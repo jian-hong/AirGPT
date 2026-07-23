@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1200" width="1800" height="1200">
+  <rect width="1800" height="1200" fill="#050505"/>
+  <ellipse cx="900" cy="760" rx="420" ry="120" fill="#0d0d0d"/>
+  <ellipse cx="900" cy="748" rx="380" ry="100" fill="#111111"/>
+  <rect x="780" y="560" width="240" height="170" rx="14" fill="#161616" stroke="#333" stroke-width="2"/>
+  <rect x="800" y="580" width="200" height="110" rx="8" fill="#0a0a0a"/>
+  <rect x="820" y="600" width="90" height="10" rx="5" fill="#4FE3C1" opacity="0.7"/>
+  <rect x="820" y="622" width="140" height="8" rx="4" fill="#333"/>
+  <rect x="820" y="640" width="110" height="8" rx="4" fill="#333"/>
+  <circle cx="1320" cy="330" r="5" fill="#4FE3C1" opacity="0.5"/>
+  <circle cx="480" cy="270" r="3" fill="#e5e5e5" opacity="0.35"/>
+  <circle cx="1180" cy="200" r="3" fill="#FFB454" opacity="0.4"/>
+  <circle cx="620" cy="420" r="4" fill="#4FE3C1" opacity="0.3"/>
+  <text x="900" y="980" text-anchor="middle" font-family="Inter,system-ui,sans-serif" font-size="42" fill="#333" letter-spacing="14">BRIDGE · RENDER PENDING</text>
+</svg>

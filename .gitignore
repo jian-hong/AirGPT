@@ -1,0 +1,48 @@
+﻿# Local environment and credentials
+env.local
+.env
+.env.*
+!.env.example
+!env.local.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Runtime data and user-provided content
+data/
+data-demo-mock/
+drops/
+
+# Local editor and agent state
+.claude/settings.local.json
+.vscode/settings.json
+
+# Python/runtime output
+__pycache__/
+*.py[cod]
+*.log
+
+# Downloaded binaries and heavyweight raw media
+bin/cloudflared.exe
+*.mov
+*.mkv
+*.avi
+*.mxf
+*.zip
+
+# Keep the curated video-assets tree, scripts, docs, and small MP4/WebM samples.
+# Finished masters should be distributed separately or through Git LFS.
+video-assets/07-exports/*
+!video-assets/07-exports/DROP_MASTERS_HERE.txt
+
+# OpenFree vendored gateway (prebuilt npm, ~739MB) + runtime
+vendor/openfree/node_modules/
+data/openfree/
+
+# Engine cross-mirror — Cortex lives in its OWN repo (D:\Cortex). Never nest it
+# here (a mirror-of-a-mirror nested git repo breaks `git add`, and it carries a
+# live env.local). Same for any Vertex mirror.
+CortexOS/
+Vertex/

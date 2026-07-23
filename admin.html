@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#080b10"/>
+<title>AirGPT Admin — Netie Workforce</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#06080d;--surface:rgba(12,16,24,.88);--surface2:rgba(18,24,34,.82);--line:rgba(255,255,255,.07);
+  --text:#eef2f7;--muted:#7a8fa8;--accent:#5b9cff;--ok:#34d399;--warn:#fbbf24;--danger:#f87171;
+  --vault:#a78bfa;--vault-dim:rgba(167,139,250,.12);--mono:"JetBrains Mono",monospace;--sans:Inter,system-ui,sans-serif;
+  --glass-blur:24px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px}
+body{
+  background:
+    radial-gradient(ellipse 100% 60% at 0% 0%,rgba(167,139,250,.1),transparent 45%),
+    radial-gradient(ellipse 80% 50% at 100% 0%,rgba(79,140,255,.1),transparent 40%),
+    var(--bg);
+}
+.shell{max-width:1400px;margin:0 auto;padding:16px 20px 40px}
+.top{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;margin-bottom:16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));
+}
+.brand{flex:1;min-width:200px}
+.brand h1{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.brand p{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px}
+.badge{font-size:10px;font-family:var(--mono);padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.badge.live{color:var(--ok);border-color:#1f4d3a;background:rgba(52,211,153,.08)}
+.btn{padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--surface2);color:var(--text);font:inherit;font-size:12px;font-weight:500;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:rgba(255,255,255,.15)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.vault{border-color:#4c3d8a;color:var(--vault);background:var(--vault-dim)}
+.grid{display:grid;grid-template-columns:1fr 320px;gap:16px}
+@media(max-width:1100px){.grid{grid-template-columns:1fr}}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.stat{padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.stat b{display:block;font-size:22px;font-weight:700;font-family:var(--mono);margin-bottom:4px}
+.stat span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat.ok b{color:var(--ok)}.stat.warn b{color:var(--warn)}.stat.danger b{color:var(--danger)}.stat.accent b{color:var(--accent)}.stat.vault b{color:var(--vault)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
+.panel-hdr{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panel-hdr h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.hint{font-size:11px;color:var(--muted);line-height:1.45;padding:10px 16px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.15)}
+.hint kbd{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--line);background:var(--bg)}
+
+.worker{border-bottom:1px solid var(--line);transition:.15s}
+.worker:last-child{border-bottom:0}
+.worker-hdr{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding:14px 16px;cursor:pointer;align-items:center}
+.worker-hdr:hover{background:var(--surface2)}
+.av{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;font-size:14px;font-weight:700;background:linear-gradient(135deg,#1a3050,#2a1840);border:1px solid var(--line)}
+.w-main{min-width:0}
+.w-name{font-size:14px;font-weight:600}
+.w-dept{font-size:11px;color:var(--muted);margin-top:2px}
+.w-meta{font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:8px}
+.w-meta em{font-style:normal;color:var(--text)}
+.w-right{text-align:right}
+.status{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:5px 10px;border-radius:999px;border:1px solid}
+.status.safe{color:var(--ok);border-color:#1f4d3a;background:rgba(52,211,153,.1)}
+.status.suspicious{color:var(--warn);border-color:#4d3d1f;background:rgba(251,191,36,.1)}
+.status.concern{color:var(--danger);border-color:#4d2020;background:rgba(248,113,113,.1)}
+.validated-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-left:6px;vertical-align:middle}
+.worker-body{display:none;padding:0 16px 14px 70px;border-top:1px dashed var(--line);background:rgba(0,0,0,.12)}
+.worker.open .worker-body{display:block}
+.worker-body .summary{font-size:12px;color:var(--muted);margin:12px 0;padding:10px 12px;border-left:3px solid var(--accent);background:var(--surface2);border-radius:0 8px 8px 0}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin:10px 0}
+.metric{padding:8px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:10px;color:var(--muted)}
+.metric strong{display:block;font-size:13px;color:var(--text);font-family:var(--mono);margin-top:2px}
+.timeline{margin-top:10px}
+.tl-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px}
+.tl-time{font-family:var(--mono);font-size:10px;color:var(--vault);min-width:42px;padding-top:2px}
+.tl-action{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);min-width:72px;padding-top:3px}
+.tl-detail{color:var(--text);flex:1;line-height:1.4}
+.files{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:none}
+.files.show{display:block}
+.files h4{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--vault);margin-bottom:8px}
+.file-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--line);margin-bottom:6px;font-size:11px}
+.file-icon{width:28px;height:28px;border-radius:6px;background:var(--vault-dim);display:grid;place-items:center;font-size:12px}
+.file-name{flex:1;font-family:var(--mono);font-size:10px;word-break:break-all}
+.file-tag{font-size:9px;padding:2px 6px;border-radius:4px;background:#1a2a40;color:var(--accent)}
+
+.side-stack{display:flex;flex-direction:column;gap:16px}
+.cortex{padding:16px}
+.cortex h3{font-size:13px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.cortex h3::before{content:"◈";color:var(--vault)}
+.cortex p{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.dual div{padding:10px;border-radius:9px;border:1px solid var(--line);background:var(--bg);font-size:10px}
+.dual b{display:block;font-size:11px;margin-bottom:4px;color:var(--text)}
+.dual span{color:var(--muted);font-family:var(--mono);font-size:9px}
+.cortex-status{font-size:10px;font-family:var(--mono);padding:8px 10px;border-radius:8px;background:var(--vault-dim);border:1px solid #4c3d8a;color:var(--vault)}
+
+.audit-list{max-height:420px;overflow-y:auto;padding:8px}
+.audit-row{padding:8px 10px;border-radius:8px;margin-bottom:4px;background:var(--bg);border:1px solid var(--line);font-size:10px;font-family:var(--mono)}
+.audit-row.fail{border-color:#4d2020;background:rgba(248,113,113,.06)}
+.audit-act{color:var(--accent)}.audit-ts{color:var(--muted);margin-right:8px}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#1a2438;border:1px solid var(--line);padding:10px 18px;border-radius:999px;font-size:12px;opacity:0;transition:.25s;z-index:99;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.footer{margin-top:20px;text-align:center;font-size:10px;color:var(--muted);font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="brand">
+      <h1>AirGPT Admin · Workforce Observatory</h1>
+      <p id="subLine">Safety-first governance · real device activity · local-first</p>
+    </div>
+    <span class="badge live" id="liveBadge">● LIVE</span>
+    <a class="btn" href="/">← AirGPT Chat</a>
+    <button class="btn vault" id="exportAuditBtn">Export audit</button>
+    <button class="btn primary" id="validateAllBtn">✓ Validate all</button>
+  </header>
+
+  <div class="stats" id="statsRow"></div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="panel-hdr">
+          <h2 id="workerPanelTitle">Workers</h2>
+          <span class="badge" id="validatedBadge">—</span>
+        </div>
+        <div class="hint">Single-click a worker → activity timeline · <kbd>Double-click</kbd> → reveal files (Obsidian vault mirror)</div>
+        <div id="workerList"></div>
+      </div>
+    </div>
+
+    <div class="side-stack">
+      <div class="panel cortex">
+        <h3>Netie Cortex — Dual Brain (safety)</h3>
+        <p>Local AirGPT captures work. Optional Cortex DMS-v2 sidecar adds secure_message + hash-chained ledger. Soft-fails if offline.</p>
+        <div class="dual">
+          <div><b>Local brain</b><span id="cortexLocal">AirGPT</span></div>
+          <div><b>Company brain</b><span id="cortexCloud">Cortex DMS-v2</span></div>
+        </div>
+        <div class="cortex-status" id="cortexStatus">Checking sidecar…</div>
+        <div class="hint" id="accessHint" style="margin-top:8px"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr"><h2>Audit stream</h2></div>
+        <div class="audit-list" id="auditList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-hdr"><h2>Spot-check</h2><button class="btn" id="reloadSpotBtn" style="padding:4px 8px">Refresh</button></div>
+        <div class="hint">Who accessed · tokens · models · leak / danger flags</div>
+        <div class="audit-list" id="spotList"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">Evidence-based governance · no hidden scoring · HR.md · integrates with Netie Cortex & Obsidian vault (roadmap)</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const API=()=>location.origin;
+let workers=[];
+let clickTimer=null;
+let lastClickId=null;
+
+(function bootstrapAuth(){
+  try{
+    const q=new URLSearchParams(location.search).get('token');
+    if(q){
+      localStorage.setItem('airgpt_token',q);
+      history.replaceState({},'',location.pathname);
+    }
+  }catch(e){}
+})();
+function authHeaders(extra){
+  const tok=localStorage.getItem('airgpt_token')||'';
+  return {...(extra||{}),...(tok?{'X-AirGPT-Token':tok}:{})};
+}
+async function adminFetch(path,opts){
+  const o=opts||{};
+  return fetch(API()+path,{...o,headers:authHeaders(o.headers||{})});
+}
+
+function toast(m){$('toast').textContent=m;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2600)}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+function statusLabel(s){
+  if(s==='safe')return 'Safe';
+  if(s==='suspicious')return 'Suspicious';
+  return 'Concern';
+}
+function _fmtMins(m){
+  m=Math.max(0,parseInt(m||0,10));
+  if(m<60)return m+'m';
+  const h=Math.floor(m/60),r=m%60;
+  return r?`${h}h ${r}m`:`${h}h`;
+}
+
+function renderStats(data){
+  const s=data.stats||{};
+  const workers=s.workers||0;
+  $('statsRow').innerHTML=`
+    <div class="stat accent"><b>${workers}</b><span>Workers</span></div>
+    <div class="stat ok"><b>${s.safe||0}</b><span>Safe</span></div>
+    <div class="stat warn"><b>${s.suspicious||0}</b><span>Suspicious</span></div>
+    <div class="stat danger"><b>${s.concern||0}</b><span>Concern</span></div>
+    <div class="stat"><b>${esc(s.total_active_display||'—')}</b><span>Active time</span></div>
+    <div class="stat vault"><b>${esc(s.total_ai_display||'—')}</b><span>AI time</span></div>
+    <div class="stat vault"><b>${s.vault_files||s.vault_notes||0}</b><span>Vault notes</span></div>`;
+  $('validatedBadge').textContent=data.validated_at?`Validated ${data.validated_at}`:(data.sku==='business'?'Business safety':'Personal free');
+  $('subLine').textContent=`Updated ${data.generated_at||'—'} · ${data.sku||'personal'} · ${workers} devices · safety-first`;
+  $('workerPanelTitle').textContent=`Workers (${workers})`;
+  const badge=$('liveBadge');
+  if(badge){
+    badge.textContent=data.ok?'● LIVE':'● OFFLINE';
+    badge.classList.toggle('live',!!data.ok);
+  }
+  if(data.cortex){
+    $('cortexLocal').textContent=data.cortex.local||'AirGPT :8765';
+    $('cortexCloud').textContent=data.cortex.cloud||data.cortex.url||'Cortex DMS-v2';
+    $('cortexStatus').textContent=`${data.cortex.status||'standby'}${data.cortex.ok?' · connected':' · offline soft-fail'}`;
+  }
+  const ah=$('accessHint');
+  if(ah&&data.access_policy){
+    const p=data.access_policy;
+    ah.textContent=`Downloads: mode=${p.mode} · approved=${p.approved} · pending=${(p.pending||[]).length}`;
+  }
+}
+
+function renderTimeline(acts){
+  return (acts||[]).map(a=>`<div class="tl-item">
+    <span class="tl-time">${esc(a.time)}</span>
+    <span class="tl-action">${esc(a.action)}</span>
+    <span class="tl-detail">${esc(a.detail)}</span>
+  </div>`).join('');
+}
+
+function renderFiles(files,show){
+  if(!files||!files.length)return '<div class="files"><h4>Files</h4><p class="hint" style="border:0;padding:0">No files logged</p></div>';
+  const cls=show?'files show':'files';
+  return `<div class="${cls}" data-files>
+    <h4>Files & vault artifacts · double-click to reveal</h4>
+    ${files.map(f=>`<div class="file-row">
+      <div class="file-icon">${f.kind==='vault'?'📓':f.kind==='image'?'🖼':'📄'}</div>
+      <div class="file-name">${esc(f.name)}</div>
+      <span class="file-tag">${esc(f.time)}</span>
+      ${f.vault?'<span class="file-tag" style="color:var(--vault)">vault</span>':''}
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderWorkers(list){
+  workers=list||[];
+  if(!workers.length){
+    $('workerList').innerHTML='<div class="hint" style="border:0">No devices registered yet</div>';
+    return;
+  }
+  $('workerList').innerHTML=workers.map(w=>`
+    <div class="worker" id="w-${w.id}" data-id="${w.id}">
+      <div class="worker-hdr">
+        <div class="av">${esc((w.name||'?').split(' ').map(x=>x[0]).join('').slice(0,2))}</div>
+        <div class="w-main">
+          <div class="w-name">${esc(w.name||'Unknown')}${w.validated?'<span class="validated-dot" title="Validated"></span>':''}</div>
+          <div class="w-dept">${esc(w.department||'—')} · ${esc(w.role||'')}</div>
+          <div class="w-meta">
+            <span>Active <em>${esc(w.active_display||_fmtMins(w.active_minutes))}</em></span>
+            <span>AI <em>${esc(w.ai_display||_fmtMins(w.ai_minutes))}</em></span>
+            <span>Last <em>${esc(w.last_active||'—')}</em></span>
+            <span>${esc((w.summary||'').slice(0,60))}${(w.summary||'').length>60?'…':''}</span>
+          </div>
+        </div>
+        <div class="w-right">
+          <span class="status ${esc(w.status)}">${statusLabel(w.status)}</span>
+        </div>
+      </div>
+      <div class="worker-body">
+        <div class="summary">${esc(w.summary)}</div>
+        <div class="metrics">
+          <div class="metric">Sessions<strong>${w.sessions||0}</strong></div>
+          <div class="metric">Screenshots<strong>${w.screenshots||0}</strong></div>
+          <div class="metric">Vault notes<strong>${w.vault_notes||0}</strong></div>
+          <div class="metric">Clipboard<strong>${w.clipboard_events||0}</strong></div>
+          <div class="metric">Device<strong style="font-size:9px">${esc(w.device||'—')}</strong></div>
+        </div>
+        <div class="timeline">${renderTimeline(w.activities)}</div>
+        ${renderFiles(w.files,false)}
+      </div>
+    </div>`).join('');
+
+  document.querySelectorAll('.worker-hdr').forEach(hdr=>{
+    const id=hdr.closest('.worker').dataset.id;
+    hdr.addEventListener('click',()=>{
+      if(clickTimer&&lastClickId===id){clearTimeout(clickTimer);clickTimer=null;return}
+      lastClickId=id;
+      clickTimer=setTimeout(()=>{
+        clickTimer=null;
+        const el=$('w-'+id);
+        const wasOpen=el.classList.contains('open');
+        document.querySelectorAll('.worker.open').forEach(x=>x.classList.remove('open'));
+        document.querySelectorAll('.files.show').forEach(x=>x.classList.remove('show'));
+        if(!wasOpen)el.classList.add('open');
+      },260);
+    });
+    hdr.addEventListener('dblclick',e=>{
+      e.preventDefault();
+      if(clickTimer){clearTimeout(clickTimer);clickTimer=null}
+      const el=$('w-'+id);
+      el.classList.add('open');
+      const files=el.querySelector('[data-files]');
+      if(files){
+        files.classList.add('show');
+        toast('Files revealed — vault mirror');
+      }
+    });
+  });
+}
+
+function renderAudit(rows){
+  const list=rows||[];
+  if(!list.length){$('auditList').innerHTML='<div class="hint" style="border:0">No audit events yet</div>';return}
+  $('auditList').innerHTML=[...list].reverse().map(r=>{
+    const ts=r.ts?new Date(r.ts*1000).toLocaleTimeString():'—';
+    return `<div class="audit-row ${r.ok===false?'fail':''}">
+      <span class="audit-ts">${esc(ts)}</span>
+      <span class="audit-act">${esc(r.action)}</span>
+      ${esc(r.detail||'')} ${r.ip?'<span style="color:var(--muted)">'+esc(r.ip)+'</span>':''}
+    </div>`;
+  }).join('');
+}
+
+function renderSpot(data){
+  const users=(data&&data.users)||[];
+  const el=$('spotList');if(!el)return;
+  if(!users.length){el.innerHTML='<div class="hint" style="border:0">No users yet</div>';return}
+  el.innerHTML=users.slice(0,24).map(u=>{
+    const flags=(u.flags||[]).join(', ')||'ok';
+    const mods=(u.models||[]).slice(0,3).map(m=>`${m.model}:${m.tokens}`).join(' · ')||'-';
+    return `<div class="audit-row ${u.status==='concern'?'fail':''}">
+      <div><strong style="color:var(--text)">${esc(u.user)}</strong> · ${esc(u.status)} · ${esc(String(u.tokens||0))} tok</div>
+      <div style="color:var(--muted);margin-top:4px">${esc(mods)}</div>
+      <div style="margin-top:4px">flags: ${esc(flags)} · last ${esc(u.last_seen||'')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadSpot(){
+  try{
+    const r=await adminFetch('/api/audit/spotcheck');
+    const d=await r.json();
+    renderSpot(d);
+  }catch(e){renderSpot({users:[]})}
+}
+
+async function load(){
+  try{
+    const r=await adminFetch('/api/admin/overview');
+    const d=await r.json();
+    if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));
+    renderStats(d);
+    renderWorkers(d.workers||[]);
+    renderAudit(d.audit_tail||[]);
+    loadSpot();
+  }catch(e){
+    toast('Failed to load admin data');
+    console.error(e);
+  }
+}
+
+$('validateAllBtn').onclick=async()=>{
+  try{
+    const r=await adminFetch('/api/admin/validate-all',{method:'POST'});
+    const d=await r.json();
+    if(d.ok){
+      toast(`Validated ${d.count||workers.length} workers ✓`);
+      load();
+    }
+  }catch(e){toast('Validate failed')}
+};
+
+$('exportAuditBtn').onclick=async()=>{
+  try{
+    const r=await adminFetch('/api/audit');
+    const d=await r.json();
+    const text=JSON.stringify(d.events||d, null, 2);
+    await navigator.clipboard.writeText(text);
+    toast('Audit log copied to clipboard');
+  }catch(e){toast('Export failed')}
+};
+const spotBtn=$('reloadSpotBtn');
+if(spotBtn)spotBtn.onclick=()=>loadSpot();
+
+load();
+setInterval(load,15000);
+</script>
+</body>
+</html>

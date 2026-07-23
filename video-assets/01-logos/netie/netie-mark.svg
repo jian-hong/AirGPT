@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="Netie">
+  <!-- Official Netie mark: outer square frame + solid inner square (white on black) -->
+  <rect width="512" height="512" fill="#000000"/>
+  <!-- Outer frame stroke ~8% of side -->
+  <rect x="96" y="96" width="320" height="320" stroke="#FFFFFF" stroke-width="40" fill="none"/>
+  <!-- Inner solid square ~1/3 of frame inner area, centered -->
+  <rect x="208" y="208" width="96" height="96" fill="#FFFFFF"/>
+</svg>

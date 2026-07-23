@@ -1,0 +1,24 @@
+AirGPT Intro VO — 17/7
+Tone: calm, confident, slightly warm. ~145 wpm. Leave gaps for silence before hero land.
+
+[0.0]
+Every day, company work walks out the door — pasted into random AI tabs, emailed from your phone to yourself.
+
+[5.6]
+AirGPT keeps it local.
+
+[7.6]
+Scan once. Send a photo from your phone — it lands in chat, hits your clipboard, pastes anywhere on Windows, and comes straight back.
+
+[21.8]
+Analyze diagrams on your machine. Agents that build — with guardrails that hold.
+
+[32.2]
+Governed with Netie.
+
+[34.6]
+AirGPT. Your work stays yours.
+
+---
+Record: 48kHz 24-bit dry WAV → 06-audio/VO_INTRO_17-07_48k.wav
+Alt takes for lines at 5.6, 14.4 (after silence), 34.6.

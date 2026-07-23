@@ -1,0 +1,8 @@
+AirGPT — Terms of Use (installer excerpt)
+
+Personal use is free for local clipboard, chat, WiFi/tunnel, and BYOK AI.
+Business features require a license. Installing AirGPT may also install Netie Space;
+both apps can share one Netie account on this PC.
+
+AI outputs can be wrong. Software is provided AS IS.
+Full terms: legal/terms.md · https://netie.ai/legal/terms

@@ -1,0 +1,319 @@
+/* OpenIDE — extracted from index.html · source of truth: OpenIDE/ui/openide.css */
+/* OpenIDE — Cursor Agents | IDE ensemble (Phase 9) */
+body.openide-mode .composer,body.openide-mode .ctx-bar,body.openide-mode .mem-fab,body.openide-mode .project-rail{display:none!important}
+body.openide-mode .connect-col,body.openide-mode .connect-collapse-btn,body.openide-mode .connect-resize-handle,body.openide-mode .side-resize-handle{display:none!important}
+body.openide-mode .lan-banner,body.openide-mode .paywall-banner,body.openide-mode .net-banner,body.openide-mode .reply-chip{display:none!important}
+body.openide-mode .app{grid-template-columns:var(--side) 1fr}
+body.openide-mode .app.side-collapsed{grid-template-columns:0 1fr}
+body.openide-mode .topbar{padding:6px 14px;background:#141414;border-bottom-color:rgba(255,255,255,.08);min-height:0}
+body.openide-mode .topbar .ai-switch,body.openide-mode .brand small{display:none!important}
+body.openide-mode .chat{max-width:none;margin:0;padding:0;overflow:hidden;height:100%}
+body.openide-mode .main-wrap,body.openide-mode .main-chat-col{min-height:0;height:100%;flex:1}
+body.openide-mode .main{background:#0a0a0a}
+body.openide-mode .brand-mark{border-radius:6px;overflow:hidden}
+/* Claude Home — quieter chrome on empty hub */
+body.claude-home .connect-col{opacity:.92}
+body.claude-home .lan-banner,body.claude-home .paywall-banner{display:none!important}
+body.claude-home .topbar{border-bottom-color:transparent;background:transparent}
+/* OpenIDE — Cursor-style: Agents=[runs|chat|tools] IDE=[files|workspace|chat] */
+.openide-shell{
+  --oide-left:220px;--oide-right:36%;
+  display:grid;grid-template-columns:var(--oide-left) 5px minmax(0,1fr) 5px var(--oide-right);
+  grid-template-areas:"left lsplit chat rsplit tools";
+  height:100%;min-height:0;background:#0a0a0a;color:var(--text)
+}
+.openide-shell.openide-view-editor{
+  --oide-left:260px;--oide-right:38%;
+  grid-template-areas:"left lsplit work rsplit chat";
+}
+.openide-shell.left-collapsed{grid-template-columns:0 0 minmax(0,1fr) 5px var(--oide-right)}
+.openide-shell.right-collapsed{grid-template-columns:var(--oide-left) 5px minmax(0,1fr) 0 0}
+.openide-shell.left-collapsed.right-collapsed{grid-template-columns:0 0 minmax(0,1fr) 0 0}
+.openide-left{grid-area:left;display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid rgba(255,255,255,.08);background:#0c0c0c;position:relative;overflow:hidden}
+.openide-shell.left-collapsed .openide-left{border:0;opacity:0;pointer-events:none}
+.openide-shell.openide-view-editor .openide-runs{display:none}
+.openide-shell.openide-view-agents .openide-filepane-ide{display:none}
+.openide-center{grid-area:chat}
+.openide-workspace{grid-area:tools;display:flex;flex-direction:column;min-width:0;min-height:0;background:#141414;overflow:hidden}
+.openide-shell.openide-view-editor .openide-workspace{grid-area:work;border-right:1px solid rgba(255,255,255,.08)}
+.openide-shell.openide-view-agents .openide-workspace{border-left:1px solid rgba(255,255,255,.08)}
+.openide-shell.right-collapsed .openide-workspace{opacity:0;pointer-events:none;border:0}
+.openide-shell.openide-view-editor.right-collapsed .openide-center{opacity:0;pointer-events:none;border:0}
+.openide-shell.openide-view-agents.right-collapsed .openide-workspace{display:none}
+.oide-resizer{width:5px;cursor:col-resize;background:transparent;position:relative;z-index:6;touch-action:none}
+.oide-resizer[data-for="left"]{grid-area:lsplit}
+.oide-resizer[data-for="right"]{grid-area:rsplit}
+.oide-resizer:hover,.oide-resizer.dragging{background:rgba(141,180,255,.35)}
+.oide-resizer::after{content:"";position:absolute;inset:0 -3px;cursor:col-resize}
+.openide-rail-toggle{position:absolute;z-index:8;top:50%;transform:translateY(-50%);width:16px;height:48px;padding:0;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,18,.94);color:var(--muted);cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center}
+.openide-rail-toggle.left{right:-16px;border-radius:0 8px 8px 0;border-left:0}
+.openide-rail-toggle.right{left:-16px;border-radius:8px 0 0 8px;border-right:0}
+.openide-shell.left-collapsed .openide-rail-toggle.left{right:auto;left:0;border-left:1px solid rgba(255,255,255,.12);border-radius:0 8px 8px 0}
+.openide-shell.right-collapsed .openide-rail-toggle.right{left:auto;right:0;border-right:1px solid rgba(255,255,255,.12);border-radius:8px 0 0 8px}
+.openide-runs{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1}
+.openide-runs-hdr{padding:8px 10px 6px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;gap:6px}
+.openide-runs-list{flex:1;overflow:auto;padding:4px}
+.openide-run-item{padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:rgba(255,255,255,.78);margin-bottom:1px;border:1px solid transparent;line-height:1.25}
+.openide-run-item:hover,.openide-run-item.on{background:rgba(255,255,255,.06);border-color:transparent;color:#fff}
+.openide-run-item .or-meta{font-size:10px;color:var(--muted);margin-top:1px}
+.openide-view-toggle{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)}
+.openide-view-toggle button{padding:3px 8px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:10px;font-weight:500;cursor:pointer;transition:background var(--morph),color var(--morph)}
+.openide-view-toggle button.on{background:rgba(255,255,255,.1);color:#fff}
+/* OpenIDE boot morph — standalone-app launch feel */
+#openideMorph{position:fixed;inset:0;z-index:500;display:grid;place-items:center;background:radial-gradient(120% 120% at 50% 30%,#141420 0%,#0a0a0a 55%);opacity:0;transform:scale(.94);transition:opacity .32s ease,transform .42s cubic-bezier(.2,.8,.2,1)}
+#openideMorph.in{opacity:1;transform:none}
+#openideMorph.out{opacity:0;transform:scale(1.05);pointer-events:none}
+.oide-boot{display:flex;flex-direction:column;align-items:center;gap:14px}
+.oide-tile{width:84px;height:84px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.18);box-shadow:0 22px 70px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.15);animation:oideTile .9s cubic-bezier(.2,.8,.2,1)}
+.oide-tile svg{width:40px;height:40px;color:#fff}
+.oide-tile svg rect[fill="currentColor"],.oide-tile svg rect[fill="#FFFFFF"]{fill:#fff}
+.oide-tile svg rect[stroke]{stroke:#fff}
+@keyframes oideTile{0%{transform:scale(.55);opacity:0}60%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+.oide-name{font-size:18px;font-weight:650;letter-spacing:.14em;text-transform:uppercase;color:#fff;opacity:.92}
+.oide-bar{width:220px;height:4px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+.oide-bar i{display:block;height:100%;width:12%;border-radius:99px;background:linear-gradient(90deg,#8db4ff,#fff);transition:width .4s ease}
+.oide-step{font-size:11px;color:var(--muted);letter-spacing:.05em;min-height:14px}
+.oide-skip{margin-top:4px;border:0;background:transparent;color:rgba(255,255,255,.45);font:inherit;font-size:11px;letter-spacing:.04em;cursor:pointer;padding:6px 10px;border-radius:8px}
+.oide-skip:hover{color:#fff;background:rgba(255,255,255,.06)}
+.openide-center{display:flex;flex-direction:column;min-width:0;min-height:0;background:#0e0e0e;transition:opacity var(--morph),transform var(--morph),border-color var(--morph);position:relative;overflow:hidden}
+.openide-shell.openide-view-agents .openide-center{border-right:1px solid rgba(255,255,255,.08)}
+.openide-shell.openide-view-editor .openide-center{border-left:1px solid rgba(255,255,255,.08)}
+.openide-center .oide-chat-collapse{display:none}
+.openide-shell.openide-view-editor .openide-center .oide-chat-collapse{display:flex}
+.openide-shell.openide-view-editor .openide-workspace>.openide-rail-toggle.right{display:none}
+.openide-shell.openide-view-editor.right-collapsed .openide-workspace>.openide-rail-toggle.right{display:flex;left:auto;right:0;border-radius:8px 0 0 8px;border-right:1px solid rgba(255,255,255,.12);border-left:0}
+
+.openide-session-hdr{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;background:#141414;flex-wrap:nowrap;min-height:0}
+.openide-session-hdr h2{font-size:13px;font-weight:600;letter-spacing:-.02em;margin:0;color:#fff;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.openide-chip{font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;background:rgba(61,214,140,.12);color:var(--ok);border:1px solid rgba(61,214,140,.28);flex-shrink:0;cursor:pointer;user-select:none}
+.openide-chip.assist{background:rgba(141,180,255,.12);color:#8db4ff;border-color:rgba(141,180,255,.28)}
+.openide-chip.idle{background:rgba(255,255,255,.06);color:var(--muted);border-color:rgba(255,255,255,.12)}
+.openide-hdr-actions{display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap}
+.openide-hdr-actions .btn,.openide-hdr-actions select{padding:5px 9px;font-size:11px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:var(--text);cursor:pointer}
+.openide-hdr-actions .btn:hover{background:rgba(255,255,255,.08)}
+.openide-transcript{flex:1;min-height:0;overflow-y:auto;padding:16px 18px 12px;font-size:13.5px;line-height:1.55;overscroll-behavior:contain}
+.openide-tool-line{display:flex;align-items:flex-start;gap:8px;padding:6px 0;color:rgba(255,255,255,.55);font-size:12.5px}
+.openide-tool-line .ot-ico{flex-shrink:0;opacity:.7;width:16px;text-align:center}
+.openide-tool-line strong{color:rgba(255,255,255,.78);font-weight:500}
+.openide-thought{margin:8px 0;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);overflow:hidden}
+.openide-thought summary{cursor:pointer;padding:8px 12px;font-size:12px;color:var(--muted);list-style:none}
+.openide-thought summary::-webkit-details-marker{display:none}
+.openide-thought[open] summary{border-bottom:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.75)}
+.openide-thought pre{margin:0;padding:10px 12px;white-space:pre-wrap;font-size:12px;color:rgba(255,255,255,.65);font-family:var(--mono);max-height:180px;overflow:auto}
+.openide-msg{margin:0 0 14px;color:rgba(242,242,242,.92);white-space:pre-wrap;font-size:14px;line-height:1.6}
+.openide-msg.user{color:rgba(255,255,255,.7);padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.openide-empty-hint{color:var(--muted);text-align:center;padding:16px;font-size:12px;line-height:1.4}
+.openide-help{padding:12px 14px;margin:8px 0;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);font-size:12.5px;color:rgba(255,255,255,.75);line-height:1.5}
+.openide-help ol{margin:8px 0 0;padding-left:18px}
+.openide-statusbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;background:#121212;font-size:12px;flex-wrap:wrap}
+.openide-statusbar .st-live{color:var(--ok);font-weight:500}
+.openide-statusbar .st-muted{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.openide-diffstat{font-family:var(--mono);font-size:11px;display:inline-flex;gap:8px}
+.openide-diffstat .plus{color:var(--ok)}
+.openide-diffstat .minus{color:#f87171}
+.openide-pr-btn{padding:4px 10px;border-radius:6px;border:0;background:var(--ok);color:#0a0a0a;font:inherit;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;display:none}
+.openide-pr-btn.show{display:inline-flex;align-items:center}
+.openide-pr-btn:hover{filter:brightness(1.08)}
+.openide-pr-btn:disabled{opacity:.45;cursor:default;filter:none}
+.openide-composer{padding:6px 10px 10px;flex-shrink:0;background:#0a0a0a}
+.openide-composer-inner{position:relative;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(20,20,22,.92);padding:6px 8px;box-shadow:none}
+.openide-composer-inner:focus-within{border-color:rgba(255,255,255,.22)}
+#openidePrompt{width:100%;min-height:36px;max-height:120px;resize:none;background:transparent;color:var(--text);border:0;outline:none;font:inherit;font-size:13px;line-height:1.35;padding:4px 6px}
+.openide-composer-row{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap}
+.openide-composer-row .btn{padding:4px 8px;font-size:10px;border-radius:6px}
+.openide-composer-row .btn.primary{background:#fff;color:#0a0a0a;border-color:#fff;margin-left:auto}
+/* Cortex agent bar — liquid glass menus */
+.oide-agent-bar{display:flex;flex-direction:column;gap:4px;width:100%}
+.oide-agent-bar-top{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.oide-agent-bar-bot{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.oide-glass-dd{position:relative;flex-shrink:0}
+.oide-glass-btn{
+  display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);
+  color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;
+  backdrop-filter:blur(var(--glass-blur,14px));max-width:140px
+}
+.oide-glass-btn:hover,.oide-glass-dd.open .oide-glass-btn{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.28)}
+.oide-glass-btn .dd-caret{opacity:.55;font-size:10px}
+.oide-glass-btn .oide-btn-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
+.oide-glass-menu{
+  display:none;position:absolute;left:0;bottom:calc(100% + 6px);z-index:40;min-width:220px;max-width:320px;
+  padding:8px;border-radius:14px;border:1px solid rgba(255,255,255,.18);
+  background:rgba(18,18,22,.92);backdrop-filter:blur(18px) saturate(1.2);
+  box-shadow:0 18px 48px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08)
+}
+.oide-glass-dd.open .oide-glass-menu{display:block}
+.oide-glass-menu .og-search{
+  width:100%;box-sizing:border-box;padding:8px 10px;margin:0 0 6px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#fff;font:inherit;font-size:12px
+}
+.oide-glass-menu .og-sec{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.45);padding:6px 8px 4px}
+.oide-glass-menu button,.oide-glass-menu .og-item{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:10px;
+  background:transparent;color:#f5f5f5;font:inherit;font-size:12.5px;cursor:pointer
+}
+.oide-glass-menu button:hover,.oide-glass-menu .og-item:hover,.oide-glass-menu button.on{background:rgba(255,255,255,.1)}
+.oide-glass-menu .og-empty{padding:14px 10px;text-align:center;color:rgba(255,255,255,.45);font-size:12px}
+.oide-glass-menu .og-hint{font-size:11px;color:rgba(255,255,255,.45);margin-left:auto}
+.oide-modes-btn{min-width:36px;justify-content:center;font-weight:650}
+.oide-tier-dd .oide-glass-btn{min-width:72px}
+.oide-think-btn{
+  width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.04);color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center
+}
+.oide-think-btn.on{color:#8db4ff;border-color:rgba(141,180,255,.4);background:rgba(141,180,255,.1)}
+.oide-think-btn.hidden-tier{display:none}
+#openidePrompt.oide-prompt-inline{flex:1;min-width:160px;min-height:40px;max-height:120px}
+.openide-on-ws{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;background:#101010;font-size:11px;color:var(--muted)}
+.openide-on-ws strong{color:#fff;font-weight:600;margin-right:4px}
+.openide-on-ws .ows-stat{font-family:var(--mono);font-size:10px}
+.openide-on-ws .ows-stat .plus{color:var(--ok)}
+.openide-on-ws .ows-stat .minus{color:#f87171}
+.openide-run-item{position:relative;padding-left:22px}
+.openide-run-dot{
+  position:absolute;left:8px;top:12px;width:8px;height:8px;border-radius:50%;background:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.25)
+}
+.openide-run-dot.need{
+  background:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.25)
+}
+.openide-run-dot.need::after{
+  content:attr(data-n);position:absolute;left:50%;top:100%;transform:translate(-50%,2px);
+  min-width:12px;height:12px;padding:0 3px;border-radius:999px;background:#ef4444;color:#fff;
+  font-size:8px;font-weight:700;line-height:12px;text-align:center
+}
+.openide-runs-hdr .oide-new-cortex{
+  padding:4px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);
+  color:#fff;font:inherit;font-size:10px;font-weight:600;cursor:pointer
+}
+.openide-runs-hdr .oide-new-cortex.on{border-color:rgba(141,180,255,.5);background:rgba(141,180,255,.12);color:#cfe0ff}
+body.openide-mode #openideIdeBtn{display:inline-flex!important;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:6px 10px}
+body:not(.openide-mode) #openideIdeBtn{display:none!important}
+/* Right rail: no mid-edge expand when collapsed — IDE↗ only opens */
+.openide-shell.right-collapsed .openide-workspace>.openide-rail-toggle.right,
+.openide-shell.right-collapsed .openide-center .oide-chat-collapse{display:none!important}
+.openide-shell.openide-view-editor.right-collapsed .openide-workspace>.openide-rail-toggle.right{display:none!important}
+#openideMentionPick{display:none;position:absolute;left:8px;right:8px;bottom:calc(100% + 4px);z-index:5;background:#161616;border:1px solid rgba(255,255,255,.12);border-radius:10px;max-height:160px;overflow:auto}
+.openide-work-tabs{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;background:#121212}
+.openide-work-tabs button{padding:5px 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;font-weight:500;cursor:pointer}
+.openide-work-tabs button.on{background:rgba(255,255,255,.08);color:#fff}
+.openide-work-tabs .oide-work-spacer{flex:1}
+.openide-run-item{padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:rgba(255,255,255,.78);margin-bottom:1px;border:1px solid transparent;line-height:1.25}
+.openide-run-item:hover,.openide-run-item.on{background:rgba(255,255,255,.06);border-color:transparent;color:#fff}
+.openide-run-item .or-meta{font-size:10px;color:var(--muted);margin-top:1px}
+.openide-runs-hdr{padding:8px 10px 6px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;gap:6px}
+.openide-session-hdr{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;background:#141414;flex-wrap:nowrap;min-height:0}
+.openide-session-hdr h2{font-size:13px;font-weight:600;letter-spacing:-.02em;margin:0;color:#fff;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.openide-chip{font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;background:rgba(61,214,140,.12);color:var(--ok);border:1px solid rgba(61,214,140,.28);flex-shrink:0;cursor:pointer;user-select:none}
+.openide-pr-btn{padding:4px 10px;border-radius:6px;border:0;background:var(--ok);color:#0a0a0a;font:inherit;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;display:none}
+.openide-pr-btn.show{display:inline-flex;align-items:center}
+.openide-pr-btn:hover{filter:brightness(1.08)}
+.openide-pr-btn:disabled{opacity:.45;cursor:default;filter:none}
+.openide-composer{padding:6px 10px 10px;flex-shrink:0;background:#0a0a0a}
+.openide-composer-inner{position:relative;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(20,20,22,.92);padding:6px 8px;box-shadow:none}
+.openide-composer-inner:focus-within{border-color:rgba(255,255,255,.22)}
+.oide-agent-bar{display:flex;flex-direction:column;gap:4px;width:100%}
+.oide-agent-bar-top{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.oide-agent-bar-bot{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.oide-prompt-inline{flex:1;min-width:120px;min-height:36px;max-height:120px;resize:none;padding:6px 8px;border:0;background:transparent;color:var(--text);font:inherit;font-size:13px;line-height:1.35}
+.openide-statusbar{display:flex;align-items:center;gap:8px;padding:4px 12px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:var(--muted);flex-shrink:0;min-height:28px}
+.openide-rail-sec{padding:6px 10px 2px;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.openide-open-tabs{padding:2px 4px 6px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;max-height:22%;overflow:auto}
+.openide-open-tab{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:4px;font-size:11px;color:rgba(255,255,255,.72);cursor:pointer;border:0;line-height:1.3}
+.openide-open-tab:hover,.openide-open-tab.on{background:rgba(255,255,255,.06);color:#fff}
+.openide-on-ws{padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;display:flex;align-items:center;gap:6px;font-size:11px}
+.oide-new-agent{min-width:22px;padding:2px 6px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:transparent;color:rgba(255,255,255,.85);font:inherit;font-size:14px;font-weight:600;cursor:pointer;line-height:1.1}
+.oide-new-agent.on,.oide-new-agent:hover{background:rgba(141,180,255,.14);border-color:rgba(141,180,255,.4);color:#fff}
+.openide-repos{flex:1;min-height:0;overflow:auto;padding:2px 4px 8px}
+.openide-repo-group{margin-bottom:2px}
+.openide-repo-hd{display:flex;align-items:center;gap:4px;padding:3px 6px;font-size:11px;font-weight:600;color:rgba(255,255,255,.65);cursor:pointer;border-radius:4px}
+.openide-repo-hd:hover,.openide-repo-hd.on{background:rgba(255,255,255,.05);color:#fff}
+.openide-repo-hd .repo-plus{margin-left:auto;opacity:.55;font-size:14px;line-height:1;padding:0 4px;border-radius:4px}
+.openide-repo-hd .repo-plus:hover{opacity:1;background:rgba(141,180,255,.2);color:#fff}
+.openide-repo-agents{padding-left:4px}
+.openide-repo-agents .openide-run-item{padding:3px 6px 3px 14px;font-size:11px;position:relative;display:flex;align-items:center;gap:6px}
+.openide-repo-agents .openide-run-item .or-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.openide-repo-agents .openide-run-item .or-when{flex-shrink:0;font-size:10px;color:var(--muted);opacity:.85}
+.openide-repo-agents .openide-run-item::before{content:'';position:absolute;left:4px;top:50%;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.25);transform:translateY(-50%)}
+.openide-repo-agents .openide-run-item.on::before{background:#8db4ff}
+/* Create-App Magic — empty state + Run CTA */
+.openide-empty-hint{padding:28px 20px;max-width:420px;margin:40px auto 0;text-align:center;color:rgba(255,255,255,.78);font-size:13px;line-height:1.45}
+.openide-empty-hint h3{margin:0 0 6px;font-size:20px;font-weight:650;color:#fff;letter-spacing:-.03em}
+.openide-empty-hint .oide-empty-sub{font-size:12.5px;opacity:1;color:rgba(255,255,255,.62);margin-bottom:16px}
+.openide-empty-ctas{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;justify-content:center}
+.openide-empty-ctas button{
+  display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:#fff;
+  font:inherit;font-size:12px;font-weight:500;cursor:pointer
+}
+.openide-empty-ctas button:hover{border-color:rgba(141,180,255,.45);background:rgba(141,180,255,.12)}
+.openide-empty-ctas button.primary{background:#fff;color:#0a0a0a;border-color:#fff;font-weight:650}
+.openide-empty-ctas button.primary:hover{filter:brightness(1.05);background:#fff}
+.oide-agent-bar-bot > .btn.primary,
+#openideRunBtn{
+  flex:0 0 auto;margin-left:auto;min-height:34px;padding:6px 16px;border-radius:10px;
+  background:#fff;color:#0a0a0a;border:1px solid #fff;font-weight:650;font-size:12px
+}
+.oide-agent-bar-bot > .btn.primary:hover,#openideRunBtn:hover{filter:brightness(1.06)}
+.oide-modes-btn{min-width:auto;padding:4px 10px!important;font-weight:650}
+.oide-new-agent{min-width:auto;padding:3px 8px;font-size:11px;font-weight:650;letter-spacing:.02em}
+#oideModeChip{font-size:11px}
+.oide-agent-bar-top{flex-wrap:wrap}
+#openidePrompt.oide-prompt-inline{flex:1 1 100%;min-width:100%;order:3;min-height:44px}
+.oide-agent-bar-top .oide-glass-dd{order:1}
+.openide-help{padding:14px 16px;margin:10px 0;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:13px;color:rgba(255,255,255,.82);line-height:1.5;text-align:left}
+.openide-help code{font-size:11px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.35)}
+
+.openide-work-tabs{display:flex;align-items:center;gap:2px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;background:#121212}
+.openide-work-tabs button{padding:3px 8px;border:0;border-radius:4px;background:transparent;color:var(--muted);font:inherit;font-size:10px;font-weight:500;cursor:pointer}
+.openide-browse-link{display:block;width:100%;margin-top:4px;padding:4px 6px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10px;text-align:left;cursor:pointer;border-radius:4px}
+.openide-browse-link:hover{color:#fff;background:rgba(255,255,255,.04)}
+.openide-shell{--oide-left:200px}
+.openide-preview,.openide-changes,.openide-editor-pane,.openide-term-pane{display:none;flex-direction:column;flex:1;min-height:0;background:#181818}
+.openide-preview.on,.openide-changes.on,.openide-editor-pane.on,.openide-term-pane.on{display:flex}
+.openide-browser-chrome{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.openide-browser-chrome .tab{font-size:11px;color:var(--muted);padding:4px 8px;border-radius:6px;background:rgba(255,255,255,.04)}
+#openidePreviewUrl{flex:1;min-width:0;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:#0e0e0e;color:var(--text);font:inherit;font-size:12px;font-family:var(--mono)}
+.openide-app-chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;flex-shrink:0}
+.openide-app-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:var(--mono)}
+.openide-app-chip:hover,.openide-app-chip.on{border-color:rgba(61,214,140,.4);color:#fff;background:rgba(61,214,140,.08)}
+.openide-app-chip .play{color:var(--ok);font-size:9px}
+#openidePreviewFrame{flex:1;min-height:0;width:100%;border:0;background:#0a0a0a}
+.openide-filepane-ide{display:flex;flex-direction:column;flex:1;min-height:0;background:#0c0c0c}
+.openide-filetabs{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.openide-filetabs button{padding:5px 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;font-weight:500;cursor:pointer}
+.openide-filetabs button.on{background:rgba(255,255,255,.08);color:#fff}
+.openide-filetabs #openideRoot{margin-left:auto;font-size:10px;color:var(--muted);font-family:var(--mono);max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.openide-tree,#openideGit{overflow:auto;padding:6px;font-size:12px;flex:1;min-height:0;background:#0c0c0c}
+.openide-tree .fe{cursor:pointer;padding:4px 6px;border-radius:6px;color:rgba(255,255,255,.78)}
+.openide-tree .fe:hover{background:rgba(255,255,255,.06);color:#fff}
+.openide-tree .fe.on{background:rgba(255,255,255,.1);color:#fff}
+.openide-editor{flex:1;min-height:0;overflow:hidden;background:#1e1e1e;position:relative}
+.openide-editor pre{margin:0;padding:10px;white-space:pre-wrap;font-family:var(--mono);font-size:12px;height:100%;overflow:auto;color:rgba(255,255,255,.85)}
+.openide-term-wrap{border-top:1px solid rgba(255,255,255,.06);padding:6px 8px;flex-shrink:0;background:#121212;height:var(--oide-term,110px);min-height:72px;max-height:40%;display:flex;flex-direction:column;gap:4px;position:relative}
+.openide-term-pane .openide-term-wrap{border-top:0;height:auto;max-height:none;flex:1;min-height:0}
+.oide-term-resizer{position:absolute;left:0;right:0;top:-3px;height:6px;cursor:row-resize;z-index:4}
+.oide-term-resizer:hover,.oide-term-resizer.dragging{background:rgba(141,180,255,.35)}
+#openideTerm{margin:0;font-size:11px;flex:1;min-height:0;overflow:auto;font-family:var(--mono);color:rgba(255,255,255,.65);white-space:pre-wrap}
+.openide-term-row{display:flex;gap:6px;flex-shrink:0}
+#openideCmd{flex:1;padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:#0e0e0e;color:var(--text);font:inherit;font-size:11px;font-family:var(--mono)}
+.openide-approval{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;margin:10px 0;background:rgba(255,255,255,.03)}
+.openide-approval pre{white-space:pre-wrap;font-size:11px;max-height:140px;overflow:auto;margin:8px 0;font-family:var(--mono);color:rgba(255,255,255,.7)}
+.openide-git-toolbar{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border-bottom:1px solid rgba(255,255,255,.06)}
+/* Agents: hide editor tab (files live left in IDE only) */
+.openide-shell.openide-view-agents #openideWorkEditor,
+.openide-shell.openide-view-agents .openide-editor-pane{display:none!important}
+@media(max-width:1100px){
+  .openide-shell,.openide-shell.openide-view-editor{
+    --oide-left:200px;--oide-right:34%;
+    grid-template-columns:var(--oide-left) 5px minmax(0,1fr) 5px var(--oide-right);
+  }
+}
+@media(max-width:960px){
+  .openide-shell,.openide-shell.openide-view-editor{
+    grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(200px,38%);
+    grid-template-areas:"chat" "tools";
+  }
+  .openide-shell.openide-view-editor{grid-template-areas:"work" "chat"}
+  .openide-left,.oide-resizer,.openide-rail-toggle{display:none!important}
+  .openide-center{border:0;border-bottom:1px solid rgba(255,255,255,.08)}
+}

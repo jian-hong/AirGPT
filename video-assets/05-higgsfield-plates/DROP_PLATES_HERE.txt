@@ -1,0 +1,2 @@
+﻿Drop Higgsfield outputs here.
+Name: HF_<VIDEO>_<SHOT>_<slug>_v01.mp4

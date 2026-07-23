@@ -1,0 +1,9 @@
+Privacy summary
+
+• Your work stays on this PC by default.
+• Nothing is sent to Netie cloud unless you enable tunnel, BYOK, or Netie login.
+• We do not train models on your content.
+• AirGPT can install Netie Space together; one Netie account links both.
+• Optional Copilot key / Win+Space helpers do not log keystrokes.
+
+Full policy: https://netie.ai/legal/privacy

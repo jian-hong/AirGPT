@@ -1,0 +1,75 @@
+{
+  "updated": "2026-07-18",
+  "styleLock": {
+    "background": "#050505",
+    "cyan": "#4FE3C1",
+    "amber": "#FFB454",
+    "promptPreamble": "Isometric low-poly 3D miniature diorama at night… (see work/prompts/still_*.txt first paragraph)",
+    "rule": "Gold PNG is identity lock. Img2vid may move camera only. Deviate by an inch max. Reject → delete → redo."
+  },
+  "stills": {
+    "still_desk.png": {
+      "status": "approved",
+      "sha256": "AF361935EF2E4D712A4A0AD6325543D7980CA05D715B6E3FA6E0F23666544ABA",
+      "bytes": 5357997,
+      "notes": "Original gold. Solid bg, island diorama."
+    },
+    "still_bridge.png": {
+      "status": "approved",
+      "sha256": "425AB926B670BA7D56453CB1878D293D1CB763BFF931EB20C5F3B2619D3D8ECA",
+      "bytes": 1117262,
+      "notes": "Regenerated 2026-07-18. Prior version failed solid-bg rule (starfield/nebula). Deleted and replaced from still_bridge.txt + desk/vault/agents refs."
+    },
+    "still_vault.png": {
+      "status": "approved",
+      "sha256": "2A46EA259E09EBF5DDE65008C6B8B2515780563D918F194D6A233F0131E8BE81",
+      "bytes": 6614384,
+      "notes": "Original gold. Solid bg, cutaway archive."
+    },
+    "still_agents.png": {
+      "status": "approved",
+      "sha256": "4E92BD79E854598858204038E23F3142DBABEBBB86478E2DD2EC7E2D94EE7087",
+      "bytes": 5816599,
+      "notes": "Original gold. Solid bg, robot workshop."
+    },
+    "still_tower.png": {
+      "status": "approved",
+      "sha256": "658BCCA01680A3D5DE93D5549AE78CB5E9BC01B4415DBA193ED2A52765400DC1",
+      "bytes": 5319728,
+      "notes": "Original gold. Solid bg, control tower."
+    },
+    "still_hero.png": {
+      "status": "approved",
+      "sha256": "3F1007041B764F21EDD78A6ED543BEB782DD459120A3365AC92BC814805D0BA3",
+      "bytes": 1058458,
+      "notes": "Regenerated 2026-07-18 for solid #050505 + style lock with island set. Prior hero was looser product-shot framing."
+    }
+  },
+  "videos": {
+    "provider": null,
+    "model": null,
+    "status": "pending_img2vid",
+    "blocker": "No img2vid credentials and no ffmpeg on build machine. Pipeline + encode script ready; homepage ships stills-first Ken Burns until masters land.",
+    "dives": {
+      "desk.mp4": { "prompt": "work/prompts/dive_desk.txt", "gold": "still_desk.png", "status": "missing" },
+      "bridge.mp4": { "prompt": "work/prompts/dive_bridge.txt", "gold": "still_bridge.png", "status": "missing" },
+      "vault.mp4": { "prompt": "work/prompts/dive_vault.txt", "gold": "still_vault.png", "status": "missing" },
+      "agents.mp4": { "prompt": "work/prompts/dive_agents.txt", "gold": "still_agents.png", "status": "missing" },
+      "tower.mp4": { "prompt": "work/prompts/dive_tower.txt", "gold": "still_tower.png", "status": "missing" },
+      "hero.mp4": { "prompt": "work/prompts/dive_hero.txt", "gold": "still_hero.png", "status": "missing" }
+    },
+    "connectors": {
+      "conn1.mp4": { "prompt": "work/prompts/conn_1.txt", "from": "desk", "to": "bridge", "status": "missing" },
+      "conn2.mp4": { "prompt": "work/prompts/conn_2.txt", "from": "bridge", "to": "vault", "status": "missing" },
+      "conn3.mp4": { "prompt": "work/prompts/conn_3.txt", "from": "vault", "to": "agents", "status": "missing" },
+      "conn4.mp4": { "prompt": "work/prompts/conn_4.txt", "from": "agents", "to": "tower", "status": "missing" },
+      "conn5.mp4": { "prompt": "work/prompts/conn_5.txt", "from": "tower", "to": "hero", "status": "missing" }
+    }
+  },
+  "runtime": {
+    "netieAgentStills": "netie-agent/public/airgpt/assets/stills/",
+    "netieAgentVids": "netie-agent/public/airgpt/assets/vid/",
+    "mode": "stills-first",
+    "clipsEnabledInHomepage": false
+  }
+}

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>DropLink — No Firewall</title>
+  <style>
+    :root {
+      --bg:#070b14; --text:#f4f7ff; --muted:#93a0b8; --stroke:rgba(255,255,255,.12);
+      --blue:#4f8cff; --ok:#34d399;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh; color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:
+        radial-gradient(ellipse 70% 50% at 20% -10%, rgba(79,140,255,.3), transparent 60%),
+        radial-gradient(ellipse 50% 40% at 90% 20%, rgba(167,139,250,.22), transparent 55%), #070b14;
+      padding:18px 16px calc(90px + env(safe-area-inset-bottom));
+    }
+    .wrap{max-width:720px;margin:0 auto}
+    h1{margin:0;font-size:1.5rem;background:linear-gradient(135deg,#fff,#9ecbff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .sub{color:var(--muted);font-size:.9rem;margin:8px 0 18px;line-height:1.45}
+    .card{
+      background:rgba(255,255,255,.06); border:1px solid var(--stroke);
+      border-radius:20px; padding:16px; margin-bottom:14px; backdrop-filter:blur(16px);
+    }
+    .room{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    input[type=text]{
+      flex:1; min-width:140px; border:1px solid var(--stroke); border-radius:12px;
+      background:rgba(0,0,0,.25); color:var(--text); padding:12px; font-size:16px;
+    }
+    .btn{
+      border:0; border-radius:12px; padding:12px 16px; font-weight:600; cursor:pointer;
+      background:linear-gradient(135deg,var(--blue),#6366f1); color:#fff;
+    }
+    .btn.ghost{background:rgba(255,255,255,.08);border:1px solid var(--stroke)}
+    .status{font-size:.85rem;color:var(--muted);display:flex;gap:8px;align-items:center;margin-top:10px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#64748b}
+    .dot.ok{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+    .drop{
+      border:2px dashed rgba(79,140,255,.35); border-radius:18px; text-align:center;
+      padding:28px 16px; cursor:pointer; transition:.2s;
+    }
+    .drop.drag{border-color:rgba(79,140,255,.8);transform:scale(1.01)}
+    .drop input{position:absolute;opacity:0;pointer-events:none}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px}
+    .tile{border:0;padding:0;border-radius:16px;overflow:hidden;aspect-ratio:1;cursor:pointer;background:#111827}
+    .tile img{width:100%;height:100%;object-fit:cover;display:block}
+    .toast{
+      position:fixed;left:50%;top:16px;transform:translateX(-50%) translateY(-120%);
+      background:rgba(17,24,39,.95);border:1px solid var(--stroke);padding:10px 14px;border-radius:12px;
+      transition:.3s;z-index:9;
+    }
+    .toast.show{transform:translateX(-50%) translateY(0)}
+    .fab{
+      position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));
+      width:56px;height:56px;border-radius:50%;border:0;font-size:1.5rem;color:#fff;cursor:pointer;
+      background:linear-gradient(135deg,var(--blue),#8b5cf6);box-shadow:0 14px 36px rgba(79,140,255,.4);
+    }
+    .note{font-size:.8rem;color:var(--muted);line-height:1.5}
+    .note strong{color:#cbd5e1}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>DropLink</h1>
+    <p class="sub">No firewall, no server on your laptop. Both devices connect <strong>outbound only</strong> via encrypted peer link. Works on company Wi‑Fi.</p>
+
+    <div class="card">
+      <div class="room">
+        <input id="room" type="text" placeholder="Room code e.g. jian-ipad" maxlength="24" />
+        <button class="btn" id="joinBtn">Join room</button>
+      </div>
+      <div class="status"><span class="dot" id="dot"></span><span id="status">Enter the same code on both devices</span></div>
+    </div>
+
+    <div class="card">
+      <label class="drop" id="drop">
+        <input id="file" type="file" accept="image/*" multiple />
+        <div style="font-size:2rem">📷</div>
+        <div><strong>Drop or choose photos</strong></div>
+        <div class="note" style="margin-top:8px">Sends directly to the other device — nothing stored in the cloud</div>
+      </label>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="card note">
+      <strong>Company laptop?</strong> This page makes only outbound connections (like visiting a website). No Windows Firewall rule needed.<br><br>
+      <strong>Steps:</strong> 1) Pick a secret room code · 2) Open this same page on iPhone/iPad · 3) Join same code · 4) Send photos
+    </div>
+  </div>
+
+  <button class="fab" id="fab">＋</button>
+  <input id="fabFile" type="file" accept="image/*" multiple hidden />
+  <div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script>
+    const roomInput = document.getElementById('room');
+    const joinBtn = document.getElementById('joinBtn');
+    const status = document.getElementById('status');
+    const dot = document.getElementById('dot');
+    const grid = document.getElementById('grid');
+    const toast = document.getElementById('toast');
+    const fileInput = document.getElementById('file');
+    const fabFile = document.getElementById('fabFile');
+    const drop = document.getElementById('drop');
+
+    let peer = null;
+    let conn = null;
+    let joined = false;
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    }
+
+    function sanitizeRoom(s) {
+      return (s || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+    }
+
+    function addThumb(dataUrl, name) {
+      const btn = document.createElement('button');
+      btn.className = 'tile';
+      btn.type = 'button';
+      btn.innerHTML = `<img src="${dataUrl}" alt="${name}">`;
+      btn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = name || 'photo.jpg';
+        a.click();
+      };
+      grid.prepend(btn);
+    }
+
+    function connectPeer() {
+      const code = sanitizeRoom(roomInput.value);
+      if (!code) { showToast('Enter a room code'); return; }
+      localStorage.setItem('droplink-room', code);
+      if (peer) peer.destroy();
+      conn = null;
+      dot.classList.remove('ok');
+      status.textContent = 'Connecting…';
+
+      const roomId = `droplink-${code}`;
+      const cfg = { host: '0.peerjs.com', port: 443, path: '/', secure: true };
+
+      function asJoiner() {
+        peer = new Peer(undefined, cfg);
+        peer.on('open', () => {
+          dot.classList.add('ok');
+          const outgoing = peer.connect(roomId, { reliable: true });
+          outgoing.on('open', () => setupConn(outgoing));
+          outgoing.on('error', () => {
+            status.textContent = `Room “${code}” — waiting for other device…`;
+          });
+        });
+        peer.on('connection', c => setupConn(c));
+        peer.on('error', e => {
+          status.textContent = 'Blocked? Try hotspot or iCloud';
+          console.warn(e);
+        });
+      }
+
+      peer = new Peer(roomId, cfg);
+      peer.on('open', () => {
+        dot.classList.add('ok');
+        status.textContent = `Room “${code}” ready — join same code on other device`;
+        peer.on('connection', c => setupConn(c));
+      });
+      peer.on('error', err => {
+        if (err.type === 'unavailable-id') asJoiner();
+        else {
+          status.textContent = 'Connection issue — try phone hotspot';
+          console.warn(err);
+        }
+      });
+    }
+
+    function setupConn(c) {
+      if (conn && conn.open) return;
+      conn = c;
+      conn.on('open', () => {
+        dot.classList.add('ok');
+        status.textContent = 'Linked — drop photos now';
+        showToast('Device connected');
+      });
+      conn.on('data', msg => {
+        if (msg?.type === 'image') addThumb(msg.dataUrl, msg.name);
+      });
+      conn.on('close', () => { conn = null; status.textContent = 'Peer disconnected'; });
+    }
+
+    function sendFile(file) {
+      if (!conn || !conn.open) { showToast('Join room & wait for other device'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        conn.send({ type: 'image', name: file.name, dataUrl: reader.result });
+        addThumb(reader.result, file.name);
+        showToast('Sent');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleFiles(list) {
+      [...list].filter(f => f.type.startsWith('image/')).forEach(sendFile);
+    }
+
+    joinBtn.onclick = connectPeer;
+    roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') connectPeer(); });
+    fileInput.onchange = e => handleFiles(e.target.files);
+    fabFile.onchange = e => handleFiles(e.target.files);
+    document.getElementById('fab').onclick = () => fabFile.click();
+    drop.onclick = () => fileInput.click();
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
+    drop.ondragleave = () => drop.classList.remove('drag');
+    drop.ondrop = e => { e.preventDefault(); drop.classList.remove('drag'); handleFiles(e.dataTransfer.files); };
+
+    const saved = localStorage.getItem('droplink-room');
+    if (saved) roomInput.value = saved;
+  </script>
+</body>
+</html>

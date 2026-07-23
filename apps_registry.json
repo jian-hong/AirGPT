@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "note": "Canonical local ports — one app per port. Never reuse. Discovery via /api/apps.",
+  "apps": [
+    {
+      "id": "airgpt",
+      "name": "AirGPT",
+      "port": 8765,
+      "health": "/api/info",
+      "url": "http://127.0.0.1:8765/",
+      "cwd": ".",
+      "start": ["python", "clipdrop.py"],
+      "kind": "self",
+      "open": "browser"
+    },
+    {
+      "id": "dms-v1",
+      "name": "DMS v1 UI",
+      "port": 3000,
+      "health": "/",
+      "url": "http://127.0.0.1:3000/",
+      "cwd": "D:/Cortex/demo/dms-ui",
+      "start": ["npm", "run", "dev"],
+      "kind": "external",
+      "open": "browser"
+    },
+    {
+      "id": "dms-v2",
+      "name": "Cortex / DMS v2",
+      "port": 8010,
+      "health": "/health",
+      "url": "http://127.0.0.1:8010/",
+      "cwd": "D:/Cortex",
+      "start": ["pwsh", "-NoProfile", "-File", "scripts/start_cortex_engine.ps1", "-Port", "8010"],
+      "kind": "external",
+      "env": {"CORTEX_API_URL": "http://127.0.0.1:8010"},
+      "open": "browser"
+    },
+    {
+      "id": "ltx2",
+      "name": "LTX-2 Video",
+      "port": 8020,
+      "health": "/health",
+      "url": "http://127.0.0.1:8020/",
+      "cwd": ".",
+      "start": ["python", "-m", "ltx2_video", "--serve", "--port", "8020"],
+      "kind": "sidecar",
+      "open": "panel"
+    },
+    {
+      "id": "openide",
+      "name": "OpenIDE",
+      "port": 8765,
+      "health": "/api/info",
+      "url": "http://127.0.0.1:8765/",
+      "kind": "surface",
+      "open": "panel",
+      "note": "In-process AirGPT workspace — no extra TCP port"
+    },
+    {
+      "id": "openforge",
+      "name": "OpenForge",
+      "port": 8765,
+      "health": "/api/info",
+      "url": "http://127.0.0.1:8765/",
+      "kind": "surface",
+      "open": "panel",
+      "note": "In-process AirGPT workspace — shares AirGPT :8765"
+    },
+    {
+      "id": "vllm",
+      "name": "vLLM",
+      "port": 8001,
+      "health": "/health",
+      "url": "http://127.0.0.1:8001/v1",
+      "kind": "detect",
+      "open": "none"
+    },
+    {
+      "id": "colibri",
+      "name": "Colibri",
+      "port": 8002,
+      "health": "/health",
+      "url": "http://127.0.0.1:8002/v1",
+      "kind": "detect",
+      "open": "none"
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "port": 11434,
+      "health": "/",
+      "url": "http://127.0.0.1:11434",
+      "kind": "detect",
+      "open": "none"
+    },
+    {
+      "id": "sglang",
+      "name": "SGLang",
+      "port": 30000,
+      "health": "/health",
+      "url": "http://127.0.0.1:30000",
+      "kind": "detect",
+      "open": "none"
+    },
+    {
+      "id": "qdrant",
+      "name": "Qdrant",
+      "port": 6333,
+      "health": "/",
+      "url": "http://127.0.0.1:6333",
+      "kind": "detect",
+      "open": "none"
+    },
+    {
+      "id": "scroll-world",
+      "name": "Netie Scroll World",
+      "port": 8801,
+      "health": "/",
+      "url": "http://127.0.0.1:8801/",
+      "cwd": "netie-scroll-world",
+      "start": ["python", "-m", "http.server", "8801"],
+      "kind": "sidecar",
+      "open": "browser"
+    },
+    {
+      "id": "openfree",
+      "name": "OpenFree",
+      "port": 20128,
+      "health": "/v1/models",
+      "url": "http://127.0.0.1:20128/",
+      "kind": "detect",
+      "open": "browser",
+      "note": "OmniRoute free gateway — enable from Key Vault"
+    }
+  ],
+  "reserved": {
+    "8787": "AirGPT control plane (optional)",
+    "6334": "Qdrant gRPC"
+  }
+}

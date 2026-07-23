@@ -1,0 +1,3 @@
+﻿Drop screen recordings in this folder.
+See ../CAPTURE_CHECKLIST.md for shot list.
+Naming: UI_AI-ANALYSIS_<shot>_v01.mov

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ClipDrop — iPad</title>
+  <style>
+    body {
+      margin: 0; font-family: -apple-system, sans-serif;
+      background: #060912; color: #f0f4ff;
+      padding: 16px; padding-bottom: 40px;
+    }
+    h1 { font-size: 1.3rem; margin: 0 0 4px; }
+    p { color: #94a3b8; font-size: .88rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; }
+    .tile {
+      border-radius: 14px; overflow: hidden; aspect-ratio: 1;
+      background: #111827; border: 1px solid rgba(255,255,255,.1);
+    }
+    .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .empty { color: #64748b; text-align: center; padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <h1>ClipDrop</h1>
+  <p>Synced from your Windows laptop via iCloud</p>
+  <div class="grid" id="grid"><div class="empty">Waiting for images…</div></div>
+  <script>
+    async function load() {
+      try {
+        const m = await fetch('manifest.json').then(r => r.json());
+        const imgs = (m.clips || []).filter(c => c.type === 'image');
+        const grid = document.getElementById('grid');
+        if (!imgs.length) { grid.innerHTML = '<div class="empty">No images yet — copy on Windows PC</div>'; return; }
+        grid.innerHTML = imgs.map(c => {
+          const f = c.file || c.id;
+          return `<a class="tile" href="images/${f}" download><img src="images/${f}" alt="" loading="lazy"></a>`;
+        }).join('');
+      } catch {
+        document.getElementById('grid').innerHTML = '<div class="empty">Open from iCloud Drive → ClipDrop folder</div>';
+      }
+    }
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+﻿Drop:
+- VO_INTRO_17-07_48k.wav
+- SFX_AI_ACTS_v1.wav
+- SFX_TICK_OK.wav
+- SFX_DECLINE.wav
+- music stems

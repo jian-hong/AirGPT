@@ -1,0 +1,204 @@
+# AirGPT (ClipDrop v5)
+
+**Local-first AI clipboard, chat, and phone-to-PC sync** — built for demos and daily engineering work.  
+Runs from any folder (e.g. `D:\AirGPT` on an internal SSD). All data stays beside the app in `data\`.
+
+**Product roles:** AirGPT is the host shell / control plane (phone, settings, pairing, apps hub). Keys, gate, and deploy live in **OpenVault**; orchestration brains live in **Cortex**. See [`PRODUCT_ROLES.md`](PRODUCT_ROLES.md).
+
+**Project path:** Runtime uses `config.ROOT` (parent of `clipdrop.py`) — portable across drives. `D:\AirGPT` is an example layout only.
+
+**Control plane:** Use the `control_plane/` package (underscore). The hyphenated `control-plane/` folder was removed as a duplicate.
+
+---
+
+## Will it run directly after copying from SSD?
+
+**Almost.** Copying the folder to `D:\AirGPT` preserves settings, chat history, vault, and `env.local`. You do **not** need to reconfigure paths.
+
+You still need **one-time setup on each new Windows laptop**:
+
+| Requirement | Notes |
+|-------------|--------|
+| **Windows 10/11** | 64-bit |
+| **Python 3.10+** | [python.org](https://www.python.org/downloads/) — tick **“Add python to PATH”** during install |
+| **Internet (first run)** | Downloads Python packages and `cloudflared.exe` (tunnel) into `bin\` |
+| **Port 8765 free** | Default server port |
+
+After Python is installed, **double-click `restart.bat`** — it installs dependencies and opens the browser.
+
+**Running from SSD is supported.** Keep the whole `D:\AirGPT` tree together; do not move only `clipdrop.py` without `data\` and `index.html`.
+
+---
+
+## Copy to new laptop (`D:\AirGPT`)
+
+1. Plug in SSD or copy the project folder.
+2. Paste so the layout looks like:
+
+```
+D:\AirGPT\
+  clipdrop.py
+  index.html
+  restart.bat
+  start.bat
+  requirements.txt
+  env.local          ← your API keys (keep private)
+  env.local.example
+  data\              ← SQLite, files, vault, audit log
+  bin\               ← cloudflared.exe (auto-created if missing)
+  README.md
+```
+
+3. On the **new laptop**, install Python if not already installed.
+4. Open **Command Prompt** or PowerShell:
+
+```bat
+cd /d D:\AirGPT
+pip install -r requirements.txt
+restart.bat
+```
+
+5. Browser opens at `http://127.0.0.1:8765`.
+6. For **iPad/iPhone**: use the **Tunnel QR** in the Connect panel (works on company WiFi). Scan a **fresh QR after every restart** — the tunnel URL changes.
+
+Optional (LAN on home WiFi / hotspot):
+
+```powershell
+# Right-click → Run as Administrator
+allow_firewall.ps1
+```
+
+---
+
+## Demo checklist (5 minutes)
+
+| Step | Action |
+|------|--------|
+| 1 | Run `restart.bat` on the laptop |
+| 2 | Hard-refresh PC browser: `Ctrl+Shift+R` |
+| 3 | Confirm **Tunnel** status is ready; show QR |
+| 4 | On iPad: scan QR → app loads as **Send to PC** |
+| 5 | Tap **📎** → pick photo → toast “Sent to PC” |
+| 6 | On PC: photo appears in chat → **auto-copied to Windows clipboard** |
+| 7 | Click **Copy** on any message → paste in Notepad / Word |
+| 8 | Copy something on Windows → appears in chat (clipboard sync) |
+| 9 | (Optional) **⏺ Record** → type notes → **⏹ Stop** → saved under `data\input_notes\` |
+
+Health check:
+
+```bat
+python allcheck.py
+python security_test.py
+```
+
+---
+
+## Everyday commands
+
+| File | Purpose |
+|------|---------|
+| `restart.bat` | Stop old server + cloudflared, install deps, start app, run checks, open browser |
+| `start.bat` | Start server only (no kill / no checks) |
+| `allcheck.bat` | API smoke test |
+| `allow_firewall.ps1` | Allow LAN port 8765 (Admin) |
+
+**After WiFi change:** run `restart.bat` again and scan a **new** tunnel QR on the phone.
+
+---
+
+## Configuration
+
+- **`env.local`** — API keys and options (never commit or email this file).  
+  Template: `env.local.example`
+- **`AI_AUTO=1`** — auto-analyze new screenshots when AI mode is on  
+- **Settings (⚙)** — workspace email, passcode, API keys in UI
+
+If `env.local` is missing on a fresh machine:
+
+```bat
+copy env.local.example env.local
+```
+
+Then add keys in Settings or edit `env.local` in a text editor.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `python` not recognized | Reinstall Python with **Add to PATH**, or use `py -3` instead of `python` |
+| Tunnel not ready | Wait ~15s; click **Restart tunnel**; ensure internet |
+| iPad cannot connect on LAN | Use **Tunnel QR** (company WiFi blocks device-to-PC) |
+| Old QR / bookmark fails | Tunnel URL rotates every restart — scan fresh QR |
+| Copy fails in browser | On PC, **Copy** uses Windows clipboard via server — use localhost or hard-refresh |
+| Port in use | Run `restart.bat` (kills process on 8765) |
+
+---
+
+## Why AirGPT for a company (and Netie)
+
+AirGPT is designed as **company-safe, local-first workforce software** — not another random web AI tab. It pairs with **Netie** ([netie.ai](https://netie.ai)) as the governance and operations layer: one controlled stack instead of workers hopping between untrusted tools.
+
+### Local-first = lower data-leak risk
+
+- Chat, screenshots, clipboard captures, and files stay in **`data\` on the worker’s machine** by default.
+- No requirement to paste proprietary diagrams into public chat sites.
+- Audit trail in `data\audit.jsonl` — who did what, when (foundation for manager dashboards; see `HR.md`).
+
+### One workspace instead of ten AI apps
+
+- Screenshot → analyze → vault → export markdown — **without** switching between browser tabs, WeChat forwards, and unvetted “free AI” sites that may be scams or data harvesters.
+- Phone sends photos **to the company laptop** via encrypted tunnel, not to unknown third-party uploaders.
+- Reduces “shadow AI” where employees use personal accounts and leak IP.
+
+### Visibility for managers (Netie roadmap)
+
+Planned HR/governance module (`HR.md`) builds on existing SQLite + audit data:
+
+- **Worker progress signals** — sessions, captures, vault contributions, daily summaries (evidence-based, not hidden scoring).
+- **AI usage efficiency** — structured prompts, context attachment, reusable vault notes vs one-off copy-paste.
+- **Operational efficiency** — less time lost re-explaining context; clipboard + screenshot loop keeps work on the machine that already has the files.
+
+This supports **better output per person** — which can mean fewer redundant handoffs and clearer accountability, not “spyware on keystrokes” (input notes are **opt-in**, user-started, stored locally).
+
+### Netie as the control plane
+
+- **Identity & alerts** — auth email via Netie (`no-reply@mail.netie.ai`), contact `hello@netie.ai`.
+- **Future**: central policy (which models, which workers, trial/licensing), waitlist → Pro cloud, supervised dashboards — while day-to-day work remains fast offline on the laptop.
+
+### Demo narrative (one sentence)
+
+> **AirGPT keeps engineering work on the laptop, syncs safely from phone, uses AI through one audited path, and sets up Netie to manage teams without sending IP to random websites.**
+
+---
+
+## Security reminders before external demo
+
+1. **Do not** show `env.local` on screen — it contains live API keys.
+2. Prefer a **demo laptop** or rotate keys after the event if the SSD was shared.
+3. Enable **workspace passcode** in Settings if the tunnel QR will be shown publicly.
+4. Export/delete test data from `data\` if you need a clean room demo.
+
+---
+
+## Tech stack (reference)
+
+- `clipdrop.py` — Python HTTP server (port 8765), clipboard/screenshot watchers, Cloudflare quick tunnel
+- `index.html` — single-page UI (chat, history, QR, phone client)
+- `db.py` — SQLite messages and deduplication
+- `ai_engine.py` — multi-provider AI (keys in `env.local`)
+- `input_notes.py` — opt-in keyboard note recorder → `data\input_notes\`
+
+### OpenVault (internal memory)
+
+AirGPT’s on-device memory rail uses an **OpenVault** policy inspired by MemPalace-style wings and MEXT hot/cold drawers: cold notes live in local FTS/Flash storage; hot goals stay in the project memory panel. This is an implementation detail — it is not shown as marketing copy in the product UI.
+
+---
+
+## Support
+
+- Internal: **desk@netie.ai** / **hello@netie.ai**
+- Docs in repo: `HR.md` (governance roadmap), `.cursor/rules/clipdrop.mdc` (dev conventions)
+
+**Version:** AirGPT 0.9.0 (ClipDrop v5)
