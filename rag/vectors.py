@@ -76,11 +76,18 @@ def available() -> dict:
     store.init()
     with store._conn() as conn:
         _ensure_tables(conn)
+    up = {}
+    try:
+        up = embed.upgrade_available()
+    except Exception:
+        up = {}
     return {
         "ok": True,
         "sqlite_vec": _USE_SQLITE_VEC,
         "embedder": embed.backend_name(),
         "mode": "sqlite_vec" if _USE_SQLITE_VEC else "blob_cosine",
+        "upgrade_available": bool(up.get("available")),
+        "upgrade_hint": up.get("hint") or "",
     }
 
 
@@ -151,8 +158,58 @@ def search(space_id: int, query: str, *, k: int = 40) -> list[tuple[int, float]]
                     return [(int(r[0]), 1.0 / (1.0 + float(r[1]))) for r in rows]
                 except Exception:
                     pass
+            # Stream ALL vectors in batches (no arbitrary cap — a LIMIT here silently
+            # hides later chunks from dense retrieval on large corpora). Each batch is
+            # decoded as ONE buffer and scored with numpy; a running top-k bounds memory.
+            try:
+                import numpy as _np
+
+                dim = len(qv)
+                qa = _np.asarray(qv, dtype=_np.float32)
+                qn = float(_np.linalg.norm(qa)) or 1.0
+                keep_ids = _np.empty(0, dtype=_np.int64)
+                keep_sims = _np.empty(0, dtype=_np.float32)
+                cur = conn.execute(
+                    "SELECT chunk_id, vec FROM chunk_vectors WHERE space_id=?", (int(space_id),)
+                )
+                while True:
+                    rows = cur.fetchmany(4096)
+                    if not rows:
+                        break
+                    ids: list[int] = []
+                    blobs: list[bytes] = []
+                    for r in rows:
+                        b = bytes(r["vec"])
+                        if len(b) // 4 != dim:
+                            continue  # dim mismatch (embedder changed) — skip stale vectors
+                        ids.append(int(r["chunk_id"]))
+                        blobs.append(b)
+                    if not ids:
+                        continue
+                    M = _np.frombuffer(b"".join(blobs), dtype=_np.float32).reshape(len(ids), dim)
+                    norms = _np.linalg.norm(M, axis=1)
+                    norms[norms == 0] = 1.0
+                    sims = ((M @ qa) / (norms * qn)).astype(_np.float32)
+                    keep_ids = _np.concatenate([keep_ids, _np.asarray(ids, dtype=_np.int64)])
+                    keep_sims = _np.concatenate([keep_sims, sims])
+                    if keep_sims.size > max(int(k) * 4, 256):  # trim so memory stays bounded
+                        sel = _np.argpartition(-keep_sims, int(k) - 1)[: int(k)]
+                        keep_ids, keep_sims = keep_ids[sel], keep_sims[sel]
+                if keep_ids.size == 0:
+                    return []
+                kk = min(int(k), keep_sims.size)
+                sel = (
+                    _np.argpartition(-keep_sims, kk - 1)[:kk]
+                    if kk < keep_sims.size
+                    else _np.arange(keep_sims.size)
+                )
+                pairs = [(int(keep_ids[i]), float(keep_sims[i])) for i in sel if keep_sims[i] > 0]
+                pairs.sort(key=lambda x: x[1], reverse=True)
+                return pairs[:k]
+            except Exception:
+                pass
             rows = conn.execute(
-                "SELECT chunk_id, vec FROM chunk_vectors WHERE space_id=? LIMIT 4000",
+                "SELECT chunk_id, vec FROM chunk_vectors WHERE space_id=? LIMIT 20000",
                 (int(space_id),),
             ).fetchall()
         scored: list[tuple[int, float]] = []
@@ -166,9 +223,17 @@ def search(space_id: int, query: str, *, k: int = 40) -> list[tuple[int, float]]
         return []
 
 
-def index_children(space_id: int, pairs: Iterable[tuple[int, str]]) -> int:
+def index_children(space_id: int, pairs, progress=None) -> int:
+    """Embed + store child vectors. progress(done, total) is called periodically."""
+    items = list(pairs)
+    total = len(items)
     n = 0
-    for cid, text in pairs:
+    for i, (cid, text) in enumerate(items, start=1):
         if upsert_chunk_vector(int(cid), int(space_id), text or ""):
             n += 1
+        if progress and (i % 8 == 0 or i == total):
+            try:
+                progress(i, total)
+            except Exception:
+                pass
     return n

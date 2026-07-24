@@ -620,6 +620,35 @@ def get_chunk(chunk_id: int) -> dict | None:
         return _row(conn.execute("SELECT * FROM chunks WHERE id=?", (int(chunk_id),)).fetchone())
 
 
+def neighbor_window(chunk_id: int, *, radius: int = 1, kind: str = "child") -> list[dict]:
+    """Return chunks adjacent (by span) to `chunk_id` within the same source.
+
+    Classic sentence-window / neighbour expansion: a semantic hit rarely contains
+    the whole answer, so pulling the chunks just before/after it widens context
+    for long passages — retrieval helped by neighbours, not chunks alone.
+    """
+    init()
+    with _conn() as conn:
+        cur = conn.execute("SELECT * FROM chunks WHERE id=?", (int(chunk_id),)).fetchone()
+        if not cur:
+            return []
+        source_id = int(cur["source_id"])
+        span = int(cur["span_start"] or 0)
+        k = str(kind or cur["kind"] or "child")
+        before = conn.execute(
+            "SELECT * FROM chunks WHERE source_id=? AND kind=? AND span_start < ? "
+            "ORDER BY span_start DESC LIMIT ?",
+            (source_id, k, span, int(radius)),
+        ).fetchall()
+        after = conn.execute(
+            "SELECT * FROM chunks WHERE source_id=? AND kind=? AND span_start > ? "
+            "ORDER BY span_start ASC LIMIT ?",
+            (source_id, k, span, int(radius)),
+        ).fetchall()
+    out = [_row(r) for r in reversed(before)] + [_row(r) for r in after]
+    return [r for r in out if r]  # type: ignore[return-value]
+
+
 def sample_parent_chunks(space_id: int, *, limit: int = 24) -> list[dict]:
     """Parent (or any) chunks for generative space summaries."""
     init()

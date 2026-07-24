@@ -5,3 +5,5 @@ pynput>=1.7.6
 zeroconf>=0.131.0
 # Optional OpenIDE Cursor backend:
 # cursor-sdk>=0.1.0
+# Optional RAG dense embedder (enable with AIRGPT_RAG_EMBED=st in env.local):
+# sentence-transformers>=3.0.0

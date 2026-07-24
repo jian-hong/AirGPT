@@ -1,6 +1,7 @@
 """Phase 0/1 foundation tests for AirGPT RAG Agent (offline, no Docker)."""
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,16 @@ from unittest import mock
 
 class RagFoundationTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Keep the suite on the hash embedder — BGE is enabled for the app via
+        # env.local / auto-cache, but 4k+ encode calls would make CI unusable.
+        self._embed_env = mock.patch.dict(os.environ, {"AIRGPT_RAG_EMBED": "hash"}, clear=False)
+        self._embed_env.start()
+        self.addCleanup(self._embed_env.stop)
+        from rag import embed as _embed
+
+        _embed.reset_embedder_cache()
+        self.addCleanup(_embed.reset_embedder_cache)
+
         self._tmpdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self._tmpdir.cleanup)
         root = Path(self._tmpdir.name)
@@ -327,6 +338,428 @@ class RagFoundationTests(unittest.TestCase):
         self.assertGreaterEqual(bench["results"]["high"]["overall"]["recall_at_k"], 0.66)
         self.assertIn(bench["recommend"].get("fact_lookup"), ("basic", "high"))
         self.assertIn(bench["recommend"].get("file_find"), ("basic", "high"))
+
+    def test_ingest_progress_callback(self):
+        """ingest_paths drives a monotonic progress bar ending at 100 / ready."""
+        from rag import ingest
+
+        space = self.store.create_space("Progress RAG", depth_default="high")
+        sid = int(space["id"])
+        events = []
+        out = ingest.ingest_paths(
+            sid, [self.fixture], force=True,
+            progress=lambda stage, pct, detail: events.append((stage, pct)),
+        )
+        self.assertTrue(out.get("ok"), out)
+        self.assertTrue(events, "no progress events")
+        pcts = [p for _, p in events]
+        self.assertEqual(pcts, sorted(pcts), "progress went backwards")
+        self.assertEqual(pcts[-1], 100)
+        stages = {s for s, _ in events}
+        self.assertTrue({"chunk", "embed", "publish"} <= stages, stages)
+
+    def test_self_score_autogolden(self):
+        """Auto-generated test cases score retrieval per mode with a headline recall."""
+        from rag import evaluate, ingest
+
+        # A few distinct docs so the auto-golden has discriminative queries
+        (self.fixture / "gamma.md").write_text(
+            "# Gamma Vectors\n\nGamma covers vector embeddings cosine similarity scoring nearest neighbours.\n",
+            encoding="utf-8",
+        )
+        (self.fixture / "delta.md").write_text(
+            "# Delta Rerank\n\nDelta describes the reranker cross encoder BGE pass over fused candidate hits.\n",
+            encoding="utf-8",
+        )
+        space = self.store.create_space("Score RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        golden = evaluate.autogenerate_golden(sid, n=8)
+        self.assertGreaterEqual(len(golden), 3)
+        for g in golden:
+            self.assertTrue(g["query"] and g["expect_path"] and g["task_type"])
+
+        out = evaluate.self_score(sid, n=8, k=5, depths=("basic", "high"))
+        self.assertTrue(out.get("ok"), out)
+        self.assertIn("headline", out)
+        self.assertIn(out["headline"]["best_mode"], ("basic", "high"))
+        self.assertGreaterEqual(out["headline"]["best_recall_at_k"], 0.5)
+        self.assertGreaterEqual(out.get("golden_size") or 0, 3)
+        self.assertTrue(out.get("sample_cases"))
+
+    def test_neighbor_window_expansion(self):
+        """Adjacent chunks are pulled around a hit to widen long-passage context."""
+        from rag import answer, ingest
+
+        doc = self.fixture / "long.md"
+        doc.write_text(
+            "# Neighbours\n\n"
+            "## One\n\nSection ONE talks about apples and orchard irrigation schedules in detail here.\n\n"
+            "## Two\n\nSection TWO talks about bananas and tropical ripening chambers in detail here.\n\n"
+            "## Three\n\nSection THREE talks about cherries and cold-chain logistics in detail here.\n\n"
+            "## Four\n\nSection FOUR talks about durians and controlled fermentation in detail here.\n\n"
+            "## Five\n\nSection FIVE talks about elderberries and pectin extraction in detail here.\n",
+            encoding="utf-8",
+        )
+        space = self.store.create_space("Neighbour RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [doc], force=True).get("ok"))
+
+        # a middle child chunk should have neighbours on both sides
+        children = [
+            c for c in self.store.get_chunks_by_ids(
+                [r["id"] for r in self._all_child_ids(sid)]
+            )
+        ]
+        self.assertGreaterEqual(len(children), 3, "need multiple child chunks")
+        mid = sorted(children, key=lambda c: c["span_start"])[len(children) // 2]
+        nb = self.store.neighbor_window(int(mid["id"]), radius=1)
+        self.assertTrue(nb, "no neighbours returned")
+        self.assertNotIn(int(mid["id"]), [int(n["id"]) for n in nb])
+
+        # context with neighbours is richer than the bare hit
+        hit = {"chunk_id": int(mid["id"]), "path": mid["path"], "heading": mid["heading"], "text": mid["text"], "span_start": mid["span_start"]}
+        bare = answer.build_context_block([hit], neighbors=False)
+        wide = answer.build_context_block([hit], neighbors=True)
+        self.assertGreater(len(wide), len(bare), "neighbour expansion did not widen context")
+
+    def _all_child_ids(self, sid):
+        with self.store._conn() as conn:
+            return conn.execute(
+                "SELECT id FROM chunks WHERE space_id=? AND kind='child'", (int(sid),)
+            ).fetchall()
+
+    def test_structured_html_json_ingest(self):
+        """HTML/JSON parsed structure-aware — no tag/brace soup or scripts; retrievable."""
+        from rag import ingest, retrieve
+
+        (self.fixture / "page.html").write_text(
+            "<html><head><title>Serdes Guide</title><style>.x{color:red}</style></head>"
+            "<body><h1>Eye Diagram</h1><p>Calibrate serdes with golden loopback sweeps.</p>"
+            "<script>tracker()</script></body></html>",
+            encoding="utf-8",
+        )
+        (self.fixture / "config.json").write_text(
+            '{"service":"embedder","backend":"bge","dims":384}', encoding="utf-8"
+        )
+        space = self.store.create_space("Struct RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        with self.store._conn() as c:
+            blob = " ".join(
+                r["text"] for r in c.execute(
+                    "SELECT text FROM chunks WHERE space_id=? AND "
+                    "(path LIKE '%page.html' OR path LIKE '%config.json')",
+                    (sid,),
+                )
+            )
+        self.assertNotIn("<script", blob)
+        self.assertNotIn("tracker()", blob)
+        self.assertNotIn("</p>", blob)
+        self.assertIn("golden loopback", blob)
+        self.assertIn("backend: bge", blob)  # JSON flattened to key: value
+
+        r = retrieve.search(sid, "serdes eye diagram loopback calibration", depth="high", top_k=5)
+        self.assertIn("page.html", " ".join(str(c.get("path") or "") for c in r.get("citations") or []))
+        j = retrieve.search(sid, "embedder backend bge dims", depth="high", top_k=5)
+        self.assertIn("config.json", " ".join(str(c.get("path") or "") for c in j.get("citations") or []))
+
+    def test_multi_query_expansion(self):
+        """Synonym rephrasings recover paraphrase recall; no-expander path is identity."""
+        from rag import expand, ingest, retrieve
+
+        (self.fixture / "watering.md").write_text(
+            "# Module watering\n\nThe irrigation scheduler waters crops based on soil moisture sensors.\n",
+            encoding="utf-8",
+        )
+        (self.fixture / "ripening.md").write_text(
+            "# Module ripening\n\nThe controller ripens bananas inside warm tropical chambers.\n",
+            encoding="utf-8",
+        )
+        space = self.store.create_space("Expand RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        # Paraphrase (synonyms, ~0 keyword overlap). A good expander bridges it.
+        q = "device that matures plantains in heated humid enclosures"
+        stub = lambda x: ["banana ripening warm tropical chamber controller"]
+        exp = expand.multi_query_search(sid, q, depth="high", top_k=3, expander=stub)
+        paths = " ".join(str(c.get("path") or "") for c in exp.get("citations") or [])
+        self.assertIn("ripening.md", paths)
+        self.assertTrue(exp.get("expanded_queries"))
+
+        # No-expander → identity: byte-for-byte the same result as retrieve.search (no regression)
+        ident = expand.multi_query_search(sid, "banana ripening", depth="high", top_k=3, expander=lambda x: [])
+        base = retrieve.search(sid, "banana ripening", depth="high", top_k=3)
+        self.assertEqual(
+            [c.get("chunk_id") for c in ident.get("citations") or []],
+            [c.get("chunk_id") for c in base.get("citations") or []],
+        )
+
+    def test_expansion_preserves_exact_rank(self):
+        """SiRA expansion (high/max) must not demote an exact heading match below rank 1."""
+        from rag import ingest, retrieve
+
+        mods = [
+            ("quantum_flux", "Quantum Flux Calibrator"),
+            ("orchard_irrig", "Orchard Irrigation Scheduler"),
+            ("banana_ripen", "Banana Ripening Controller"),
+            ("serdes_eye", "Serdes Eye Diagram Analyzer"),
+        ]
+        for slug, title in mods:
+            (self.fixture / f"{slug}.md").write_text(
+                f"# {title}\n\nThis module processes input through the standard configurable "
+                f"pipeline with options for tuning, validation, and reporting.\n",
+                encoding="utf-8",
+            )
+        space = self.store.create_space("Rank RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        for slug, title in (mods[0], mods[3]):
+            for depth in ("basic", "high", "max"):
+                cites = retrieve.search(sid, title, depth=depth, top_k=5).get("citations") or []
+                top = Path(str((cites[0] if cites else {}).get("path") or "")).name
+                self.assertEqual(top, f"{slug}.md", f"{depth}: {title!r} ranked {top} at #1, expected {slug}.md")
+
+    def test_faithfulness_verify(self):
+        """Unsupported (hallucinated) claims are flagged; grounded answers score high."""
+        from rag import answer, ingest
+
+        context = (
+            "[1] rrf.md\nReciprocal Rank Fusion combines multiple ranked lists by summing "
+            "reciprocal ranks. It is used in hybrid search to merge dense and sparse results."
+        )
+        good = "Reciprocal Rank Fusion merges dense and sparse ranked lists by summing reciprocal ranks."
+        r1 = answer.verify_faithfulness(good, context)
+        self.assertGreaterEqual(r1["score"], 0.9)
+        self.assertEqual(r1["unsupported"], [])
+
+        bad = (
+            "Reciprocal Rank Fusion merges ranked lists. "
+            "It was invented by Napoleon Bonaparte in 1823 for artillery targeting."
+        )
+        r2 = answer.verify_faithfulness(bad, context)
+        self.assertLess(r2["score"], 1.0)
+        self.assertTrue(any("Napoleon" in s for s in r2["unsupported"]))
+
+        # flows through the answer() API (extractive path is grounded by construction)
+        space = self.store.create_space("Faith RAG", depth_default="high")
+        sid = int(space["id"])
+        ingest.ingest_paths(sid, [self.fixture], force=True)
+        out = answer.answer(sid, "hybrid search RRF fusion", depth="high", use_llm=False)
+        self.assertIn("faithfulness", out)
+        self.assertEqual(out["faithfulness"], 1.0)
+
+    def test_hard_mode_golden(self):
+        """Hard difficulty drops headings + uses mid-frequency tokens → real discrimination."""
+        from rag import evaluate, ingest
+
+        for slug in ("modone", "modtwo", "modthree", "modfour"):
+            (self.fixture / f"{slug}.md").write_text(
+                f"# {slug.title()} Service\n\nThe {slug} component processes streaming data through "
+                f"configurable pipelines with validation, caching and reporting options.\n",
+                encoding="utf-8",
+            )
+        space = self.store.create_space("Hard RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        easy = evaluate.autogenerate_golden(sid, n=8, hard=False)
+        hard = evaluate.autogenerate_golden(sid, n=8, hard=True)
+        self.assertTrue(easy and hard)
+        # the difficulty knob must actually change the generated queries
+        self.assertNotEqual([g["query"] for g in easy], [g["query"] for g in hard])
+        # hard queries drop the heading word ("Service") that file-level search trivially matches
+        self.assertTrue(any("Service" in g["query"] for g in easy))
+        self.assertFalse(any("Service" in g["query"] for g in hard))
+
+        sc = evaluate.self_score(sid, n=6, k=5, depths=("high",), hard=True)
+        self.assertTrue(sc.get("ok"), sc)
+        self.assertEqual(sc.get("difficulty"), "hard")
+
+    def test_lexical_rerank(self):
+        """Full-coverage target beats a higher-score low-coverage distractor; neutral on no-overlap."""
+        from rag.answer import _lexical_rerank
+
+        hits = [
+            {"chunk_id": 1, "text": "generic port for research", "heading": "", "score": 0.06},          # cov 1/3, top score
+            {"chunk_id": 2, "text": "idempotent activation port handshake described", "heading": "", "score": 0.04},  # cov 3/3 (target)
+            {"chunk_id": 3, "text": "unrelated content about video plans", "heading": "", "score": 0.01},  # cov 0
+        ]
+        ranked = _lexical_rerank("idempotent activation port", hits)
+        self.assertEqual(ranked[0]["chunk_id"], 2, "full-coverage target should rank first")
+
+        # no query-term overlap → falls back to retrieval-score order (paraphrase-neutral)
+        neutral = _lexical_rerank("bananas grapes elderberry", hits)
+        self.assertEqual(neutral[0]["chunk_id"], 1, "no overlap → highest score wins")
+
+    def test_code_symbol_chunking(self):
+        """Code splits on def/class boundaries (not '#' comments) → coherent chunks."""
+        from rag.chunking import parent_child_chunk
+
+        code = (
+            '"""Module docstring."""\n\n'
+            'import os\n\n'
+            '# a comment that must NOT become a chunk boundary\n'
+            'def alpha(x):\n    return x + 1\n\n'
+            'def bravo(y):\n    # inner comment\n    return y * 2\n\n'
+            'class Charlie:\n    def method(self):\n        return 3\n'
+        )
+        parents, _ = parent_child_chunk(code, code=True)
+        heads = [p.text.strip().splitlines()[0] for p in parents]
+        self.assertTrue(any(h.startswith("def alpha") for h in heads))
+        self.assertTrue(any(h.startswith("def bravo") for h in heads))
+        self.assertTrue(any(h.startswith("class Charlie") for h in heads))
+        # the '#' comment must NOT have become its own section head
+        self.assertFalse(any(h.startswith("# a comment") for h in heads))
+
+        # markdown path unaffected: '#' headings still split prose
+        md, _ = parent_child_chunk("# Title\n\nbody text here\n\n# Two\n\nmore text here\n", code=False)
+        self.assertGreaterEqual(len(md), 2)
+
+    def test_diversify_evidence(self):
+        """Per-source cap + near-dup drop surface complementary evidence in top-k."""
+        from rag.answer import _diversify
+
+        hits = [
+            {"chunk_id": i, "source_id": 1, "path": "a.md", "heading": "",
+             "text": "the pipeline ranks with reciprocal rank fusion again"}
+            for i in range(5)
+        ] + [
+            {"chunk_id": 10, "source_id": 2, "path": "b.md", "heading": "",
+             "text": "the pipeline reranks with a cross encoder pass"},
+            {"chunk_id": 11, "source_id": 3, "path": "c.md", "heading": "",
+             "text": "unrelated video plan uses ltx2 cinematic motion"},
+        ]
+        out = _diversify(hits, k=4, max_per_source=2)
+        srcs = [h["source_id"] for h in out]
+        self.assertEqual(len(out), 4)
+        self.assertLessEqual(srcs.count(1), 2, "source A not capped")
+        self.assertIn(2, srcs, "complementary source B was crowded out")
+
+        # backfill: a single-source corpus still returns k (doesn't starve)
+        single = [
+            {"chunk_id": i, "source_id": 1, "path": "a.md", "heading": "",
+             "text": f"section {i} covers a distinct topic number {i}alpha here"}
+            for i in range(6)
+        ]
+        self.assertEqual(len(_diversify(single, k=4, max_per_source=2)), 4)
+
+    def test_spell_correct(self):
+        """OOV (typo) tokens map to the closest corpus term; valid terms untouched."""
+        from rag import ingest, spell
+
+        (self.fixture / "sec.md").write_text(
+            "# Security\n\nThe security hardening guide covers idempotent authentication and provider tokens.\n",
+            encoding="utf-8",
+        )
+        space = self.store.create_space("Spell RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        r = spell.correct_query("secuirty hardning", sid)
+        self.assertIn("security", r)
+        self.assertIn("hardening", r)
+        self.assertIn("authentication", spell.correct_query("authentcation flow", sid))
+        # valid corpus terms are left exactly as-is
+        self.assertEqual(spell.correct_query("security hardening", sid), "security hardening")
+        # short tokens and words with no close match are not corrupted
+        self.assertEqual(spell.correct_query("xyz zzzzq", sid), "xyz zzzzq")
+        # inflection guard: valid word forms must NOT be "corrected" to a corpus variant
+        # ('provide' → 'provider' is a prefix relationship = inflection, not a typo)
+        self.assertEqual(spell.correct_query("provide the tokens", sid), "provide the tokens")
+
+    def test_embedder_upgrade_detect(self):
+        """Under AIRGPT_RAG_EMBED=hash, surface an installed-but-inactive upgrade."""
+        from rag import embed, vectors
+
+        self.assertEqual(embed.backend_name(), "hash")
+        up = embed.upgrade_available()
+        self.assertIn("available", up)
+        self.assertIn("active", up)
+        v = vectors.available()
+        self.assertIn("upgrade_available", v)
+        self.assertIn("upgrade_hint", v)
+        self.assertEqual(v["upgrade_available"], bool(up.get("available")))
+        if up.get("available"):
+            self.assertEqual(up["active"], "hash")
+            self.assertTrue(up.get("hint"))
+            self.assertTrue(v["upgrade_hint"])
+
+    def test_embedder_bge_opt_in(self):
+        """Explicit AIRGPT_RAG_EMBED=st loads BGE when sentence-transformers is present."""
+        from rag import embed
+
+        if not embed._st_installed():
+            self.skipTest("sentence-transformers not installed")
+        embed.reset_embedder_cache()
+        with mock.patch.dict(os.environ, {"AIRGPT_RAG_EMBED": "st"}, clear=False):
+            embed.reset_embedder_cache()
+            # Prefer local cache; skip if weights missing (no download in CI).
+            if not embed._bge_cached():
+                self.skipTest("BGE weights not cached")
+            name = embed.backend_name()
+            self.assertEqual(name, "model", "st opt-in should activate real embedder")
+            v = embed.embed_text("hybrid search reciprocal rank fusion")
+            self.assertGreaterEqual(len(v), 64)
+            self.assertNotEqual(len(v), embed.DEFAULT_DIM)  # BGE is 384-d, not hash-64
+        embed.reset_embedder_cache()
+
+    def test_self_score_skips_llm(self):
+        """Scoring measures retrieval only — it must never invoke LLM generation."""
+        from rag import answer as answer_mod
+        from rag import evaluate, ingest
+
+        space = self.store.create_space("EvalFast", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [self.fixture], force=True).get("ok"))
+
+        seen: list = []
+        orig = answer_mod.answer
+
+        def spy(space_id, query, **kw):
+            seen.append(kw.get("use_llm"))
+            return orig(space_id, query, **kw)
+
+        with mock.patch.object(answer_mod, "answer", spy):
+            out = evaluate.self_score(sid, n=4, k=5, depths=("high",))
+        self.assertTrue(out.get("ok"), out)
+        self.assertTrue(seen, "scorer never called answer()")
+        self.assertTrue(all(v is False for v in seen), f"scorer invoked the LLM: {seen}")
+
+    def test_dense_scan_has_no_row_cap(self):
+        """Dense search must scan every vector — a hard LIMIT silently hides later
+        chunks from retrieval on large corpora (regression guard for LIMIT 4000)."""
+        import struct
+
+        from rag import embed, vectors
+
+        space = self.store.create_space("Cap RAG", depth_default="high")
+        sid = int(space["id"])
+        vectors.available()  # ensure vector tables exist
+        dim = len(embed.embed_text("probe"))
+
+        rows = []
+        for i in range(1, 4301):  # > the old 4000-row cap
+            v = embed.embed_text(f"filler chunk number {i} with generic pipeline content")
+            rows.append((i, sid, dim, "hash", struct.pack(f"{dim}f", *v)))
+        target_id = 4301
+        tv = embed.embed_text("zqxwv unique marker protocol")
+        rows.append((target_id, sid, dim, "hash", struct.pack(f"{dim}f", *tv)))
+        with self.store._conn() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO chunk_vectors(chunk_id,space_id,dim,backend,vec) "
+                "VALUES(?,?,?,?,?)",
+                rows,
+            )
+
+        hits = vectors.search(sid, "zqxwv unique marker protocol", k=5)
+        ids = [c for c, _ in hits]
+        self.assertIn(target_id, ids, "vector past the old 4000-row scan cap was unreachable")
+        self.assertEqual(ids[0], target_id, "exact-text match should rank first")
 
     def test_sira_df_guard(self):
         from rag.sira import expand_query, filter_phrases_by_df

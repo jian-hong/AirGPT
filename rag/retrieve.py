@@ -7,8 +7,9 @@ import uuid
 from collections import Counter
 from typing import Any
 
-from rag import sira, store, vectors
+from rag import adaptive, sira, store, vectors
 from rag.fuse import RankedHit, fuse_channels
+from rag.rerank import rerank_hits
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_\-./]{1,}")
 
@@ -237,7 +238,7 @@ def search(
     space_id: int,
     query: str,
     *,
-    depth: str = "high",
+    depth: str | None = "high",
     top_k: int = 8,
     debug: bool = False,
 ) -> dict:
@@ -246,7 +247,9 @@ def search(
     if not space:
         return {"ok": False, "error": "space not found"}
 
-    depth = (depth or space.get("depth_default") or "high").lower()
+    if not depth or str(depth).strip().lower() == "auto":
+        depth = adaptive.resolve_depth(space_id, depth)
+    depth = str(depth).lower()
     arch = ""
     if depth == "manual":
         # Manual = user-picked architecture preset stored on the space; map to an
@@ -290,12 +293,18 @@ def search(
 
     sparse_k = 60 if base == "max" else (20 if base == "basic" else 40)
     dense_k = sparse_k
-    sparse = sparse_search(space_id, expanded_q, k=sparse_k)
-    dense = dense_vector_search(space_id, expanded_q, k=dense_k)
+    # Primary channels run the ORIGINAL query so exact matches keep their precise
+    # rank; SiRA expansion is a SEPARATE recall channel that only adds candidates
+    # the exact query missed — widening recall without diluting MRR.
+    sparse = sparse_search(space_id, query, k=sparse_k)
+    dense = dense_vector_search(space_id, query, k=dense_k)
     files = file_level_search(space_id, query, k=20)
+    channels = {"sparse": sparse, "dense": dense, "file": files}
+    if expanded_q and expanded_q.strip() != (query or "").strip():
+        channels["expand"] = sparse_search(space_id, expanded_q, k=sparse_k)
 
     fused = fuse_channels(
-        {"sparse": sparse, "dense": dense, "file": files},
+        channels,
         k=60,
         top_n=50 if base == "max" else (20 if base == "basic" else 30),
     )
@@ -323,6 +332,9 @@ def search(
         if int(h.get("source_id") or 0) in hot_sources:
             h["score"] = float(h.get("score") or 0) + 0.05
     chunk_hits.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
+
+    # Cross-encoder rerank after RRF (feature-flagged; soft-falls to RRF order)
+    chunk_hits = rerank_hits(query, chunk_hits, top_n=min(len(chunk_hits), 40 if base == "max" else 30))
 
     expanded = expand_parents(chunk_hits, max_parents=top_k)
     clean_cites = []

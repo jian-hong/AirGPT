@@ -7,6 +7,15 @@ from dataclasses import dataclass, field
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
 CODE_FENCE_RE = re.compile(r"^```", re.MULTILINE)
+# Top-level code symbol definitions — split code on function/class boundaries so
+# each chunk is a coherent unit (and so '#' comments aren't mistaken for markdown
+# headings, which would fragment functions).
+CODE_SYM_RE = re.compile(
+    r"^(?:async\s+def\s|def\s|class\s|func\s|type\s|impl\s|struct\s|enum\s|interface\s"
+    r"|(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s"
+    r"|(?:export\s+)?(?:const|let|var)\s+\w+\s*=)",
+    re.MULTILINE,
+)
 
 
 @dataclass
@@ -26,12 +35,7 @@ def estimate_tokens(text: str) -> int:
     return max(1, (len(text or "") + 3) // 4)
 
 
-def _split_sections(text: str) -> list[tuple[str, str, int, int]]:
-    """Return (heading, body, start, end) sections. Heading may be empty for preamble."""
-    text = text or ""
-    matches = list(HEADING_RE.finditer(text))
-    if not matches:
-        return [("", text, 0, len(text))]
+def _sections_from(text: str, matches: list, *, code: bool) -> list[tuple[str, str, int, int]]:
     sections: list[tuple[str, str, int, int]] = []
     if matches[0].start() > 0:
         pre = text[: matches[0].start()]
@@ -40,10 +44,29 @@ def _split_sections(text: str) -> list[tuple[str, str, int, int]]:
     for i, m in enumerate(matches):
         start = m.start()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        heading = (m.group(2) or "").strip()
         body = text[start:end]
+        heading = body.splitlines()[0].strip()[:80] if code else (m.group(2) or "").strip()
         sections.append((heading, body, start, end))
     return sections
+
+
+def _split_sections(text: str, *, code: bool = False) -> list[tuple[str, str, int, int]]:
+    """Return (heading, body, start, end) sections.
+
+    Code files (code=True) split on top-level def/class/function SYMBOL boundaries
+    so each chunk is a coherent function/class — and '#' comments are never treated
+    as markdown headings. Prose/markdown splits on headings.
+    """
+    text = text or ""
+    if code:
+        sym = list(CODE_SYM_RE.finditer(text))
+        if len(sym) >= 2:
+            return _sections_from(text, sym, code=True)
+        return [("", text, 0, len(text))]  # small code file — keep whole, don't split on comments
+    matches = list(HEADING_RE.finditer(text))
+    if not matches:
+        return [("", text, 0, len(text))]
+    return _sections_from(text, matches, code=False)
 
 
 def _window_children(body: str, base_offset: int, *, target_tokens: int = 200, overlap_tokens: int = 40) -> list[tuple[str, int, int]]:
@@ -90,14 +113,16 @@ def parent_child_chunk(
     *,
     child_tokens: int = 200,
     parent_max_tokens: int = 900,
+    code: bool = False,
 ) -> tuple[list[ChunkDraft], list[ChunkDraft]]:
     """
     Build parent sections and child embed windows.
     Returns (parents, children) where children.parent_index points into parents.
+    code=True aligns parent chunks to function/class boundaries for source files.
     """
     parents: list[ChunkDraft] = []
     children: list[ChunkDraft] = []
-    for heading, body, start, end in _split_sections(text):
+    for heading, body, start, end in _split_sections(text, code=code):
         # Cap oversized parents by further splitting on blank lines
         parent_bodies: list[tuple[str, str, int, int]] = [(heading, body, start, end)]
         if estimate_tokens(body) > parent_max_tokens:

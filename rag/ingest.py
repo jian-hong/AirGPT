@@ -72,16 +72,57 @@ def _pdf_text(path: Path) -> str:
         return ""
 
 
-def read_text_file(path: Path) -> tuple[str, str]:
-    raw = path.read_bytes()
-    if path.suffix.lower() == ".pdf":
-        return _pdf_text(path), _hash_bytes(raw)
+def _flatten_json(obj, prefix: str = "") -> list[str]:
+    """Structure-aware JSON → readable 'key path: value' lines for embedding."""
+    lines: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            key = f"{prefix}.{k}" if prefix else str(k)
+            if isinstance(v, (dict, list)):
+                lines.extend(_flatten_json(v, key))
+            else:
+                lines.append(f"{key}: {v}")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            key = f"{prefix}[{i}]"
+            if isinstance(v, (dict, list)):
+                lines.extend(_flatten_json(v, key))
+            else:
+                lines.append(f"{key}: {v}")
+    else:
+        lines.append(f"{prefix}: {obj}" if prefix else str(obj))
+    return lines
+
+
+def _decode(raw: bytes) -> str:
     for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
         try:
-            return raw.decode(enc), _hash_bytes(raw)
+            return raw.decode(enc)
         except UnicodeDecodeError:
             continue
-    return raw.decode("utf-8", errors="replace"), _hash_bytes(raw)
+    return raw.decode("utf-8", errors="replace")
+
+
+def read_text_file(path: Path) -> tuple[str, str]:
+    raw = path.read_bytes()
+    digest = _hash_bytes(raw)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return _pdf_text(path), digest
+    # Structure-aware parsing so embeddings see meaning, not markup/braces.
+    if suffix in (".html", ".htm"):
+        title, body = html_to_text(_decode(raw))
+        text = (f"# {title}\n\n{body}" if title else body).strip()
+        return (text or _decode(raw)), digest
+    if suffix == ".json":
+        import json as _json
+        try:
+            text = "\n".join(_flatten_json(_json.loads(_decode(raw))))
+            if text.strip():
+                return text, digest
+        except Exception:
+            pass  # malformed JSON → fall through to raw text
+    return _decode(raw), digest
 
 
 def iter_files(root: Path, *, max_files: int = 500) -> Iterable[Path]:
@@ -111,8 +152,20 @@ def ingest_paths(
     paths: list[str | Path],
     *,
     force: bool = False,
+    progress=None,
 ) -> dict:
-    """Ingest files/folders into a knowledge space and rebuild the local hybrid index."""
+    """Ingest files/folders into a knowledge space and rebuild the local hybrid index.
+
+    progress(stage, percent, detail) is called through the pipeline so callers
+    (e.g. the SSE build endpoint) can drive a real "ready for retrieval" bar.
+    """
+    def _p(stage, pct, detail=""):
+        if progress:
+            try:
+                progress(stage, int(pct), str(detail))
+            except Exception:
+                pass
+
     space = store.get_space(space_id)
     if not space:
         return {"ok": False, "error": "space not found"}
@@ -122,6 +175,7 @@ def ingest_paths(
     store.touch_space(space_id, status="indexing")
     revision = store.create_revision(space_id, profile="local_hybrid_high")
     rev_id = int(revision["id"])
+    _p("authorize", 3, "checking sources")
 
     collected: list[Path] = []
     for raw in paths:
@@ -136,6 +190,7 @@ def ingest_paths(
         return {"ok": False, "error": "no readable text files", "job_id": job_id}
 
     store.update_job(job_id, stage="extract", detail=f"{len(collected)} files")
+    _p("extract", 8, f"{len(collected)} files")
     if force:
         store.clear_chunks(space_id)
         try:
@@ -148,9 +203,11 @@ def ingest_paths(
     phrases_by_doc: list[list[str]] = []
     child_pairs: list[tuple[int, str]] = []
 
+    n_files = len(collected)
     try:
-        for path in collected:
+        for _fi, path in enumerate(collected, start=1):
             store.update_job(job_id, stage="normalize", detail=str(path))
+            _p("chunk", 10 + int(40 * _fi / max(1, n_files)), f"{path.name} ({_fi}/{n_files})")
             text, digest = read_text_file(path)
             if not text.strip():
                 continue
@@ -180,7 +237,11 @@ def ingest_paths(
             source_ids.append(source_id)
 
             store.update_job(job_id, stage="chunk", detail=path.name)
-            parents, children = chunking.parent_child_chunk(text)
+            is_code = path.suffix.lower() in {
+                ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
+                ".c", ".h", ".cpp", ".hpp", ".sql", ".sh", ".ps1",
+            }
+            parents, children = chunking.parent_child_chunk(text, code=is_code)
             parent_row_ids: list[int] = []
             for pdraft in parents:
                 pid = store.insert_chunk(
@@ -231,17 +292,22 @@ def ingest_paths(
             store.update_source_status(source_id, "ready", meta={"blob": str(dest), "phrases": phrases[:12]})
 
         store.update_job(job_id, stage="embed", detail=f"{len(child_pairs)} children")
+        _p("embed", 55, f"embedding {len(child_pairs)} vectors")
         embedded = 0
         try:
-            embedded = vectors.index_children(space_id, child_pairs)
+            def _emb(done, tot):
+                _p("embed", 55 + int(35 * done / max(1, tot)), f"{done}/{tot} vectors")
+            embedded = vectors.index_children(space_id, child_pairs, progress=_emb)
         except Exception:
             embedded = 0
+        _p("index", 92, "building hybrid index")
         vec_info = {}
         try:
             vec_info = vectors.available()
         except Exception:
             vec_info = {}
 
+        _p("validate", 96, "validating counts")
         store.update_job(job_id, stage="validate", counts={"sources": len(source_ids), "chunks": chunk_count, "embedded": embedded})
         metrics = {
             "sources": len(source_ids),
@@ -264,6 +330,7 @@ def ingest_paths(
             store.update_space_settings(int(space_id), config={"corpus_summary": ""})
         except Exception:
             pass
+        _p("publish", 100, "ready for retrieval")
         return {
             "ok": True,
             "job_id": job_id,
