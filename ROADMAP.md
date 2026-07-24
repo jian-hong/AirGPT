@@ -44,6 +44,18 @@ Personal local AirGPT stays free / open-source path (BYOK). Online Pro and Busin
 - Forward-deployed QC / predictive maintenance companions
 - AirGPT/Cortex orchestrates + audits; edge inference stays external
 
+## Shipped 2026-07-24 — agent surfaces, Routines, methodology skills
+
+- **Dedicated agent surfaces**: clicking a built agent opens its own page or a focused chat, never a blocking prompt. RAG, Research, and a new Vertex edge-AI page (camera + stream + process) each route from `agentSurface`.
+- **Routines page** (`showRoutinesPage`): simple recurring tasks (daily/weekly ingest) that need no dedicated agent app. Scalable, editable cards that play image, video, and music with words. Local store now; real scheduling ties to the orchestrator next.
+- **Methodology skills** in `data/skills/`: `build-recon`, `cortex-agent-design`, `agent-window-builder`, `verify-no-fabrication`, `coop-editing`, `web-research`, `routine-design`. These capture how to research, design an agent, build an agent window, and verify without fabrication, so the Cortex engine can turn a few-shot prompt into a working agent or app.
+- **Cortex home** trimmed: fewer, shorter suggestion chips that build the agent on click; "vault" wording is now "memory storage"; compact chrome on short viewports.
+
+### Routines and skills — next
+- Wire routine cadence to the orchestrator so daily/weekly routines actually run and ingest.
+- A "create agent in Cortex" flow that reads the `cortex-agent-design` skill and scaffolds tools + prompt + surface from one prompt.
+- Vertex streaming backbone (Kafka to PyFlink) and an MJPEG/WebSocket live endpoint on the QC service.
+
 ## Explicit deferrals (see `NEXT_UPDATE.md`)
 
 - Full online Personal AI without BYOK (until Stripe live)

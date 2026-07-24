@@ -4693,7 +4693,7 @@ function syncNavSections(activeSec){
 function updateSideNav(){
   const plat=['hub','marketplace','hosting','usage','video'];
   const build=['openide','openforge'];
-  const agents=['cortex','cortex-catalog','research','rag','vertex','apps'];
+  const agents=['cortex','cortex-catalog','research','rag','vertex','routines','apps'];
   const onPlat=plat.includes(sideView);
   const onBuild=build.includes(sideView);
   const onAgents=agents.includes(sideView);
@@ -5365,7 +5365,7 @@ async function showCortexAgentChat(){
     <div class="cortex-suggest">${chips}</div>
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
-    <p class="hint" style="margin-top:14px">Browse <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showCortexPage()">Apps</button> for every agent you’ve built.</p>
+    <p class="hint" style="margin-top:14px">Browse <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showCortexPage()">Apps</button> or <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showRoutinesPage()">Routines</button> for every agent you’ve built.</p>
   </div>`;
   renderCortexSideAgents();
   applyPlaceholder({force:true});
@@ -6684,6 +6684,136 @@ async function ragAddResearchNew(path){
     if(!r||!r.ok||!r.space){toast('Create failed');return}
     await ragAddResearchTo(r.space.id,path,r.space.name);
   }catch(e){toast('Create failed')}
+}
+
+// ===== Routines — scheduled, low-ceremony tasks (daily/weekly ingest) =====
+// A routine is a named, scheduled task that does not need a dedicated agent
+// app. Cards are scalable and editable and can play image, video, and music
+// with words. Persisted locally; running on a real clock ties to the
+// scheduler (roadmap). See the routine-design skill pack.
+const ROUTINE_DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const ROUTINE_TYPES=['text','image','video','music'];
+function routinesSave(a){try{localStorage.setItem('airgpt_routines',JSON.stringify(a||[]))}catch(e){}}
+function routinesLoad(){
+  try{const a=JSON.parse(localStorage.getItem('airgpt_routines')||'null');if(Array.isArray(a))return a;}catch(e){}
+  const seed=[
+    {id:'r_daily',title:'Daily ingest',purpose:'A short morning brief from your sources.',cadence:'daily',time:'08:00',day:1,type:['text'],source:'memory storage + web',text:'Add a source and media. This card can play an image, a video, and music with words.',img:'',video:'',music:'',size:'compact',enabled:true},
+    {id:'r_weekly',title:'Weekly ingest',purpose:'A Monday digest with highlights.',cadence:'weekly',time:'08:00',day:1,type:['text','image'],source:'memory storage',text:'Edit me. Attach an image or video URL to preview it here.',img:'',video:'',music:'',size:'large',enabled:true},
+  ];
+  routinesSave(seed);return seed;
+}
+function routineCadenceLabel(r){
+  if(r.cadence==='weekly')return 'Weekly · '+ROUTINE_DAYS[(Number(r.day)||1)%7]+(r.time?' '+r.time:'');
+  if(r.cadence==='time')return 'Daily · '+(r.time||'08:00');
+  return 'Daily'+(r.time?' · '+r.time:'');
+}
+function routineMediaHtml(r){
+  const h=r.size==='large'?'220px':'130px';
+  const t=Array.isArray(r.type)?r.type:[];
+  let out='';
+  if(t.includes('video')&&r.video)out+=`<video src="${esc(r.video)}" controls preload="metadata" style="width:100%;max-height:${h};border-radius:10px;background:#000;display:block;margin-bottom:8px"></video>`;
+  else if(t.includes('image')&&r.img)out+=`<img src="${esc(r.img)}" alt="" style="width:100%;max-height:${h};object-fit:cover;border-radius:10px;display:block;margin-bottom:8px"/>`;
+  if(t.includes('music')&&r.music)out+=`<audio src="${esc(r.music)}" controls preload="none" style="width:100%;margin-bottom:8px"></audio>`;
+  return out;
+}
+function routineCardHtml(r){
+  const big=r.size==='large';
+  return `<div class="cortex-card routine-card${big?' routine-lg':''}" style="margin:0;${big?'grid-column:span 2;':''}${r.enabled===false?'opacity:.55;':''}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <strong style="flex:1">${esc(r.title||'Routine')}</strong>
+      <span class="sess-agent-tag">${esc(routineCadenceLabel(r))}</span>
+    </div>
+    <p class="hint" style="margin:0 0 8px">${esc(r.purpose||'')}</p>
+    ${routineMediaHtml(r)}
+    ${r.text?`<p style="margin:0 0 8px;font-size:13px;white-space:pre-wrap">${esc(r.text)}</p>`:''}
+    ${r.source?`<p class="hint" style="margin:0 0 8px;opacity:.7">Source: ${esc(r.source)}</p>`:''}
+    <div class="btn-row" style="gap:6px;flex-wrap:wrap">
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineEdit('${esc(r.id)}')">Edit</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineToggleSize('${esc(r.id)}')">${big?'Compact':'Enlarge'}</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineDuplicate('${esc(r.id)}')">Duplicate</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineToggleEnabled('${esc(r.id)}')">${r.enabled===false?'Resume':'Pause'}</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" onclick="routineDelete('${esc(r.id)}')">Delete</button>
+    </div>
+  </div>`;
+}
+function routineEditorHtml(r){
+  const t=Array.isArray(r.type)?r.type:['text'];
+  const typeChk=ROUTINE_TYPES.map(k=>`<label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:13px"><input type="checkbox" class="rt-type" value="${k}" ${t.includes(k)?'checked':''}/> ${k}</label>`).join('');
+  const dayOpts=ROUTINE_DAYS.map((d,i)=>`<option value="${i}" ${Number(r.day)===i?'selected':''}>${d}</option>`).join('');
+  const inp='width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;font:inherit;margin-bottom:8px';
+  return `<div class="cortex-card" id="routineEditor" style="margin-bottom:14px">
+    <h3 style="margin:0 0 10px">${r.id?'Edit routine':'New routine'}</h3>
+    <input id="rtTitle" placeholder="Title" value="${esc(r.title||'')}" style="${inp}"/>
+    <input id="rtPurpose" placeholder="One-line purpose" value="${esc(r.purpose||'')}" style="${inp}"/>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="rtCadence" style="${inp};flex:1;min-width:120px">
+        <option value="daily" ${r.cadence==='daily'?'selected':''}>Daily</option>
+        <option value="weekly" ${r.cadence==='weekly'?'selected':''}>Weekly</option>
+        <option value="time" ${r.cadence==='time'?'selected':''}>Daily at time</option>
+      </select>
+      <select id="rtDay" style="${inp};flex:0 0 auto">${dayOpts}</select>
+      <input id="rtTime" type="time" value="${esc(r.time||'08:00')}" style="${inp};flex:0 0 auto"/>
+    </div>
+    <div style="margin:2px 0 10px">${typeChk}</div>
+    <input id="rtSource" placeholder="Source (feed, query, memory storage, folder)" value="${esc(r.source||'')}" style="${inp}"/>
+    <textarea id="rtText" placeholder="Words to show" rows="2" style="${inp};resize:vertical">${esc(r.text||'')}</textarea>
+    <input id="rtImg" placeholder="Image URL (optional)" value="${esc(r.img||'')}" style="${inp}"/>
+    <input id="rtVideo" placeholder="Video URL (optional)" value="${esc(r.video||'')}" style="${inp}"/>
+    <input id="rtMusic" placeholder="Music URL (optional)" value="${esc(r.music||'')}" style="${inp}"/>
+    <div class="btn-row" style="gap:8px">
+      <button type="button" class="btn primary" onclick="routineSaveFromForm('${esc(r.id||'')}')">Save routine</button>
+      <button type="button" class="btn" onclick="showRoutinesPage()">Cancel</button>
+    </div>
+  </div>`;
+}
+let _routineDraft=null;
+function routineNew(){_routineDraft={id:'',title:'',purpose:'',cadence:'daily',time:'08:00',day:1,type:['text'],source:'',text:'',img:'',video:'',music:'',size:'compact',enabled:true};showRoutinesPage();}
+function routineEdit(id){const r=routinesLoad().find(x=>x.id===id);_routineDraft=r?Object.assign({},r):null;showRoutinesPage();}
+function routineSaveFromForm(id){
+  const g=x=>document.getElementById(x);
+  if(!g('rtTitle'))return;
+  const old=routinesLoad().find(x=>x.id===id)||{};
+  const types=[...document.querySelectorAll('.rt-type:checked')].map(c=>c.value);
+  const r={
+    id:id||('r_'+Date.now().toString(36)),
+    title:(g('rtTitle').value||'Routine').trim()||'Routine',
+    purpose:(g('rtPurpose').value||'').trim(),
+    cadence:g('rtCadence').value||'daily',
+    day:Number(g('rtDay').value||1),
+    time:g('rtTime').value||'08:00',
+    type:types.length?types:['text'],
+    source:(g('rtSource').value||'').trim(),
+    text:(g('rtText').value||'').trim(),
+    img:(g('rtImg').value||'').trim(),
+    video:(g('rtVideo').value||'').trim(),
+    music:(g('rtMusic').value||'').trim(),
+    size:old.size||'compact',
+    enabled:old.enabled!==false,
+  };
+  const arr=routinesLoad();const i=arr.findIndex(x=>x.id===r.id);
+  if(i>=0)arr[i]=r;else arr.push(r);
+  routinesSave(arr);_routineDraft=null;toast('Routine saved');showRoutinesPage();
+}
+function _routineMutate(id,fn){const arr=routinesLoad();const i=arr.findIndex(x=>x.id===id);if(i<0)return;fn(arr[i],arr,i);routinesSave(arr);showRoutinesPage();}
+function routineDelete(id){if(!confirm('Delete this routine?'))return;_routineMutate(id,(r,arr,i)=>arr.splice(i,1));}
+function routineDuplicate(id){const arr=routinesLoad();const r=arr.find(x=>x.id===id);if(!r)return;arr.push(Object.assign({},r,{id:'r_'+Date.now().toString(36),title:(r.title||'Routine')+' copy'}));routinesSave(arr);showRoutinesPage();}
+function routineToggleSize(id){_routineMutate(id,r=>{r.size=r.size==='large'?'compact':'large';});}
+function routineToggleEnabled(id){_routineMutate(id,r=>{r.enabled=r.enabled===false;});}
+async function showRoutinesPage(){
+  sideView='routines';updateSideNav();closeSide();
+  const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
+  const list=routinesLoad();
+  const editor=_routineDraft?routineEditorHtml(_routineDraft):'';
+  const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Create one to start a daily or weekly ingest.</p>';
+  $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
+    <h2>Routines</h2>
+    <p class="cortex-tag">Simple recurring tasks such as daily and weekly ingest. No dedicated app needed. Cards are scalable and editable and can play image, video, and music with words.</p>
+    <div class="btn-row" style="margin-bottom:12px"><button type="button" class="btn primary" onclick="routineNew()">+ New routine</button></div>
+    ${editor}
+    <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
+    <p class="hint" style="margin-top:14px;opacity:.7">Scheduling runs when the scheduler is wired. For now this manages and previews routines and plays their media.</p>
+  </div>`;
+  _routineDraft=null;
 }
 
 // ===== Vertex — Edge AI monitoring window (precision manufacturing) =====
