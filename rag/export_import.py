@@ -196,6 +196,10 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 skipped += 1
                 continue
             title = _safe_title(str(src.get("title") or blob.name))
+            # Packed sources are extracted text; carry .txt so import re-ingests
+            # them as text rather than re-running a binary extractor.
+            if not title.lower().endswith(".txt"):
+                title = f"{title}.txt"
             pack_path = f"sources/{i:04d}__{title}"
             data = blob.read_bytes()
             if len(data) > MAX_PACK_BYTES:
@@ -337,6 +341,8 @@ def import_pack(
             if not pack_path:
                 continue
             title = _safe_title(str(entry.get("title") or Path(pack_path).name))
+            if not title.lower().endswith(".txt"):
+                title = f"{title}.txt"
             target = dest_dir / title
             # Avoid collisions
             if target.exists():

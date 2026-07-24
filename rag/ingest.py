@@ -299,11 +299,12 @@ def ingest_paths(
             if not text.strip():
                 continue
             mime = mimetypes.guess_type(str(path))[0] or "text/plain"
-            # copy into blob store
+            # copy into blob store. The blob is post-extraction TEXT, so store
+            # it as .txt — a rebuild or import then re-ingests it as text rather
+            # than re-running a binary extractor (e.g. _xlsx_text) on plain text.
             dest_dir = store.BLOB_DIR / str(space_id) / "sources"
             dest_dir.mkdir(parents=True, exist_ok=True)
-            rel = path.name
-            dest = dest_dir / f"{digest[:12]}_{rel}"
+            dest = dest_dir / f"{digest[:12]}_{path.stem}.txt"
             if not dest.exists():
                 dest.write_text(text, encoding="utf-8")
 
