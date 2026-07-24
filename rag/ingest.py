@@ -38,6 +38,10 @@ TEXT_SUFFIXES = {
     ".sql",
     ".sh",
     ".ps1",
+    ".xlsx",
+    ".xlsm",
+    ".docx",
+    ".pptx",
 }
 
 
@@ -70,6 +74,83 @@ def _pdf_text(path: Path) -> str:
         return "\n\n".join((pg.extract_text() or "") for pg in reader.pages[:200])
     except Exception:
         return ""
+
+
+def _xlsx_text(path: Path) -> str:
+    """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes."""
+    try:
+        import openpyxl
+    except Exception:
+        return ""
+    try:
+        wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    except Exception:
+        return ""
+    out: list[str] = []
+    try:
+        for ws in wb.worksheets:
+            rows: list[str] = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
+                if cells:
+                    rows.append(" | ".join(cells))
+            if rows:
+                out.append(f"## Sheet: {ws.title}\n" + "\n".join(rows))
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+    return "\n\n".join(out).strip()
+
+
+def _ooxml_local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _docx_text(path: Path) -> str:
+    """Paragraph text from <w:t> runs in word/document.xml. Stdlib only."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(str(path)) as z:
+            root = ET.fromstring(z.read("word/document.xml"))
+    except Exception:
+        return ""
+    paras: list[str] = []
+    for p in root.iter():
+        if _ooxml_local(p.tag) != "p":
+            continue
+        runs = [t.text for t in p.iter() if _ooxml_local(t.tag) == "t" and t.text]
+        if runs:
+            paras.append("".join(runs))
+    return "\n".join(paras).strip()
+
+
+def _pptx_text(path: Path) -> str:
+    """Per-slide text from <a:t> runs across ppt/slides/slideN.xml. Stdlib only."""
+    import fnmatch
+    import re
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    out: list[str] = []
+    try:
+        with zipfile.ZipFile(str(path)) as z:
+            names = [n for n in z.namelist() if fnmatch.fnmatch(n, "ppt/slides/slide*.xml")]
+            names.sort(key=lambda n: int((re.search(r"(\d+)", n) or [0, 0])[1]))
+            for i, name in enumerate(names, 1):
+                try:
+                    root = ET.fromstring(z.read(name))
+                except Exception:
+                    continue
+                texts = [t.text for t in root.iter() if _ooxml_local(t.tag) == "t" and t.text]
+                if texts:
+                    out.append(f"## Slide {i}\n" + "\n".join(texts))
+    except Exception:
+        return ""
+    return "\n\n".join(out).strip()
 
 
 def _flatten_json(obj, prefix: str = "") -> list[str]:
@@ -109,6 +190,12 @@ def read_text_file(path: Path) -> tuple[str, str]:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return _pdf_text(path), digest
+    if suffix in (".xlsx", ".xlsm"):
+        return _xlsx_text(path), digest
+    if suffix == ".docx":
+        return _docx_text(path), digest
+    if suffix == ".pptx":
+        return _pptx_text(path), digest
     # Structure-aware parsing so embeddings see meaning, not markup/braces.
     if suffix in (".html", ".htm"):
         title, body = html_to_text(_decode(raw))
