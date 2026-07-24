@@ -3503,7 +3503,7 @@ const QUESTIONS_OF_THE_DAY=[
 const CORTEX_AGENT_HINTS=[
   'Create an agent to pull PR requests every day at 8pm',
   'Help me connect mail history to Slack and auto-generate messages',
-  'Build an agent that summarizes my vault every Monday morning',
+  'Build an agent that summarizes my memory storage every Monday morning',
   'Create an agent that watches a repo and drafts release notes',
   'Help me schedule a daily standup digest from calendar + chat',
   'Create an agent that files bug tickets from screenshot chats',
@@ -3512,7 +3512,7 @@ const HABIT_AGENT_ACTIONS=[
   'Daily insights on the nature of the world — notify me every morning',
   'Daily dance tutorial with a short practice cue every day',
   'Turn my recurring research questions into a morning briefing agent',
-  'Persistent agent: weekly vault digest every Monday at 8am',
+  'Persistent agent: weekly memory digest every Monday at 8am',
   'Daily coding tip from my recent chats — push a notification',
   'Agent that watches what I reuse and suggests one automation a day',
 ];
@@ -3583,6 +3583,16 @@ function useQuestionInInput(q){
   el.dispatchEvent(new Event('input'));
   const idx=QUESTIONS_OF_THE_DAY.indexOf(q);
   if(idx>=0)trackPref('question',String(idx),'use');
+}
+// A Cortex suggestion chip: show it in the chat space and actually build the agent.
+async function useCortexSuggestion(s){
+  if(!s)return;
+  const el=$('input');
+  if(el){el.value=s;el.dispatchEvent(new Event('input'));}
+  if(typeof handleCortexChat==='function'){
+    if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}
+    await handleCortexChat(s);
+  }else if(el){el.focus();}
 }
 function resetTastePrefs(){
   localStorage.removeItem('airgpt_taste');
@@ -5253,10 +5263,13 @@ function habitAgentActions(){
   return out;
 }
 function cortexSuggestionChips(){
-  // Action-first chips (habits → daily agents), then generic create hints
-  const base=[...habitAgentActions(),...CORTEX_AGENT_HINTS];
-  const seen=new Set();
-  return base.filter(s=>{const k=s.toLowerCase();if(seen.has(k))return false;seen.add(k);return true}).slice(0,6);
+  // Few, short, action-first. Clicking one creates that agent (useCortexSuggestion).
+  return [
+    'Morning news brief, daily',
+    'Weekly memory digest, Mondays 8am',
+    'Watch a repo, draft release notes',
+    'Daily coding tip from my chats',
+  ];
 }
 function agentToolHighlights(a){
   const tools=Array.isArray(a?.tools)?a.tools:[];
@@ -5266,9 +5279,9 @@ function agentToolHighlights(a){
   if(kind)hi.push(kind);
   if(name.includes('openvertex')||kind==='routing')hi.push('routing');
   if(name.includes('openresearch')||kind==='research')hi.push('research');
-  if(name.includes('vault')||kind==='vault')hi.push('vault');
+  if(name.includes('vault')||kind==='vault')hi.push('storage');
   if(name.includes('rag')||kind==='rag')hi.push('rag');
-  const pretty=t=>String(t||'').replace(/_/g,' ').replace(/^fs /,'fs ').slice(0,18);
+  const pretty=t=>String(t||'').replace(/_/g,' ').replace(/\bvault\b/g,'storage').replace(/^fs /,'fs ').slice(0,18);
   const fromTools=tools.map(pretty).filter(Boolean);
   const merged=[];
   [...hi,...fromTools].forEach(t=>{
@@ -5301,7 +5314,7 @@ function cortexRecentAgentsHtml(agents){
       ? tools.map((t,i)=>`<span class="cr-tool${i===0?' hi':''}">${esc(t)}</span>`).join('')
       : `<span class="cr-tool">${esc(a.kind||'agent')}</span>`;
     const ico=esc(String(a.name||'A').slice(0,1).toUpperCase());
-    return `<button type="button" class="cortex-recent-item" onclick="runCortexAgent(${Number(a.id)||0})">
+    return `<button type="button" class="cortex-recent-item" onclick="openAgentById(${Number(a.id)||0})">
       <span class="cr-ico" aria-hidden="true">${ico}</span>
       <span class="cr-body"><span class="cr-title">${esc(a.name||'Agent')}</span><span class="cr-meta">${chips}</span></span>
     </button>`;
@@ -5333,12 +5346,12 @@ async function showCortexAgentChat(){
   window._cortexActiveAgent=window._cortexActiveAgent||getCortexActiveAgent();
   let agents=[];
   try{agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[]}catch(e){}
-  const chips=cortexSuggestionChips().map(s=>`<button type="button" onclick="useQuestionInInput(${JSON.stringify(s)})">${esc(s)}</button>`).join('');
+  const chips=cortexSuggestionChips().map(s=>`<button type="button" onclick='useCortexSuggestion(${JSON.stringify(s)})'>${esc(s)}</button>`).join('');
   const active=window._cortexActiveAgent;
   const activeLine=active?`<p class="hint" style="margin:0 0 12px">Active: <strong>${esc(active.name||'agent')}</strong> — follow-ups continue this agent. Say “new agent …” to spawn another.</p>`:'';
   $('chat').innerHTML=`<div class="cortex-page cortex-agent-home chat-page-enter">
     <h2>Cortex</h2>
-    <p class="cortex-tag">Every message is routed: create an agent/scheduler, continue the active one, or auto-respond with hands &amp; tools. <strong>web_search</strong> runs first; skills/MCP needs come from your vault + the web. Refine with <code>/edit</code>.</p>
+    <p class="cortex-tag">Every message is routed: create an agent/scheduler, continue the active one, or auto-respond with hands &amp; tools. <strong>web_search</strong> runs first; skills/MCP needs come from your memory storage + the web. Refine with <code>/edit</code>.</p>
     ${activeLine}
     <div class="cortex-suggest">${chips}</div>
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 6px;text-align:left">Recent agents</h3>
@@ -5429,9 +5442,9 @@ async function showCortexPage(quiet){
     </div>
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Built agents</h3>
     ${agentCards}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
-      <button type="button" class="btn primary" style="border-radius:12px" onclick="createCortexAgent()">+ New agent</button>
-      <button type="button" class="btn" style="border-radius:12px" onclick="showPricingModal()">See pricing</button>
+    <div style="display:flex;gap:10px;align-items:center;margin:16px 0">
+      <button type="button" class="btn primary" style="border-radius:14px;padding:14px 26px;font-size:15px;font-weight:650;flex:1" onclick="createCortexAgent()">+ New agent</button>
+      <button type="button" class="btn" style="border-radius:9px;padding:6px 12px;font-size:11px;opacity:.6;flex:0 0 auto" onclick="showPricingModal()">See pricing</button>
     </div>
   </div>`;
   const byId={};agents.forEach(a=>{byId[String(a.id)]=a});
@@ -5818,8 +5831,36 @@ async function handleCortexChatCreate(text,caps,intent){
 /** @deprecated — use handleCortexChat */
 async function orchestrateCortexAgentFromPrompt(text){return handleCortexChat(text)}
 function looksLikeAgentCreatePrompt(text){return classifyCortexIntent(text)!=='chat'||!!(text||'').trim()}
+// Clicking any built agent opens its dedicated surface (RAG / Research pages)
+// or a focused Cortex chat for that agent — never a blocking window.prompt().
+async function openAgentById(id){
+  let a=null;
+  try{
+    const agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
+    a=agents.find(x=>String(x.id)===String(id))||null;
+  }catch(e){}
+  if(a){openPinnedAgent(a);return;}
+  showCortexAgentChat();
+}
 async function runCortexAgent(id){
-  const prompt=window.prompt('What should this agent do?','Summarize recent vault notes for this project');
+  let a=null;
+  try{
+    const agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
+    a=agents.find(x=>String(x.id)===String(id))||null;
+  }catch(e){}
+  if(a){
+    const surf=agentSurface(a);
+    if(surf==='rag'){showRagPage();return;}
+    if(surf==='research'){showResearchPage();return;}
+    setCortexActiveAgent(a);
+    touchRecentAgent(a);
+  }
+  await showCortexAgentChat();
+  const inp=$('input');
+  if(inp){inp.placeholder='Ask '+((a&&a.name)||'this agent')+' to…';inp.focus();}
+}
+// Kept for callers that want to execute an agent with an explicit prompt (SSE).
+async function runAgentWithPrompt(id,prompt){
   if(!prompt)return;
   toast('Agent running…');
   try{
@@ -7813,9 +7854,13 @@ function _acRender(){
   });
   const r=_acState.el.getBoundingClientRect();
   m.style.left=(window.scrollX+r.left)+'px';
-  m.style.top=(window.scrollY+r.bottom+4)+'px';
   m.style.width=Math.min(440,Math.max(240,r.width))+'px';
-  m.style.display='block';_acState.open=true;
+  // Measure, then flip above the composer if it would clip off the bottom.
+  m.style.visibility='hidden';m.style.display='block';m.style.top='0px';
+  const mh=m.offsetHeight;
+  const flipUp=(window.innerHeight-r.bottom)<(mh+10)&&r.top>(mh+10);
+  m.style.top=(window.scrollY+(flipUp?r.top-mh-4:r.bottom+4))+'px';
+  m.style.visibility='visible';_acState.open=true;
 }
 function _acHighlight(){
   const m=document.getElementById('composerAc');if(!m)return;
@@ -7943,6 +7988,23 @@ function handleSlashCommand(text){
         if(typeof refreshCortexRight==='function')refreshCortexRight();
       }catch(e){toast('Subagent failed')}
     })();
+    return true;
+  }
+  if(cmd==='research'){
+    const topic=arg||'';
+    if(!topic){toast('Usage: /research <topic>');return true;}
+    if(window.bgTasks&&typeof window.bgTasks.research==='function'){
+      window.bgTasks.research(topic);
+      toast('Background research started · '+topic.slice(0,60));
+    }else toast('Background tasks UI not ready');
+    return true;
+  }
+  if(cmd==='workflow'){
+    const id=(arg||'smoothness_audit').trim().split(/\s+/)[0];
+    if(window.bgTasks&&typeof window.bgTasks.run==='function'){
+      window.bgTasks.run(id);
+      toast('Workflow “'+id+'” started in background');
+    }else toast('Background tasks UI not ready');
     return true;
   }
   switch(cmd){
@@ -10378,6 +10440,25 @@ async function send(){
   if(!text&&!hasFiles&&!contextIds.length)return;
   if(text.startsWith('/')&&handleSlashCommand(text)){if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}return}
   if(text.startsWith('@')&&await dispatchAtAgent(text)){if(el)el.value='';return}
+  // Background workflow auto-fanout (Cortex recognizer) — explicit phrases or strong match.
+  if(text&&!hasFiles&&!text.startsWith('/')&&window.bgTasks){
+    try{
+      const rec=await api('/api/workflows/recognize',{method:'POST',body:JSON.stringify({prompt:text})}).then(r=>r.json());
+      if(rec&&rec.should_run&&rec.template_id&&(rec.explicit||(rec.confidence||0)>=0.45)){
+        if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}
+        const goal=(rec.variables&&(rec.variables.topic||rec.variables.target))||text;
+        fetch('/api/workflows/run',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({workflow_id:rec.template_id,goal:goal})})
+          .then(r=>r.json()).then(d=>{
+            if(d&&d.ok){
+              toast('Started “'+(rec.template_id)+'” in background');
+              if(window.bgTasks.open)window.bgTasks.open();
+            }else toast((d&&d.error)||'Workflow start failed');
+          }).catch(()=>toast('Workflow start failed — is Cortex running?'));
+        return;
+      }
+    }catch(e){}
+  }
   // Cortex: every message → create / schedule / continue / auto-respond (web_search first)
   if(sideView==='cortex'&&text&&!hasFiles){
     if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}
@@ -10966,6 +11047,242 @@ async function kvSave(envKey,inputId){
   }catch(e){toast('Save failed — keys can only be saved on the host PC')}
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').classList.contains('open'))closeKeyVault()});
+
+/* ── Background tasks panel ───────────────────────────────────────────────
+   Self-contained IIFE (collision-safe: one anchor, own DOM, own styles).
+   Shows phased subagent workflows — phase reached, tokens, tools, time,
+   and what each subagent was invoked for. Backed by /api/workflows/*.     */
+(function(){
+  if(window.__bgTasksReady) return; window.__bgTasksReady = true;
+  var POLL_MS = 2000, open = false, timer = null, expanded = {}, showFinished = false;
+
+  var css = document.createElement('style');
+  css.textContent = [
+    '#bgTasksBtn{position:fixed;right:16px;bottom:16px;z-index:9998;display:none;align-items:center;gap:7px;',
+      'padding:8px 13px;border-radius:999px;border:1px solid var(--border,#e3e3e3);background:var(--bg,#fff);',
+      'color:var(--fg,#1d1d1f);font:500 12.5px/1 system-ui,-apple-system,sans-serif;cursor:pointer;',
+      'box-shadow:0 2px 14px rgba(0,0,0,.13)}',
+    '#bgTasksBtn.on{display:flex}',
+    '#bgTasksBtn .pulse{width:7px;height:7px;border-radius:50%;background:#2f9e44;animation:bgPulse 1.5s infinite}',
+    '@keyframes bgPulse{0%,100%{opacity:1}50%{opacity:.28}}',
+    '#bgTasksPanel{position:fixed;top:0;right:0;width:min(430px,100vw);height:100vh;z-index:9999;display:none;',
+      'flex-direction:column;background:var(--bg,#fff);color:var(--fg,#1d1d1f);border-left:1px solid var(--border,#e3e3e3);',
+      'font:13px/1.45 system-ui,-apple-system,sans-serif;box-shadow:-8px 0 30px rgba(0,0,0,.09)}',
+    '#bgTasksPanel.open{display:flex}',
+    '#bgTasksPanel .bgHead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border,#ececec)}',
+    '#bgTasksPanel .bgHead h3{margin:0;font-size:14px;font-weight:600;flex:1}',
+    '#bgTasksPanel .bgHead button{background:none;border:0;cursor:pointer;color:inherit;opacity:.55;padding:4px;font-size:15px;line-height:1}',
+    '#bgTasksPanel .bgHead button:hover{opacity:1}',
+    '#bgTasksPanel .bgBody{flex:1;overflow-y:auto;padding:12px 14px 22px}',
+    '#bgTasksPanel .bgLabel{font-size:11.5px;opacity:.55;margin:8px 2px 7px;font-weight:500}',
+    '#bgTasksPanel .bgCard{border:1px solid var(--border,#ececec);border-radius:10px;padding:11px 12px;margin-bottom:10px;background:var(--card,rgba(127,127,127,.045))}',
+    '#bgTasksPanel .bgTitle{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin-bottom:3px}',
+    '#bgTasksPanel .bgTitle .sp{flex:1}',
+    '#bgTasksPanel .bgX{background:none;border:0;cursor:pointer;color:inherit;opacity:.4;font-size:14px;padding:2px 4px}',
+    '#bgTasksPanel .bgX:hover{opacity:.9}',
+    '#bgTasksPanel .bgMeta{font-size:11.5px;opacity:.62;display:flex;gap:11px;flex-wrap:wrap;margin-bottom:5px}',
+    '#bgTasksPanel .bgDesc{font-size:12px;opacity:.78;margin:6px 0 10px}',
+    '#bgTasksPanel .bgPhase{border-top:1px solid var(--border,#eee);padding:9px 0 4px}',
+    '#bgTasksPanel .bgPhaseHd{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:3px 4px;border-radius:6px}',
+    '#bgTasksPanel .bgPhaseHd:hover{background:rgba(127,127,127,.08)}',
+    '#bgTasksPanel .bgPhaseHd .nm{flex:1;font-size:12.5px;font-weight:500}',
+    '#bgTasksPanel .bgPhaseHd .cv{opacity:.4;font-size:10px;transition:transform .15s}',
+    '#bgTasksPanel .bgPhaseHd .cv.o{transform:rotate(90deg)}',
+    '#bgTasksPanel .dots{display:flex;gap:3px;padding:5px 6px 2px}',
+    '#bgTasksPanel .dots i{width:9px;height:5px;border-radius:2px;background:rgba(127,127,127,.26)}',
+    '#bgTasksPanel .dots i.run{background:#f59f00;animation:bgPulse 1.2s infinite}',
+    '#bgTasksPanel .dots i.done{background:#2f9e44}',
+    '#bgTasksPanel .dots i.err{background:#e03131}',
+    '#bgTasksPanel table{width:100%;border-collapse:collapse;margin-top:4px}',
+    '#bgTasksPanel th{font-size:10.5px;font-weight:500;opacity:.45;text-align:right;padding:3px 5px}',
+    '#bgTasksPanel th:first-child{text-align:left}',
+    '#bgTasksPanel td{font-size:11.5px;padding:3px 5px;text-align:right;vertical-align:top}',
+    '#bgTasksPanel td:first-child{text-align:left;opacity:.9}',
+    '#bgTasksPanel td .pp{display:block;font-size:10.5px;opacity:.5}',
+    '#bgTasksPanel .st{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;background:rgba(127,127,127,.35)}',
+    '#bgTasksPanel .st.run{background:#f59f00}.st.done{background:#2f9e44}.st.err{background:#e03131}',
+    '#bgTasksPanel .bgFoot{display:flex;align-items:center;gap:10px;padding:9px 4px 0;font-size:11.5px;opacity:.6}',
+    '#bgTasksPanel .bgFoot button{background:none;border:0;color:inherit;cursor:pointer;font-size:11.5px;padding:2px 4px}',
+    '#bgTasksPanel .bgFoot button:hover{opacity:1;text-decoration:underline}',
+    '#bgTasksPanel .bgFoot .sp{flex:1}',
+    '#bgTasksPanel .bgLaunch{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
+    '#bgTasksPanel .bgLaunch button{font:12px system-ui;padding:6px 10px;border-radius:7px;cursor:pointer;',
+      'border:1px solid var(--border,#e0e0e0);background:var(--bg,#fff);color:inherit}',
+    '#bgTasksPanel .bgLaunch button:hover{background:rgba(127,127,127,.09)}',
+    '#bgTasksPanel .bgEmpty{opacity:.45;font-size:12px;padding:16px 4px}'
+  ].join('');
+  document.head.appendChild(css);
+
+  var btn = document.createElement('div');
+  btn.id = 'bgTasksBtn';
+  btn.innerHTML = '<span class="pulse"></span><span id="bgTasksCount">0 running</span>';
+  btn.onclick = function(){ openPanel(true); };
+  document.body.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.id = 'bgTasksPanel';
+  panel.innerHTML =
+    '<div class="bgHead"><h3>Background tasks</h3>' +
+    '<button id="bgTasksRefresh" title="Refresh">&#8635;</button>' +
+    '<button id="bgTasksClose" title="Close">&#10005;</button></div>' +
+    '<div class="bgBody"><div class="bgLaunch" id="bgTasksLaunch"></div>' +
+    '<div id="bgTasksList"></div></div>';
+  document.body.appendChild(panel);
+  panel.querySelector('#bgTasksClose').onclick = function(){ openPanel(false); };
+  panel.querySelector('#bgTasksRefresh').onclick = poll;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function fmtTok(n){ n=+n||0; return n>=1000 ? (n/1000).toFixed(1)+'k' : String(n); }
+  function fmtSec(s){ s=+s||0; return s<60 ? Math.round(s)+'s' : Math.floor(s/60)+'m '+Math.round(s%60)+'s'; }
+  function cls(st){ return st==='running'?'run':st==='done'?'done':(st==='error'?'err':''); }
+
+  function openPanel(v){
+    open = v; panel.classList.toggle('open', v);
+    if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); }
+  }
+
+  function loadPresets(){
+    var host = panel.querySelector('#bgTasksLaunch');
+    if(host.dataset.done) return;
+    fetch('/api/workflows').then(function(r){return r.json()}).then(function(d){
+      if(!d || !d.workflows) return;
+      host.dataset.done = '1';
+      host.innerHTML = d.workflows.map(function(w){
+        return '<button data-wf="'+esc(w.id)+'" title="'+esc(w.description)+'">▶ '+esc(w.name)+'</button>';
+      }).join('');
+      Array.prototype.forEach.call(host.querySelectorAll('button'), function(b){
+        b.onclick = function(){ runWorkflow(b.dataset.wf); };
+      });
+    }).catch(function(){});
+  }
+
+  function runWorkflow(id, goal){
+    fetch('/api/workflows/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({workflow_id:id||'', goal:goal||''})})
+      .then(function(r){return r.json()}).then(function(){ poll(); }).catch(function(){});
+  }
+
+  function cancelTask(id){
+    fetch('/api/workflows/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_id:id})}).then(poll).catch(function(){});
+  }
+
+  function agentRows(ph){
+    return '<table><thead><tr><th>Agent</th><th>Tokens</th><th>Tools</th><th>Time</th></tr></thead><tbody>' +
+      ph.agents.map(function(a){
+        return '<tr><td><span class="st '+cls(a.status)+'"></span>'+esc(a.id) +
+          (a.purpose ? '<span class="pp">'+esc(a.purpose)+'</span>' : '') + '</td>' +
+          '<td>'+fmtTok(a.tokens)+'</td><td>'+(a.tool_count||0)+'</td>' +
+          '<td>'+fmtSec(a.elapsed)+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function phaseHtml(t, ph){
+    var key = t.id+':'+ph.id, isOpen = expanded[key] !== undefined ? expanded[key] : (ph.status==='running');
+    var dots = ph.agents.map(function(a){ return '<i class="'+cls(a.status)+'"></i>'; }).join('');
+    return '<div class="bgPhase"><div class="bgPhaseHd" data-k="'+esc(key)+'">' +
+      '<span class="nm">'+esc(ph.name)+'</span>' +
+      '<span class="cv'+(isOpen?' o':'')+'">&#9654;</span></div>' +
+      '<div class="dots">'+dots+'</div>' +
+      (isOpen ? agentRows(ph) : '') + '</div>';
+  }
+
+  function taskHtml(t){
+    var tot = t.totals || {};
+    return '<div class="bgCard"><div class="bgTitle"><span>'+esc(t.name)+'</span><span class="sp"></span>' +
+      (t.status==='running' ? '<button class="bgX" data-cancel="'+esc(t.id)+'" title="Cancel">&#9723;</button>' : '') +
+      '</div>' +
+      '<div class="bgMeta"><span>'+esc(t.kind||'Workflow')+'</span><span>'+fmtSec(t.elapsed)+'</span>' +
+      '<span>'+(tot.agents||0)+' agents</span><span>'+fmtTok(tot.tokens)+' tokens'+(t.tokens_estimated?' ~':'')+'</span>' +
+      '<span>'+(tot.tools||0)+' tools</span></div>' +
+      '<div class="bgDesc">'+esc(t.description)+'</div>' +
+      '<div class="bgLabel">Phases <span style="opacity:.6">'+(tot.phases_done||0)+'/'+(tot.phases_total||0)+'</span></div>' +
+      t.phases.map(function(p){ return phaseHtml(t, p); }).join('') +
+      (t.error ? '<div class="bgDesc" style="color:#e03131">'+esc(t.error)+'</div>' : '') +
+      '</div>';
+  }
+
+  function render(d){
+    var run = d.running || [], fin = d.finished || [];
+    var list = panel.querySelector('#bgTasksList');
+    var html = '';
+    html += '<div class="bgLabel">Running</div>';
+    html += run.length ? run.map(taskHtml).join('') : '<div class="bgEmpty">No background tasks running.</div>';
+    html += '<div class="bgFoot"><button id="bgTasksToggleFin">Finished '+fin.length+' ' +
+            (showFinished?'&#9660;':'&#9654;')+'</button><span class="sp"></span>' +
+            '<button id="bgTasksClear">Clear</button></div>';
+    if(showFinished && fin.length) html += fin.map(taskHtml).join('');
+    list.innerHTML = html;
+
+    Array.prototype.forEach.call(list.querySelectorAll('.bgPhaseHd'), function(h){
+      h.onclick = function(){ var k=h.dataset.k;
+        var cur = expanded[k]; var ph = h.parentNode;
+        expanded[k] = !(cur !== undefined ? cur : ph.querySelector('table') != null);
+        poll(); };
+    });
+    Array.prototype.forEach.call(list.querySelectorAll('[data-cancel]'), function(b){
+      b.onclick = function(){ cancelTask(b.dataset.cancel); };
+    });
+    var tg = list.querySelector('#bgTasksToggleFin');
+    if(tg) tg.onclick = function(){ showFinished = !showFinished; poll(); };
+    var cl = list.querySelector('#bgTasksClear');
+    if(cl) cl.onclick = function(){ fetch('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
+
+    var n = run.length;
+    document.getElementById('bgTasksCount').textContent = n + ' running';
+    btn.classList.toggle('on', n > 0 && !open);
+    if(n === 0 && timer && !open){ clearInterval(timer); timer = null; }
+  }
+
+  function poll(){
+    fetch('/api/workflows/tasks').then(function(r){return r.json()})
+      .then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
+  }
+
+  // Public hooks: chat / slash commands start work and surface the panel.
+  window.bgTasks = {
+    open: function(){ openPanel(true); },
+    research: function(topic){ runWorkflow('deep_research', topic); openPanel(true); },
+    run: function(id){ runWorkflow(id || 'smoothness_audit'); openPanel(true); },
+    refresh: poll
+  };
+
+  // Keep the launcher honest even when the panel is shut.
+  setInterval(function(){ if(!open) poll(); }, 5000);
+  poll();
+})();
+
+/* ── Compact chrome on short viewports ────────────────────────────────────
+   When the window is vertically small, shrink the composer and slide the top
+   nav away — it reappears on hover at the top edge — so more page shows.    */
+(function(){
+  if(window.__compactChromeReady) return; window.__compactChromeReady = true;
+  var st = document.createElement('style');
+  st.textContent = [
+    'header.topbar{transition:transform .2s ease,opacity .2s ease}',
+    'body.compact-chrome header.topbar{position:fixed;top:0;left:0;right:0;z-index:40;',
+      'transform:translateY(-100%);opacity:0;pointer-events:none}',
+    'body.compact-chrome.nav-peek header.topbar{transform:none;opacity:1;pointer-events:auto}',
+    'body.compact-chrome .composer{padding-top:5px;padding-bottom:5px}',
+    'body.compact-chrome .composer textarea,body.compact-chrome .composer #input{min-height:30px}',
+    'body.compact-chrome #navPeekZone{position:fixed;top:0;left:0;right:0;height:8px;z-index:41}'
+  ].join('');
+  document.head.appendChild(st);
+
+  var zone = document.createElement('div');
+  zone.id = 'navPeekZone';
+  document.body.appendChild(zone);
+
+  function apply(){ document.body.classList.toggle('compact-chrome', window.innerHeight < 560); }
+  window.addEventListener('resize', apply);
+  document.addEventListener('mousemove', function(e){
+    if(!document.body.classList.contains('compact-chrome')) return;
+    if(e.clientY <= 8) document.body.classList.add('nav-peek');
+    else if(e.clientY > 76) document.body.classList.remove('nav-peek');
+  });
+  apply();
+})();
 </script>
 </body>
 </html>
