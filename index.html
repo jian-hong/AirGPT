@@ -1927,6 +1927,10 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <span class="ai-switch-label r" id="aiLabelR">AI</span>
       </div>
       <button class="qr-btn" id="openideIdeBtn" title="Open IDE panel" onclick="openOpenIDERightRail()" style="display:none">IDE ↗</button>
+      <button class="qr-btn bgtasks-top-btn" id="bgTasksTopBtn" title="Background tasks — phased subagent workflows" aria-label="Background tasks" onclick="if(window.bgTasks&&window.bgTasks.open)window.bgTasks.open()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5 12 21l8-4.5"/></svg>
+        <span class="bgtasks-top-dot" id="bgTasksTopDot" hidden>0</span>
+      </button>
       <button class="qr-btn" id="settingsBtn" title="Settings">⚙</button>
       <div class="topbar-overflow-wrap" id="topbarOverflow">
         <button class="menu-btn" type="button" onclick="toggleTopbarMenu()" aria-label="More">⋯</button>
@@ -4689,7 +4693,7 @@ function syncNavSections(activeSec){
 function updateSideNav(){
   const plat=['hub','marketplace','hosting','usage','video'];
   const build=['openide','openforge'];
-  const agents=['cortex','cortex-catalog','research','rag','apps'];
+  const agents=['cortex','cortex-catalog','research','rag','vertex','apps'];
   const onPlat=plat.includes(sideView);
   const onBuild=build.includes(sideView);
   const onAgents=agents.includes(sideView);
@@ -4759,18 +4763,22 @@ function agentSurface(a){
   const skill=String(a?.skill_pack||'').toLowerCase();
   const surf=String(a?.config?.surface||'').toLowerCase();
   if(surf==='rag'||kind==='rag_service'||skill==='rag'||name==='rag')return 'rag';
-  if(surf==='research'||kind==='research'||skill==='research'||name.includes('research')||name.includes('vertex'))return 'research';
+  if(surf==='vertex'||name.includes('vertex'))return 'vertex';
+  if(surf==='research'||kind==='research'||skill==='research'||name.includes('research'))return 'research';
   return 'cortex';
 }
 function agentNavLabel(a){
   const name=String(a?.name||'Agent');
   // Friendlier left-rail labels for known surfaces
-  if(agentSurface(a)==='research'&&/openresearch/i.test(name))return 'Research';
+  const surf=agentSurface(a);
+  if(surf==='vertex')return 'Vertex';
+  if(surf==='research'&&/openresearch/i.test(name))return 'Research';
   return name;
 }
 function openPinnedAgent(a){
   const surf=agentSurface(a);
   if(surf==='rag'){showRagPage();return}
+  if(surf==='vertex'){showVertexPage();return}
   if(surf==='research'){showResearchPage();return}
   if(typeof runCortexAgent==='function'&&a?.id)runCortexAgent(a.id);
   else showCortexAgentChat();
@@ -4792,6 +4800,7 @@ async function renderPinnedAgentsNav(){
   const icon=(surf)=>{
     if(surf==='rag')return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M4 9h16M9 9v10"/></svg>';
     if(surf==='research')return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9l3 3v13H6z"/><path d="M9 12h6M9 16h4"/></svg>';
+    if(surf==='vertex')return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>';
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v6l4 2-4 2v6"/><circle cx="12" cy="12" r="9"/></svg>';
   };
   const byId={};
@@ -4799,7 +4808,7 @@ async function renderPinnedAgentsNav(){
     byId[String(a.id)]=a;
     const surf=agentSurface(a);
     const label=agentNavLabel(a);
-    const beta=(surf==='rag'||surf==='research')?'<span class="nav-beta">Beta</span>':'';
+    const beta=(surf==='rag'||surf==='research'||surf==='vertex')?'<span class="nav-beta">Beta</span>':'';
     return `<button type="button" class="nav-item" data-agent-id="${a.id}" data-agent-surface="${surf}" title="${esc(a.name||label)} — pinned agent">
       ${icon(surf)}${esc(label)}${beta}
     </button>`;
@@ -5851,6 +5860,7 @@ async function runCortexAgent(id){
   if(a){
     const surf=agentSurface(a);
     if(surf==='rag'){showRagPage();return;}
+    if(surf==='vertex'){showVertexPage();return;}
     if(surf==='research'){showResearchPage();return;}
     setCortexActiveAgent(a);
     touchRecentAgent(a);
@@ -6674,6 +6684,84 @@ async function ragAddResearchNew(path){
     if(!r||!r.ok||!r.space){toast('Create failed');return}
     await ragAddResearchTo(r.space.id,path,r.space.name);
   }catch(e){toast('Create failed')}
+}
+
+// ===== Vertex — Edge AI monitoring window (precision manufacturing) =====
+// A dedicated "agent window": live vision QC (camera + anomaly heatmap),
+// streaming telemetry, and process health. The camera pane works against any
+// Vertex QC service exposing GET /snapshot (Anomalib PatchCore → TensorRT →
+// FastAPI, per Netie-AI/Vertex). Flink stream aggregation + OPC-UA/Modbus
+// process ingest are the roadmap, labelled honestly below — never faked.
+function vertexEndpoint(){try{return localStorage.getItem('airgpt_vertex_endpoint')||''}catch(e){return ''}}
+function setVertexEndpoint(v){try{localStorage.setItem('airgpt_vertex_endpoint',String(v||'').replace(/\/+$/,''))}catch(e){}}
+function vertexConnect(){
+  const el=document.getElementById('vertexUrl');if(!el)return;
+  const v=(el.value||'').trim();
+  if(v&&!/^https?:\/\//i.test(v)){toast('Use a full http(s):// URL');return}
+  setVertexEndpoint(v);showVertexPage();
+}
+function _vertexStopPoll(){if(window._vertexPollTimer){clearInterval(window._vertexPollTimer);window._vertexPollTimer=null;}}
+function _vertexTick(){
+  if(sideView!=='vertex'){_vertexStopPoll();return;}
+  const base=vertexEndpoint();if(!base)return;
+  const img=document.getElementById('vertexCam');
+  if(img)img.src=base+'/snapshot?t='+Date.now();
+}
+async function showVertexPage(){
+  sideView='vertex';updateSideNav();closeSide();
+  const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
+  _vertexStopPoll();
+  const base=vertexEndpoint();
+  const connectBar=`<div class="btn-row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+    <input id="vertexUrl" placeholder="Vertex QC service URL — e.g. http://192.168.1.50:8000" value="${esc(base)}"
+      style="flex:1;min-width:230px;padding:9px 12px;border-radius:10px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;font:inherit"/>
+    <button type="button" class="btn primary" onclick="vertexConnect()">${base?'Reconnect':'Connect'}</button>
+    ${base?`<button type="button" class="btn" onclick="setVertexEndpoint('');showVertexPage()">Disconnect</button>`:''}
+  </div>`;
+  const camPane=base
+    ? `<img id="vertexCam" alt="Live QC feed" style="width:100%;display:block;border-radius:10px;background:#0c0c10;min-height:180px;object-fit:contain"/>
+       <div id="vertexCamState" class="hint" style="margin-top:6px">Connecting to ${esc(base)}/snapshot…</div>`
+    : `<div class="empty" style="padding:22px 10px;text-align:center">
+        <div style="font-size:26px">📷</div>
+        <p class="hint">Connect a Vertex QC service to see the live camera + anomaly heatmap.<br/>Any deployment exposing <code>GET /snapshot</code> works.</p></div>`;
+  $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
+    <h2>Vertex · Edge AI</h2>
+    <p class="cortex-tag">Real-world edge AI for precision manufacturing — live vision QC, streaming telemetry, and process health in one window.</p>
+    ${connectBar}
+    <div class="vx-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <div class="cortex-card"><h3 style="margin:0 0 8px">Camera + anomaly heatmap</h3>${camPane}</div>
+      <div class="cortex-card">
+        <h3 style="margin:0 0 8px">Stream telemetry</h3>
+        <div id="vertexStream" class="hint">${base?'Waiting for the QC feed to report…':'Connect a service to stream per-frame anomaly score, FPS, and latency.'}</div>
+        <p class="hint" style="margin-top:10px;opacity:.7">Roadmap: publish per-frame events to Kafka → PyFlink windowed defect-rate / drift.</p>
+      </div>
+      <div class="cortex-card">
+        <h3 style="margin:0 0 8px">Industrial process</h3>
+        <div id="vertexProcess" class="hint">${base?'Health derives from the live feed.':'Connect a service to monitor process health.'}</div>
+        <p class="hint" style="margin-top:10px;opacity:.7">Roadmap: OPC-UA / Modbus tags (spindle load, vibration, temp) correlated with anomaly score.</p>
+      </div>
+    </div>
+    <div class="cortex-card" style="margin-top:12px">
+      <h3 style="margin:0 0 6px">Build a monitoring window</h3>
+      <p class="hint">Point Vertex at your cameras and machine tags; Cortex assembles a dedicated real-time window (camera · stream · process). Learned from <code>Netie-AI/Vertex</code> — its QC vision pipeline is live; streaming + process ingest are being built here.</p>
+    </div>
+  </div>`;
+  if(base){
+    const img=document.getElementById('vertexCam');
+    if(img){
+      img.onload=()=>{
+        const s=document.getElementById('vertexCamState');if(s)s.innerHTML='<span style="color:#2f9e44">●</span> Connected · live';
+        const st=document.getElementById('vertexStream');if(st)st.textContent='Feed live — per-frame anomaly overlay streaming.';
+        const pr=document.getElementById('vertexProcess');if(pr)pr.innerHTML='<span style="color:#2f9e44">●</span> QC service reachable.';
+      };
+      img.onerror=()=>{
+        const s=document.getElementById('vertexCamState');if(s)s.innerHTML='<span style="color:#e03131">●</span> No feed — service offline or /snapshot blocked.';
+        const pr=document.getElementById('vertexProcess');if(pr)pr.innerHTML='<span style="color:#e03131">●</span> QC service not reachable.';
+      };
+    }
+    _vertexTick();
+    window._vertexPollTimer=setInterval(_vertexTick,1000);
+  }
 }
 
 // ===== RAG Agent — knowledge spaces (Phase 0/1) =====
@@ -11251,6 +11339,42 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   // Keep the launcher honest even when the panel is shut.
   setInterval(function(){ if(!open) poll(); }, 5000);
   poll();
+})();
+
+/* ── Background tasks — top-bar entry point badge ─────────────────────────
+   Lights the always-visible #bgTasksTopBtn (added to .topbar-actions) with a
+   live running-count dot. Self-contained: reads only /api/workflows/tasks and
+   opens the panel via the public window.bgTasks API, so it never touches the
+   panel IIFE's internals.                                                    */
+(function(){
+  if(window.__bgTasksTopReady) return; window.__bgTasksTopReady = true;
+  var st = document.createElement('style');
+  st.textContent = [
+    '.bgtasks-top-btn{position:relative;display:inline-flex;align-items:center;justify-content:center}',
+    '.bgtasks-top-btn svg{width:17px;height:17px;display:block}',
+    '.bgtasks-top-btn.busy{color:var(--accent,#2f9e44);border-color:var(--accent,#2f9e44)}',
+    '.bgtasks-top-dot{position:absolute;top:-4px;right:-4px;min-width:15px;height:15px;padding:0 3px;',
+      'box-sizing:border-box;border-radius:999px;background:#2f9e44;color:#fff;font-size:9px;font-weight:700;',
+      'line-height:15px;text-align:center}',
+    '.bgtasks-top-btn.busy .bgtasks-top-dot{display:inline-block!important}',
+    '@keyframes bgTopPulse{0%,100%{box-shadow:0 0 0 0 rgba(47,158,68,.45)}50%{box-shadow:0 0 0 4px rgba(47,158,68,0)}}',
+    '.bgtasks-top-btn.busy{animation:bgTopPulse 1.8s infinite}'
+  ].join('');
+  document.head.appendChild(st);
+
+  function upd(){
+    var btn = document.getElementById('bgTasksTopBtn');
+    if(!btn) return;
+    fetch('/api/workflows/tasks').then(function(r){return r.json()}).then(function(d){
+      if(!d || !d.ok) return;
+      var n = (d.running || []).length;
+      var dot = btn.querySelector('.bgtasks-top-dot');
+      btn.classList.toggle('busy', n > 0);
+      if(dot){ dot.textContent = String(n); dot.hidden = n === 0; }
+    }).catch(function(){});
+  }
+  setInterval(upd, 4000);
+  setTimeout(upd, 800);
 })();
 
 /* ── Compact chrome on short viewports ────────────────────────────────────
