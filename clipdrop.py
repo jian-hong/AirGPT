@@ -680,11 +680,13 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/git/",        # repo status/diff/checkout/branches
     "/api/agents/",     # agent listing + run (code-execution surface)
     "/api/cortex/",     # agent-brain queue/settings/runs/recipes/isolation
+    "/api/workflows",   # background phased subagent fan-out (runs tools)
     "/api/invoke/",     # create/update rules & skills (workspace write)
     "/api/openide/",    # IDE backend/ready/last-run/scaffold
     "/api/openvault/",  # OpenVault mesh handshake / connect-pack (D:\OpenVault)
     "/api/openforge/",  # chip design pipeline
     "/api/rag",         # RAG Agent knowledge spaces / ingest / answer (host-only)
+    "/api/github",      # GitHub OAuth device flow + status (token write)
     "/api/admin",       # admin dashboard data (covers /api/admin[/*])
     "/api/audit",       # audit trail (covers /api/audit[/*])
 )
@@ -858,17 +860,21 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
         if is_img:
             file_data = _normalize_image_bytes(file_data)
         h = hashlib.sha256(file_data).hexdigest()
+        hash_preclaimed = False
         if allow_duplicate and session_id:
             if db.hash_seen_in_session(h, session_id):
                 return None
-        elif db.hash_seen(h):
-            return None
+        else:
+            # Claim before save_file so losers never write orphan media
+            if not db.claim_hash(h):
+                return None
+            hash_preclaimed = True
         rel, mime, thumb, kind = save_file(file_data, filename or "file.bin")
         msg = db.add_message(
             device_ip=device_ip, device_name=device_name, text=text,
             kind=kind, filename=filename, filepath=rel, thumb=thumb, mime=mime,
             size=len(file_data), source=source, content_hash=h, session_id=session_id,
-            allow_duplicate=allow_duplicate,
+            allow_duplicate=allow_duplicate, hash_preclaimed=hash_preclaimed,
         )
         if msg:
             bump_sync()
@@ -958,6 +964,33 @@ def _export_package() -> bytes:
     return buf.getvalue()
 
 
+# The Windows clipboard is a single global lock held per-thread. The 0.35s
+# poller and the HTTP handler threads must never race for it, and nothing slow
+# may run while it is held: a stuck holder breaks Ctrl+C for every app on the
+# machine (observed: OpenClipboard 0/20, GetOpenClipboardWindow NULL, capture
+# dead for 48 minutes).
+_CLIPBOARD_LOCK = threading.Lock()
+_clip_open_fail_logged = 0.0
+
+
+def _open_clipboard(win32clipboard, *, attempts: int = 3) -> bool:
+    """Open with bounded retry. Never silently swallow a persistent failure."""
+    global _clip_open_fail_logged
+    last = None
+    for i in range(attempts):
+        try:
+            win32clipboard.OpenClipboard(None)
+            return True
+        except Exception as e:  # another app owns it for a moment
+            last = e
+            time.sleep(0.05 * (i + 1))
+    now = time.time()
+    if now - _clip_open_fail_logged > 60:
+        _clip_open_fail_logged = now
+        print(f"[clipboard] cannot open (holder busy or stuck): {last}")
+    return False
+
+
 def read_clipboard():
     try:
         import win32clipboard
@@ -965,40 +998,65 @@ def read_clipboard():
         from PIL import Image
     except ImportError:
         return "", None, None
-    try:
-        win32clipboard.OpenClipboard(None)
-    except Exception:
-        return "", None, None
-    try:
-        for fmt_name in ("PNG", "JFIF"):
-            fmt = win32clipboard.RegisterClipboardFormat(fmt_name)
-            if win32clipboard.IsClipboardFormatAvailable(fmt):
-                raw = win32clipboard.GetClipboardData(fmt)
-                if raw and len(raw) > 80:
-                    return "image", bytes(raw), None
-        if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
-            dib = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
-            _, _, _, _, _, off = struct.unpack("<LLLLLL", dib[:24])
-            bmp = b"BM" + struct.pack("<I", len(dib) + 14) + b"\0\0\0\0" + struct.pack("<I", 14 + off) + dib
-            img = Image.open(io.BytesIO(bmp))
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="PNG")
-            return "image", buf.getvalue(), None
-        if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
-            t = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
-            if t and str(t).strip():
-                return "text", None, str(t)
-    except Exception:
-        pass
-    finally:
+
+    kind = None
+    payload = None
+    text = None
+    # Phase 1: hold the OS lock only long enough to copy bytes out.
+    with _CLIPBOARD_LOCK:
+        if not _open_clipboard(win32clipboard):
+            return "", None, None
         try:
-            win32clipboard.CloseClipboard()
+            for fmt_name in ("PNG", "JFIF"):
+                fmt = win32clipboard.RegisterClipboardFormat(fmt_name)
+                if win32clipboard.IsClipboardFormatAvailable(fmt):
+                    raw = win32clipboard.GetClipboardData(fmt)
+                    if raw and len(raw) > 80:
+                        kind, payload = "encoded", bytes(raw)
+                        break
+            if kind is None and win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
+                kind = "dib"
+                payload = bytes(win32clipboard.GetClipboardData(win32clipboard.CF_DIB))
+            if kind is None and win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+                t = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+                if t and str(t).strip():
+                    kind, text = "text", str(t)
         except Exception:
             pass
+        finally:
+            try:
+                win32clipboard.CloseClipboard()
+            except Exception:
+                pass
+
+    # Phase 2: decode / re-encode with the OS lock released.
+    if kind == "encoded":
+        return "image", payload, None
+    if kind == "dib" and payload:
+        try:
+            _, _, _, _, _, off = struct.unpack("<LLLLLL", payload[:24])
+            bmp = (
+                b"BM"
+                + struct.pack("<I", len(payload) + 14)
+                + b"\0\0\0\0"
+                + struct.pack("<I", 14 + off)
+                + payload
+            )
+            img = Image.open(io.BytesIO(bmp))
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="PNG", optimize=True)
+            return "image", buf.getvalue(), None
+        except Exception:
+            return "", None, None
+    if kind == "text":
+        return "text", None, text
     return "", None, None
 
 
-def suppress_clipboard_watch(seconds: float = 2.5) -> None:
+CLIPBOARD_SNIP_DEFER_SEC = 1.2
+
+
+def suppress_clipboard_watch(seconds: float = 5.0) -> None:
     global _suppress_clipboard_until
     _suppress_clipboard_until = time.time() + seconds
 
@@ -1008,12 +1066,24 @@ def write_clipboard_text(text: str) -> bool:
     try:
         import win32clipboard
         import win32con
-        suppress_clipboard_watch()
-        win32clipboard.OpenClipboard(None)
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
-        win32clipboard.CloseClipboard()
-        _last_text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        h = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        suppress_clipboard_watch(5.0)
+        with _CLIPBOARD_LOCK:
+            if not _open_clipboard(win32clipboard):
+                return False
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+            finally:
+                # Without this, a SetClipboardData failure leaks the global
+                # clipboard lock for the life of the process.
+                try:
+                    win32clipboard.CloseClipboard()
+                except Exception:
+                    pass
+        _last_text_hash = h
+        # Reserve hash so watcher does not re-ingest our own write
+        db.claim_hash(h)
         return True
     except Exception as e:
         print(f"[clipboard] write text: {e}")
@@ -1028,17 +1098,29 @@ def write_clipboard_image(data: bytes) -> bool:
         if not data:
             return False
         data = _normalize_image_bytes(data)
+        h = hashlib.sha256(data).hexdigest()
         im = Image.open(io.BytesIO(data))
         buf = io.BytesIO()
         im.convert("RGB").save(buf, "BMP")
         dib = buf.getvalue()[14:]
         buf.close()
-        suppress_clipboard_watch()
-        win32clipboard.OpenClipboard(None)
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib)
-        win32clipboard.CloseClipboard()
-        _last_img_hash = hashlib.sha256(data).hexdigest()
+        suppress_clipboard_watch(5.0)
+        _last_img_hash = h
+        # Claim before SetClipboardData so a racing watcher cannot publish a replica
+        db.claim_hash(h)
+        with _CLIPBOARD_LOCK:
+            if not _open_clipboard(win32clipboard):
+                return False
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_DIB, dib)
+            finally:
+                # Without this, a SetClipboardData failure leaks the global
+                # clipboard lock for the life of the process.
+                try:
+                    win32clipboard.CloseClipboard()
+                except Exception:
+                    pass
         return True
     except Exception as e:
         print(f"[clipboard] write image: {e}")
@@ -1076,16 +1158,24 @@ def clipboard_loop():
                     as_shot = bool(
                         _client_ai_enabled and AI_AUTO and ai_engine and _looks_like_screenshot(img)
                     )
-                    _last_img_hash = h
                     if as_shot:
-                        r = post_capture_image(
-                            "127.0.0.1", hostname(), img,
-                            f"snip_{datetime.now():%H%M%S}.png", "screenshot",
-                            with_ai=True,
-                        )
-                        if r:
-                            print("[clip] clipboard snip → AI Screenshot Chat")
+                        # Prefer Screenshots folder watcher; only publish if folder never claims
+                        time.sleep(CLIPBOARD_SNIP_DEFER_SEC)
+                        if time.time() < _suppress_clipboard_until or h == _last_img_hash or db.hash_seen(h):
+                            _last_img_hash = h
+                        else:
+                            _last_img_hash = h
+                            r = post_capture_image(
+                                "127.0.0.1", hostname(), img,
+                                f"snip_{datetime.now():%H%M%S}.png", "screenshot",
+                                with_ai=True,
+                            )
+                            if r:
+                                print("[clip] clipboard snip → AI Screenshot Chat")
+                            else:
+                                print("[clip] clipboard snip skipped (folder/claim won)")
                     else:
+                        _last_img_hash = h
                         r = post_capture_image(
                             "127.0.0.1", hostname(), img,
                             f"clipboard_{datetime.now():%H%M%S}.png", "clipboard",
@@ -1139,7 +1229,7 @@ def screenshot_loop():
                     r = post_capture_image("127.0.0.1", hostname(), data, f.name, "screenshot")
                     if r:
                         _last_img_hash = h
-                        suppress_clipboard_watch(3.0)
+                        suppress_clipboard_watch(5.0)
                         print(f"[clip] screenshot → AI Screenshot Chat: {f.name}")
                     else:
                         _last_img_hash = h
@@ -1519,6 +1609,23 @@ def tunnel_worker():
         status="failed", error="All tunnels failed (Cloudflare may be rate-limited). Use LAN/hotspot or press Restart Tunnel.",
         healthy=False,
     )
+
+
+def _rag_rebuild_paths(srcs: list) -> list:
+    """Paths to re-ingest for a full rebuild. Prefer the original source path;
+    fall back to the local .txt blob when the original upload is gone (e.g. a
+    temp file from a browser upload), so a rebuild never silently drops sources."""
+    out = []
+    for s in srcs or []:
+        p = s.get("path")
+        if p and os.path.exists(p):
+            out.append(p)
+            continue
+        meta = s.get("meta") if isinstance(s.get("meta"), dict) else {}
+        blob = meta.get("blob")
+        if blob and os.path.exists(blob):
+            out.append(blob)
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1907,8 +2014,69 @@ class Handler(BaseHTTPRequestHandler):
             "stop_reason": done.get("stop_reason"),
             "rounds": done.get("rounds"),
             "coverage": done.get("coverage"),
+            "faithfulness": done.get("faithfulness"),
+            "unsupported_claims": done.get("unsupported_claims") or [],
             "model": done.get("model"),
             "chat_id": chat_id,
+        })
+        self._sse_end()
+
+    def _handle_rag_build_stream(self, sid: int) -> None:
+        """SSE ingest/build driving a real 'ready for retrieval' progress bar."""
+        try:
+            data = json.loads(self._body().decode() or "{}")
+        except json.JSONDecodeError:
+            data = {}
+        try:
+            from rag import ingest as rag_ingest
+            from rag import store as rag_store
+        except Exception as e:
+            return self._json(503, {"error": str(e)[:200]})
+        srcs = rag_store.list_sources(sid)
+        paths = _rag_rebuild_paths(srcs)
+        if isinstance(data.get("paths"), list) and data.get("paths"):
+            paths = [str(p) for p in data["paths"]]
+        if not paths:
+            return self._json(400, {"error": "no sources to build"})
+
+        evq: queue.Queue = queue.Queue()
+        result: dict = {}
+
+        def _progress(stage, pct, detail):
+            evq.put({"type": "progress", "stage": stage, "percent": pct, "detail": detail})
+
+        def _producer():
+            try:
+                result.update(rag_ingest.ingest_paths(sid, paths, force=True, progress=_progress))
+            except Exception as e:
+                result.update({"ok": False, "error": str(e)[:300]})
+            finally:
+                evq.put(None)
+
+        threading.Thread(target=_producer, daemon=True).start()
+        self._sse_begin()
+        self._sse_send({"type": "progress", "stage": "start", "percent": 0, "detail": f"{len(paths)} source(s)"})
+        idle = 0
+        while True:
+            try:
+                ev = evq.get(timeout=0.5)
+            except queue.Empty:
+                idle += 1
+                if idle % 4 == 0 and not self._sse_write_raw(b": keepalive\n\n"):
+                    break
+                continue
+            if ev is None:
+                break
+            if not self._sse_send(ev):
+                break
+        self._sse_send({
+            "type": "done",
+            "ok": bool(result.get("ok")),
+            "sources": result.get("sources"),
+            "chunks": result.get("chunks"),
+            "metrics": result.get("metrics"),
+            "revision_id": result.get("revision_id"),
+            "error": result.get("error"),
         })
         self._sse_end()
 
@@ -2315,6 +2483,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, key_vault.snapshot(include_status=_is_local_host(ip)))
             except Exception as e:
                 return self._json(500, {"error": f"keyvault: {e}"[:200]})
+
+        if path == "/api/github/status":
+            try:
+                import github_auth
+                return self._json(200, github_auth.status())
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/openfree/status":
             try:
@@ -2973,6 +3148,69 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        if path == "/api/workflows":
+            try:
+                import workflow_engine
+                return self._json(200, {"ok": True, "workflows": workflow_engine.list_workflows()})
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/workflows/tasks":
+            try:
+                import workflow_engine
+                return self._json(200, workflow_engine.snapshot())
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
+        if path.startswith("/api/workflows/task/") and path.endswith("/events"):
+            try:
+                import cortex_client
+
+                tid = path[len("/api/workflows/task/") : -len("/events")].strip("/")
+                if not tid or tid.startswith("agent_run_"):
+                    return self._json(404, {"error": "SSE only for Cortex workflow runs"})
+                cortex_client.ensure_engine(wait_sec=4.0)
+                base, key = cortex_client._cfg()
+                import urllib.request
+
+                req = urllib.request.Request(
+                    f"{base}/api/workflows/task/{tid}/events",
+                    headers=cortex_client._headers(key),
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                with urllib.request.urlopen(req, timeout=300) as upstream:
+                    while True:
+                        chunk = upstream.read(1024)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                return
+            except Exception as e:
+                try:
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)[:200]}).encode())
+                except Exception:
+                    pass
+                return
+
+        if path.startswith("/api/workflows/task/"):
+            try:
+                import workflow_engine
+                tid = path.rsplit("/", 1)[-1]
+                task = workflow_engine.get_task(tid)
+                if not task:
+                    return self._json(404, {"error": "unknown task"})
+                return self._json(200, {"ok": True, "task": task})
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
         if path == "/api/cortex/settings":
             try:
                 import cortex_orchestrator
@@ -3355,6 +3593,48 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             data = json.loads(self._body().decode() or "{}")
             return self._json(200, app_settings.update_settings(data))
+
+        if path == "/api/github/auth/start":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import github_auth
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, github_auth.start_device_flow(broad=bool(data.get("broad"))))
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/github/auth/poll":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import github_auth
+                data = json.loads(self._body().decode() or "{}")
+                out = github_auth.poll_device_flow(str(data.get("device_code") or ""))
+                if out.get("ok") and out.get("access_token"):
+                    token = out.pop("access_token")
+                    saved = github_auth.persist_token(token, app_settings)
+                    if not saved.get("ok"):
+                        return self._json(500, saved)
+                    st = github_auth.status()
+                    return self._json(200, {
+                        "ok": True,
+                        "connected": st.get("connected"),
+                        "login": st.get("login"),
+                        "scope": out.get("scope"),
+                    })
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/github/auth/disconnect":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import github_auth
+                return self._json(200, github_auth.clear_token(app_settings))
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/openfree/enable":
             # Host-only: sets env flags + launches the OpenFree gateway sidecar.
@@ -3772,6 +4052,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path.startswith("/api/rag/spaces/") and path.endswith("/self-score"):
+            try:
+                from rag import evaluate as rag_eval
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                depths = data.get("depths") if isinstance(data.get("depths"), list) else ["basic", "high", "max"]
+                out = rag_eval.self_score(
+                    sid, n=int(data.get("n") or 12), k=int(data.get("k") or 5),
+                    depths=tuple(str(d) for d in depths),
+                    hard=bool(data.get("hard")),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/settings"):
             try:
                 from rag import store as rag_store
@@ -3782,6 +4078,7 @@ class Handler(BaseHTTPRequestHandler):
                     sid,
                     name=str(data.get("name")) if data.get("name") else None,
                     depth_default=str(data.get("depth_default")) if data.get("depth_default") else None,
+                    profile=str(data.get("profile")) if data.get("profile") else None,
                     config=data.get("config") if isinstance(data.get("config"), dict) else None,
                 )
                 if not space:
@@ -3837,6 +4134,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path.startswith("/api/rag/spaces/") and path.endswith("/build-stream"):
+            return self._handle_rag_build_stream(int(path.split("/")[4]))
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/build"):
             try:
                 from rag import ingest as rag_ingest
@@ -3845,7 +4145,7 @@ class Handler(BaseHTTPRequestHandler):
                 sid = int(path.split("/")[4])
                 data = json.loads(self._body().decode() or "{}")
                 srcs = rag_store.list_sources(sid)
-                paths = [s.get("path") for s in srcs if s.get("path")]
+                paths = _rag_rebuild_paths(srcs)
                 if data.get("paths"):
                     paths = list(data.get("paths"))
                 if not paths:
@@ -4379,6 +4679,47 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/workflows/run":
+            try:
+                import workflow_engine
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(
+                    200,
+                    workflow_engine.start(
+                        str(data.get("workflow_id") or ""),
+                        goal=str(data.get("goal") or ""),
+                        breadth=int(data.get("breadth") or 3),
+                    ),
+                )
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/workflows/cancel":
+            try:
+                import workflow_engine
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, workflow_engine.cancel(str(data.get("task_id") or "")))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/workflows/clear":
+            try:
+                import workflow_engine
+                return self._json(200, workflow_engine.clear_finished())
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/workflows/recognize":
+            try:
+                import workflow_engine
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(
+                    200,
+                    workflow_engine.recognize(str(data.get("prompt") or data.get("text") or "")),
+                )
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
         if path == "/api/invoke/skills":
             try:
                 import invoke_registry
@@ -4699,7 +5040,11 @@ def main():
     # Ensure a clean bind — kill stale listeners / orphan tunnels from prior runs
     _kill_orphan_cloudflared()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
+    # Netie Space is the front-door UI; set AIRGPT_NO_BROWSER=1 for backend-only.
+    if os.environ.get("AIRGPT_NO_BROWSER", "").strip() not in ("1", "true", "TRUE", "yes", "YES"):
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
+    else:
+        print("  UI:     browser suppressed (AIRGPT_NO_BROWSER=1) — use Netie Space\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
