@@ -8,19 +8,27 @@ Canonical port is 8010 (see apps_registry.json) — do not reuse 8001 (vLLM).
 This module constantly polls /health + /api/engine/specs so Hosting/Cortex UI
 can show live CRM-style status. Soft-fail for personal chat when offline;
 engine config / business gate require a live sidecar.
+
+When CORTEX_AUTOSPAWN=1 (default), a single spawn attempt runs if /health is down
+and D:\\Cortex\\scripts\\start_cortex_engine.ps1 is reachable.
 """
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from ai_engine import load_env
 
 DEFAULT_URL = "http://127.0.0.1:8010"
+DEFAULT_CORTEX_ROOT = Path(os.environ.get("CORTEX_ROOT") or r"D:\Cortex")
 
 # Soft-fail cache so offline sidecar doesn't add latency every chat turn
 _avail_cache: dict[str, Any] = {"t": 0.0, "ok": False}
@@ -32,12 +40,20 @@ _poll: dict[str, Any] = {
 }
 _poll_lock = threading.Lock()
 _poller_started = False
+_spawn_lock = threading.Lock()
+_spawn_state: dict[str, Any] = {"attempted": False, "ok": False, "error": None, "t": 0.0}
 POLL_INTERVAL_SEC = 5.0
 
 
 def _cfg() -> tuple[str, str]:
     env = load_env()
-    return (env.get("CORTEX_API_URL") or DEFAULT_URL).rstrip("/"), env.get("CORTEX_API_KEY", "")
+    url = (
+        os.environ.get("CORTEX_API_URL")
+        or env.get("CORTEX_API_URL")
+        or DEFAULT_URL
+    ).rstrip("/")
+    key = os.environ.get("CORTEX_API_KEY") or env.get("CORTEX_API_KEY", "")
+    return url, key
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -99,8 +115,152 @@ def available() -> bool:
     return ok
 
 
+def _autospawn_enabled() -> bool:
+    env = load_env()
+    raw = (env.get("CORTEX_AUTOSPAWN") or os.environ.get("CORTEX_AUTOSPAWN") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _cortex_root() -> Path:
+    env = load_env()
+    return Path(env.get("CORTEX_ROOT") or os.environ.get("CORTEX_ROOT") or DEFAULT_CORTEX_ROOT)
+
+
+def _port_from_url(url: str) -> int:
+    try:
+        p = urlparse(url)
+        if p.port:
+            return int(p.port)
+    except Exception:
+        pass
+    return 8010
+
+
+def _read_url_hint() -> str | None:
+    hint = _cortex_root() / "data" / "engine" / "cortex_api_url.txt"
+    try:
+        if hint.is_file():
+            text = hint.read_text(encoding="utf-8").strip()
+            if text.startswith("http"):
+                return text.rstrip("/")
+    except Exception:
+        pass
+    return None
+
+
+def _powershell_exe() -> str:
+    for name in ("pwsh", "powershell"):
+        try:
+            subprocess.run([name, "-NoProfile", "-Command", "exit 0"], capture_output=True, timeout=5)
+            return name
+        except Exception:
+            continue
+    return "powershell"
+
+
+def spawn_engine(*, wait_sec: float = 12.0) -> dict[str, Any]:
+    """Start Cortex once via start_cortex_engine.ps1; poll /health until live or timeout."""
+    with _spawn_lock:
+        if available():
+            _spawn_state.update({"attempted": True, "ok": True, "error": None, "t": time.time()})
+            return {"ok": True, "already": True, "url": _cfg()[0]}
+        if _spawn_state.get("attempted") and not _spawn_state.get("ok"):
+            # One attempt per process unless forced by ensure_engine(force=True)
+            return {
+                "ok": False,
+                "error": _spawn_state.get("error") or "spawn already attempted",
+                "url": _cfg()[0],
+            }
+
+        root = _cortex_root()
+        script = root / "scripts" / "start_cortex_engine.ps1"
+        if not script.is_file():
+            err = f"missing launcher: {script}"
+            _spawn_state.update({"attempted": True, "ok": False, "error": err, "t": time.time()})
+            return {"ok": False, "error": err}
+
+        base, _ = _cfg()
+        port = _port_from_url(base)
+        try:
+            creationflags = 0
+            if os.name == "nt":
+                creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+                    subprocess, "DETACHED_PROCESS", 0x00000008
+                )
+            shell = _powershell_exe()
+            subprocess.Popen(
+                [
+                    shell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-File",
+                    str(script),
+                    "-Port",
+                    str(port),
+                ],
+                cwd=str(root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=creationflags,
+                close_fds=True,
+            )
+        except Exception as exc:
+            err = f"spawn failed: {exc}"[:200]
+            _spawn_state.update({"attempted": True, "ok": False, "error": err, "t": time.time()})
+            return {"ok": False, "error": err, "url": base}
+
+        deadline = time.monotonic() + max(1.0, float(wait_sec))
+        while time.monotonic() < deadline:
+            if health().get("ok"):
+                hint = _read_url_hint()
+                _spawn_state.update({"attempted": True, "ok": True, "error": None, "t": time.time()})
+                return {"ok": True, "spawned": True, "url": hint or base}
+            time.sleep(0.4)
+
+        err = "spawned but /health did not come up in time"
+        _spawn_state.update({"attempted": True, "ok": False, "error": err, "t": time.time()})
+        return {"ok": False, "error": err, "url": base}
+
+
+def ensure_engine(*, force: bool = False, wait_sec: float = 12.0) -> dict[str, Any]:
+    """Return live health; optionally spawn once when offline and CORTEX_AUTOSPAWN=1."""
+    if available():
+        return {"ok": True, "status": "live", "url": _cfg()[0], "spawned": False}
+    if not _autospawn_enabled() and not force:
+        return {
+            "ok": False,
+            "status": "standby",
+            "url": _cfg()[0],
+            "error": "offline (CORTEX_AUTOSPAWN disabled)",
+            "hint": r"Start Cortex: .\scripts\start_cortex_engine.ps1 -Port 8010",
+        }
+    if force:
+        with _spawn_lock:
+            _spawn_state["attempted"] = False
+    result = spawn_engine(wait_sec=wait_sec)
+    if result.get("ok"):
+        return {"ok": True, "status": "live", "url": result.get("url") or _cfg()[0], "spawned": True}
+    return {
+        "ok": False,
+        "status": "standby",
+        "url": result.get("url") or _cfg()[0],
+        "error": result.get("error"),
+        "hint": r"Start Cortex: .\scripts\start_cortex_engine.ps1 -Port 8010",
+    }
+
+
 def engine_specs() -> dict[str, Any]:
     data = _get("/api/engine/specs", timeout=2.0)
+    return data if isinstance(data, dict) else {"ok": False, "error": "unreachable"}
+
+
+def engine_activity() -> dict[str, Any]:
+    """GET /api/engine/activity — routines/workflows/races/apps control panel."""
+    data = _get("/api/engine/activity", timeout=3.0)
     return data if isinstance(data, dict) else {"ok": False, "error": "unreachable"}
 
 
@@ -109,12 +269,51 @@ def engine_backends() -> dict[str, Any]:
     return data if isinstance(data, dict) else {"ok": False, "error": "unreachable"}
 
 
-def engine_config(body: dict[str, Any]) -> dict[str, Any]:
-    """POST /api/engine/config — requires live Cortex engine."""
+def engine_just_works(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """POST /api/engine/just-works — one-button plan for the current machine.
+
+    The lubricant surface: Cortex picks a backend that actually runs here and
+    reports it in plain language. Research boosters stay off until a bench gate
+    is green, so this never turns on something unproven behind the user's back.
+    """
+    if not available():
+        ensure_engine(wait_sec=10.0)
     if not available():
         return {
             "ok": False,
-            "error": "Cortex engine offline. Start D:\\Cortex first: .\\scripts\\start_cortex_engine.ps1",
+            "require_engine": True,
+            "human": [
+                "The Cortex engine is not running yet, so I cannot check this machine.",
+                "Start it, then press the button again.",
+            ],
+            "error": "Cortex engine offline",
+        }
+    data = _post("/api/engine/just-works", body or {}, timeout=25.0)
+    if not isinstance(data, dict):
+        return {
+            "ok": False,
+            "human": ["Could not work out a setup for this machine. Nothing was changed."],
+            "error": "just-works failed",
+        }
+    return data
+
+
+def engine_bakeoff(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """POST /api/engine/bakeoff — soft probe of local backends (reachability)."""
+    if not available():
+        return {"ok": False, "error": "Cortex engine offline", "require_engine": True}
+    data = _post("/api/engine/bakeoff", body or {}, timeout=30.0)
+    return data if isinstance(data, dict) else {"ok": False, "error": "bakeoff failed"}
+
+
+def engine_config(body: dict[str, Any]) -> dict[str, Any]:
+    """POST /api/engine/config — requires live Cortex engine (one autospawn try)."""
+    if not available():
+        ensure_engine(wait_sec=10.0)
+    if not available():
+        return {
+            "ok": False,
+            "error": "Cortex engine offline. Start D:\\Cortex first: .\\scripts\\start_cortex_engine.ps1 -Port 8010",
             "require_engine": True,
         }
     data = _post("/api/engine/config", body, timeout=3.0)
@@ -142,8 +341,11 @@ def context_compact(messages: list[str], *, token_budget: int = 1200) -> dict[st
 
 
 def refresh_snapshot() -> dict[str, Any]:
-    """One poll cycle: health + engine specs + memory stats."""
+    """One poll cycle: health + engine specs + memory stats (autospawn once if offline)."""
     h = health()
+    if not h.get("ok") and _autospawn_enabled() and not _spawn_state.get("attempted"):
+        ensure_engine(wait_sec=8.0)
+        h = health()
     eng: dict[str, Any] = {}
     mem: dict[str, Any] = {}
     if h.get("ok"):
@@ -160,9 +362,10 @@ def refresh_snapshot() -> dict[str, Any]:
         "engine": eng,
         "memory": mem,
         "polled_at": time.time(),
+        "spawn": dict(_spawn_state),
         "hint": None
         if h.get("ok")
-        else "Start Cortex engine first (D:\\Cortex): .\\scripts\\start_cortex_engine.ps1",
+        else "Start Cortex engine first (D:\\Cortex): .\\scripts\\start_cortex_engine.ps1 -Port 8010",
     }
     with _poll_lock:
         _poll["t"] = time.monotonic()
@@ -323,6 +526,202 @@ def call_action(
         },
         timeout=10.0,
     )
+
+
+# -- Routines + installed apps (Cortex SoT; AirGPT UI is the driver) ----------
+
+
+def _detail_from_http(exc: urllib.error.HTTPError) -> Any:
+    try:
+        payload = json.loads(exc.read().decode())
+        return payload.get("detail", payload)
+    except Exception:
+        return str(exc)
+
+
+def _json_call(
+    method: str,
+    path: str,
+    body: dict | None = None,
+    *,
+    timeout: float = 8.0,
+) -> dict[str, Any]:
+    """JSON call that keeps FastAPI error bodies (humanize.explain objects)."""
+    base, key = _cfg()
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            f"{base}{path}",
+            data=data,
+            headers=_headers(key),
+            method=method.upper(),
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode()
+            out = json.loads(raw) if raw else {"ok": True}
+            if isinstance(out, dict):
+                out.setdefault("ok", True)
+                out["_http"] = r.status
+                return out
+            return {"ok": True, "data": out, "_http": r.status}
+    except urllib.error.HTTPError as e:
+        detail = _detail_from_http(e)
+        return {"ok": False, "detail": detail, "error": detail, "_http": e.code}
+    except Exception as e:
+        return {**_wf_down(str(e)[:200]), "_http": 503}
+
+
+def _wf_down(detail: str = "Cortex engine offline") -> dict[str, Any]:
+    return {
+        "ok": False,
+        "error": detail,
+        "hint": "Start Cortex on :8010 (CORTEX_AUTOSPAWN=1) or open Hosting → Netie Engine",
+    }
+
+
+def routines_list() -> dict[str, Any]:
+    ensure_engine(wait_sec=6.0)
+    data = _get("/api/routines", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
+def routines_draft(goal: str) -> dict[str, Any]:
+    """POST /api/routines/draft — preview only; nothing saved."""
+    ensure_engine(wait_sec=6.0)
+    return _json_call("POST", "/api/routines/draft", {"goal": goal}, timeout=6.0)
+
+
+def routines_create(goal: str, **extra: Any) -> dict[str, Any]:
+    """POST /api/routines — one sentence is enough; extras optional overrides."""
+    ensure_engine(wait_sec=6.0)
+    body = {"goal": goal, **{k: v for k, v in extra.items() if v is not None}}
+    return _json_call("POST", "/api/routines", body, timeout=8.0)
+
+
+def routines_pause(rid: str, reason: str = "user") -> dict[str, Any]:
+    return _json_call("POST", f"/api/routines/{rid}/pause", {"reason": reason}, timeout=4.0)
+
+
+def routines_resume(rid: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/routines/{rid}/resume", {}, timeout=4.0)
+
+
+def routines_run(rid: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/routines/{rid}/run", {}, timeout=60.0)
+
+
+def routines_delete(rid: str) -> dict[str, Any]:
+    return _json_call("DELETE", f"/api/routines/{rid}", timeout=4.0)
+
+
+def cortex_apps_list() -> dict[str, Any]:
+    """GET Cortex /api/apps — installed package store (not AirGPT port registry)."""
+    ensure_engine(wait_sec=6.0)
+    data = _get("/api/apps", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
+def cortex_apps_import_folder(path: str, name: str | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"path": path}
+    if name:
+        body["name"] = name
+    ensure_engine(wait_sec=6.0)
+    return _json_call("POST", "/api/apps/import-folder", body, timeout=30.0)
+
+
+def cortex_apps_approve(app_id: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/apps/{app_id}/approve", {}, timeout=8.0)
+
+
+def cortex_apps_reject(app_id: str, reason: str = "rejected") -> dict[str, Any]:
+    return _json_call("POST", f"/api/apps/{app_id}/reject", {"reason": reason}, timeout=6.0)
+
+
+def cortex_apps_dockerize(app_id: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/apps/{app_id}/dockerize", {}, timeout=15.0)
+
+
+def cortex_apps_start(app_id: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/apps/{app_id}/start", {}, timeout=20.0)
+
+
+def cortex_apps_stop(app_id: str) -> dict[str, Any]:
+    return _json_call("POST", f"/api/apps/{app_id}/stop", {}, timeout=8.0)
+
+
+def cortex_apps_delete(app_id: str) -> dict[str, Any]:
+    return _json_call("DELETE", f"/api/apps/{app_id}", timeout=6.0)
+
+
+# -- Background workflows (Cortex SoT) ---------------------------------------
+
+
+def workflows_list() -> dict[str, Any]:
+    ensure_engine(wait_sec=8.0)
+    data = _get("/api/workflows", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "Cortex engine offline")
+
+
+def workflows_snapshot() -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _get("/api/workflows/tasks", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return {**_wf_down(), "running": [], "finished": []}
+
+
+def workflows_get(task_id: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _get(f"/api/workflows/task/{task_id}", timeout=3.0)
+    if isinstance(data, dict) and (data.get("ok") or data.get("task")):
+        return data
+    return _wf_down()
+
+
+def workflows_run(body: dict[str, Any]) -> dict[str, Any]:
+    ensure_engine(wait_sec=10.0)
+    data = _post("/api/workflows/run", body, timeout=8.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    if isinstance(data, dict) and data.get("error"):
+        return {"ok": False, "error": str(data.get("error"))[:300]}
+    return _wf_down()
+
+
+def workflows_cancel(task_id: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _post("/api/workflows/cancel", {"task_id": task_id}, timeout=4.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down()
+
+
+def workflows_clear() -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _post("/api/workflows/clear", {}, timeout=4.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down()
+
+
+def workflows_recognize(prompt: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _post("/api/workflows/recognize", {"prompt": prompt}, timeout=4.0)
+    if isinstance(data, dict) and data.get("ok") is not False:
+        return data if data.get("ok") is not None else {"ok": True, **data}
+    return {**_wf_down(), "should_run": False, "template_id": None}
+
+
+def workflows_push_hardware(hardware: dict[str, Any]) -> dict[str, Any]:
+    ensure_engine(wait_sec=3.0)
+    data = _post("/api/workflows/hardware", {"hardware": hardware or {}}, timeout=3.0)
+    return data if isinstance(data, dict) else _wf_down()
 
 
 # Start background poll when module is imported (AirGPT server boot)

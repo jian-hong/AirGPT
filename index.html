@@ -1013,14 +1013,65 @@ body.rag-mode.rag-squeezed .rag-ask-chrome textarea::placeholder{color:transpare
   box-shadow:0 10px 28px rgba(0,0,0,.45);pointer-events:none;
 }
 .rag-pipe-node:hover .rag-pipe-tip,.rag-pipe-node:focus-within .rag-pipe-tip{display:block}
-.rag-chunk-samples{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:12px;text-align:left}
+.rag-chunk-samples{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;margin-top:12px;text-align:left}
 .rag-chunk-card{
-  padding:10px 12px;border-radius:12px;border:1px solid rgba(80,180,255,.22);background:rgba(0,0,0,.28);
-  font-size:12px;line-height:1.45;min-height:72px;cursor:default;
+  padding:10px 11px;border-radius:14px;border:1px solid rgba(80,180,255,.22);background:rgba(0,0,0,.28);
+  font-size:12px;line-height:1.45;min-height:118px;aspect-ratio:5/6;cursor:default;overflow:hidden;
 }
 .rag-chunk-card .ck-meta{font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
-.rag-chunk-card .ck-body{color:var(--text);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-.rag-chunk-card:hover .ck-body{-webkit-line-clamp:12}
+.rag-chunk-card .ck-body{color:var(--text);display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.rag-chunk-card:hover .ck-body{-webkit-line-clamp:14}
+body.theme-light .rag-chunk-card{background:#fff;border-color:rgba(0,0,0,.1);box-shadow:var(--shadow-soft)}
+body.theme-light .rag-chunk-card .ck-body{color:var(--text)}
+body.theme-light .rag-neon-card > .hint,
+body.theme-light .rag-neon-card p.hint{color:var(--muted)!important;opacity:1}
+.rag-source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;margin:10px 0 4px}
+.rag-source-tile{
+  aspect-ratio:5/6;border-radius:14px;border:1px solid var(--line);background:var(--surface);
+  padding:10px 8px 8px;display:flex;flex-direction:column;gap:6px;min-width:0;position:relative;
+  box-shadow:var(--shadow-soft);
+}
+.rag-source-tile .st-kind{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.rag-source-tile .st-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:1}
+.rag-source-tile .st-meta{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rag-source-tile .st-x{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:8px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:12px}
+.rag-source-tile .st-x:hover{background:rgba(0,0,0,.12);color:var(--text)}
+.rag-build-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:14px;align-items:start}
+@media(max-width:960px){.rag-build-layout{grid-template-columns:1fr}}
+.rag-url-row{display:flex;align-items:center;gap:8px}
+.rag-url-send{
+  width:40px;height:40px;flex-shrink:0;border-radius:12px;border:1px solid var(--line);
+  background:var(--surface2);color:var(--text);cursor:pointer;display:grid;place-items:center;font-size:16px;
+}
+.rag-url-send:hover{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.rag-url-send.warn{background:#b91c1c;color:#fff;border-color:#b91c1c;animation:ragShake .35s ease}
+@keyframes ragShake{0%,100%{transform:none}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.rag-url-warn{font-size:12px;color:#b91c1c;margin:0 0 6px;min-height:16px}
+.rag-rebuild-fab{
+  position:fixed;right:22px;bottom:88px;z-index:70;border:0;border-radius:999px;padding:12px 18px;
+  background:#111;color:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer;
+  box-shadow:0 12px 32px rgba(0,0,0,.28);display:inline-flex;align-items:center;gap:8px;
+}
+body.theme-dark .rag-rebuild-fab{background:#fff;color:#111}
+.rag-rebuild-fab:disabled{opacity:.55;cursor:wait}
+.rag-pending-modal{position:fixed;inset:0;z-index:240;display:none;place-items:center;padding:20px;background:rgba(8,8,10,.45);backdrop-filter:blur(8px)}
+.rag-pending-modal.open{display:grid}
+.rag-pending-box{width:min(92vw,420px);border-radius:18px;border:1px solid var(--line);background:var(--surface);padding:20px 18px 16px;position:relative;box-shadow:0 24px 56px rgba(0,0,0,.35)}
+.rag-pending-box .x{position:absolute;top:10px;right:10px;border:0;background:transparent;font-size:18px;cursor:pointer;color:var(--muted);width:32px;height:32px;border-radius:10px}
+.rag-pending-box .x:hover{background:rgba(0,0,0,.06);color:var(--text)}
+.rag-pending-box h3{margin:0 0 8px;font-size:16px}
+.rag-pending-box p{margin:0 0 14px;font-size:13px;color:var(--muted);line-height:1.45}
+.mem-item{padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);margin-bottom:8px}
+.mem-item strong{display:block;margin-bottom:4px}
+.mem-item .mem-actions-row{display:flex;gap:8px;margin-top:8px}
+.mem-item .mem-actions-row button{font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface2);cursor:pointer;color:var(--text)}
+.mem-view .mem-body{font-size:13px;line-height:1.45;color:var(--text);white-space:pre-wrap}
+.mem-edit-area{display:none}
+.mem-sec.editing .mem-edit-area{display:block}
+.mem-sec.editing .mem-view{display:none}
+.ragthink .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--text);border-radius:50%;margin-right:8px;vertical-align:-1px;animation:ragSpin .7s linear infinite}
+@keyframes ragSpin{to{transform:rotate(360deg)}}
+.ragthink.lost .t{color:#b91c1c}
 .side-section{border-bottom:0}
 .side-section-hdr{display:flex;align-items:center;gap:6px;padding:12px 0 5px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);cursor:pointer;user-select:none;opacity:.78;line-height:1.2;margin-top:6px;font-family:var(--sans);background:transparent;border:0;width:100%;box-sizing:border-box}
 .side-section-hdr:hover{color:var(--text);opacity:1}
@@ -1555,9 +1606,74 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 .stream-bub .body{min-height:1.2em}
 .msg-reply{font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;margin-left:4px}
 .msg-reply:hover{color:#fff;border-color:var(--line)}
-.reply-chip{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);background:var(--surface)}
-.reply-chip strong{color:#fff;font-weight:600;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.reply-chip button{border:0;background:transparent;color:#fff;cursor:pointer;font-size:14px}
+/* Legacy top reply strip — hidden; reply lives as a composer chip like attachments */
+.reply-chip{display:none!important}
+.reply-tile{
+  position:relative;display:inline-flex;align-items:center;gap:8px;max-width:min(72vw,320px);
+  min-height:36px;padding:6px 28px 6px 10px;border-radius:12px;
+  border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);
+  animation:stageIn .28s cubic-bezier(.22,1,.36,1) both;flex-shrink:0;
+}
+.reply-tile .reply-kicker{
+  flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.08);
+}
+.reply-tile .reply-snip{
+  font-size:12.5px;font-weight:550;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+}
+.reply-tile .stage-x{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:18px;height:18px;border:0;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+body.theme-light .reply-tile{background:#fff;border-color:rgba(0,0,0,.12);box-shadow:var(--shadow-soft)}
+body.theme-light .reply-tile .reply-kicker{background:rgba(0,0,0,.05);color:var(--muted)}
+body.theme-light .reply-tile .stage-x{background:rgba(0,0,0,.08);color:var(--text)}
+/* Plus menu (Claude-style composer tools) */
+.plus-menu-wrap{position:relative;flex-shrink:0}
+.plus-menu{
+  display:none;position:absolute;left:0;bottom:calc(100% + 10px);z-index:160;
+  min-width:248px;padding:6px;border-radius:14px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(18,18,20,.94);box-shadow:0 18px 44px rgba(0,0,0,.5);
+  backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
+  transform-origin:bottom left;animation:plusMenuIn .22s cubic-bezier(.22,1,.36,1) both;
+}
+.plus-menu.open{display:block}
+@keyframes plusMenuIn{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
+.plus-menu button{
+  width:100%!important;height:auto!important;min-height:40px;border-radius:10px!important;border:0!important;
+  background:transparent!important;color:var(--text)!important;display:flex!important;align-items:center!important;
+  justify-content:flex-start!important;gap:10px!important;padding:8px 10px!important;font-size:13px!important;
+  font-weight:500!important;opacity:1!important;text-align:left;cursor:pointer;
+}
+.plus-menu button:hover{background:rgba(255,255,255,.08)!important}
+.plus-menu button .pm-ico{width:18px;opacity:.85;flex-shrink:0;text-align:center}
+.plus-menu button .pm-kbd{margin-left:auto;font-size:10px;color:var(--muted);font-weight:500}
+.plus-menu button .pm-check{margin-left:auto;color:#60a5fa;font-size:14px}
+.plus-menu .pm-sep{height:1px;margin:4px 6px;background:rgba(255,255,255,.1)}
+body.theme-light .plus-menu{background:#fff;border-color:rgba(0,0,0,.1);box-shadow:0 16px 40px rgba(0,0,0,.12)}
+body.theme-light .plus-menu button:hover{background:rgba(0,0,0,.04)!important}
+body.theme-light .plus-menu .pm-sep{background:rgba(0,0,0,.08)}
+/* Project page contrast + ask CTA */
+body.theme-light .project-recent-row{color:var(--text)!important;border-top-color:rgba(0,0,0,.08)}
+body.theme-light .project-recent-row:hover{color:var(--text)!important;background:rgba(0,0,0,.03)}
+body.theme-light .project-recent-row small{color:var(--muted)!important}
+body.theme-light .project-recents h3{color:var(--muted)}
+body.theme-light .project-hub-hdr .back{color:var(--muted)}
+body.theme-light .project-hub-hdr .back:hover{color:var(--text);background:rgba(0,0,0,.04)}
+body.theme-light .center-empty.project-focus .focus-hint{color:var(--muted)}
+.project-ask-cta{
+  display:inline-flex;align-items:center;gap:8px;margin:18px 8px 0;padding:10px 16px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;
+  font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;letter-spacing:-.01em;
+  transition:background .18s,transform .18s cubic-bezier(.22,1,.36,1),border-color .18s;
+}
+.project-ask-cta:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.28);transform:translateY(-1px)}
+body.theme-light .project-ask-cta{background:#111;color:#fff;border-color:#111}
+body.theme-light .project-ask-cta:hover{background:#222;border-color:#222}
+.center-empty.project-focus{max-width:720px;margin:0 auto;width:100%}
+.project-recent-row{color:rgba(255,255,255,.9)}
+/* Memory fab below titlebar so it never covers Share */
+.mem-fab{top:52px}
+.main-chat-col:has(.chat-titlebar.show) .mem-fab{top:58px}
+.chat-titlebar-actions{gap:8px;padding-right:44px}
+@media(max-width:760px){.chat-titlebar-actions{padding-right:40px}.mem-fab{top:48px}}
 .ai-thinking span:nth-child(2){animation-delay:.2s}
 .ai-thinking span:nth-child(3){animation-delay:.4s}
 @keyframes think{0%,80%,100%{opacity:.25;transform:scale(.85)}40%{opacity:1;transform:scale(1)}}
@@ -1899,7 +2015,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
   <header class="topbar">
     <button type="button" class="side-toggle-top" id="sideToggleTop" title="Show / hide left panel" aria-label="Toggle left panel" onclick="toggleSideCollapsed()">☰</button>
     <button class="menu-btn" onclick="openSide()">☰</button>
-    <div class="brand" id="brandHome" title="AirGPT home" onclick="onBrandClick(event)">
+    <div class="brand brand-exit" id="brandHome" title="AirGPT home" onclick="onBrandClick(event)" onclick="openAirgptHome()" title="AirGPT — vault + Cortex">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2.5L3.5 19.5h3.2l1.6-3.4h7.4l1.6 3.4H21L12 2.5zm0 5.2l2.7 5.8H9.3L12 7.7z" fill="currentColor"/>
@@ -2066,7 +2182,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     <div class="lan-banner" id="lanBanner"><button type="button" class="banner-x" onclick="dismissBanner('lan')" aria-label="Dismiss">×</button><span id="lanBannerText"></span></div>
     <div class="lan-banner net-banner" id="netBanner"><button type="button" class="banner-x" onclick="dismissBanner('net')" aria-label="Dismiss">×</button><span id="netBannerText"></span></div>
     <div class="paywall-banner" id="paywallBanner"><button type="button" class="banner-x" onclick="dismissBanner('pay')" aria-label="Dismiss">×</button><span id="paywallBannerText"></span></div>
-    <div class="reply-chip" id="replyChip" style="display:none">
+    <div class="reply-chip" id="replyChip" style="display:none" aria-hidden="true">
       <span>Replying to</span> <strong id="replyChipText"></strong>
       <button type="button" onclick="clearReplyContext()" title="Cancel">×</button>
     </div>
@@ -2122,7 +2238,17 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
                 <button type="button" id="camBtn" title="Take photo">📷</button>
                 <button type="button" id="libBtn" title="Photo or file">📁</button>
               </div>
-              <button type="button" id="attachBtn" class="attach-plus" title="Attach photo or file">+</button>
+              <div class="plus-menu-wrap">
+                <button type="button" id="attachBtn" class="attach-plus" title="Add tools &amp; files" aria-haspopup="menu" aria-expanded="false">+</button>
+                <div class="plus-menu" id="plusMenu" role="menu" hidden>
+                  <button type="button" role="menuitem" data-pm="files"><span class="pm-ico">📎</span> Add files or photos <span class="pm-kbd">Ctrl+U</span></button>
+                  <button type="button" role="menuitem" data-pm="web"><span class="pm-ico">🌐</span> Web search <span class="pm-check" id="pmWebCheck" hidden>✓</span></button>
+                  <button type="button" role="menuitem" data-pm="research"><span class="pm-ico">🔎</span> Research this chat</button>
+                  <div class="pm-sep" role="separator"></div>
+                  <button type="button" role="menuitem" data-pm="skills"><span class="pm-ico">📜</span> Skills…</button>
+                  <button type="button" role="menuitem" data-pm="connectors"><span class="pm-ico">▦</span> Connectors…</button>
+                </div>
+              </div>
               <textarea id="input" rows="1" placeholder=""></textarea>
               <div class="composer-actions">
                 <div class="model-dd" id="modelDd">
@@ -3106,6 +3232,7 @@ let aiMode=(function(){
   return s==='1';
 })();
 let aiPending=false;
+let sendInFlight=false;
 let sessionGen=0;
 let streamSessionGen=0;
 let contextIds=[];
@@ -3145,6 +3272,7 @@ let openideMonaco=null;
 let connectPath=(()=>{const p=localStorage.getItem('airgpt_connect_path')||'tunnel';return p==='lan'?'lan':'tunnel'})();
 let terminalSessionId='';
 let stagedFiles=[];
+let replyContext=null; // {msgId, sessionId, snippet} — chip lives in composer-attach
 let cachedSessions=[];
 let cachedCategories=[];
 let groupByMode=localStorage.getItem('airgpt_group_by')||'date';
@@ -3344,14 +3472,12 @@ function shortFileName(n){
 function renderStageBar(){
   const bar=$('stageBar');if(!bar)return;
   const chrome=$('composerChrome');
-  if(!stagedFiles.length){
-    bar.classList.remove('show');bar.innerHTML='';
-    if(chrome)chrome.classList.remove('has-attach');
-    updateSendVisibility();return;
-  }
-  if(chrome)chrome.classList.add('has-attach');
-  bar.classList.add('show');
-  bar.innerHTML=stagedFiles.map((f,i)=>{
+  const replyHtml=replyContext?(()=>{
+    const snip=((replyContext.snippet||'')+'').replace(/\s+/g,' ').trim().slice(0,42);
+    const tip=esc((replyContext.snippet||'').slice(0,160));
+    return `<span class="reply-tile" title="${tip}"><span class="reply-kicker">Reply</span><span class="reply-snip">${esc(snip||('#'+replyContext.msgId))}</span><button type="button" class="stage-x" onclick="clearReplyContext()" title="Cancel reply" aria-label="Cancel reply">×</button></span>`;
+  })():'';
+  const filesHtml=stagedFiles.map((f,i)=>{
     const meta=fileTypeMeta(f);
     const title=esc(f.name||('file '+(i+1)));
     const tip=shortFileName(f.name||'file');
@@ -3362,7 +3488,36 @@ function renderStageBar(){
     }
     return `<span class="stage-tile ${meta.kind}" title="${title}"><span class="stage-letter">${esc(meta.letter)}</span><button type="button" class="stage-x" onclick="removeStagedFile(${i})" title="Remove" aria-label="Remove">×</button><span class="stage-name">${esc(tip)}</span></span>`;
   }).join('');
+  const has=!!(replyContext||stagedFiles.length);
+  if(!has){
+    bar.classList.remove('show');bar.innerHTML='';
+    if(chrome)chrome.classList.remove('has-attach');
+    updateSendVisibility();return;
+  }
+  if(chrome)chrome.classList.add('has-attach');
+  bar.classList.add('show');
+  bar.innerHTML=replyHtml+filesHtml;
   updateSendVisibility();
+}
+function clearReplyContext(){
+  replyContext=null;
+  const chip=$('replyChip');if(chip)chip.style.display='none';
+  renderStageBar();
+}
+function setReplyContext(msg){
+  const snip=((msg.text||msg.ai_analysis||msg.filename||'')+'').replace(/\s+/g,' ').trim().slice(0,120);
+  replyContext={msgId:msg.id,sessionId:msg.session_id||currentSession,snippet:snip,kind:msg.kind};
+  const chip=$('replyChip');
+  if(chip){chip.style.display='none';$('replyChipText').textContent=snip||('Message #'+msg.id)}
+  renderStageBar();
+}
+async function replyToMessage(id){
+  const m=msgById[id]||allHistory.find(x=>x.id===id);
+  if(!m)return toast('Message not found');
+  setReplyContext(m);
+  if(m.kind==='image')attachContext(id);
+  aiMode=true;localStorage.setItem('clipdrop_ai_mode','1');updateAiSwitch();
+  $('input')?.focus();
 }
 window.removeStagedFile=i=>{
   const f=stagedFiles[i];
@@ -3558,7 +3713,15 @@ function applyPlaceholder(opts){
     el.placeholder='';
     return;
   }
-  const next=sideView==='cortex'?pickCortexAgentHint():questionOfTheDay(false);
+  let next;
+  if(sideView==='project'||$('chat')?.querySelector('.project-focus')){
+    const label=MODE_LABELS[currentMode()]||currentMode()||'this project';
+    next='Ask about '+label+'…';
+  }else if(sideView==='cortex'){
+    next=pickCortexAgentHint();
+  }else{
+    next=questionOfTheDay(false);
+  }
   const force=!!(opts&&opts.force);
   if(!force&&el.placeholder===next)return;
   if(!el.placeholder||force){
@@ -4021,35 +4184,54 @@ async function renderMemPanel(){
   if(engLab)engLab.textContent=(eng.chroma?'chroma':'fts')+(eng.mempalace?' · wing':'');
   const na=d.next_action||{};
   const goals=d.goals||{};
-  const mems=(d.memories||[]).slice(0,12);
+  const mems=(d.memories||[]).slice(0,16);
   const folders=[...(d.folders||[])];
   const wing=(d.wing_folders||[]).filter(f=>!folders.some(x=>x.name===f.name));
   const ggoals=(d.global_goals||[]);
   const globalText=ggoals[0]?.body||goals.long_term||'';
+  const nextText=(na.body||'').trim();
+  const stateText=(goals.current_state||'').trim();
   body.innerHTML=`
-    <div class="mem-sec">
+    <div class="mem-sec" id="memSecNext">
       <h4>Temporary next action</h4>
-      <textarea id="memNextAction" placeholder="What should happen next in this chat…">${esc(na.body||'')}</textarea>
-      <div class="mem-actions"><button type="button" class="primary" onclick="saveMemNextAction()">Save next</button></div>
+      <div class="mem-view">${nextText?`<div class="mem-body">${esc(nextText)}</div>`:'<div class="hint">Nothing queued — Edit to set the next step.</div>'}
+        <div class="mem-actions-row"><button type="button" onclick="memToggleEdit('memSecNext')">Edit</button></div>
+      </div>
+      <div class="mem-edit-area">
+        <textarea id="memNextAction" placeholder="What should happen next in this chat…">${esc(na.body||'')}</textarea>
+        <div class="mem-actions"><button type="button" class="primary" onclick="saveMemNextAction()">Save</button>
+          <button type="button" onclick="memToggleEdit('memSecNext',false)">Cancel</button></div>
+      </div>
     </div>
-    <div class="mem-sec">
+    <div class="mem-sec" id="memSecGoals">
       <h4>Global goals · ${esc(MODE_LABELS[project]||project)}</h4>
-      <textarea id="memGlobalGoal" placeholder="Long-term / north-star for this project…">${esc(globalText)}</textarea>
-      <label style="display:block;font-size:10px;color:var(--muted);margin:8px 0 4px">Current state</label>
-      <textarea id="memCurrentState" placeholder="Where things stand…">${esc(goals.current_state||'')}</textarea>
-      <div class="mem-actions"><button type="button" class="primary" onclick="saveMemGoals()">Save goals</button></div>
+      <div class="mem-view">
+        ${globalText||stateText?`<div class="mem-body"><strong>North star</strong>\n${esc(globalText||'—')}\n\n<strong>Current state</strong>\n${esc(stateText||'—')}</div>`:'<div class="hint">No goals yet — Edit to set them. Auto-updates from significant chats.</div>'}
+        <div class="mem-actions-row"><button type="button" onclick="memToggleEdit('memSecGoals')">Edit</button></div>
+      </div>
+      <div class="mem-edit-area">
+        <textarea id="memGlobalGoal" placeholder="Long-term / north-star for this project…">${esc(globalText)}</textarea>
+        <label style="display:block;font-size:10px;color:var(--muted);margin:8px 0 4px">Current state</label>
+        <textarea id="memCurrentState" placeholder="Where things stand…">${esc(goals.current_state||'')}</textarea>
+        <div class="mem-actions"><button type="button" class="primary" onclick="saveMemGoals()">Save</button>
+          <button type="button" onclick="memToggleEdit('memSecGoals',false)">Cancel</button></div>
+      </div>
     </div>
     <div class="mem-sec">
-      <h4>Memories</h4>
+      <h4>Memories · ${esc(MODE_LABELS[project]||project)}</h4>
       <div class="mem-search-row">
         <input type="text" id="memSearchQ" placeholder="Search index…"/>
         <button type="button" onclick="runMemSearch()">Search</button>
       </div>
       <div class="mem-list" id="memList">${mems.length?mems.map(m=>`
-        <div class="mem-item"><strong>${esc(m.title||m.kind||'note')}</strong>${esc((m.body||'').slice(0,160))}${m.body&&m.body.length>160?'…':''}
-        <div class="mem-meta">${esc(m.folder||'general')} · ${esc(m.kind||'')}${m.source?' · '+esc(m.source):''}</div></div>`).join(''):'<div class="hint">No memories yet — drop text or add below.</div>'}</div>
-      <textarea id="memNewBody" placeholder="Add a memory note…" style="margin-top:8px"></textarea>
-      <div class="mem-actions"><button type="button" class="primary" onclick="addMemNote()">Add memory</button></div>
+        <div class="mem-item"><strong>${esc(m.title||m.kind||'note')}</strong>
+        <div class="mem-body">${esc((m.body||'').slice(0,220))}${m.body&&m.body.length>220?'…':''}</div>
+        <div class="mem-meta">${esc(m.folder||'general')} · ${esc(m.kind||'')}${m.source?' · '+esc(m.source):''}</div></div>`).join(''):'<div class="hint">No memories yet — they accumulate from significant chats automatically.</div>'}</div>
+      <div class="mem-actions" style="margin-top:10px"><button type="button" onclick="memShowAddNote()">+ Add note</button></div>
+      <div id="memAddNoteWrap" style="display:none;margin-top:8px">
+        <textarea id="memNewBody" placeholder="Add a memory note…"></textarea>
+        <div class="mem-actions"><button type="button" class="primary" onclick="addMemNote()">Save note</button></div>
+      </div>
     </div>
     <div class="mem-sec">
       <h4>Folders in this chat</h4>
@@ -4057,6 +4239,9 @@ async function renderMemPanel(){
         <div class="mem-folder"><span class="ico">📁</span>${esc(f.name||f.id||'')}${f.count!=null?' · '+f.count:''}</div>`).join('')||'<div class="hint">No folders yet</div>'}
       </div>
       <div class="mem-actions" style="margin-top:10px">
+        <button type="button" onclick="memShowAddFolder()">+ Folder</button>
+      </div>
+      <div id="memAddFolderWrap" style="display:none;margin-top:8px;display:none" class="mem-actions">
         <input type="text" id="memNewFolder" placeholder="New folder name" style="flex:1;min-width:120px"/>
         <button type="button" onclick="addMemFolder()">Add</button>
       </div>
@@ -4067,6 +4252,16 @@ async function renderMemPanel(){
     </div>`;
   setupMemDropZone();
 }
+window.memToggleEdit=(id,on)=>{
+  const el=$(id);if(!el)return;
+  const open=typeof on==='boolean'?on:!el.classList.contains('editing');
+  el.classList.toggle('editing',open);
+};
+window.memShowAddNote=()=>{const w=$('memAddNoteWrap');if(w)w.style.display='block';$('memNewBody')?.focus()};
+window.memShowAddFolder=()=>{
+  const w=$('memAddFolderWrap');if(!w)return;
+  w.style.display='flex';w.style.gap='8px';$('memNewFolder')?.focus();
+};
 function setupMemDropZone(){
   const z=$('memDropZone');if(!z||z._bound)return;z._bound=true;
   z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over')});
@@ -4152,29 +4347,32 @@ function setupMemFab(){
 }
 async function showProjectFocus(key){
   const label=MODE_LABELS[key]||key;
-  const q=questionOfTheDay(true);
   applyCategory(key);
   sideView='project';
   await renderProjectRail(key);
-  const recents=(cachedSessions||[]).filter(s=>(s.category||s.mode||'')===key||(MODE_LABELS[s.category]&&s.category===key)).slice(0,6);
+  const recents=(cachedSessions||[]).filter(s=>(s.category||s.mode||'')===key||(MODE_LABELS[s.category]&&s.category===key)).slice(0,8);
   const recentHtml=recents.length?recents.map(s=>{
     const when=s.updated_at?new Date(s.updated_at*1000).toLocaleString([],{month:'short',day:'numeric'}):'';
     return `<div class="project-recent-row" data-sid="${s.id}"><div>${esc(s.title||('Chat #'+s.id))}</div><small>${esc(when)}</small></div>`;
-  }).join(''):`<div class="hint" style="padding:8px 0">No chats yet in this project — ask below.</div>`;
+  }).join(''):`<div class="hint" style="padding:8px 0;color:var(--muted)">No chats yet — ask below to start one.</div>`;
   $('chat').innerHTML=`<div class="center-empty project-focus chat-page-enter">
     <div class="project-hub-hdr">
       <button type="button" class="back" onclick="showProjectsPage({keepSession:true})">← All projects</button>
     </div>
     <div class="hero-title">${esc(label)}</div>
-    <p class="focus-hint">Ask anything below — or pick a recent chat.</p>
-    <p class="hero-sub qotd" id="focusQotd">${esc(q)}</p>
+    <p class="focus-hint">Continue a recent chat, or ask something new.</p>
+    <button type="button" class="project-ask-cta" id="projectAskCta">Ask about ${esc(label)}</button>
     <div class="project-recents"><h3>Recents</h3>${recentHtml}</div>
   </div>`;
-  $('focusQotd')?.addEventListener('click',()=>useQuestionInInput(q));
+  $('projectAskCta')?.addEventListener('click',()=>{
+    const el=$('input');
+    if(el){el.focus();el.placeholder='Ask about '+label+'…'}
+    toast('Ask about '+label);
+  });
   $('chat').querySelectorAll('.project-recent-row').forEach(row=>{
     row.onclick=()=>openSession(parseInt(row.dataset.sid,10));
   });
-  applyPlaceholder();
+  applyPlaceholder({force:true});
   updateProjectBtn?.();
   if(memPanelOpen)toggleMemPanel(false);
   syncMemFabVisibility();
@@ -4189,26 +4387,6 @@ async function startProjectChat(key){
   showProjectFocus(key);
   loadVaultTree();
   toast(MODE_LABELS[key]||'Ready');
-}
-let replyContext=null; // {msgId, sessionId, snippet}
-function clearReplyContext(){
-  replyContext=null;
-  const chip=$('replyChip');if(chip)chip.style.display='none';
-}
-function setReplyContext(msg){
-  const snip=((msg.text||msg.ai_analysis||msg.filename||'')+'').replace(/\s+/g,' ').trim().slice(0,120);
-  replyContext={msgId:msg.id,sessionId:msg.session_id||currentSession,snippet:snip,kind:msg.kind};
-  const chip=$('replyChip');
-  if(chip){chip.style.display='flex';$('replyChipText').textContent=snip||('Message #'+msg.id)}
-}
-async function replyToMessage(id){
-  const m=msgById[id]||allHistory.find(x=>x.id===id);
-  if(!m)return toast('Message not found');
-  setReplyContext(m);
-  if(m.kind==='image')attachContext(id);
-  aiMode=true;localStorage.setItem('clipdrop_ai_mode','1');updateAiSwitch();
-  $('input')?.focus();
-  toast('Reply ready — send to open a new chat with this context');
 }
 async function syncAiModeToServer(){
   try{
@@ -5037,6 +5215,16 @@ function showSideView(view){
   }
   closeSideDrawerOnly();
 }
+function openAirgptHome(){
+  try{leaveOverlayWorkspace?.()}catch(e){}
+  sideView='chats';
+  updateSideNav?.();
+  showCenterProjects?.({asChats:true,keepSession:true});
+  // Cortex rail companion — open agent surface without leaving vault
+  setTimeout(()=>{try{if(window.bgTasks&&window.bgTasks.open){/* keep */} }catch(e){}},0);
+  toast('Vault + chats · Cortex is in Agents');
+}
+
 async function showHubPage(){
   leaveOverlayWorkspace();
   stashHomeChatIfNeeded();
@@ -6311,6 +6499,55 @@ function cortexCrmBannerHtml(cx){
     <button type="button" class="btn" style="margin-top:10px;border-radius:12px" onclick="showHostingPage()">Retry health</button>
   </div>`;
 }
+function _secErr(sec){
+  return sec&&sec.error?`<p style="color:var(--danger,#f87171);font-size:12px">${esc(String(sec.error))}</p>`:'';
+}
+function engineActivityCardHtml(act){
+  if(!act||!act.ok){
+    return `<div class="cortex-card" id="engineActivityCard" style="margin-bottom:14px">
+      <h3>Engine activity</h3>
+      <p style="color:var(--muted);font-size:12px">${esc((act&&act.error)||'Cortex activity unreachable')}</p>
+    </div>`;
+  }
+  const r=act.routines||{}, w=act.workflows||{}, races=act.races||{}, apps=act.apps||{};
+  const budget=r.budget||{};
+  const due=(r.due_soon||[]).slice(0,5).map(d=>`<li>${esc(d.name||d.id)} · ${esc(String(d.in_seconds))}s</li>`).join('')||'<li>—</li>';
+  const activeWf=(w.active||[]).slice(0,5).map(x=>`<li>${esc(x.title||x.id)} · ${esc(x.status||'')}</li>`).join('')||'<li>—</li>';
+  const recentWf=(w.recent||[]).slice(0,5).map(x=>`<li>${esc(x.title||x.id)} · ${esc(x.status||'')}</li>`).join('')||'<li>—</li>';
+  const families=(races.families||[]).slice(0,5).map(f=>`<li>${esc(f.family||f.name||JSON.stringify(f))}</li>`).join('')||'<li>—</li>';
+  const drafts=(apps.pending_drafts||[]).slice(0,5).map(a=>`<li>${esc(a.name||a.id)} · ${esc(a.stack||'')}</li>`).join('')||'<li>—</li>';
+  const runningApps=(apps.running||[]).slice(0,5).map(a=>`<li>${esc(a.name||a.id)} · :${esc(String(a.port||'?'))}</li>`).join('')||'<li>—</li>';
+  return `<div class="cortex-card" id="engineActivityCard" style="margin-bottom:14px">
+    <h3>Engine activity</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px;font-size:12px">
+      <div>
+        <b>Routines</b>
+        ${_secErr(r)}
+        <p>total ${esc(String(r.total??0))} · paused ${esc(String(r.paused??0))} · running ${(r.running||[]).length}</p>
+        <p>budget ${esc(String(budget.spent_today_myr??budget.spent_myr??0))}/${esc(String(budget.cap_myr??25))} MYR</p>
+        <ul style="margin:6px 0 0 16px;padding:0">${due}</ul>
+      </div>
+      <div>
+        <b>Workflows</b>
+        ${_secErr(w)}
+        <p>Active</p><ul style="margin:4px 0 8px 16px;padding:0">${activeWf}</ul>
+        <p>Recent</p><ul style="margin:4px 0 0 16px;padding:0">${recentWf}</ul>
+      </div>
+      <div>
+        <b>Races</b>
+        ${_secErr(races)}
+        <ul style="margin:6px 0 0 16px;padding:0">${families}</ul>
+      </div>
+      <div>
+        <b>Apps</b>
+        ${_secErr(apps)}
+        <p>approved ${esc(String(apps.approved??0))} · blocked ${esc(String(apps.blocked??0))}</p>
+        <p>Drafts</p><ul style="margin:4px 0 8px 16px;padding:0">${drafts}</ul>
+        <p>Running</p><ul style="margin:4px 0 0 16px;padding:0">${runningApps}</ul>
+      </div>
+    </div>
+  </div>`;
+}
 async function showHostingPage(quiet){
   if(quiet&&sideView!=='hosting'){stopCortexCrmPoll();return}
   if(!quiet){
@@ -6320,10 +6557,11 @@ async function showHostingPage(quiet){
   }
   sideView='hosting';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
-  let eng={added:[],available:[],hardware:{}}, host={collaboration:{}}, cx={ok:false};
+  let eng={added:[],available:[],hardware:{}}, host={collaboration:{}}, cx={ok:false}, act={ok:false};
   try{eng=await api('/api/hosting/engines').then(r=>r.json())}catch(e){}
   try{host=await api('/api/hosting').then(r=>r.json())}catch(e){}
   try{cx=await api('/api/cortex/health').then(r=>r.json())}catch(e){}
+  try{act=await api('/api/engine/activity').then(r=>r.json()).catch(()=>({ok:false,error:'unreachable'}))}catch(e){act={ok:false,error:String(e)}}
   if(quiet&&sideView!=='hosting'){stopCortexCrmPoll();return}
   const added=eng.added||[];
   const runningN=added.filter(e=>e.status==='running').length;
@@ -6337,6 +6575,8 @@ async function showHostingPage(quiet){
     if(st){st.className='netie-status '+state;st.textContent=stateLbl}
     const banner=$('cortexCrmBanner');
     if(banner)banner.outerHTML=cortexCrmBannerHtml(cx);
+    const actCard=$('engineActivityCard');
+    if(actCard)actCard.outerHTML=engineActivityCardHtml(act);
     return;
   }
   const boxes=added.map(e=>netieEngineBoxHtml(e)).join('');
@@ -6348,9 +6588,19 @@ async function showHostingPage(quiet){
         <button type="button" class="netie-info-btn" title="Specs & optimizations" onclick="openNetieSpecs()">i</button>
         <span class="netie-status ${state}">${esc(stateLbl)}</span>
       </div>
-      <p class="netie-tag">Cortex owns the registry. Start the D:\\Cortex engine on :8010, then configure backends here. Press Apps to activate peers.</p>
+      <p class="netie-tag">Run AI models on this computer. Press the button below and it picks whatever actually works here. Everything else on this page is optional.</p>
+    </div>
+    <div class="cortex-card" id="justWorksCard" style="margin-top:14px">
+      <h3 style="margin:0 0 6px">Set it up for me</h3>
+      <p class="hint" style="margin:0 0 12px;line-height:1.5">Checks this computer and picks a setup that runs here. Nothing is installed or changed until you say so.</p>
+      <div class="btn-row" style="gap:10px;align-items:center">
+        <button type="button" class="btn primary" id="justWorksBtn" style="border-radius:12px;padding:12px 22px;font-size:15px;font-weight:650" onclick="engineJustWorks()">Set it up for me</button>
+        <span class="hint" id="justWorksState" style="font-size:12px"></span>
+      </div>
+      <div id="justWorksOut" style="margin-top:12px"></div>
     </div>
     ${cortexCrmBannerHtml(cx)}
+    ${engineActivityCardHtml(act)}
     <div class="netie-engines">${boxes}${addBox}</div>
     <div class="cortex-card" style="margin-top:16px">
       <h3>Collaboration</h3>
@@ -6364,6 +6614,51 @@ async function showHostingPage(quiet){
   </div>`;
   startCortexCrmPoll(()=>showHostingPage(true),['hosting']);
 }
+// One-button engine setup (the lubricant surface). Plans first, never applies
+// without a second explicit press. Every message is written for someone who
+// does not know what a backend is.
+// House rule: no em dashes or arrows in user-facing copy. Engine strings carry
+// them, so normalise here and collapse the spacing they leave behind.
+function jwClean(s){return String(s||'').replace(/\s*[—→]\s*/g,' - ').replace(/\s{2,}/g,' ').trim()}
+function jwAdvancedHtml(d){
+  const c=d.config||{}, p=d.platform||{};
+  const boosters=(d.boosters_available||[]).map(b=>
+    `<li>${esc(jwClean(b.label||b.id))}: off (${esc(jwClean(b.why_not_auto||'needs a benchmark first'))})</li>`).join('');
+  return `<details style="margin-top:10px">
+    <summary style="cursor:pointer;font-size:12px;opacity:.7">Advanced details</summary>
+    <div class="hint" style="margin-top:8px;font-size:12px;line-height:1.6">
+      <div>Backend: <code>${esc(c.backend||'?')}</code></div>
+      ${(c.optimizers||[]).length?`<div>Safe middleware on: ${(c.optimizers||[]).map(o=>`<code>${esc(o)}</code>`).join(' ')}</div>`:''}
+      <div>This computer: ${esc(p.system||'?')} ${esc(p.machine||'')}</div>
+      ${p.windows_gpu_note?`<div style="opacity:.75;margin-top:4px">${esc(jwClean(p.windows_gpu_note))}</div>`:''}
+      ${boosters?`<div style="margin-top:6px">Experimental, kept off:<ul style="margin:4px 0 0 16px">${boosters}</ul></div>`:''}
+    </div></details>`;
+}
+async function engineJustWorks(apply){
+  const btn=$('justWorksBtn'), state=$('justWorksState'), out=$('justWorksOut');
+  if(btn){btn.disabled=true;btn.textContent=apply?'Applying…':'Checking this computer…';}
+  if(state)state.textContent='';
+  try{
+    const r=await api('/api/engine/just-works',{method:'POST',body:JSON.stringify({apply:!!apply})}).then(x=>x.json());
+    const lines=(r.human&&r.human.length)?r.human:[r.error||'Could not work that out.'];
+    const clean=jwClean;
+    if(out){
+      out.innerHTML=`<div style="border-left:3px solid ${r.ok?'var(--ok,#2f9e44)':'#e03131'};padding:8px 0 8px 12px">
+        ${lines.map(l=>`<div style="font-size:13px;line-height:1.55">${esc(clean(l))}</div>`).join('')}
+      </div>${r.ok?jwAdvancedHtml(r):''}`;
+    }
+    if(r.ok&&!apply&&!r.applied){
+      if(state)state.textContent='Nothing changed yet.';
+      if(btn){btn.disabled=false;btn.textContent='Use this setup';btn.onclick=()=>engineJustWorks(true);}
+      return;
+    }
+    if(state)state.textContent=r.applied?'Saved.':'';
+    if(btn){btn.disabled=false;btn.textContent='Set it up for me';btn.onclick=()=>engineJustWorks();}
+  }catch(e){
+    if(out)out.innerHTML=`<div class="hint" style="color:#e03131">Could not reach the engine on this computer. Nothing was changed.</div>`;
+    if(btn){btn.disabled=false;btn.textContent='Set it up for me';btn.onclick=()=>engineJustWorks();}
+  }
+}
 async function showAppsHubPage(quiet){
   if(quiet&&sideView!=='apps')return;
   if(!quiet){
@@ -6374,7 +6669,9 @@ async function showAppsHubPage(quiet){
   sideView='apps';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
   let d={apps:[],port_conflicts_in_registry:[],note:''};
+  let pkgs={apps:[],ok:false};
   try{d=await api('/api/apps').then(r=>r.json())}catch(e){}
+  try{pkgs=await api('/api/cortex/apps').then(r=>r.json())}catch(e){}
   const conflicts=(d.port_conflicts_in_registry||[]).length
     ?`<p class="hint" style="color:#e6b84d">Registry port conflict: ${(d.port_conflicts_in_registry||[]).join(', ')}</p>`:'';
   const cards=(d.apps||[]).map(a=>{
@@ -6394,15 +6691,118 @@ async function showAppsHubPage(quiet){
       <div class="ah-actions">${openBtn||startBtn}${stopBtn||''}</div>
     </div>`;
   }).join('')||'<p class="hint">No apps in registry.</p>';
+  const pkgCards=(pkgs.apps||[]).map(cortexPkgCardHtml).join('')||(pkgs.ok===false
+    ?'<p class="hint" style="color:#e03131">Cortex packages unavailable — start the engine on :8010.</p>'
+    :'<p class="hint">No packages yet. Point at a project folder below.</p>');
+  const inp='width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <div class="netie-hero">
       <div class="netie-hero-top"><h2>Server</h2><span class="netie-status ${ (d.apps||[]).some(a=>a.running)?'live':'standby'}">ports</span></div>
       <p class="netie-tag">${esc(d.note||'Local services by port. Conflicts are blocked so previous projects don’t collide — checked against the Apps registry (OpenVault-friendly).')}</p>
     </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Cortex packages</h3>
+    <p class="hint" style="margin:0 0 8px">Drop a project folder — the engine names it, writes a Dockerfile if needed, and waits for your approval before it can run.</p>
+    <div class="cortex-card" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="cortexPkgPath" placeholder="D:\\path\\to\\project" style="${inp};flex:1;min-width:200px"/>
+        <button type="button" class="btn primary" onclick="cortexPkgImportFolder()">Import folder</button>
+      </div>
+    </div>
+    <div class="apps-hub-grid" style="margin-bottom:18px">${pkgCards}</div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Local ports</h3>
     ${conflicts}
     <div class="apps-hub-grid">${cards}</div>
     <p class="hint" style="margin-top:14px">Canonical: AirGPT :8765 · DMS v1 :3000 · Cortex/DMS v2 :8010 · LTX-2 :8020 · OpenFree :20128 · vLLM :8001 · Colibri :8002</p>
   </div>`;
+}
+function cortexPkgCardHtml(a){
+  const about=a.about||{};
+  const summary=about.summary||(a.stack?`${a.stack} app`:'App');
+  const will=(about.will_do||[]).map(x=>`<li>${esc(x)}</li>`).join('');
+  const watch=(about.watch_out||[]).map(x=>`<li style="color:#e03131">${esc(x)}</li>`).join('');
+  const reasons=(a.explained_reasons||[]).map(er=>{
+    if(typeof er==='string')return `<li>${esc(er)}</li>`;
+    return `<li><strong>${esc(er.title||'')}</strong> — ${esc(er.what||'')} ${esc(er.fix||'')}</li>`;
+  }).join('');
+  const st=esc(a.status||'draft');
+  const safe=about.safe_to_approve!==false && a.status==='draft';
+  const hasDocker=!!(a.manifest&&a.manifest.has_dockerfile)||a.has_dockerfile;
+  let actions='';
+  if(a.status==='draft'){
+    actions+=`<button type="button" class="btn primary" ${safe?'':'title="Review warnings first"'} onclick="cortexPkgApprove('${esc(a.id)}')">Approve</button>`;
+    actions+=`<button type="button" class="btn" onclick="cortexPkgReject('${esc(a.id)}')">Reject</button>`;
+  }
+  if(a.status==='approved'||a.status==='draft'){
+    if(!hasDocker)actions+=`<button type="button" class="btn" onclick="cortexPkgDockerize('${esc(a.id)}')">Dockerize</button>`;
+  }
+  if(a.status==='approved'){
+    actions+=`<button type="button" class="btn primary" onclick="cortexPkgStart('${esc(a.id)}')">Start</button>`;
+    actions+=`<button type="button" class="btn" onclick="cortexPkgStop('${esc(a.id)}')">Stop</button>`;
+  }
+  actions+=`<button type="button" class="btn" style="color:#e03131" onclick="cortexPkgDelete('${esc(a.id)}')">Delete</button>`;
+  const err=a.explained_error?(typeof a.explained_error==='string'?a.explained_error:(a.explained_error.title||'')):'';
+  return `<div class="apps-hub-card" style="min-width:260px">
+    <div class="ah-top"><h4>${esc(a.name||a.id)}</h4><span class="sess-agent-tag">${st}</span></div>
+    <p class="hint" style="margin:6px 0">${esc(summary)}</p>
+    ${will?`<ul style="margin:0 0 6px 16px;font-size:12px;color:var(--muted)">${will}</ul>`:''}
+    ${watch?`<ul style="margin:0 0 6px 16px;font-size:12px">${watch}</ul>`:''}
+    ${reasons?`<ul style="margin:0 0 6px 16px;font-size:12px">${reasons}</ul>`:''}
+    ${err?`<p class="hint" style="color:#e03131">${esc(err)}</p>`:''}
+    <div class="ah-actions" style="flex-wrap:wrap;gap:6px">${actions}</div>
+  </div>`;
+}
+async function cortexPkgImportFolder(){
+  const path=(document.getElementById('cortexPkgPath')?.value||'').trim();
+  if(!path){toast('Pick a project folder path');return}
+  try{
+    const r=await api('/api/cortex/apps/import-folder',{method:'POST',body:JSON.stringify({path})}).then(x=>x.json());
+    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
+    toast('Imported · '+(r.app&&r.app.about&&r.app.about.summary||'draft'));
+    showAppsHubPage(true);
+  }catch(e){toast('Import failed')}
+}
+async function cortexPkgApprove(id){
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id)+'/approve',{method:'POST',body:'{}'}).then(x=>x.json());
+    toast(r.ok?'Approved':_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Approve failed')}
+}
+async function cortexPkgReject(id){
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id)+'/reject',{method:'POST',body:JSON.stringify({reason:'rejected'})}).then(x=>x.json());
+    toast(r.ok?'Rejected':_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Reject failed')}
+}
+async function cortexPkgDockerize(id){
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id)+'/dockerize',{method:'POST',body:'{}'}).then(x=>x.json());
+    toast(r.ok?(r.created?'Dockerfile written':'Already had a Dockerfile'):_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Dockerize failed')}
+}
+async function cortexPkgStart(id){
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id)+'/start',{method:'POST',body:'{}'}).then(x=>x.json());
+    toast(r.ok?'Started':_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Start failed')}
+}
+async function cortexPkgStop(id){
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id)+'/stop',{method:'POST',body:'{}'}).then(x=>x.json());
+    toast(r.ok?'Stopped':_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Stop failed')}
+}
+async function cortexPkgDelete(id){
+  if(!confirm('Delete this package?'))return;
+  try{
+    const r=await api('/api/cortex/apps/'+encodeURIComponent(id),{method:'DELETE'}).then(x=>x.json());
+    toast(r.ok?'Deleted':_explainedToast(r.detail||r.error));
+    showAppsHubPage(true);
+  }catch(e){toast('Delete failed')}
 }
 async function appsHubStart(id){
   try{const r=await api('/api/apps/start',{method:'POST',body:JSON.stringify({id})}).then(x=>x.json());
@@ -6802,134 +7202,132 @@ async function ragAddResearchNew(path){
   }catch(e){toast('Create failed')}
 }
 
-// ===== Routines — scheduled, low-ceremony tasks (daily/weekly ingest) =====
-// A routine is a named, scheduled task that does not need a dedicated agent
-// app. Cards are scalable and editable and can play image, video, and music
-// with words. Persisted locally; running on a real clock ties to the
-// scheduler (roadmap). See the routine-design skill pack.
-const ROUTINE_DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const ROUTINE_TYPES=['text','image','video','music'];
-function routinesSave(a){try{localStorage.setItem('airgpt_routines',JSON.stringify(a||[]))}catch(e){}}
-function routinesLoad(){
-  try{const a=JSON.parse(localStorage.getItem('airgpt_routines')||'null');if(Array.isArray(a))return a;}catch(e){}
-  const seed=[
-    {id:'r_daily',title:'Daily ingest',purpose:'A short morning brief from your sources.',cadence:'daily',time:'08:00',day:1,type:['text'],source:'memory storage + web',text:'Add a source and media. This card can play an image, a video, and music with words.',img:'',video:'',music:'',size:'compact',enabled:true},
-    {id:'r_weekly',title:'Weekly ingest',purpose:'A Monday digest with highlights.',cadence:'weekly',time:'08:00',day:1,type:['text','image'],source:'memory storage',text:'Edit me. Attach an image or video URL to preview it here.',img:'',video:'',music:'',size:'large',enabled:true},
-  ];
-  routinesSave(seed);return seed;
+// ===== Routines — Cortex one-sentence draft → preview → Create =====
+// Contract: POST /api/cortex/routines/draft then POST /api/cortex/routines {goal}.
+// Local media-card routines are retired; Cortex owns schedule + governor.
+let _routinePreview=null;
+function _explainedToast(detail){
+  if(!detail)return 'Something went wrong';
+  if(typeof detail==='string')return detail;
+  return detail.title||detail.what||detail.fix||JSON.stringify(detail).slice(0,120);
 }
-function routineCadenceLabel(r){
-  if(r.cadence==='weekly')return 'Weekly · '+ROUTINE_DAYS[(Number(r.day)||1)%7]+(r.time?' '+r.time:'');
-  if(r.cadence==='time')return 'Daily · '+(r.time||'08:00');
-  return 'Daily'+(r.time?' · '+r.time:'');
-}
-function routineMediaHtml(r){
-  const h=r.size==='large'?'220px':'130px';
-  const t=Array.isArray(r.type)?r.type:[];
-  let out='';
-  if(t.includes('video')&&r.video)out+=`<video src="${esc(r.video)}" controls preload="metadata" style="width:100%;max-height:${h};border-radius:10px;background:#000;display:block;margin-bottom:8px"></video>`;
-  else if(t.includes('image')&&r.img)out+=`<img src="${esc(r.img)}" alt="" style="width:100%;max-height:${h};object-fit:cover;border-radius:10px;display:block;margin-bottom:8px"/>`;
-  if(t.includes('music')&&r.music)out+=`<audio src="${esc(r.music)}" controls preload="none" style="width:100%;margin-bottom:8px"></audio>`;
-  return out;
+function routineNextRunLabel(ts){
+  if(!ts)return '';
+  try{const d=new Date(Number(ts)*1000);if(isNaN(d.getTime()))return '';
+    return d.toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
+  }catch(e){return ''}
 }
 function routineCardHtml(r){
-  const big=r.size==='large';
-  return `<div class="cortex-card routine-card${big?' routine-lg':''}" style="margin:0;${big?'grid-column:span 2;':''}${r.enabled===false?'opacity:.55;':''}">
+  const paused=String(r.status||'')==='paused'||r.enabled===false;
+  const when=r.schedule_text||routineNextRunLabel(r.next_run_at)||'';
+  const err=r.explained_error||(r.paused_reason?_explainedToast(r.paused_reason):'');
+  return `<div class="cortex-card routine-card" style="margin:0;${paused?'opacity:.6;':''}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <strong style="flex:1">${esc(r.title||'Routine')}</strong>
-      <span class="sess-agent-tag">${esc(routineCadenceLabel(r))}</span>
+      <strong style="flex:1">${esc(r.name||'Routine')}</strong>
+      <span class="sess-agent-tag">${esc(when||(paused?'Paused':'Scheduled'))}</span>
     </div>
-    <p class="hint" style="margin:0 0 8px">${esc(r.purpose||'')}</p>
-    ${routineMediaHtml(r)}
-    ${r.text?`<p style="margin:0 0 8px;font-size:13px;white-space:pre-wrap">${esc(r.text)}</p>`:''}
-    ${r.source?`<p class="hint" style="margin:0 0 8px;opacity:.7">Source: ${esc(r.source)}</p>`:''}
+    <p class="hint" style="margin:0 0 8px">${esc(r.prompt||r.goal||'')}</p>
+    ${err?`<p class="hint" style="margin:0 0 8px;color:#e03131">${esc(typeof err==='string'?err:_explainedToast(err))}</p>`:''}
     <div class="btn-row" style="gap:6px;flex-wrap:wrap">
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineEdit('${esc(r.id)}')">Edit</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineToggleSize('${esc(r.id)}')">${big?'Compact':'Enlarge'}</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineDuplicate('${esc(r.id)}')">Duplicate</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineToggleEnabled('${esc(r.id)}')">${r.enabled===false?'Resume':'Pause'}</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineRunNow('${esc(r.id)}')">Run now</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineTogglePause('${esc(r.id)}',${paused?'false':'true'})">${paused?'Resume':'Pause'}</button>
       <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" onclick="routineDelete('${esc(r.id)}')">Delete</button>
     </div>
   </div>`;
 }
-function routineEditorHtml(r){
-  const t=Array.isArray(r.type)?r.type:['text'];
-  const typeChk=ROUTINE_TYPES.map(k=>`<label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:13px"><input type="checkbox" class="rt-type" value="${k}" ${t.includes(k)?'checked':''}/> ${k}</label>`).join('');
-  const dayOpts=ROUTINE_DAYS.map((d,i)=>`<option value="${i}" ${Number(r.day)===i?'selected':''}>${d}</option>`).join('');
-  const inp='width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;margin-bottom:8px';
-  return `<div class="cortex-card" id="routineEditor" style="margin-bottom:14px">
-    <h3 style="margin:0 0 10px">${r.id?'Edit routine':'New routine'}</h3>
-    <input id="rtTitle" placeholder="Title" value="${esc(r.title||'')}" style="${inp}"/>
-    <input id="rtPurpose" placeholder="One-line purpose" value="${esc(r.purpose||'')}" style="${inp}"/>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <select id="rtCadence" style="${inp};flex:1;min-width:120px">
-        <option value="daily" ${r.cadence==='daily'?'selected':''}>Daily</option>
-        <option value="weekly" ${r.cadence==='weekly'?'selected':''}>Weekly</option>
-        <option value="time" ${r.cadence==='time'?'selected':''}>Daily at time</option>
-      </select>
-      <select id="rtDay" style="${inp};flex:0 0 auto">${dayOpts}</select>
-      <input id="rtTime" type="time" value="${esc(r.time||'08:00')}" style="${inp};flex:0 0 auto"/>
-    </div>
-    <div style="margin:2px 0 10px">${typeChk}</div>
-    <input id="rtSource" placeholder="Source (feed, query, memory storage, folder)" value="${esc(r.source||'')}" style="${inp}"/>
-    <textarea id="rtText" placeholder="Words to show" rows="2" style="${inp};resize:vertical">${esc(r.text||'')}</textarea>
-    <input id="rtImg" placeholder="Image URL (optional)" value="${esc(r.img||'')}" style="${inp}"/>
-    <input id="rtVideo" placeholder="Video URL (optional)" value="${esc(r.video||'')}" style="${inp}"/>
-    <input id="rtMusic" placeholder="Music URL (optional)" value="${esc(r.music||'')}" style="${inp}"/>
+function routinePreviewHtml(d){
+  if(!d)return '';
+  const assumptions=(d.assumptions||[]).map(a=>`<li>${esc(a)}</li>`).join('');
+  const next=routineNextRunLabel(d.next_run_at);
+  return `<div class="cortex-card" id="routinePreview" style="margin-bottom:14px">
+    <h3 style="margin:0 0 8px">Preview · ${esc(d.name||'New routine')}</h3>
+    <p class="hint" style="margin:0 0 8px">${esc(d.schedule_text||'')}${next?' · next '+esc(next):''} · effort ${esc(d.depth||'basic')}</p>
+    <p style="margin:0 0 8px;font-size:13px">${esc(d.prompt||'')}</p>
+    ${assumptions?`<ul style="margin:0 0 12px 18px;font-size:12px;color:var(--muted);line-height:1.45">${assumptions}</ul>`:''}
     <div class="btn-row" style="gap:8px">
-      <button type="button" class="btn primary" onclick="routineSaveFromForm('${esc(r.id||'')}')">Save routine</button>
-      <button type="button" class="btn" onclick="showRoutinesPage()">Cancel</button>
+      <button type="button" class="btn primary" onclick="routineCreateFromPreview()">Create</button>
+      <button type="button" class="btn" onclick="_routinePreview=null;showRoutinesPage()">Cancel</button>
     </div>
   </div>`;
 }
-let _routineDraft=null;
-function routineNew(){_routineDraft={id:'',title:'',purpose:'',cadence:'daily',time:'08:00',day:1,type:['text'],source:'',text:'',img:'',video:'',music:'',size:'compact',enabled:true};showRoutinesPage();}
-function routineEdit(id){const r=routinesLoad().find(x=>x.id===id);_routineDraft=r?Object.assign({},r):null;showRoutinesPage();}
-function routineSaveFromForm(id){
-  const g=x=>document.getElementById(x);
-  if(!g('rtTitle'))return;
-  const old=routinesLoad().find(x=>x.id===id)||{};
-  const types=[...document.querySelectorAll('.rt-type:checked')].map(c=>c.value);
-  const r={
-    id:id||('r_'+Date.now().toString(36)),
-    title:(g('rtTitle').value||'Routine').trim()||'Routine',
-    purpose:(g('rtPurpose').value||'').trim(),
-    cadence:g('rtCadence').value||'daily',
-    day:Number(g('rtDay').value||1),
-    time:g('rtTime').value||'08:00',
-    type:types.length?types:['text'],
-    source:(g('rtSource').value||'').trim(),
-    text:(g('rtText').value||'').trim(),
-    img:(g('rtImg').value||'').trim(),
-    video:(g('rtVideo').value||'').trim(),
-    music:(g('rtMusic').value||'').trim(),
-    size:old.size||'compact',
-    enabled:old.enabled!==false,
-  };
-  const arr=routinesLoad();const i=arr.findIndex(x=>x.id===r.id);
-  if(i>=0)arr[i]=r;else arr.push(r);
-  routinesSave(arr);_routineDraft=null;toast('Routine saved');showRoutinesPage();
+function routineComposerHtml(){
+  const inp='width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;margin-bottom:8px';
+  const chips=( _routinePreview&&_routinePreview.suggestions)||[
+    'Summarize my open PRs every weekday morning',
+    'Check the site is up every 15 minutes',
+    'Deep research on our competitors every Monday morning'
+  ];
+  const chipHtml=chips.slice(0,4).map(s=>`<button type="button" class="btn" style="padding:4px 10px;font-size:11px;border-radius:999px" onclick="document.getElementById('rtGoal').value=${JSON.stringify(s)}">${esc(s)}</button>`).join('');
+  return `<div class="cortex-card" style="margin-bottom:14px">
+    <h3 style="margin:0 0 8px">What should it do?</h3>
+    <p class="hint" style="margin:0 0 8px">One sentence is enough. No schedule knobs — the engine guesses, you confirm.</p>
+    <textarea id="rtGoal" rows="2" placeholder="Summarize my open PRs every weekday morning" style="${inp};resize:vertical"></textarea>
+    <div class="btn-row" style="gap:8px;margin-bottom:8px;flex-wrap:wrap">${chipHtml}</div>
+    <button type="button" class="btn primary" onclick="routineDraftPreview()">Preview</button>
+  </div>`;
 }
-function _routineMutate(id,fn){const arr=routinesLoad();const i=arr.findIndex(x=>x.id===id);if(i<0)return;fn(arr[i],arr,i);routinesSave(arr);showRoutinesPage();}
-function routineDelete(id){if(!confirm('Delete this routine?'))return;_routineMutate(id,(r,arr,i)=>arr.splice(i,1));}
-function routineDuplicate(id){const arr=routinesLoad();const r=arr.find(x=>x.id===id);if(!r)return;arr.push(Object.assign({},r,{id:'r_'+Date.now().toString(36),title:(r.title||'Routine')+' copy'}));routinesSave(arr);showRoutinesPage();}
-function routineToggleSize(id){_routineMutate(id,r=>{r.size=r.size==='large'?'compact':'large';});}
-function routineToggleEnabled(id){_routineMutate(id,r=>{r.enabled=r.enabled===false;});}
+async function routineDraftPreview(){
+  const goal=(document.getElementById('rtGoal')?.value||'').trim();
+  if(!goal){toast('Tell me what to do first');return}
+  try{
+    const r=await api('/api/cortex/routines/draft',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
+    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
+    _routinePreview=Object.assign({}, r.draft||{}, {suggestions:r.suggestions||[], goal});
+    showRoutinesPage();
+  }catch(e){toast('Could not reach Cortex — is the engine on :8010?')}
+}
+async function routineCreateFromPreview(){
+  const goal=(_routinePreview&&(_routinePreview.goal||_routinePreview.prompt))||'';
+  if(!goal){toast('Tell me what to do first');return}
+  try{
+    const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
+    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
+    _routinePreview=null;toast('Routine created');showRoutinesPage();
+  }catch(e){toast('Create failed')}
+}
+async function routineRunNow(id){
+  try{
+    const r=await api('/api/cortex/routines/'+encodeURIComponent(id)+'/run',{method:'POST',body:'{}'}).then(x=>x.json());
+    toast(r.ok?'Running…':_explainedToast(r.detail||r.error));
+    showRoutinesPage();
+  }catch(e){toast('Run failed')}
+}
+async function routineTogglePause(id,pause){
+  const path=pause?'/pause':'/resume';
+  try{
+    const r=await api('/api/cortex/routines/'+encodeURIComponent(id)+path,{method:'POST',body:JSON.stringify({reason:'user'})}).then(x=>x.json());
+    toast(r.ok?(pause?'Paused':'Resumed'):_explainedToast(r.detail||r.error));
+    showRoutinesPage();
+  }catch(e){toast('Update failed')}
+}
+async function routineDelete(id){
+  if(!confirm('Delete this routine?'))return;
+  try{
+    const r=await api('/api/cortex/routines/'+encodeURIComponent(id),{method:'DELETE'}).then(x=>x.json());
+    toast(r.ok?'Deleted':_explainedToast(r.detail||r.error));
+    showRoutinesPage();
+  }catch(e){toast('Delete failed')}
+}
 async function showRoutinesPage(){
   sideView='routines';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
-  const list=routinesLoad();
-  const editor=_routineDraft?routineEditorHtml(_routineDraft):'';
-  const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Create one to start a daily or weekly ingest.</p>';
+  let list=[], budget=null, offline=false;
+  try{
+    const d=await api('/api/cortex/routines').then(x=>x.json());
+    if(d&&d.ok){list=d.routines||[];budget=d.budget||null}
+    else offline=true;
+  }catch(e){offline=true}
+  const preview=_routinePreview?routinePreviewHtml(_routinePreview):'';
+  const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Type one sentence below and preview it.</p>';
+  const bud=budget?`<p class="hint" style="margin:0 0 10px">Today's spend: RM${esc(String(budget.spent_myr??budget.spent??0))} / RM${esc(String(budget.cap_myr??budget.cap??25))}</p>`:'';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
-    <p class="cortex-tag">Simple recurring tasks such as daily and weekly ingest. No dedicated app needed. Cards are scalable and editable and can play image, video, and music with words.</p>
-    <div class="btn-row" style="margin-bottom:12px"><button type="button" class="btn primary" onclick="routineNew()">+ New routine</button></div>
-    ${editor}
+    <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing.</p>
+    ${offline?'<p class="hint" style="color:#e03131">Cortex engine offline — start :8010, then refresh.</p>':''}
+    ${bud}
+    ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
-    <p class="hint" style="margin-top:14px;opacity:.7">Scheduling runs when the scheduler is wired. For now this manages and previews routines and plays their media.</p>
   </div>`;
-  _routineDraft=null;
 }
 
 // ===== Vertex — Edge AI monitoring window (precision manufacturing) =====
@@ -7011,7 +7409,7 @@ async function showVertexPage(){
 }
 
 // ===== RAG Agent — knowledge spaces (Phase 0/1) =====
-let ragState={spaceId:0,space:null,chatId:0,depth:'high',tab:'overview',view:'',streaming:false,lastTraceId:'',useLlm:true,building:false,buildStage:'',vecInfo:null,summary:''};
+let ragState={spaceId:0,space:null,chatId:0,depth:'high',tab:'overview',view:'',streaming:false,lastTraceId:'',useLlm:true,building:false,buildStage:'',vecInfo:null,summary:'',pendingBuild:false,buildTick:false,buildStageId:''};
 const RAG_ARCHS=[
   ['hybrid_rrf','Hybrid retrieval','Dense + keyword search, fused and reranked — solid default'],
   ['agentic','Iterative research','Retrieves in rounds until the answer is sufficient'],
@@ -7400,7 +7798,10 @@ function ragRenderSpace(){
   syncRagAskBar();
   ragRenderTab();
 }
-function ragSetTab(t){ragState.tab=t;ragRenderSpace();}
+function ragSetTab(t){
+  if(ragState.tab==='build'&&t!=='build') ragMaybePromptPendingBuild();
+  ragState.tab=t;ragRenderSpace();
+}
 function ragToggleLlm(){ragState.useLlm=!ragState.useLlm;['ragLlmBtn','ragLlmMini'].forEach(id=>{const b=$(id);if(b)b.textContent='LLM '+(ragState.useLlm?'ON':'off');});toast(ragState.useLlm?'LLM reasoning ON (grounded)':'Extractive only (offline)');}
 
 async function ragRenderTab(){
@@ -7466,59 +7867,67 @@ async function ragRenderTab(){
     const lock=ragState.building?' rag-build-locked':'';
     body.innerHTML='<div class="empty">Loading sources…</div>';
     let sources=[];try{sources=(await api('/api/rag/spaces/'+sid+'/sources').then(r=>r.json())).sources||[]}catch(e){}
-    const list=sources.map(x=>{
+    const list=sources.length?`<div class="rag-source-grid">${sources.map(x=>{
       const isChat=/(^|[\\/])chat_\d+\.md$/.test(String(x.path||''))||String(x.title||'').startsWith('chat_');
       const kind=isChat?'Chat':(/url_/i.test(String(x.title||x.path||''))?'Link':'File');
-      return `<div class="cortex-card" style="margin-bottom:6px;display:flex;align-items:center;gap:10px">
-        <div style="min-width:0;flex:1"><strong>${esc(x.title||ragFileName(x.path)||'source')}</strong>
-          <span style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);margin-left:6px;opacity:.75">${kind}</span>
-          <div class="hint" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.status||'')} · ${esc(ragFileName(x.path)||'')}</div></div>
-        <button type="button" class="btn" style="padding:2px 8px;flex-shrink:0" title="Remove source" onclick="ragDeleteSource(${x.id})">✕</button>
-      </div>`;}).join('')||'<p class="hint">No sources yet — add files, chats, a host folder, or a link. Ingest chunks → embeds → indexes immediately.</p>';
+      const title=esc(x.title||ragFileName(x.path)||'source');
+      return `<div class="rag-source-tile" title="${title}">
+        <button type="button" class="st-x" title="Remove" onclick="ragDeleteSource(${x.id})">✕</button>
+        <div class="st-kind">${kind}</div>
+        <div class="st-title">${title}</div>
+        <div class="st-meta">${esc(x.status||'ready')}</div>
+      </div>`;}).join('')}</div>`:'<p class="hint">No sources yet — add files, chats, a folder, or a link.</p>';
     body.innerHTML=`
-      <div class="rag-neon-card">
-        <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Sources</div>
-        <p class="hint" style="margin:0 0 10px">Add material here. Pack import is only from the RAG library (creates a new space) — not into an existing RAG.</p>
-        <div class="btn-row" style="margin-bottom:8px">
-          <button type="button" class="btn primary" onclick="document.getElementById('ragUpFiles').click()">Add files…</button>
-          <input type="file" id="ragUpFiles" multiple style="display:none" onchange="ragUploadFiles(this)"/>
-          <button type="button" class="btn" onclick="ragToggleChatAttach()">Add chats…</button>
+      <div class="rag-build-layout">
+        <div class="rag-neon-card">
+          <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Sources</div>
+          <p class="hint" style="margin:0 0 10px;color:var(--muted)">Add material here. Import a previously built RAG pack from the library creates a <em>new</em> space.</p>
+          <div class="btn-row" style="margin-bottom:8px;flex-wrap:wrap">
+            <button type="button" class="btn primary" onclick="document.getElementById('ragUpFiles').click()">Add files…</button>
+            <input type="file" id="ragUpFiles" multiple style="display:none" onchange="ragUploadFiles(this)"/>
+            <button type="button" class="btn" onclick="ragToggleChatAttach()">Add chats…</button>
+            <button type="button" class="btn" onclick="ragImportPackPrompt()" title="Import a previously built RAG zip/folder">Import pack…</button>
+          </div>
+          <div id="ragChatAttach" data-open="0" style="margin-bottom:8px"></div>
+          <div class="btn-row" style="margin-bottom:8px">
+            <input id="ragPathInput" placeholder="Host path — D:\\docs\\my-project" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
+            <button type="button" class="btn" onclick="ragIngestPath()">Ingest path</button>
+          </div>
+          <div id="ragIngestStatus" class="hint" style="margin-bottom:10px;color:var(--muted)"></div>
+          ${list}
         </div>
-        <div id="ragChatAttach" data-open="0" style="margin-bottom:8px"></div>
-        <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragPathInput" placeholder="Host path — D:\\docs\\my-project" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
-          <button type="button" class="btn" onclick="ragIngestPath()">Ingest path</button>
+        <div>
+          <div class="rag-neon-card${lock}" id="ragBuildControls">
+            <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Ingest links</div>
+            <p class="rag-url-warn" id="ragUrlWarn" aria-live="polite"></p>
+            <div class="rag-url-row" style="margin-bottom:10px">
+              <input id="ragUrlInput" placeholder="YouTube / article / docs URL…" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit" onkeydown="if(event.key==='Enter')ragIngestUrlSmart()"/>
+              <button type="button" class="rag-url-send" id="ragUrlSend" title="Ingest link" onclick="ragIngestUrlSmart()">↗</button>
+            </div>
+            <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Web search</div>
+            <div class="btn-row" style="margin-bottom:8px">
+              <input id="ragWebInput" placeholder="Search free web — e.g. how does RRF fusion work" onkeydown="if(event.key==='Enter')ragWebSearch()" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit"/>
+              <button type="button" class="btn primary" onclick="ragWebSearch()" title="Search the public web and pick pages to index">🔎 Search</button>
+            </div>
+            <div id="ragWebResults" style="margin-bottom:8px"></div>
+            <div class="rag-build-progress${ragState.building?' show':''}${ragState.buildTick?' done-tick show':''}" id="ragBuildProgress">
+              <div class="rag-build-spinner"></div>
+              <div style="min-width:0"><div style="font-size:13px" id="ragBuildStageLabel">${esc(ragState.buildStage||'Queued…')}</div>
+              <div class="hint" style="font-size:11px" id="ragBuildStatus">${ragState.building?'Build running — other tabs stay usable.':''}</div></div>
+            </div>
+            <div id="ragScoreOut" class="hint" style="margin-top:8px"></div>
+          </div>
+          <div class="rag-neon-card rag-pipe-panel" style="margin-top:12px">
+            <div class="hint" style="margin:0 0 2px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Pipeline</div>
+            <p class="hint" style="margin:0 0 8px;color:var(--muted)">Each stage extracts → chunks → embeds → retrieves. Samples are parent chunks (not the full index).</p>
+            <div id="ragPipeWrap">${ragPipeHtml(nodes,ragState.buildStageId||'')}</div>
+            <div id="ragChunkSamples" class="rag-chunk-samples"><span class="hint">Loading chunk samples…</span></div>
+            <div id="ragVecStatus" class="hint" style="margin-top:12px;font-size:11px"></div>
+          </div>
         </div>
-        <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragUrlInput" placeholder="https://link-to-article-or-docs" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
-          <button type="button" class="btn" onclick="ragIngestUrl()">Ingest link</button>
-        </div>
-        <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragWebInput" placeholder="Search the web (free · no key) — e.g. how does RRF fusion work" onkeydown="if(event.key==='Enter')ragWebSearch()" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
-          <button type="button" class="btn" onclick="ragWebSearch()">🔎 Web search</button>
-        </div>
-        <div id="ragWebResults" style="margin-bottom:8px"></div>
-        <div id="ragIngestStatus" class="hint" style="margin-bottom:10px"></div>
-        ${list}
       </div>
-      <div class="rag-neon-card${lock}" id="ragBuildControls">
-        <p class="hint" style="margin:0 0 10px;line-height:1.5">Add every file you want this space to know, then press <strong>Rebuild index</strong> once. Rebuilding re-reads all sources and refreshes the answers.</p>
-        <div class="btn-row"><button type="button" class="btn primary" id="ragBuildBtn" style="min-width:150px" onclick="ragBuild()">${ragState.building?'Building…':'Rebuild index'}</button></div>
-        <div id="ragScoreOut" class="hint" style="margin-top:8px"></div>
-        <div class="rag-build-progress${ragState.building?' show':''}${ragState.buildTick?' done-tick show':''}" id="ragBuildProgress">
-          <div class="rag-build-spinner"></div>
-          <div style="min-width:0"><div style="font-size:13px" id="ragBuildStageLabel">${esc(ragState.buildStage||'Queued…')}</div>
-          <div class="hint" style="font-size:11px" id="ragBuildStatus">${ragState.building?'Other tabs stay usable — Build controls pause until done.':''}</div></div>
-        </div>
-      </div>
-      <div class="rag-neon-card rag-pipe-panel">
-        <div class="hint" style="margin:0 0 2px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Pipeline</div>
-        <p class="hint" style="margin:0 0 8px">Hover a stage for detail. Samples below show parent chunks after ingest.</p>
-        <div id="ragPipeWrap">${ragPipeHtml(nodes,ragState.buildStageId||'')}</div>
-        <div id="ragChunkSamples" class="rag-chunk-samples"><span class="hint">Loading chunk samples…</span></div>
-        <div id="ragVecStatus" class="hint" style="margin-top:12px;font-size:11px"></div>
-      </div>
-      <details style="margin-top:8px;max-width:720px;margin-left:auto;margin-right:auto" ontoggle="ragLoadTrace(this)">
+      <button type="button" class="rag-rebuild-fab" id="ragBuildBtn" onclick="ragBuild()" ${ragState.building?'disabled':''}>${ragState.building?'Building…':'↻ Rebuild index'}</button>
+      <details style="margin-top:12px;max-width:720px;margin-left:auto;margin-right:auto" ontoggle="ragLoadTrace(this)">
         <summary style="cursor:pointer;font-size:13px">Inspect last retrieval</summary>
         <div id="ragTraceBody" style="margin-top:8px"></div>
       </details>`;
@@ -7601,7 +8010,8 @@ async function ragUploadFiles(inp){
     try{j=await r.json()}catch(e){j={error:'non-JSON response ('+r.status+')'}}
     if(r.ok&&j&&j.ok){
       toast('Indexed '+(j.chunks||0)+' chunks from '+(j.sources||files.length)+' source(s)');
-      if(st)st.textContent='Indexed '+(j.chunks||0)+' chunks.';
+      if(st)st.textContent='Indexed '+(j.chunks||0)+' chunks. Rebuild if answers look stale.';
+      ragState.pendingBuild=true;
       ragState.summary='';ragRefreshSpace();
     }else{
       const err=(j&&(j.error||j.detail))||('HTTP '+r.status);
@@ -7627,7 +8037,7 @@ async function ragMemAction(kind){
 async function ragLoadChunkSamples(sid){
   const el=$('ragChunkSamples');if(!el)return;
   try{
-    const d=await api('/api/rag/spaces/'+sid+'/samples?limit=6').then(r=>r.json());
+    const d=await api('/api/rag/spaces/'+sid+'/samples?limit=18').then(r=>r.json());
     const rows=d.chunks||d.samples||[];
     if(!rows.length){el.innerHTML='<span class="hint">No chunks yet — ingest files above.</span>';return}
     el.innerHTML=rows.map(c=>{
@@ -7662,14 +8072,71 @@ async function ragAttachChats(){
   }catch(e){toast('Attach failed')}
 }
 async function ragIngestUrl(){
+  return ragIngestUrlSmart();
+}
+function ragIngestUrlSmart(){
   const inp=$('ragUrlInput');const u=inp?inp.value.trim():'';
-  if(!u){toast('Enter a link');return}
-  const st=$('ragIngestStatus');if(st)st.textContent='Fetching '+u+' …';
+  const warn=$('ragUrlWarn');const btn=$('ragUrlSend');
+  if(!u){
+    if(warn)warn.textContent="You haven't keyed in a link!";
+    if(btn){btn.classList.add('warn');setTimeout(()=>btn.classList.remove('warn'),500)}
+    return;
+  }
+  if(warn)warn.textContent='';
+  return ragIngestUrlDo(u);
+}
+async function ragIngestUrlDo(u){
+  const st=$('ragIngestStatus');if(st)st.textContent='Fetching + indexing link…';
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({urls:[u],force:false})}).then(x=>x.json());
-    if(r&&r.ok){toast('Link indexed ('+(r.chunks||0)+' chunks)');if(inp)inp.value='';ragState.summary='';ragRefreshSpace();}
-    else{const why=((r.failed_urls||[])[0]||{}).reason||r.error||'failed';if(st)st.textContent='Failed: '+esc(why);toast('Link ingest failed')}
+    if(r&&r.ok){
+      toast('Indexed link · '+(r.chunks||0)+' chunks');
+      ragState.pendingBuild=true;ragState.summary='';ragRefreshSpace();
+      const inp=$('ragUrlInput');if(inp)inp.value='';
+    }else{
+      const why=((r.failed_urls||[])[0]||{}).reason||r.error||'failed';
+      if(st)st.textContent='Failed: '+esc(why);toast('Link ingest failed');
+    }
   }catch(e){if(st)st.textContent='Link ingest failed';toast('Link ingest failed')}
+}
+function ragImportPackPrompt(){
+  // Library import creates a new space — jump there with a clear toast.
+  toast('Import pack from the RAG library (creates a new space)');
+  try{showRagPage()}catch(e){}
+  setTimeout(()=>{
+    const btn=[...document.querySelectorAll('button')].find(b=>/import/i.test(b.textContent||''));
+    if(btn)btn.focus();
+  },200);
+}
+function ragShowPendingBuildModal(){
+  let m=$('ragPendingModal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='ragPendingModal';
+    m.className='rag-pending-modal';
+    m.innerHTML=`<div class="rag-pending-box" role="dialog" aria-modal="true">
+      <button type="button" class="x" onclick="ragDismissPendingBuild(true)" aria-label="Close">×</button>
+      <h3>Build before you leave?</h3>
+      <p>You added sources that aren’t fully rebuilt yet. Rebuild so retrieval uses the latest chunks — or cancel and come back later.</p>
+      <div class="btn-row" style="justify-content:flex-end;gap:8px">
+        <button type="button" class="btn" onclick="ragDismissPendingBuild(true)">Cancel</button>
+        <button type="button" class="btn primary" onclick="ragDismissPendingBuild(false);ragSetTab('build');ragBuild()">Build now</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  m.classList.add('open');
+}
+function ragDismissPendingBuild(clearFlag){
+  const m=$('ragPendingModal');if(m)m.classList.remove('open');
+  if(clearFlag)ragState.pendingBuild=false;
+}
+function ragMaybePromptPendingBuild(){
+  if(ragState.pendingBuild&&ragState.spaceId&&!ragState.building){
+    ragShowPendingBuildModal();
+    return true;
+  }
+  return false;
 }
 // Free web search (DuckDuckGo, no key) → pick results → ingest into this RAG.
 // Self-scoring: auto-generate test cases from the corpus, score retrieval per mode.
@@ -7858,6 +8325,7 @@ async function ragBuild(){
       ragState.buildTick=true;
       ragSetBuildUI('cite',`Ready for retrieval · ${doneEv.sources||0} sources · ${doneEv.chunks||0} chunks`);
       toast('Build complete — ready for retrieval');
+      ragState.pendingBuild=false;
       await ragRefreshSpaceQuiet();
       ragState.summary='';
       await ragFetchSummary(true);
@@ -8099,11 +8567,30 @@ async function ragSend(){
   }
   ragState.streaming=true;const sendBtn=$('ragAskSend')||$('ragSendBtn');if(sendBtn)sendBtn.disabled=true;
   const aiId='ragai-'+Date.now();
-  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="dot"></span><span class="t">Reading sources…</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
+  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">Gathering…</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
   ragScrollMsgs();
   let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};
   const q1=s=>document.querySelector('#'+aiId+' '+s);
   const hideThink=()=>{const t=q1('.ragthink');if(t)t.style.display='none';};
+  const sleuthWords=['Gathering…','Sleuthing…','Reading sources…','Cross-checking…','Tracing citations…','Weighing evidence…'];
+  let sleuthI=0, lastBeat=Date.now(), stallTimer=null, sleuthTimer=null;
+  const setThink=(txt,lost)=>{
+    const box=q1('.ragthink');const el=q1('.ragthink .t');
+    if(el)el.textContent=txt;
+    if(box)box.classList.toggle('lost',!!lost);
+  };
+  sleuthTimer=setInterval(()=>{
+    if(acc)return;
+    sleuthI=(sleuthI+1)%sleuthWords.length;
+    setThink(sleuthWords[sleuthI],false);
+  },2200);
+  stallTimer=setInterval(()=>{
+    if(acc)return;
+    if(Date.now()-lastBeat>28000){
+      setThink('Connection slow — still waiting / reconnecting…',true);
+    }
+  },4000);
+  const clearThinkTimers=()=>{try{clearInterval(sleuthTimer)}catch(e){};try{clearInterval(stallTimer)}catch(e){};};
   const updateSurfed=()=>{
     const strip=q1('.rag-files-surfed');if(!strip)return;
     if(!cites.length){strip.style.display='none';return;}
@@ -8123,7 +8610,7 @@ async function ragSend(){
       for(const chunk of parts){
         const line=chunk.split('\n').find(l=>l.startsWith('data:'));if(!line)continue;
         let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
-        if(j.type==='thinking'){const txt=j.text||'Thinking…';thoughts.push(txt);const t=q1('.ragthink .t');if(t&&!acc)t.textContent=txt;}
+        if(j.type==='thinking'){const txt=j.text||'Thinking…';thoughts.push(txt);lastBeat=Date.now();if(!acc)setThink(txt,false);}
         else if(j.type==='citations'){cites=j.citations||[];const s=new Set(cites.map(c=>ragFileName(c.path).toLowerCase()));nVisited=s.size;if(nVisited)thoughts.push('Read '+nVisited+' source'+(nVisited>1?'s':'')+': '+[...s].slice(0,5).join(', '));const t=q1('.ragthink .t');if(t&&!acc)t.textContent=nVisited?('Read '+nVisited+' source'+(nVisited>1?'s':'')+' · grounding…'):'Grounding…';updateSurfed();}
         else if(j.type==='delta'){acc+=j.text||'';hideThink();const b=q1('.ragbody');if(b)b.innerHTML=ragLinkCiteChips(esc(acc).replace(/\n/g,'<br>'));ragScrollMsgs();}
         else if(j.type==='meta'){ragState.lastTraceId=j.trace_id||ragState.lastTraceId;if(j.chat_id)ragState.chatId=j.chat_id;}
@@ -8142,7 +8629,8 @@ async function ragSend(){
       tl.outerHTML=`<details class="rag-think-log"><summary>🧠 Thinking · ${thoughts.length} step${thoughts.length>1?'s':''}${meta.length?' · '+meta.join(' · '):''}</summary><div>${thoughts.map(t=>'<div class="step">'+esc(t)+'</div>').join('')}</div></details>`;
     } else hideThink();
     const cc=q1('.ragcite');if(cc)cc.innerHTML=ragCitesHtml(cites);
-  }catch(e){hideThink();const b=q1('.ragbody');if(b)b.textContent='Answer failed: '+(e.message||e);}
+  }catch(e){clearThinkTimers();hideThink();const b=q1('.ragbody');if(b)b.textContent='Answer failed: '+(e.message||e)+' — check connection.';}
+  clearThinkTimers();
   ragState.streaming=false;if(sendBtn)sendBtn.disabled=false;ragScrollMsgs();
 }
 
@@ -9028,12 +9516,15 @@ async function loadSessions(){
 }
 async function newChat(){
   saveComposerDraft();
-  try{streamAbort?.abort()}catch(e){};aiPending=false;sessionGen++;document.getElementById('ai-stream')?.remove();document.getElementById('pending-user')?.remove();
+  try{streamAbort?.abort()}catch(e){};aiPending=false;sendInFlight=false;sessionGen++;document.getElementById('ai-stream')?.remove();document.getElementById('pending-user')?.remove();
   currentSession=0;
   localStorage.setItem('clipdrop_session','0');
   lastId=0;
   clearReplyContext();
   contextIds=[];contextLabels={};renderCtx();
+  // Fresh chat always starts in General — Engineering skill pack was
+  // refusing personal questions after inheriting the server default.
+  setProject('general',{silent:true,implicit:true});
   sideView='chats';
   updateSideNav();
   showCenterProjects({asChats:true,forceWelcome:true,keepSession:false});
@@ -9318,13 +9809,32 @@ function initMermaid(){
 }
 // Render any un-rendered .mermaid blocks inside root. Safe to call repeatedly; each
 // node is rendered at most once (data-mm-done), so it won't disrupt streaming.
+function sanitizeMermaidSrc(src){
+  const s=(src||'').trim();
+  if(!/^\s*mindmap\b/im.test(s))return s;
+  // Mindmaps are indentation trees — convert illegal flowchart arrows into children.
+  const out=[];
+  for(const raw of s.split('\n')){
+    if(/-->/.test(raw)){
+      const m=raw.match(/^(\s*)(.+?)\s*-->\s*(.+?)\s*$/);
+      if(m){
+        out.push(m[1]+m[2].replace(/\s*\([^)]*\)\s*$/,'').trim());
+        out.push(m[1]+'  '+m[3].replace(/\s*\([^)]*\)\s*$/,'').trim());
+        continue;
+      }
+    }
+    out.push(raw);
+  }
+  return out.join('\n');
+}
 async function renderMermaidIn(root){
   if(!window.mermaid)return;
   initMermaid();
   const scope=root||document;
   const nodes=[...scope.querySelectorAll('.mermaid:not([data-mm-done])')];
   for(const el of nodes){
-    const src=el.getAttribute('data-mm-src')||el.textContent||'';
+    const raw=el.getAttribute('data-mm-src')||el.textContent||'';
+    const src=sanitizeMermaidSrc(raw);
     el.setAttribute('data-mm-done','1');
     if(!src.trim()){continue}
     try{
@@ -10030,6 +10540,9 @@ async function sendStream(text,extra={}){
   beginStreamUi(text);
   aiPending=true;
   let thinking='',tokens='',donePayload=null,hadError=false,errMsg='';
+  // Once the stream HTTP response opens, the server has already persisted the
+  // user row — never let send() fall through to POST /api/messages after that.
+  let streamOpened=false;
   try{
     const r=await fetch(API()+'/api/chat/stream',{
       method:'POST',
@@ -10039,6 +10552,7 @@ async function sendStream(text,extra={}){
         context_ids:contextIds.slice(0,3),
         model_tier:currentModelTier(),
         thinking:isThinkingOn(),
+        web_search:!!(typeof webSearchArmed!=='undefined'&&webSearchArmed),
         ...extra
       }),
       signal:streamAbort.signal
@@ -10046,9 +10560,16 @@ async function sendStream(text,extra={}){
     if(!r.ok||!r.body){
       let detail='Stream failed'+(r.status?(' ('+r.status+')'):'');
       try{const ej=await r.json();if(ej.error)detail=ej.error}catch(e){}
-      await reconcileAfterSendFail(detail+' — retrying…');
-      return false;
+      // Rate limit / provider busy: keep history, pause this send — never wipe chat or re-POST.
+      if(r.status===429||/rate|wait|too many|quota/i.test(detail)){
+        await reconcileAfterSendFail(detail);
+        toast(detail);
+        return {ok:false, opened:false, paused:true};
+      }
+      await reconcileAfterSendFail(detail);
+      return {ok:false, opened:false};
     }
+    streamOpened=true;
     const reader=r.body.getReader();
     const dec=new TextDecoder();
     let buf='';
@@ -10089,18 +10610,18 @@ async function sendStream(text,extra={}){
         donePayload={analysis:tokens,session_id:currentSession};
       }else{
         await reconcileAfterSendFail(hadError?errMsg:'No reply from model — check API keys / connection (DeepSeek optional; OpenRouter/Google/Groq/SEA-LION fallback)');
-        return false;
+        return {ok:false, opened:true};
       }
     }
     if(!(donePayload.analysis||tokens||'').trim()){
       await reconcileAfterSendFail('Empty reply — check API keys / connection');
-      return false;
+      return {ok:false, opened:true};
     }
     if(donePayload?.session_id)adoptSessionId(donePayload.session_id);
     clearReplyContext();
     contextIds=[];contextLabels={};renderCtx();
     // Keep stream bubble until pullChat merges — avoids pop/reset flash
-    await pullChat();
+    try{await pullChat()}catch(e){}
     aiPending=false;
     document.getElementById('ai-stream')?.remove();
     document.getElementById('pending-user')?.remove();
@@ -10108,22 +10629,22 @@ async function sendStream(text,extra={}){
     if(!$('chat')?.querySelector('.msg.ai-msg:not(#ai-stream)')){
       try{await pullChat()}catch(e){}
     }
-    pullHistory();loadVaultTree?.();
+    try{pullHistory();loadVaultTree?.()}catch(e){}
     drainMessageQueue();
     updateQueueHint();
     updateMsgJumpBar();
-    return true;
+    return {ok:true, opened:true};
   }catch(e){
     if(e.name==='AbortError'){
       aiPending=false;
       document.getElementById('ai-stream')?.remove();
       try{await pullChat()}catch(err){}
       document.getElementById('pending-user')?.remove();
-      return true;
+      return {ok:true, opened:streamOpened};
     }
     console.error(e);
     await reconcileAfterSendFail('Send failed — check connection / API keys');
-    return false;
+    return {ok:false, opened:streamOpened};
   }finally{streamAbort=null}
 }
 
@@ -10744,6 +11265,7 @@ async function ensureChatSession(){
   return 0;
 }
 async function send(){
+  if(sendInFlight)return;
   const el=$('input');
   let text=(el?.value||'').trim();
   const hasFiles=stagedFiles.length>0;
@@ -10838,26 +11360,31 @@ async function send(){
       extra.session_id=0;
     }
     if(contextIds.length)extra.context_ids=contextIds;
-    const ok=await sendStream(text,extra);
-    if(ok)return;
-    const body={text,device_name:myName,session_id:replyContext?0:currentSession,mode:currentMode(),ai_mode:true,model_tier:currentModelTier(),thinking:isThinkingOn()};
-    if(extra.reply_to_id){body.reply_to_id=extra.reply_to_id;body.reply_snippet=extra.reply_snippet;body.parent_session_id=extra.parent_session_id}
-    if(contextIds.length)body.context_ids=contextIds;
-    beginStreamUi(text);
-    aiPending=true;showThinking();
-    contextIds=[];contextLabels={};renderCtx();clearReplyContext();
-    let res={};
-    try{res=await api('/api/messages',{method:'POST',body:JSON.stringify(body)}).then(r=>r.json())}
-    catch(e){await reconcileAfterSendFail('Send failed — check connection / API keys');return}
-    if(res.error){await reconcileAfterSendFail(res.error);return}
-    if(res.session_id)adoptSessionId(res.session_id);
-    markHadSession();
-    if(res.ai==='no_context'){hideThinking();document.getElementById('ai-stream')?.remove();toast('No analyzed screenshot in this chat — capture one first');aiPending=false}
-    else if(res.ai==='queued'||res.ai==='queued_text')aiPending=true;
-    else aiPending=false;
-    await pullChat();pullHistory();
-    document.getElementById('pending-user')?.remove();
-    return;
+    sendInFlight=true;
+    try{
+      const streamResult=await sendStream(text,extra);
+      // Stream opened ⇒ user row already in DB. Never re-POST the same text.
+      // Rate-limit pause ⇒ keep chat history, do not fallback.
+      if(streamResult.ok||streamResult.opened||streamResult.paused)return;
+      const body={text,device_name:myName,session_id:replyContext?0:currentSession,mode:currentMode(),ai_mode:true,model_tier:currentModelTier(),thinking:isThinkingOn()};
+      if(extra.reply_to_id){body.reply_to_id=extra.reply_to_id;body.reply_snippet=extra.reply_snippet;body.parent_session_id=extra.parent_session_id}
+      if(contextIds.length)body.context_ids=contextIds;
+      beginStreamUi(text);
+      aiPending=true;showThinking();
+      contextIds=[];contextLabels={};renderCtx();clearReplyContext();
+      let res={};
+      try{res=await api('/api/messages',{method:'POST',body:JSON.stringify(body)}).then(r=>r.json())}
+      catch(e){await reconcileAfterSendFail('Send failed — check connection / API keys');return}
+      if(res.error){await reconcileAfterSendFail(res.error);return}
+      if(res.session_id)adoptSessionId(res.session_id);
+      markHadSession();
+      if(res.ai==='no_context'){hideThinking();document.getElementById('ai-stream')?.remove();toast('No analyzed screenshot in this chat — capture one first');aiPending=false}
+      else if(res.ai==='queued'||res.ai==='queued_text')aiPending=true;
+      else aiPending=false;
+      await pullChat();pullHistory();
+      document.getElementById('pending-user')?.remove();
+      return;
+    }finally{sendInFlight=false}
   }
   // Manual: optimistic bubble without AI stream chrome
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page'))$('chat').innerHTML='';
@@ -10968,7 +11495,57 @@ async function sendFiles(files){
 }
 
 $('sendBtn').onclick=send;
-$('attachBtn').onclick=()=>$('fileIn').click();
+let webSearchArmed=localStorage.getItem('airgpt_web_search')==='1';
+function syncPlusWebCheck(){
+  const el=$('pmWebCheck');if(el)el.hidden=!webSearchArmed;
+}
+function closePlusMenu(){
+  const m=$('plusMenu'),b=$('attachBtn');
+  if(m){m.classList.remove('open');m.hidden=true}
+  if(b)b.setAttribute('aria-expanded','false');
+}
+function togglePlusMenu(force){
+  const m=$('plusMenu'),b=$('attachBtn');if(!m||!b)return;
+  const open=typeof force==='boolean'?force:!m.classList.contains('open');
+  m.classList.toggle('open',open);m.hidden=!open;
+  b.setAttribute('aria-expanded',open?'true':'false');
+  if(open)syncPlusWebCheck();
+}
+$('attachBtn').onclick=e=>{e.stopPropagation();togglePlusMenu()};
+$('plusMenu')?.addEventListener('click',e=>{
+  const btn=e.target.closest('button[data-pm]');if(!btn)return;
+  const act=btn.dataset.pm;
+  closePlusMenu();
+  if(act==='files')$('fileIn')?.click();
+  else if(act==='web'){
+    webSearchArmed=!webSearchArmed;
+    localStorage.setItem('airgpt_web_search',webSearchArmed?'1':'0');
+    syncPlusWebCheck();
+    toast(webSearchArmed?'Web search on for next messages':'Web search off');
+  }else if(act==='research'){
+    const el=$('input');
+    if(el){
+      const cur=(el.value||'').trim();
+      el.value=cur?(cur.replace(/\s*$/,'')+' — research and verify from the live pages'):'Research and verify the people/companies mentioned — fetch the pages, do not invent';
+      el.dispatchEvent(new Event('input'));el.focus();
+    }
+    webSearchArmed=true;localStorage.setItem('airgpt_web_search','1');
+  }else if(act==='skills'){
+    const el=$('input');if(el){el.value='/skill ';el.focus();el.dispatchEvent(new Event('input'))}
+    toast('Type /skill <pack> global|project');
+  }else if(act==='connectors'){
+    toast('Connectors — open Settings → Integrations');
+    try{$('settingsBtn')?.click()}catch(err){}
+  }
+});
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.plus-menu-wrap'))closePlusMenu();
+});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='u'){
+    e.preventDefault();$('fileIn')?.click();
+  }
+});
 if($('camBtn'))$('camBtn').onclick=()=>$('camIn').click();
 if($('libBtn'))$('libBtn').onclick=()=>$('fileIn').click();
 $('fileIn').onchange=e=>{stageFiles([...e.target.files]);e.target.value=''};
@@ -11175,8 +11752,8 @@ async function pollJoinRequests(){
 }
 async function approveJoin(ip,name){
   try{
-    await api('/api/access/approve',{method:'POST',body:JSON.stringify({ip,name:name||''})});
-    toast('Approved '+ip);pollJoinRequests();
+    await api('/api/access/approve',{method:'POST',body:JSON.stringify({ip,name:name||'',capability:'llm_edit'})});
+    toast('Allowed · LLM on host (clipboard paste off)');pollJoinRequests();
   }catch(e){toast('Approve failed')}
 }
 window.approveJoin=approveJoin;

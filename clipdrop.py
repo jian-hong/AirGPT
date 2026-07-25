@@ -82,7 +82,7 @@ except ImportError:
     email_resend = None  # type: ignore
 
 _latest_capture_session = 0
-_server_mode = "engineering"
+_server_mode = "general"
 
 HOST = "0.0.0.0"
 PORT = 8765
@@ -259,7 +259,7 @@ def _check_ai_rate() -> str | None:
     return None
 
 
-def run_analysis(msg_id: int, question: str | None = None, mode: str = "engineering", session_id: int = 0, depth: str = "normal") -> None:
+def run_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
     if not _is_online():
         err = "AI mode requires internet. Offline storage still works — export anytime."
         if question:
@@ -346,7 +346,7 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "engineer
         print(f"[ai] error msg {msg_id}: {e}")
 
 
-def queue_analysis(msg_id: int, question: str | None = None, mode: str = "engineering", session_id: int = 0, depth: str = "normal") -> None:
+def queue_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
     rate_err = _check_ai_rate()
     if rate_err:
         msg = db.get_message(msg_id)
@@ -484,6 +484,7 @@ def _chat_stream_events(
     session_id: int = 0,
     model_tier: str = "high",
     thinking: bool = True,
+    web_search: bool = False,
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
@@ -507,6 +508,7 @@ def _chat_stream_events(
             business_require=business,
             model_tier=model_tier,
             thinking=thinking,
+            force_web=web_search,
         ):
             if abort.is_set():
                 return
@@ -515,7 +517,7 @@ def _chat_stream_events(
         yield {"type": "error", "text": str(e)[:800]}
 
 
-def _file_capture_to_vault(msg: dict, msg_id: int, analysis: str, mode: str = "engineering", early: dict | None = None) -> None:
+def _file_capture_to_vault(msg: dict, msg_id: int, analysis: str, mode: str = "general", early: dict | None = None) -> None:
     """Categorize capture into fixed project category."""
     sid = int(msg.get("session_id") or 0)
     if not sid:
@@ -687,6 +689,7 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/openforge/",  # chip design pipeline
     "/api/rag",         # RAG Agent knowledge spaces / ingest / answer (host-only)
     "/api/github",      # GitHub OAuth device flow + status (token write)
+    "/api/engine",      # engine plan/apply + bakeoff (changes how this PC serves models)
     "/api/admin",       # admin dashboard data (covers /api/admin[/*])
     "/api/audit",       # audit trail (covers /api/audit[/*])
 )
@@ -828,15 +831,29 @@ def save_file(data: bytes, filename: str) -> tuple[str, str, str | None, str]:
 
 
 def _normalize_image_bytes(raw: bytes) -> bytes:
-    """Stable PNG bytes for dedup (clipboard DIB can vary slightly)."""
+    """Stable PNG bytes for storage (clipboard DIB can vary slightly)."""
     try:
         from PIL import Image
         im = Image.open(io.BytesIO(raw))
         buf = io.BytesIO()
-        im.convert("RGB").save(buf, format="PNG", optimize=True)
+        # Keep ICC out of stored PNG so encode paths stay close; identity
+        # dedupe uses _image_content_hash (pixels), not these bytes.
+        im_rgb = im.convert("RGB")
+        im_rgb.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
     except Exception:
         return raw
+
+
+def _image_content_hash(raw: bytes) -> str:
+    """SHA-256 over RGB pixels (size + bytes). Ignores ICC/PNG encoding noise."""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        w, h = im.size
+        return hashlib.sha256(f"{w}x{h}:".encode() + im.tobytes()).hexdigest()
+    except Exception:
+        return hashlib.sha256(raw or b"").hexdigest()
 
 
 def _looks_like_screenshot(img_bytes: bytes) -> bool:
@@ -859,7 +876,9 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
         is_img = is_img or file_data.startswith(b"\x89PNG") or file_data.startswith(b"\xff\xd8")
         if is_img:
             file_data = _normalize_image_bytes(file_data)
-        h = hashlib.sha256(file_data).hexdigest()
+            h = _image_content_hash(file_data)
+        else:
+            h = hashlib.sha256(file_data).hexdigest()
         hash_preclaimed = False
         if allow_duplicate and session_id:
             if db.hash_seen_in_session(h, session_id):
@@ -1098,7 +1117,7 @@ def write_clipboard_image(data: bytes) -> bool:
         if not data:
             return False
         data = _normalize_image_bytes(data)
-        h = hashlib.sha256(data).hexdigest()
+        h = _image_content_hash(data)
         im = Image.open(io.BytesIO(data))
         buf = io.BytesIO()
         im.convert("RGB").save(buf, "BMP")
@@ -1151,7 +1170,7 @@ def clipboard_loop():
             kind, img, text = read_clipboard()
             if kind == "image" and img:
                 img = _normalize_image_bytes(img)
-                h = hashlib.sha256(img).hexdigest()
+                h = _image_content_hash(img)
                 if h == _last_img_hash or db.hash_seen(h):
                     _last_img_hash = h
                 else:
@@ -1221,7 +1240,7 @@ def screenshot_loop():
                         data = _normalize_image_bytes(f.read_bytes())
                     except OSError:
                         continue  # file still writing — retry next poll
-                    h = hashlib.sha256(data).hexdigest()
+                    h = _image_content_hash(data)
                     _seen_ss[key] = mtime
                     if h == _last_img_hash or db.hash_seen(h):
                         _last_img_hash = h
@@ -1632,6 +1651,41 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
 
+    # Keep-alive safety. Early error returns (429 rate limit, 403 share ACL, 503 no
+    # engine) reply before anyone reads the POST body. On HTTP/1.1 those bytes stay in
+    # the socket, so the *next* request on that connection parses mid-JSON garbage as a
+    # request line — every following call on that socket dies and the UI looks like the
+    # backend crashed. Track whether the body was consumed and drain it before replying.
+    _DRAIN_MAX = 4 * 1024 * 1024
+
+    def handle_one_request(self):
+        self._body_consumed = False
+        super().handle_one_request()
+
+    def _drain_request_body(self) -> None:
+        if getattr(self, "_body_consumed", True):
+            return
+        self._body_consumed = True
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n <= 0:
+            return
+        if n > self._DRAIN_MAX:
+            # Huge upload rejected early — cheaper to drop the socket than read it all
+            self.close_connection = True
+            return
+        try:
+            left = n
+            while left > 0:
+                chunk = self.rfile.read(min(65536, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+        except (OSError, ValueError):
+            self.close_connection = True
+
     def log_message(self, fmt, *args):
         if args and str(args[0]).startswith("GET /api"):
             return
@@ -1732,6 +1786,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, code, body: bytes, ctype):
         try:
+            self._drain_request_body()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
@@ -1746,6 +1801,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(data).encode(), "application/json; charset=utf-8")
 
     def _sse_begin(self) -> None:
+        self._drain_request_body()
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -1806,6 +1862,10 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(thinking_flag, str):
             thinking_flag = thinking_flag.lower() not in ("0", "false", "no", "off")
         thinking_flag = bool(thinking_flag) and model_tier != "basic"
+        web_search_flag = data.get("web_search", False)
+        if isinstance(web_search_flag, str):
+            web_search_flag = web_search_flag.lower() not in ("0", "false", "no", "off")
+        web_search_flag = bool(web_search_flag)
 
         if reply_to_id and not reply_snippet:
             rm = db.get_message(reply_to_id)
@@ -1845,6 +1905,7 @@ class Handler(BaseHTTPRequestHandler):
                     session_id=session_id,
                     model_tier=model_tier,
                     thinking=thinking_flag,
+                    web_search=web_search_flag,
                 ):
                     if abort.is_set():
                         break
@@ -2081,6 +2142,7 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_end()
 
     def _body(self):
+        self._body_consumed = True
         n = int(self.headers.get("Content-Length", 0))
         return self.rfile.read(n) if n else b""
 
@@ -2643,6 +2705,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, cortex_client.snapshot())
             except ImportError:
                 return self._json(200, {"ok": False, "status": "unavailable"})
+
+        if path == "/api/engine/activity":
+            try:
+                import cortex_client
+                data = cortex_client.engine_activity()
+                status = 200 if data.get("ok") else 503
+                return self._json(status, data)
+            except ImportError:
+                return self._json(503, {"ok": False, "error": "cortex_client unavailable"})
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        # Cortex Routines / package Apps — namespaced so AirGPT /api/apps (ports) stays intact.
+        if path == "/api/cortex/routines":
+            try:
+                import cortex_client
+                data = cortex_client.routines_list()
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/cortex/apps":
+            try:
+                import cortex_client
+                data = cortex_client.cortex_apps_list()
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/engine/just-works":
+            # GET = plan only, never applies. The apply path is POST + explicit
+            # confirm, so the button can show what it would do first.
+            try:
+                import cortex_client
+                data = cortex_client.engine_just_works({})
+                return self._json(200 if data.get("ok") else 503, data)
+            except ImportError:
+                return self._json(503, {"ok": False, "error": "cortex_client unavailable"})
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/agents":
             try:
@@ -3366,7 +3468,7 @@ class Handler(BaseHTTPRequestHandler):
                 dname = str(data.get("device_name", dname))[:40]
                 text = str(data.get("text", ""))
                 sid = int(data.get("session_id", 0) or 0)
-                mode = str(data.get("mode", "engineering"))
+                mode = str(data.get("mode", "general"))
                 if data.get("ai_mode"):
                     if not text.strip():
                         return self._json(400, {"error": "question required"})
@@ -3419,6 +3521,21 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self._body().decode() or "{}")
             mid = int(data.get("message_id", 0) or 0)
             text = str(data.get("text", ""))
+            # Phone peers default to llm_edit — clipboard publish requires read_paste.
+            if not _is_local_host(ip):
+                try:
+                    import access_policy as _ap
+
+                    if not _ap.may_clipboard_publish(ip, is_local=False):
+                        return self._json(
+                            403,
+                            {
+                                "error": "Clipboard paste disabled for this device. Approve with read_paste, or use LLM chat only.",
+                                "capability": "llm_edit",
+                            },
+                        )
+                except Exception:
+                    pass
             if mid:
                 msg = db.get_message(mid)
                 kind = copy_message_to_clipboard(msg)
@@ -3470,7 +3587,7 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self._body().decode() or "{}")
             mid = int(data.get("message_id", 0))
             question = str(data.get("question", "")).strip() or None
-            mode = str(data.get("mode", "engineering"))
+            mode = str(data.get("mode", "general"))
             depth = str(data.get("depth", "normal"))
             sid = int(data.get("session_id", 0) or 0)
             msg = db.get_message(mid)
@@ -3483,7 +3600,8 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self._body().decode() or "{}")
             title = str(data.get("title", "New chat"))[:80]
             sess = db.create_session(title)
-            cat = db.MODE_TO_CATEGORY.get(_server_mode, "general")
+            # New chats default to General unless the client already picked a mode.
+            cat = db.MODE_TO_CATEGORY.get(str(data.get("mode") or "general"), "general")
             db.update_session_meta(sess["id"], category=cat)
             return self._json(200, {"session": sess})
 
@@ -3501,7 +3619,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import access_policy
                 data = json.loads(self._body().decode() or "{}")
-                return self._json(200, access_policy.approve(data.get("ip", ""), data.get("name", "")))
+                return self._json(200, access_policy.approve(data.get("ip", ""), data.get("name", ""), capability=str(data.get("capability", "llm_edit") or "llm_edit")))
             except ImportError:
                 return self._json(503, {"error": "unavailable"})
 
@@ -3527,7 +3645,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/mode":
             data = json.loads(self._body().decode() or "{}")
-            m = str(data.get("mode", "engineering"))
+            m = str(data.get("mode", "general"))
             if m in db.MODE_TO_CATEGORY:
                 _server_mode = m
             return self._json(200, {"mode": _server_mode})
@@ -4679,6 +4797,135 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/engine/just-works":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                # apply is opt-in: the button plans first, the user confirms.
+                out = cortex_client.engine_just_works(
+                    {
+                        "apply": bool(body.get("apply")),
+                        "research": bool(body.get("research")),
+                        "prefer": str(body.get("prefer") or ""),
+                    }
+                )
+                return self._json(200 if out.get("ok") else 503, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/engine/bakeoff":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.engine_bakeoff(body)
+                return self._json(200 if out.get("ok") else 503, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/cortex/routines/draft":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.routines_draft(str(body.get("goal") or ""))
+                return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/cortex/routines":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.routines_create(str(body.get("goal") or body.get("prompt") or ""))
+                return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/routines/") and path.endswith("/pause"):
+            try:
+                import cortex_client
+                rid = path.split("/")[-2]
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.routines_pause(rid, str(body.get("reason") or "user"))
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/routines/") and path.endswith("/resume"):
+            try:
+                import cortex_client
+                rid = path.split("/")[-2]
+                out = cortex_client.routines_resume(rid)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/routines/") and path.endswith("/run"):
+            try:
+                import cortex_client
+                rid = path.split("/")[-2]
+                out = cortex_client.routines_run(rid)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/cortex/apps/import-folder":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.cortex_apps_import_folder(
+                    str(body.get("path") or ""),
+                    name=(str(body["name"]) if body.get("name") else None),
+                )
+                return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/apps/") and path.endswith("/approve"):
+            try:
+                import cortex_client
+                app_id = path.split("/")[-2]
+                out = cortex_client.cortex_apps_approve(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/apps/") and path.endswith("/reject"):
+            try:
+                import cortex_client
+                app_id = path.split("/")[-2]
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.cortex_apps_reject(app_id, str(body.get("reason") or "rejected"))
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/apps/") and path.endswith("/dockerize"):
+            try:
+                import cortex_client
+                app_id = path.split("/")[-2]
+                out = cortex_client.cortex_apps_dockerize(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/apps/") and path.endswith("/start"):
+            try:
+                import cortex_client
+                app_id = path.split("/")[-2]
+                out = cortex_client.cortex_apps_start(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/apps/") and path.endswith("/stop"):
+            try:
+                import cortex_client
+                app_id = path.split("/")[-2]
+                out = cortex_client.cortex_apps_stop(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/workflows/run":
             try:
                 import workflow_engine
@@ -4850,8 +5097,7 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
-        length = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(length) if length else b"{}"
+        raw = self._body() or b"{}"
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
         except Exception:
@@ -4894,7 +5140,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(503, {"error": "access policy unavailable"})
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
-            return self._json(200, access_policy.approve(body.get("ip", ""), body.get("name", "")))
+            return self._json(200, access_policy.approve(body.get("ip", ""), body.get("name", ""), capability=str(body.get("capability", "llm_edit") or "llm_edit")))
         if path == "/api/access/deny":
             try:
                 import access_policy
@@ -4903,6 +5149,9 @@ class Handler(BaseHTTPRequestHandler):
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
             return self._json(200, access_policy.deny(body.get("ip", "")))
+        if path.startswith("/api/cortex/routines/"):
+            # reserved for future patch; keep namespace owned
+            return self._json(405, {"error": "use pause/resume/run POST actions"})
         return self._json(404, {"error": "not found"})
 
     def do_DELETE(self):
@@ -4927,6 +5176,22 @@ class Handler(BaseHTTPRequestHandler):
             mid = int(path.split("/")[-1])
             db.delete_message(mid)
             return self._json(200, {"ok": True})
+        if path.startswith("/api/cortex/routines/"):
+            try:
+                import cortex_client
+                rid = path.rstrip("/").split("/")[-1]
+                out = cortex_client.routines_delete(rid)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+        if path.startswith("/api/cortex/apps/"):
+            try:
+                import cortex_client
+                app_id = path.rstrip("/").split("/")[-1]
+                out = cortex_client.cortex_apps_delete(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
         return self._json(404, {"error": "not found"})
 
 
@@ -4996,6 +5261,11 @@ def _startup_verify() -> None:
 
 def main():
     global _firewall_status, AI_AUTO
+    try:
+        import crashlog
+        crashlog.install("airgpt")
+    except Exception as e:
+        print(f"[crashlog] disabled: {e}")
     AI_AUTO = _load_ai_auto()
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -5045,10 +5315,23 @@ def main():
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
     else:
         print("  UI:     browser suppressed (AIRGPT_NO_BROWSER=1) — use Netie Space\n")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        server.server_close()
+    # serve_forever() should never raise — socketserver swallows per-request errors — but
+    # if the accept loop itself trips, resume instead of taking the whole app down with it.
+    while True:
+        try:
+            server.serve_forever()
+            break
+        except KeyboardInterrupt:
+            server.server_close()
+            break
+        except Exception as e:
+            print(f"[serve] accept loop error, resuming: {e}")
+            try:
+                import crashlog
+                crashlog.exception("serve_forever", e)
+            except Exception:
+                pass
+            time.sleep(0.5)
 
 
 if __name__ == "__main__":
