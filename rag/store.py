@@ -289,9 +289,10 @@ def update_space_settings(
     *,
     name: str | None = None,
     depth_default: str | None = None,
+    profile: str | None = None,
     config: dict | None = None,
 ) -> dict | None:
-    """Partial settings update: rename, default depth, merged config keys."""
+    """Partial settings update: rename, default depth, storage profile, merged config."""
     init()
     with _conn() as conn:
         row = conn.execute("SELECT * FROM knowledge_spaces WHERE id=?", (int(space_id),)).fetchone()
@@ -301,6 +302,11 @@ def update_space_settings(
         depth = str(depth_default or row["depth_default"] or "high").lower()
         if depth not in ("basic", "high", "max", "manual"):
             depth = row["depth_default"] or "high"
+        new_profile = str(profile).strip().lower() if profile is not None else (row["profile"] or "local")
+        if new_profile in ("local+", "local_plus", "local-qdrant"):
+            new_profile = "local_qdrant"
+        if new_profile not in ("local", "local_qdrant", "business"):
+            new_profile = row["profile"] or "local"
         cfg_raw = row["config"] or "{}"
         if isinstance(config, dict):
             try:
@@ -310,8 +316,8 @@ def update_space_settings(
             cur.update(config)
             cfg_raw = json.dumps(cur)
         conn.execute(
-            "UPDATE knowledge_spaces SET name=?, depth_default=?, config=?, updated_at=? WHERE id=?",
-            (new_name, depth, cfg_raw, time.time(), int(space_id)),
+            "UPDATE knowledge_spaces SET name=?, depth_default=?, profile=?, config=?, updated_at=? WHERE id=?",
+            (new_name, depth, new_profile[:40], cfg_raw, time.time(), int(space_id)),
         )
         return _row(conn.execute("SELECT * FROM knowledge_spaces WHERE id=?", (int(space_id),)).fetchone())
 
@@ -650,19 +656,41 @@ def neighbor_window(chunk_id: int, *, radius: int = 1, kind: str = "child") -> l
 
 
 def sample_parent_chunks(space_id: int, *, limit: int = 24) -> list[dict]:
-    """Parent (or any) chunks for generative space summaries."""
+    """Parent (or any) chunks for space summaries and the pipeline preview.
+
+    Round-robins across sources. A plain "ORDER BY id LIMIT n" let one big file
+    (e.g. a workbook with many sheets) fill the whole window, so other documents
+    never appeared in the summary or the samples.
+    """
     init()
+    diverse = (
+        "SELECT * FROM ("
+        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
+        "  FROM chunks WHERE space_id=? AND kind=?"
+        ") ORDER BY _rn ASC, source_id ASC LIMIT ?"
+    )
     with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM chunks WHERE space_id=? AND kind='parent' ORDER BY id ASC LIMIT ?",
-            (int(space_id), int(limit)),
-        ).fetchall()
-        if not rows:
-            rows = conn.execute(
-                "SELECT * FROM chunks WHERE space_id=? ORDER BY id ASC LIMIT ?",
-                (int(space_id), int(limit)),
-            ).fetchall()
-        return [_row(r) for r in rows]  # type: ignore[misc]
+        for kind in ("parent", None):
+            try:
+                if kind is None:
+                    rows = conn.execute(
+                        "SELECT * FROM ("
+                        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
+                        "  FROM chunks WHERE space_id=?"
+                        ") ORDER BY _rn ASC, source_id ASC LIMIT ?",
+                        (int(space_id), int(limit)),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(diverse, (int(space_id), kind, int(limit))).fetchall()
+            except sqlite3.OperationalError:
+                # No window-function support — fall back to insertion order.
+                sql = "SELECT * FROM chunks WHERE space_id=?" + (
+                    " AND kind='parent'" if kind else ""
+                ) + " ORDER BY id ASC LIMIT ?"
+                rows = conn.execute(sql, (int(space_id), int(limit))).fetchall()
+            if rows:
+                return [_row(r) for r in rows]  # type: ignore[misc]
+        return []
 
 
 def get_chunks_by_ids(ids: list[int]) -> list[dict]:

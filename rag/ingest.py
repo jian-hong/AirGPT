@@ -185,36 +185,61 @@ def _decode(raw: bytes) -> str:
 
 
 def read_text_file(path: Path) -> tuple[str, str]:
+    """Return (extracted_text, sha256). Applies type-aware normalize after extract."""
+    from rag import normalize as norm
+    from rag import media as media_mod
+
     raw = path.read_bytes()
-    digest = _hash_bytes(raw)
     suffix = path.suffix.lower()
+    text = ""
     if suffix == ".pdf":
-        return _pdf_text(path), digest
-    if suffix in (".xlsx", ".xlsm"):
-        return _xlsx_text(path), digest
-    if suffix == ".docx":
-        return _docx_text(path), digest
-    if suffix == ".pptx":
-        return _pptx_text(path), digest
-    # Structure-aware parsing so embeddings see meaning, not markup/braces.
-    if suffix in (".html", ".htm"):
+        text = _pdf_text(path)
+    elif suffix in (".xlsx", ".xlsm"):
+        text = _xlsx_text(path)
+    elif suffix == ".docx":
+        text = _docx_text(path)
+    elif suffix == ".pptx":
+        text = _pptx_text(path)
+    elif suffix in media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES:
+        text = media_mod.transcribe_media(path)
+    elif suffix in (".html", ".htm"):
         title, body = html_to_text(_decode(raw))
-        text = (f"# {title}\n\n{body}" if title else body).strip()
-        return (text or _decode(raw)), digest
-    if suffix == ".json":
+        text = (f"# {title}\n\n{body}" if title else body).strip() or _decode(raw)
+    elif suffix == ".json":
         import json as _json
         try:
             text = "\n".join(_flatten_json(_json.loads(_decode(raw))))
-            if text.strip():
-                return text, digest
+            if not text.strip():
+                text = _decode(raw)
         except Exception:
-            pass  # malformed JSON → fall through to raw text
-    return _decode(raw), digest
+            text = _decode(raw)
+    else:
+        text = _decode(raw)
+
+    result = norm.normalize_text(text, path=path, suffix=suffix)
+    # Identity is the EXTRACTED TEXT, not the container bytes. Re-ingesting an
+    # .xlsx and re-ingesting its extracted .txt blob (the rebuild path) must
+    # resolve to the same source, otherwise every rebuild duplicates the row.
+    # Newline-agnostic so a blob written on Windows hashes like its source.
+    digest = _hash_bytes(result.text.replace("\r\n", "\n").encode("utf-8", errors="replace"))
+    # Stash import map on a thread-local-ish attribute for ingest to pick up
+    read_text_file.last_import_map = list(result.import_map)  # type: ignore[attr-defined]
+    read_text_file.last_meta = dict(result.meta)  # type: ignore[attr-defined]
+    return result.text, digest
+
+
+read_text_file.last_import_map = []  # type: ignore[attr-defined]
+read_text_file.last_meta = {}  # type: ignore[attr-defined]
 
 
 def iter_files(root: Path, *, max_files: int = 500) -> Iterable[Path]:
     root = Path(root)
+    from rag import media as media_mod
+
     suffixes = TEXT_SUFFIXES | ({".pdf"} if pdf_supported() else set())
+    if media_mod.video_audio_supported():
+        suffixes |= media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES
+    # Images intentionally omitted until OCR is built
     if root.is_file():
         yield root
         return
@@ -222,7 +247,8 @@ def iter_files(root: Path, *, max_files: int = 500) -> Iterable[Path]:
     for p in sorted(root.rglob("*")):
         if not p.is_file():
             continue
-        if p.suffix.lower() not in suffixes:
+        suf = p.suffix.lower()
+        if suf not in suffixes:
             continue
         if any(part.startswith(".") for part in p.parts):
             continue
@@ -260,9 +286,23 @@ def ingest_paths(
     job = store.create_job(space_id, stage="authorize")
     job_id = int(job["id"])
     store.touch_space(space_id, status="indexing")
-    revision = store.create_revision(space_id, profile="local_hybrid_high")
+    space_profile = str(space.get("profile") or "local")
+    rev_profile = f"{space_profile}_hybrid_{space.get('depth_default') or 'high'}"
+    revision = store.create_revision(space_id, profile=rev_profile[:80])
     rev_id = int(revision["id"])
     _p("authorize", 3, "checking sources")
+
+    # Fail early if non-local profile cannot upsert on this install
+    try:
+        from rag.vector_backends import ProfileNotBuiltError, require_upsert_backend
+
+        require_upsert_backend(int(space_id))
+    except ProfileNotBuiltError as e:
+        store.update_job(job_id, stage="done", status="error", error=str(e)[:240])
+        store.touch_space(space_id, status="error")
+        return {"ok": False, "error": str(e), "job_id": job_id}
+    except Exception:
+        pass
 
     collected: list[Path] = []
     for raw in paths:
@@ -289,6 +329,7 @@ def ingest_paths(
     chunk_count = 0
     phrases_by_doc: list[list[str]] = []
     child_pairs: list[tuple[int, str]] = []
+    demoted_total = 0
 
     n_files = len(collected)
     try:
@@ -304,9 +345,16 @@ def ingest_paths(
             # than re-running a binary extractor (e.g. _xlsx_text) on plain text.
             dest_dir = store.BLOB_DIR / str(space_id) / "sources"
             dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / f"{digest[:12]}_{path.stem}.txt"
-            if not dest.exists():
-                dest.write_text(text, encoding="utf-8")
+            if path.parent.resolve() == dest_dir.resolve():
+                # Already this space's blob (rebuild re-reads it): use in place,
+                # never copy it onto itself with a stacked digest prefix.
+                dest = path
+            else:
+                dest = dest_dir / f"{digest[:12]}_{path.stem}.txt"
+                if not dest.exists():
+                    # newline="\n": Windows would translate to \r\n, so re-reading
+                    # the blob on rebuild would hash differently and duplicate the row.
+                    dest.write_text(text, encoding="utf-8", newline="\n")
 
             src = store.add_source(
                 space_id,
@@ -329,7 +377,11 @@ def ingest_paths(
                 ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
                 ".c", ".h", ".cpp", ".hpp", ".sql", ".sh", ".ps1",
             }
-            parents, children = chunking.parent_child_chunk(text, code=is_code)
+            import_map = list(getattr(read_text_file, "last_import_map", []) or [])
+            parents, children, chunk_metrics = chunking.parent_child_chunk(
+                text, code=is_code, salience_terms=import_map[:40] or None
+            )
+            demoted_total += int(chunk_metrics.get("demoted_children") or 0)
             parent_row_ids: list[int] = []
             for pdraft in parents:
                 pid = store.insert_chunk(
@@ -367,6 +419,10 @@ def ingest_paths(
 
             store.update_job(job_id, stage="enrich", detail=path.name)
             phrases = sira.index_phrases(text)
+            # Import map sidecar — retrieval can find "who imports X" without embedding spam
+            for mod in import_map[:40]:
+                if mod and mod not in phrases:
+                    phrases.append(f"import:{mod}")
             phrases_by_doc.append(phrases)
             headings = chunking.extract_headings(text)
             store.insert_file_index(
@@ -377,7 +433,11 @@ def ingest_paths(
                 phrases=phrases,
                 headings=headings,
             )
-            store.update_source_status(source_id, "ready", meta={"blob": str(dest), "phrases": phrases[:12]})
+            store.update_source_status(
+                source_id,
+                "ready",
+                meta={"blob": str(dest), "phrases": phrases[:12], "import_map": import_map[:24]},
+            )
 
         store.update_job(job_id, stage="embed", detail=f"{len(child_pairs)} children")
         _p("embed", 55, f"embedding {len(child_pairs)} vectors")
@@ -386,7 +446,13 @@ def ingest_paths(
             def _emb(done, tot):
                 _p("embed", 55 + int(35 * done / max(1, tot)), f"{done}/{tot} vectors")
             embedded = vectors.index_children(space_id, child_pairs, progress=_emb)
-        except Exception:
+        except Exception as e:
+            from rag.vector_backends import ProfileNotBuiltError
+
+            if isinstance(e, ProfileNotBuiltError):
+                store.update_job(job_id, stage="done", status="error", error=str(e)[:240])
+                store.touch_space(space_id, status="error")
+                return {"ok": False, "error": str(e), "job_id": job_id}
             embedded = 0
         _p("index", 92, "building hybrid index")
         vec_info = {}
@@ -405,6 +471,8 @@ def ingest_paths(
             "embedder": vec_info.get("embedder"),
             "phrase_docs": len(phrases_by_doc),
             "df_terms": len(sira.corpus_df(phrases_by_doc)),
+            "demoted_children": demoted_total,
+            "profile": space_profile,
         }
         store.publish_revision(rev_id, chunk_count=chunk_count, source_count=len(source_ids), metrics=metrics)
         store.update_job(
@@ -551,8 +619,8 @@ def ingest_research(space_id: int, research_paths: list[str], *, force: bool = F
 class _HtmlText(HTMLParser):
     """Minimal readable-text extraction — stdlib only, no external fetch libs."""
 
-    _SKIP = {"script", "style", "noscript", "template", "svg", "head"}
-    _BREAK = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "section", "article", "blockquote", "pre"}
+    _SKIP = {"script", "style", "noscript", "template", "svg", "head", "nav", "footer", "aside", "header"}
+    _BREAK = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "section", "article", "blockquote", "pre", "main"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)

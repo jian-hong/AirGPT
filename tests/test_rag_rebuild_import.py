@@ -120,3 +120,46 @@ def test_packaged_source_carries_txt(isolated):
         src_members = [n for n in z.namelist() if n.startswith("sources/")]
     assert src_members, "no source members in pack"
     assert all(n.endswith(".txt") for n in src_members), src_members
+
+
+def test_repeated_rebuild_does_not_duplicate_sources(isolated):
+    """Rebuilding from blobs must be idempotent.
+
+    Regression: identity was sha256(container bytes), so an .xlsx and its
+    extracted .txt blob hashed differently. Every rebuild added a second source
+    row and wrote a second blob named {newdigest}_{olddigest}_{name}.txt, so a
+    7-file space showed 14 sources after one rebuild.
+    """
+    store, ingest, tmp = isolated
+    up = tmp / "up"
+    up.mkdir()
+    _make_xlsx(up / "lab.xlsx")
+    (up / "notes.md").write_text("# Notes\nShip the fix.\n", encoding="utf-8")
+
+    sid = int(store.create_space(name="idem", depth_default="high")["id"])
+    assert ingest.ingest_paths(sid, [str(up)], force=True).get("ok")
+
+    blob_dir = store.BLOB_DIR / str(sid) / "sources"
+
+    def counts():
+        return len(store.list_sources(sid)), len(list(blob_dir.glob("*")))
+
+    assert counts() == (2, 2), f"initial ingest: {counts()}"
+
+    # Originals gone (browser upload temp files) -> rebuild reads the blobs.
+    import shutil
+
+    shutil.rmtree(up)
+    for _ in range(2):
+        paths = _rebuild_paths(store.list_sources(sid))
+        assert paths, "rebuild found no paths"
+        assert ingest.ingest_paths(sid, paths, force=True).get("ok")
+        assert counts() == (2, 2), f"rebuild duplicated: {counts()}"
+
+    # No stacked digest prefixes like {12hex}_{12hex}_name.txt
+    for p in blob_dir.glob("*"):
+        parts = p.name.split("_")
+        stacked = len(parts) > 2 and len(parts[0]) == 12 and len(parts[1]) == 12
+        assert not stacked, f"stacked digest prefix: {p.name}"
+
+    assert MARKER in _chunks_text(store, sid), "content lost after rebuilds"

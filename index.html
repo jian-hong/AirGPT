@@ -2087,6 +2087,10 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <span class="chat-titlebar-badge" id="chatTitleBadge" hidden></span>
           </div>
           <div class="chat-titlebar-actions">
+            <button type="button" class="chat-share-btn bgtasks-title-btn" id="bgTasksTitleBtn" title="Background tasks" aria-label="Background tasks" onclick="if(window.bgTasks&&window.bgTasks.open)window.bgTasks.open()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5 12 21l8-4.5"/></svg>
+              <span class="bgtasks-title-dot" id="bgTasksTitleDot" hidden>0</span>
+            </button>
             <button type="button" class="chat-share-btn" id="chatShareBtn" title="Share this chat" aria-label="Share this chat" onclick="shareChatFromHeader()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 13.2 15.7 17.3M15.8 6.7 8.3 10.7"/></svg>
               Share
@@ -2459,15 +2463,9 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
         <div class="sc-panel" id="scPanel-agents" data-panel="agents">
           <h3>Agents</h3>
-          <p class="hint">Create Cortex agents (usable in chat &amp; OpenIDE). Skill pack optional.</p>
+          <p class="hint">Agents are durable and suggested from your trends. Create them from Cortex (suggested chips), not Settings. Subagents spawn on demand for one task.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
-            <h4>Create agent</h4>
-            <div class="field-row"><input id="scAgentName" class="side-search" placeholder="Agent name"/><span class="field-tick">✓</span></div>
-            <div class="field-row"><input id="scAgentSkill" class="side-search" placeholder="skill_pack id (e.g. research)"/><span class="field-tick">✓</span></div>
-            <button type="button" class="btn primary" onclick="settingsCreateAgent()">Create Agent</button>
-          </div>
-          <div class="settings-section">
-            <h4>Auto</h4>
+            <h4>Preferences</h4>
             <label class="settings-check"><input type="checkbox" id="scAgentAutoDetect" onchange="localStorage.setItem('airgpt_agent_autodetect',this.checked?'1':'0')"/> Auto-detect agents from workspace / prompts</label>
             <label class="settings-check"><input type="checkbox" id="scAgentAutoCreate" onchange="localStorage.setItem('airgpt_agent_autocreate',this.checked?'1':'0')"/> Auto-create when a clear agent need is detected</label>
             <p class="hint">Detection suggests names; auto-create only runs when both boxes are on.</p>
@@ -2475,21 +2473,15 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <div class="settings-section">
             <h4>Catalog</h4>
             <div id="scAgentsList" class="sc-list"><div class="hint">Loading…</div></div>
+            <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();if(typeof showCortexAgentChat==='function')showCortexAgentChat()">Open Cortex</button>
           </div>
         </div>
 
         <div class="sc-panel" id="scPanel-subagents" data-panel="subagents">
           <h3>Subagents</h3>
-          <p class="hint">Helpers for specific tasks. Assist = 0 children · Deep = ≤2 via <code>subagent_dispatch</code> or <code>/subagent</code>. Children never recurse.</p>
+          <p class="hint">Helpers for one task. Spawn with <strong>New subagent</strong> on Cortex (no name prompt). Assist = 0 children · Deep = ≤2. Children never recurse.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
-            <h4>Create subagent</h4>
-            <div class="field-row"><input id="scSubName" class="side-search" placeholder="Name (e.g. UI reviewer)"/><span class="field-tick">✓</span></div>
-            <div class="field-row"><input id="scSubTask" class="side-search" placeholder="Specific task (e.g. review PRs for a11y)"/><span class="field-tick">✓</span></div>
-            <textarea id="scSubBrief" class="side-search" rows="4" placeholder="Optional brief — what this helper should always do…"></textarea>
-            <button type="button" class="btn primary" style="margin-top:8px" onclick="settingsCreateSubagent()">Create Subagent</button>
-          </div>
-          <div class="settings-section">
-            <h4>Auto</h4>
+            <h4>Preferences</h4>
             <label class="settings-check"><input type="checkbox" id="scSubAutoDetect" onchange="localStorage.setItem('airgpt_subagent_autodetect',this.checked?'1':'0')"/> Auto-detect when a task fits a helper</label>
             <label class="settings-check"><input type="checkbox" id="scSubAutoCreate" onchange="localStorage.setItem('airgpt_subagent_autocreate',this.checked?'1':'0')"/> Auto-create task-specific subagents</label>
             <label class="settings-check"><input type="checkbox" id="scSubDeep" checked disabled/> Cap Deep fan-out at 2 (locked)</label>
@@ -2497,7 +2489,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <div class="settings-section">
             <h4>Task-specific helpers</h4>
             <div id="scSubagentsList" class="sc-list"><div class="hint">Loading…</div></div>
-            <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();if(typeof showOpenIDEPage==='function')showOpenIDEPage();toast('Use /subagent or Multitask in OpenIDE')">Open OpenIDE to run</button>
+            <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();if(typeof showCortexAgentChat==='function')showCortexAgentChat();if(typeof createSubagentQuick==='function')createSubagentQuick()">New subagent</button>
           </div>
         </div>
 
@@ -2519,16 +2511,18 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
         <div class="sc-panel" id="scPanel-git" data-panel="git">
           <h3>Git &amp; PRs</h3>
-          <p class="hint">OpenIDE injects <code>branch@head</code> into every agent run. Create PR needs <code>gh</code>.</p>
+          <p class="hint">OpenIDE injects <code>branch@head</code> into every agent run. Create PR needs <code>gh</code> or a connected GitHub token.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
-            <h4>GitHub auth (scaffold)</h4>
-            <p class="hint" id="ghAuthHint" style="margin:0 0 8px">Uses the local <code>gh</code> CLI — no OAuth popup in AirGPT yet. Connect once in a terminal, then verify here.</p>
+            <h4>GitHub</h4>
+            <p class="hint" id="ghAuthHint" style="margin:0 0 8px">Press Connect to authorize via GitHub device flow. Token stays in the local key vault (never in a URL).</p>
+            <label class="settings-check" style="margin-bottom:8px"><input type="checkbox" id="ghBroadScopes"/> All repos + org (high access) — opt-in; default is minimal read scopes</label>
             <div class="sc-connect-actions">
-              <button type="button" class="btn primary" onclick="githubAuthHelp()">How to connect GitHub</button>
-              <button type="button" class="btn" onclick="githubAuthStatus()">Check status</button>
+              <button type="button" class="btn primary" id="ghConnectBtn" onclick="githubConnect()">Connect GitHub</button>
+              <button type="button" class="btn" onclick="githubAuthStatus()">Refresh status</button>
+              <button type="button" class="btn" id="ghDisconnectBtn" style="display:none" onclick="githubDisconnect()">Disconnect</button>
               <button type="button" class="btn" onclick="closeSettings();showOpenIDEPage()">Open OpenIDE</button>
             </div>
-            <pre id="ghAuthOut" class="hint" style="margin-top:10px;white-space:pre-wrap;max-height:140px;overflow:auto;display:none"></pre>
+            <pre id="ghAuthOut" class="hint" style="margin-top:10px;white-space:pre-wrap;max-height:160px;overflow:auto;display:none"></pre>
           </div>
         </div>
 
@@ -2749,7 +2743,7 @@ function isLocalHost(){
       #bugRecBar .bug-mark{background:rgba(255,255,255,.1);color:#fff}
       #bugRecBar .bug-end{background:#ff5c8a;color:#fff;font-weight:600}
       #bugRecBar .bug-cancel{background:rgba(255,255,255,.08);color:#fff}
-      #bugDialog{position:fixed;z-index:100000;width:min(420px,94vw);background:var(--card,#1b1b1f);color:var(--text,#eee);border:1px solid var(--line,#333);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.5);padding:14px;display:none;left:50%;top:12%;transform:translateX(-50%)}
+      #bugDialog{position:fixed;z-index:100000;width:min(420px,94vw);background:var(--surface);color:var(--text,#eee);border:1px solid var(--line,#333);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.5);padding:14px;display:none;left:50%;top:12%;transform:translateX(-50%)}
       #bugDialog h4{margin:0 0 8px;font-size:14px}
       #bugDialog textarea{width:100%;min-height:70px;padding:9px 11px;border-radius:10px;border:1px solid var(--line,#333);background:transparent;color:inherit;font:inherit;resize:vertical;box-sizing:border-box}
       #bugDialog .meta{font-size:11px;color:var(--muted,#888);margin:8px 0;overflow-wrap:anywhere;max-height:140px;overflow:auto}
@@ -5271,14 +5265,63 @@ function habitAgentActions(){
   HABIT_AGENT_ACTIONS.forEach(a=>{if(!out.includes(a))out.push(a)});
   return out;
 }
+function suggestedAgentsFromTrend(){
+  // Deterministic, local — recent agents + prefScore taste. No server call.
+  const scored=[];
+  try{
+    const recent=JSON.parse(localStorage.getItem('airgpt_recent_agents')||'[]');
+    recent.forEach(r=>{
+      const name=String(r.name||'').trim();
+      if(!name||name.toLowerCase()==='vault summarizer')return;
+      const kind=String(r.kind||'agent');
+      const score=(typeof prefScore==='function'?prefScore('agent',String(r.id)):0)
+        + (typeof prefScore==='function'?prefScore('agent_name',name):0)
+        + 2;
+      scored.push({prompt:`Make an agent like “${name}” for ${kind} work`,score,name});
+    });
+  }catch(e){}
+  habitAgentActions().slice(0,3).forEach(h=>{
+    if(!scored.some(x=>x.prompt===h))scored.push({prompt:h,score:1,name:h.slice(0,40)});
+  });
+  scored.sort((a,b)=>b.score-a.score);
+  const out=[];
+  scored.forEach(s=>{if(!out.includes(s.prompt))out.push(s.prompt)});
+  return out.slice(0,3);
+}
 function cortexSuggestionChips(){
-  // Few, short, action-first. Clicking one creates that agent (useCortexSuggestion).
-  return [
-    'Morning news brief, daily',
-    'Weekly memory digest, Mondays 8am',
-    'Watch a repo, draft release notes',
-    'Daily coding tip from my chats',
-  ];
+  const trend=suggestedAgentsFromTrend();
+  const starters=['Morning news brief, daily','Weekly memory digest, Mondays 8am'];
+  const merged=[];
+  [...trend,...starters].forEach(s=>{if(s&&!merged.includes(s))merged.push(s)});
+  return merged.slice(0,5);
+}
+async function createSubagentQuick(){
+  const draft=($('input')?.value||'').trim();
+  const active=window._cortexActiveAgent||(typeof getCortexActiveAgent==='function'?getCortexActiveAgent():null);
+  const hhmm=new Date().toTimeString().slice(0,5);
+  const name=('Sub · '+hhmm).slice(0,80);
+  const task=draft||(active?('Help with: '+(active.name||'current agent')):'One-shot helper for the current task');
+  try{
+    const r=await api('/api/agents',{method:'POST',body:JSON.stringify({
+      name,
+      kind:'subagent',
+      pinned:false,
+      config:{is_subagent:true,task:task.slice(0,200),description:task.slice(0,400)}
+    })}).then(x=>x.json());
+    const agent=r.agent||r;
+    const id=agent&&agent.id;
+    if(!id){toast((r&&r.error)||'Subagent create failed');return}
+    toast('Subagent ready');
+    touchRecentAgent(agent);
+    window._cortexActiveAgent=agent;
+    if(typeof openAgentById==='function')openAgentById(id);
+    else showCortexAgentChat();
+    if(draft&&$('input')){
+      try{
+        await api('/api/cortex/queue',{method:'POST',body:JSON.stringify({agent_id:id,prompt:draft,is_subagent:true})});
+      }catch(e){}
+    }
+  }catch(e){toast('Subagent create failed')}
 }
 function agentToolHighlights(a){
   const tools=Array.isArray(a?.tools)?a.tools:[];
@@ -5360,8 +5403,13 @@ async function showCortexAgentChat(){
   const activeLine=active?`<p class="hint" style="margin:0 0 12px">Active: <strong>${esc(active.name||'agent')}</strong> — follow-ups continue this agent. Say “new agent …” to spawn another.</p>`:'';
   $('chat').innerHTML=`<div class="cortex-page cortex-agent-home chat-page-enter">
     <h2>Cortex</h2>
-    <p class="cortex-tag">Every message is routed: create an agent/scheduler, continue the active one, or auto-respond with hands &amp; tools. <strong>web_search</strong> runs first; skills/MCP needs come from your memory storage + the web. Refine with <code>/edit</code>.</p>
+    <p class="cortex-tag">Agents are suggested from your trends; subagents spawn for one task. Every message is routed with hands &amp; tools. Refine with <code>/edit</code>.</p>
     ${activeLine}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
+      <button type="button" class="btn primary" style="border-radius:10px" onclick="createSubagentQuick()">New subagent</button>
+      <button type="button" class="btn" style="border-radius:10px" onclick="showCortexPage()">Browse apps</button>
+    </div>
+    <p class="hint" style="margin:0 0 6px;text-align:left">Suggested agents</p>
     <div class="cortex-suggest">${chips}</div>
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
@@ -5452,7 +5500,8 @@ async function showCortexPage(quiet){
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Built agents</h3>
     ${agentCards}
     <div style="display:flex;gap:10px;align-items:center;margin:16px 0">
-      <button type="button" class="btn primary" style="border-radius:14px;padding:14px 26px;font-size:15px;font-weight:650;flex:1" onclick="createCortexAgent()">+ New agent</button>
+      <button type="button" class="btn primary" style="border-radius:14px;padding:14px 26px;font-size:15px;font-weight:650;flex:1" onclick="createCortexAgent()">Suggested agents</button>
+      <button type="button" class="btn" style="border-radius:14px;padding:14px 18px;font-size:13px" onclick="createSubagentQuick()">New subagent</button>
       <button type="button" class="btn" style="border-radius:9px;padding:6px 12px;font-size:11px;opacity:.6;flex:0 0 auto" onclick="showPricingModal()">See pricing</button>
     </div>
   </div>`;
@@ -5477,15 +5526,16 @@ function morphNavChats(){
 async function onNavChatsClick(){
   morphNavChats();
   saveComposerDraft();
+  // Always collapse Build / Agents / Platform before chat home logic
+  sideView='chats';
+  updateSideNav();
   const hasContent=!!($('chat')?.querySelector('.msg')||aiPending||messageQueue?.length);
-  const onChat=sideView==='chats'||sideView==='home';
-  const onProjects=sideView==='projects'||!!$('airgptProjectsPage');
+  const onChat=true;
+  const onProjects=!!($('airgptProjectsPage'));
   // From Projects (or any non-chat surface): always return to Chat — never stuck
-  if(!onChat||onProjects){
+  if(onProjects||!hasContent){
     if(_homeChatSnapshot&&!hasContent){
       try{
-        sideView='chats';
-        updateSideNav();
         if(_homeChatSnapshot.html)$('chat').innerHTML=_homeChatSnapshot.html;
         if(_homeChatSnapshot.session){
           currentSession=_homeChatSnapshot.session;
@@ -5505,17 +5555,15 @@ async function onNavChatsClick(){
     setTimeout(()=>$('input')?.focus(),80);
     return;
   }
-  if(onChat&&hasContent){
+  if(hasContent){
     await newChat();
     $('input')?.focus();
     return;
   }
-  if(onChat&&!hasContent){
-    applyPlaceholder({force:true});
-    restoreComposerDraft();
-    $('input')?.focus();
-    closeSideDrawerOnly();
-  }
+  applyPlaceholder({force:true});
+  restoreComposerDraft();
+  $('input')?.focus();
+  closeSideDrawerOnly();
 }
 function setCortexThinkingMode(mode){
   cortexThinkingMode=mode;
@@ -5568,11 +5616,79 @@ function appendAssistantBubble(text){
 }
 async function createCortexAgent(){
   showCortexAgentChat();
-  toast('Describe the agent in chat — or /create-subagent <name>');
+  toast('Pick a suggested agent chip — or describe one in chat');
   setTimeout(()=>{
     const inp=$('input');
     if(inp&&!inp.value.trim()){inp.placeholder='Create an agent that…';inp.focus();}
   },100);
+}
+let _ghPollTimer=null;
+function _ghOut(text){
+  const el=$('ghAuthOut');if(!el)return;
+  el.style.display='block';
+  el.textContent=text||'';
+}
+async function githubAuthStatus(){
+  try{
+    const r=await api('/api/github/status').then(x=>x.json());
+    const btn=$('ghConnectBtn');
+    const disc=$('ghDisconnectBtn');
+    if(r&&r.connected&&r.login){
+      _ghOut('Connected as @'+r.login+(r.name?(' · '+r.name):''));
+      if(btn)btn.textContent='Connected';
+      if(disc)disc.style.display='';
+    }else{
+      _ghOut(r&&r.error?String(r.error):'Not connected');
+      if(btn)btn.textContent='Connect GitHub';
+      if(disc)disc.style.display='none';
+    }
+  }catch(e){_ghOut('Could not check GitHub status')}
+}
+async function githubDisconnect(){
+  try{
+    const r=await api('/api/github/auth/disconnect',{method:'POST',body:'{}'}).then(x=>x.json());
+    if(r&&r.ok){toast('GitHub disconnected');githubAuthStatus()}
+    else toast((r&&r.error)||'Disconnect failed');
+  }catch(e){toast('Disconnect failed')}
+}
+async function githubConnect(){
+  if(_ghPollTimer){clearInterval(_ghPollTimer);_ghPollTimer=null}
+  const broad=!!$('ghBroadScopes')?.checked;
+  if(broad&&!confirm('Broad access requests full repo + org scopes (large blast radius). Continue?'))return;
+  _ghOut('Starting device flow…');
+  try{
+    const start=await api('/api/github/auth/start',{method:'POST',body:JSON.stringify({broad})}).then(x=>x.json());
+    if(!start||!start.ok){
+      _ghOut((start&&start.error)||'Could not start GitHub auth');
+      toast((start&&start.error)||'GitHub auth failed');
+      return;
+    }
+    const uri=start.verification_uri||'https://github.com/login/device';
+    _ghOut('Enter code '+start.user_code+' at '+uri+'\nScopes: '+(start.scope||'minimal')+'\nWaiting for authorization…');
+    try{window.open(uri,'_blank','noopener')}catch(e){}
+    const deviceCode=start.device_code;
+    let interval=Math.max(5,Number(start.interval)||5)*1000;
+    _ghPollTimer=setInterval(async()=>{
+      try{
+        const poll=await api('/api/github/auth/poll',{method:'POST',body:JSON.stringify({device_code:deviceCode})}).then(x=>x.json());
+        if(poll&&poll.pending){
+          if(poll.slow_down)interval=Math.min(interval+2000,15000);
+          return;
+        }
+        clearInterval(_ghPollTimer);_ghPollTimer=null;
+        if(poll&&poll.ok&&poll.connected){
+          toast('Connected as @'+(poll.login||'github'));
+          githubAuthStatus();
+        }else{
+          _ghOut((poll&&poll.error)||'Authorization failed');
+          toast((poll&&poll.error)||'GitHub auth failed');
+        }
+      }catch(e){
+        clearInterval(_ghPollTimer);_ghPollTimer=null;
+        _ghOut('Poll failed');
+      }
+    },interval);
+  }catch(e){_ghOut('Could not start GitHub auth');toast('GitHub auth failed')}
 }
 /** Active Cortex agent for continue-chat turns */
 function getCortexActiveAgent(){
@@ -6658,7 +6774,7 @@ async function ragAddResearch(path,btn){
   document.getElementById('ragResearchMenu')?.remove();
   let spaces=[];try{spaces=(await api('/api/rag/spaces').then(r=>r.json())).spaces||[]}catch(e){}
   const m=document.createElement('div');m.id='ragResearchMenu';
-  m.style.cssText='position:absolute;z-index:99999;min-width:220px;max-width:320px;background:var(--card,#1b1b1f);border:1px solid var(--border,#333);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:4px';
+  m.style.cssText='position:absolute;z-index:99999;min-width:220px;max-width:320px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:4px';
   const mk=(label,cb,primary)=>{const b=document.createElement('button');b.type='button';b.style.cssText='display:block;width:100%;text-align:left;padding:7px 10px;border:0;border-radius:6px;background:transparent;color:'+(primary?'var(--accent,#2b6cb0)':'inherit')+';font:inherit;font-size:13px;cursor:pointer';b.textContent=label;b.onclick=cb;m.appendChild(b);};
   spaces.slice(0,8).forEach(s=>mk('📚 '+(s.name||('RAG '+s.id)),()=>ragAddResearchTo(s.id,path,s.name)));
   mk('＋ New RAG from this paper',()=>ragAddResearchNew(path),true);
@@ -6740,7 +6856,7 @@ function routineEditorHtml(r){
   const t=Array.isArray(r.type)?r.type:['text'];
   const typeChk=ROUTINE_TYPES.map(k=>`<label style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:13px"><input type="checkbox" class="rt-type" value="${k}" ${t.includes(k)?'checked':''}/> ${k}</label>`).join('');
   const dayOpts=ROUTINE_DAYS.map((d,i)=>`<option value="${i}" ${Number(r.day)===i?'selected':''}>${d}</option>`).join('');
-  const inp='width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;font:inherit;margin-bottom:8px';
+  const inp='width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;margin-bottom:8px';
   return `<div class="cortex-card" id="routineEditor" style="margin-bottom:14px">
     <h3 style="margin:0 0 10px">${r.id?'Edit routine':'New routine'}</h3>
     <input id="rtTitle" placeholder="Title" value="${esc(r.title||'')}" style="${inp}"/>
@@ -6844,7 +6960,7 @@ async function showVertexPage(){
   const base=vertexEndpoint();
   const connectBar=`<div class="btn-row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
     <input id="vertexUrl" placeholder="Vertex QC service URL — e.g. http://192.168.1.50:8000" value="${esc(base)}"
-      style="flex:1;min-width:230px;padding:9px 12px;border-radius:10px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;font:inherit"/>
+      style="flex:1;min-width:230px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit"/>
     <button type="button" class="btn primary" onclick="vertexConnect()">${base?'Reconnect':'Connect'}</button>
     ${base?`<button type="button" class="btn" onclick="setVertexEndpoint('');showVertexPage()">Disconnect</button>`:''}
   </div>`;
@@ -7033,7 +7149,7 @@ async function ragRenderLibrary(){
   const cards=spaces.map(s=>`<div class="cortex-card" style="margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="ragOpenSpace(${s.id})">
     <div style="min-width:0">
       <h3 style="margin:0 0 3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(s.name)}
-        <span class="hint" style="font-size:11px;font-weight:500;padding:1px 8px;border-radius:999px;border:1px solid var(--border,#333);opacity:.8" title="Index depth (change in Build / Settings)">${esc(ragDepthLabel(s))}</span></h3>
+        <span class="hint" style="font-size:11px;font-weight:500;padding:1px 8px;border-radius:999px;border:1px solid var(--line);opacity:.8" title="Index depth (change in Build / Settings)">${esc(ragDepthLabel(s))}</span></h3>
       <p style="margin:0" class="hint">${esc(String(s.source_count||0))} sources · ${esc(String(s.chat_count||0))} chats${s.updated_at?' · '+esc(ragAgo(s.updated_at)):''}</p>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
@@ -7071,6 +7187,19 @@ async function ragExportSpace(id){
     toast('Pack exported');
   }catch(e){toast('Export failed')}
 }
+// Rebuild the whole pipeline for a space: re-extract + re-embed every source.
+// Sources re-read from their local blob under data/rag/{id}/ when the original
+// upload path is gone, so nothing silently drops.
+async function ragRebuildSpace(id){
+  const sid=id||ragState.spaceId;if(!sid){toast('No RAG selected');return}
+  if(!confirm('Rebuild the whole index for this RAG? This re-extracts and re-embeds every source.'))return;
+  toast('Rebuilding index…');
+  try{
+    const r=await api('/api/rag/spaces/'+sid+'/build',{method:'POST',body:JSON.stringify({})}).then(x=>x.json());
+    if(r&&r.ok){toast('Rebuilt · '+(r.chunks||0)+' chunks from '+(r.sources||0)+' sources');if(typeof showRagPage==='function')showRagPage();}
+    else{toast('Rebuild failed: '+((r&&r.error)||'unknown'));}
+  }catch(e){toast('Rebuild failed')}
+}
 function ragImportPackPick(){const el=$('ragImportFile');if(el)el.click()}
 async function ragDoImport(el){
   const f=el.files&&el.files[0];el.value='';
@@ -7102,8 +7231,8 @@ function ragShowCreate(){
     <h2 style="margin:2px 0 10px">New RAG</h2>
     <div class="cortex-card" style="margin-bottom:10px">
       <h3 style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Identity</h3>
-      <input id="rcName" placeholder="Name — e.g. Chip bring-up KB" oninput="ragCreateSummary()" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit;margin-bottom:8px"/>
-      <input id="rcDesc" placeholder="One-line description (optional)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+      <input id="rcName" placeholder="Name — e.g. Chip bring-up KB" oninput="ragCreateSummary()" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit;margin-bottom:8px"/>
+      <input id="rcDesc" placeholder="One-line description (optional)" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
     </div>
     <div class="cortex-card" style="margin-bottom:10px">
       <h3 style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Knowledge depth</h3>
@@ -7125,7 +7254,7 @@ function ragShowCreate(){
       </div>
       <div style="margin-bottom:12px">
         <strong style="font-size:13px">Previous chats</strong> <span class="hint">— freeze transcripts as knowledge</span>
-        <input id="rcChatSearch" placeholder="Filter chats…" oninput="ragCreateRenderChats(this.value)" style="width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit;margin:6px 0"/>
+        <input id="rcChatSearch" placeholder="Filter chats…" oninput="ragCreateRenderChats(this.value)" style="width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit;margin:6px 0"/>
         <div id="rcChatList" style="max-height:180px;overflow:auto"><span class="hint">Loading chats…</span></div>
       </div>
       <div style="margin-bottom:12px">
@@ -7134,7 +7263,7 @@ function ragShowCreate(){
       </div>
       <div>
         <strong style="font-size:13px">Host path</strong> <span class="hint">— advanced, host-only folder walk</span>
-        <input id="rcPath" placeholder="D:\\docs\\my-project" oninput="ragCreateSummary()" style="width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit;margin-top:6px"/>
+        <input id="rcPath" placeholder="D:\\docs\\my-project" oninput="ragCreateSummary()" style="width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit;margin-top:6px"/>
       </div>
     </div>
     <div class="cortex-card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -7160,7 +7289,7 @@ function ragCreateFilesPicked(inp){
 }
 function ragCreateRenderChips(){
   const c=window._ragCreate;const chips=$('rcFileChips');
-  if(chips)chips.innerHTML=c.files.map((f,i)=>`<span style="display:inline-flex;align-items:center;gap:5px;margin:2px 6px 2px 0;padding:2px 8px;border-radius:999px;border:1px solid var(--border,#333);font-size:12px">${esc(f.name)} <a style="cursor:pointer" onclick="ragCreateRemoveFile(${i})">✕</a></span>`).join('');
+  if(chips)chips.innerHTML=c.files.map((f,i)=>`<span style="display:inline-flex;align-items:center;gap:5px;margin:2px 6px 2px 0;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:12px">${esc(f.name)} <a style="cursor:pointer" onclick="ragCreateRemoveFile(${i})">✕</a></span>`).join('');
 }
 function ragCreateRemoveFile(i){window._ragCreate.files.splice(i,1);ragCreateRenderChips();ragCreateSummary();}
 async function ragCreateLoadSessions(){
@@ -7261,7 +7390,7 @@ function ragRenderSpace(){
       <h2 class="rag-space-title" title="${esc(s.name||'RAG')}">${esc(s.name||'RAG')}</h2>
       <div class="rag-space-meta">
         ${ragStatusPill(s.status)}
-        <span style="padding:2px 8px;border-radius:999px;border:1px solid var(--border,#333)">Private</span>
+        <span style="padding:2px 8px;border-radius:999px;border:1px solid var(--line)">Private</span>
         <button type="button" class="btn" style="padding:2px 10px;font-size:11px" id="ragLlmBtn" onclick="ragToggleLlm()" title="Grounded LLM answers">LLM ${ragState.useLlm?'ON':'off'}</button>
       </div>
     </div>
@@ -7342,7 +7471,7 @@ async function ragRenderTab(){
       const kind=isChat?'Chat':(/url_/i.test(String(x.title||x.path||''))?'Link':'File');
       return `<div class="cortex-card" style="margin-bottom:6px;display:flex;align-items:center;gap:10px">
         <div style="min-width:0;flex:1"><strong>${esc(x.title||ragFileName(x.path)||'source')}</strong>
-          <span style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--border,#333);margin-left:6px;opacity:.75">${kind}</span>
+          <span style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);margin-left:6px;opacity:.75">${kind}</span>
           <div class="hint" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.status||'')} · ${esc(ragFileName(x.path)||'')}</div></div>
         <button type="button" class="btn" style="padding:2px 8px;flex-shrink:0" title="Remove source" onclick="ragDeleteSource(${x.id})">✕</button>
       </div>`;}).join('')||'<p class="hint">No sources yet — add files, chats, a host folder, or a link. Ingest chunks → embeds → indexes immediately.</p>';
@@ -7357,15 +7486,15 @@ async function ragRenderTab(){
         </div>
         <div id="ragChatAttach" data-open="0" style="margin-bottom:8px"></div>
         <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragPathInput" placeholder="Host path — D:\\docs\\my-project" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+          <input id="ragPathInput" placeholder="Host path — D:\\docs\\my-project" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
           <button type="button" class="btn" onclick="ragIngestPath()">Ingest path</button>
         </div>
         <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragUrlInput" placeholder="https://link-to-article-or-docs" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+          <input id="ragUrlInput" placeholder="https://link-to-article-or-docs" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
           <button type="button" class="btn" onclick="ragIngestUrl()">Ingest link</button>
         </div>
         <div class="btn-row" style="margin-bottom:8px">
-          <input id="ragWebInput" placeholder="Search the web (free · no key) — e.g. how does RRF fusion work" onkeydown="if(event.key==='Enter')ragWebSearch()" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+          <input id="ragWebInput" placeholder="Search the web (free · no key) — e.g. how does RRF fusion work" onkeydown="if(event.key==='Enter')ragWebSearch()" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
           <button type="button" class="btn" onclick="ragWebSearch()">🔎 Web search</button>
         </div>
         <div id="ragWebResults" style="margin-bottom:8px"></div>
@@ -7373,14 +7502,8 @@ async function ragRenderTab(){
         ${list}
       </div>
       <div class="rag-neon-card${lock}" id="ragBuildControls">
-        <label class="hint" style="display:block;margin-bottom:4px">Rebuild depth</label>
-        <select id="ragBuildDepth" onchange="ragState.depth=this.value;const r=$('ragBuildArchRow');if(r)r.style.display=this.value==='manual'?'':'none'" style="width:100%;max-width:520px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;margin-bottom:10px">${depthOpts}</select>
-        <div id="ragBuildArchRow" style="display:${(ragState.depth||s.depth_default)==='manual'?'':'none'};margin-bottom:10px">
-          <label class="hint" style="display:block;margin-bottom:4px">Manual architecture</label>
-          <select id="ragBuildArch" style="width:100%;max-width:520px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit">${archOpts}</select>
-        </div>
-        <div class="btn-row"><button type="button" class="btn primary" id="ragBuildBtn" onclick="ragBuild()">${ragState.building?'Building…':'Rebuild index'}</button>
-          <button type="button" class="btn" id="ragScoreBtn" onclick="ragScoreRetrieval()" title="Auto-generate test cases from your corpus and score retrieval quality per mode">📊 Score retrieval</button></div>
+        <p class="hint" style="margin:0 0 10px;line-height:1.5">Add every file you want this space to know, then press <strong>Rebuild index</strong> once. Rebuilding re-reads all sources and refreshes the answers.</p>
+        <div class="btn-row"><button type="button" class="btn primary" id="ragBuildBtn" style="min-width:150px" onclick="ragBuild()">${ragState.building?'Building…':'Rebuild index'}</button></div>
         <div id="ragScoreOut" class="hint" style="margin-top:8px"></div>
         <div class="rag-build-progress${ragState.building?' show':''}${ragState.buildTick?' done-tick show':''}" id="ragBuildProgress">
           <div class="rag-build-spinner"></div>
@@ -7426,20 +7549,14 @@ async function ragRenderTab(){
     body.innerHTML=`<div class="rag-settings-wrap">
       <div class="cortex-card rag-settings-card">
         <label class="hint" style="display:block;margin-bottom:4px">Name</label>
-        <input id="ragSetName" value="${esc(s.name||'')}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border,#333);background:transparent;color:inherit;margin-bottom:12px;box-sizing:border-box"/>
-        <label class="hint" style="display:block;margin-bottom:4px">Default depth</label>
-        <select id="ragSetDepth" onchange="const a=$('ragSetArchRow');if(a)a.style.display=(this.value==='manual')?'':'none'" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;margin-bottom:10px;box-sizing:border-box">${depthOpts}</select>
-        <div id="ragSetArchRow" style="display:${(s.depth_default==='manual')?'':'none'}">
-          <label class="hint" style="display:block;margin-bottom:4px">Manual architecture</label>
-          <select id="ragSetArch" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit;margin-bottom:10px;box-sizing:border-box">${archOpts}</select>
-        </div>
+        <input id="ragSetName" value="${esc(s.name||'')}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:inherit;margin-bottom:12px;box-sizing:border-box"/>
         <div class="btn-row"><button type="button" class="btn primary" onclick="ragSaveSettings()">Save</button></div>
       </div>
       <div class="rag-neon-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Share this RAG</div>
         <p class="hint" style="margin:0 0 10px;line-height:1.45">LAN access keys — compute stays on this laptop. <strong>Read</strong> = extractive. <strong>Write</strong> = can toggle LLM. Importing a whole pack into this space is not supported; use Export, then Import from the library to create a new RAG.</p>
         <div class="rag-share-row">
-          <select id="ragShareAccess" style="padding:8px 12px;border-radius:10px;border:1px solid var(--border,#333);background:var(--card,#1b1b1f);color:inherit">
+          <select id="ragShareAccess" style="padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit">
             <option value="read">Read access</option>
             <option value="write">Write access</option>
           </select>
@@ -7451,6 +7568,11 @@ async function ragRenderTab(){
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Export</div>
         <p class="hint" style="margin:0;line-height:1.45">Export a portable zip (sources + chats). Import from the library creates a <em>new</em> RAG and rebuilds the index.</p>
         <button type="button" class="btn" onclick="ragExportSpace(${s.id||0})">Export pack</button>
+      </div>
+      <div class="cortex-card rag-settings-card">
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Rebuild index</div>
+        <p class="hint" style="margin:0 0 10px;line-height:1.45">Re-extract and re-embed every source through the full pipeline (extract → chunk → embed → index). Run this after an ingestion upgrade or if answers look wrong. Sources are re-read from their local copy under <code>data/rag/${esc(String(s.id||''))}/</code>.</p>
+        <button type="button" class="btn primary" onclick="ragRebuildSpace(${s.id||0})">Rebuild whole pipeline</button>
       </div>
       <div class="cortex-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Archive</div>
@@ -7621,13 +7743,14 @@ async function ragLoadTrace(det){
   el.innerHTML='<span class="hint">Loading trace…</span>';
   try{
     const r=await api('/api/rag/traces/'+tid).then(x=>x.json());
-    if(r&&r.ok){const t=r.trace;el.innerHTML=`<p class="hint">Trace ${esc(t.id)} · ${esc(t.template_id||'')} · depth ${esc(t.depth||'')}</p><pre style="white-space:pre-wrap;font-size:12px;background:var(--card,rgba(127,127,127,.1));padding:10px;border-radius:8px;overflow:auto">${esc(JSON.stringify(t.payload||{},null,2))}</pre>`;}
+    if(r&&r.ok){const t=r.trace;el.innerHTML=`<p class="hint">Trace ${esc(t.id)} · ${esc(t.template_id||'')} · depth ${esc(t.depth||'')}</p><pre style="white-space:pre-wrap;font-size:12px;background:var(--surface2);padding:10px;border-radius:8px;overflow:auto">${esc(JSON.stringify(t.payload||{},null,2))}</pre>`;}
     else el.innerHTML='<p class="hint">Trace not found.</p>';
   }catch(e){el.innerHTML='<p class="hint">Trace load failed.</p>'}
 }
 async function ragSaveSettings(){
   const name=($('ragSetName')?$('ragSetName').value.trim():'');
-  const depth=$('ragSetDepth')?$('ragSetDepth').value:'high';
+  // Depth is not edited here any more — keep whatever the space already has.
+  const depth=$('ragSetDepth')?$('ragSetDepth').value:(((ragState.space||{}).depth_default)||'high');
   const prev=((ragState.space&&ragState.space.config)||{});
   const cfg={share_keys:Array.isArray(prev.share_keys)?prev.share_keys:[]};
   if(prev.description)cfg.description=prev.description;
@@ -7840,7 +7963,7 @@ function ragConfirm(msg){
 }
 function ragBubbleHtml(role,content,citations){
   const isUser=role==='user';
-  const bg=isUser?'var(--accent,#2b6cb0)':'var(--card,rgba(127,127,127,.14))';
+  const bg=isUser?'var(--accent,#2b6cb0)':'var(--surface2)';
   const fg=isUser?'var(--accent-fg,#0a0a0a)':'inherit';
   let body=String(content||'');
   if(!isUser){
@@ -7874,11 +7997,11 @@ function ragSourcesControlsHtml(){
     </div>
     <div id="ragChatAttach" data-open="0" style="margin-bottom:8px"></div>
     <div class="btn-row" style="margin-bottom:8px">
-      <input id="ragPathInput" placeholder="Host folder — D:\\docs\\my-project" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+      <input id="ragPathInput" placeholder="Host folder — D:\\docs\\my-project" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
       <button type="button" class="btn" onclick="ragIngestPath()">Ingest path</button>
     </div>
     <div class="btn-row">
-      <input id="ragUrlInput" placeholder="https://link-to-article" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid var(--border,#333);background:transparent;color:inherit"/>
+      <input id="ragUrlInput" placeholder="https://link-to-article" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
       <button type="button" class="btn" onclick="ragIngestUrl()">Ingest link</button>
     </div>`;
 }
@@ -7903,7 +8026,7 @@ async function ragRunSearch(query){
     if(r&&r.ok){
       ragState.lastTraceId=r.trace_id||ragState.lastTraceId;
       const rows=(r.citations||[]).slice(0,8).map((c,i)=>`[${i+1}] ${esc(ragFileName(c.path))}${c.heading?' · '+esc(c.heading):''} — ${esc((c.excerpt||'').slice(0,140))}`).join('<br>')||'No hits.';
-      if(msgs)msgs.insertAdjacentHTML('beforeend',`<div style="align-self:flex-start;max-width:92%;padding:8px 12px;border-radius:12px;background:var(--card,rgba(127,127,127,.14));font-size:13px">${rows}</div>`);
+      if(msgs)msgs.insertAdjacentHTML('beforeend',`<div style="align-self:flex-start;max-width:92%;padding:8px 12px;border-radius:12px;background:var(--surface2);font-size:13px">${rows}</div>`);
     }else if(msgs)msgs.insertAdjacentHTML('beforeend',ragBubbleHtml('ai','Search failed: '+esc(r.error||'unknown'),null));
   }catch(e){if(msgs)msgs.insertAdjacentHTML('beforeend',ragBubbleHtml('ai','Search failed',null));}
   ragScrollMsgs();
@@ -7976,7 +8099,7 @@ async function ragSend(){
   }
   ragState.streaming=true;const sendBtn=$('ragAskSend')||$('ragSendBtn');if(sendBtn)sendBtn.disabled=true;
   const aiId='ragai-'+Date.now();
-  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--card,rgba(127,127,127,.14));line-height:1.5"><div class="ragthink rag-think"><span class="dot"></span><span class="t">Reading sources…</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
+  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="dot"></span><span class="t">Reading sources…</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
   ragScrollMsgs();
   let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};
   const q1=s=>document.querySelector('#'+aiId+' '+s);
@@ -8031,7 +8154,7 @@ function _acMenu(){
   let m=document.getElementById('composerAc');
   if(!m){
     m=document.createElement('div');m.id='composerAc';
-    m.style.cssText='position:absolute;z-index:99999;display:none;max-height:280px;overflow:auto;min-width:240px;max-width:440px;background:var(--card,#1b1b1f);border:1px solid var(--border,#333);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.4);padding:4px;font-size:13px';
+    m.style.cssText='position:absolute;z-index:99999;display:none;max-height:280px;overflow:auto;min-width:240px;max-width:440px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.4);padding:4px;font-size:13px';
     document.body.appendChild(m);
   }
   return m;
@@ -8158,18 +8281,7 @@ function handleSlashCommand(text){
     return true;
   }
   if(cmd==='create-subagent'||cmd==='create_subagent'){
-    const name=(arg.split(/\n/)[0]||'').trim()||'Helper';
-    const prompt=arg.includes('\n')?arg.split(/\n/).slice(1).join('\n').trim():('Help with: '+name);
-    (async()=>{
-      try{
-        const r=await api('/api/agents',{method:'POST',body:JSON.stringify({name:name.slice(0,80),kind:'special',pinned:false,config:{description:prompt.slice(0,400)}})}).then(x=>x.json());
-        if(r&&(r.ok||r.agent||r.id)){
-          toast('Subagent “'+name+'” created — refine in Cortex · /edit');
-          showCortexAgentChat();
-          if($('input')){ $('input').value='Improve agent '+name+': '+prompt.slice(0,200); applyPlaceholder({force:true}); }
-        }else toast((r&&r.error)||'Create failed');
-      }catch(e){toast('Create failed')}
-    })();
+    createSubagentQuick();
     return true;
   }
   if(cmd==='edit'){
@@ -10167,6 +10279,7 @@ function showSettingsPanel(id){
   if(pid==='invoke')refreshSettingsInvokePanel();
   if(pid==='agents')refreshSettingsAgentsPanel();
   if(pid==='subagents')refreshSettingsSubagentsPanel();
+  if(pid==='git'&&typeof githubAuthStatus==='function')githubAuthStatus();
   if(pid==='network'){pullInfo?.();refreshHubMini?.()}
   try{if(typeof pushBugAudit==='function')pushBugAudit('settings_panel',{panel:pid})}catch(e){}
 }
@@ -10217,7 +10330,7 @@ async function refreshSettingsAgentsPanel(){
     const d=await api('/api/agents').then(r=>r.json());
     const agents=(d.agents||[]).filter(a=>!a.config?.is_subagent && a.kind!=='subagent');
     host.innerHTML=agents.length?agents.map(a=>`<div class="sc-row"><span><strong>${esc(a.name)}</strong> · ${esc(a.skill_pack||a.kind||'agent')} ${a.pinned?'· pinned':''}</span></div>`).join('')
-      :'<div class="hint">No agents yet — create one above</div>';
+      :'<div class="hint">No agents yet — open Cortex and use a suggested chip</div>';
   }catch(e){host.innerHTML='<div class="hint">Could not load agents</div>'}
 }
 async function refreshSettingsSubagentsPanel(){
@@ -10229,38 +10342,17 @@ async function refreshSettingsSubagentsPanel(){
       const task=a.config?.task||a.config?.description||a.skill_pack||'helper';
       return `<div class="sc-row"><span><strong>${esc(a.name)}</strong><br><small style="color:var(--muted)">${esc(String(task).slice(0,120))}</small></span></div>`;
     }).join('')
-      :'<div class="hint">No task-specific subagents yet — create one above or use /create-subagent</div>';
+      :'<div class="hint">No subagents yet — use New subagent on Cortex</div>';
   }catch(e){host.innerHTML='<div class="hint">Could not load subagents</div>'}
 }
 async function settingsCreateSubagent(){
-  const name=($('scSubName')?.value||'').trim()||'Helper';
-  const task=($('scSubTask')?.value||'').trim();
-  const brief=($('scSubBrief')?.value||'').trim();
-  if(!task&&!brief)return toast('Add a specific task or brief');
-  try{
-    const r=await api('/api/agents',{method:'POST',body:JSON.stringify({
-      name:name.slice(0,80),
-      kind:'subagent',
-      pinned:false,
-      config:{is_subagent:true,task:task.slice(0,200),description:(brief||task).slice(0,400)}
-    })}).then(x=>x.json());
-    if(r&&(r.ok||r.id||r.agent)){
-      toast('Subagent “'+name+'” created');
-      if($('scSubName'))$('scSubName').value='';
-      if($('scSubTask'))$('scSubTask').value='';
-      if($('scSubBrief'))$('scSubBrief').value='';
-      refreshSettingsSubagentsPanel();
-    }else toast((r&&r.error)||'Create failed');
-  }catch(e){toast('Create failed')}
+  closeSettings();
+  await createSubagentQuick();
 }
 async function settingsCreateAgent(){
-  const name=($('scAgentName')?.value||'').trim()||'Special agent';
-  const skill=($('scAgentSkill')?.value||'').trim();
-  try{
-    const r=await api('/api/agents',{method:'POST',body:JSON.stringify({name,kind:'special',skill_pack:skill,pinned:true})}).then(x=>x.json());
-    if(r&&r.ok){toast('Agent created');if($('scAgentName'))$('scAgentName').value='';refreshSettingsAgentsPanel()}
-    else toast((r&&r.error)||'Create failed');
-  }catch(e){toast('Create failed')}
+  closeSettings();
+  showCortexAgentChat();
+  toast('Agents are suggested on Cortex — pick a chip to build one');
 }
 async function settingsSaveRules(prefer){
   const text=($('scRulesBody')?.value||'').trim();
@@ -11267,67 +11359,80 @@ async function kvSave(envKey,inputId){
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').classList.contains('open'))closeKeyVault()});
 
 /* ── Background tasks panel ───────────────────────────────────────────────
-   Self-contained IIFE (collision-safe: one anchor, own DOM, own styles).
-   Shows phased subagent workflows — phase reached, tokens, tools, time,
-   and what each subagent was invoked for. Backed by /api/workflows/*.     */
+   Self-contained IIFE. Phases → agents → Tokens/Tools/Time, expandable audit
+   (tool_detail + excerpt), Finished history. Uses app design tokens so the
+   drawer scales with window chrome. Backed by /api/workflows/*.             */
 (function(){
   if(window.__bgTasksReady) return; window.__bgTasksReady = true;
-  var POLL_MS = 2000, open = false, timer = null, expanded = {}, showFinished = false;
+  var POLL_MS = 2500, open = false, timer = null, expanded = {}, agentOpen = {}, showFinished = false;
+  var sse = null, sseTask = '', lastSnap = {running:[], finished:[]};
 
   var css = document.createElement('style');
   css.textContent = [
-    '#bgTasksBtn{position:fixed;right:16px;bottom:16px;z-index:9998;display:none;align-items:center;gap:7px;',
-      'padding:8px 13px;border-radius:999px;border:1px solid var(--line,rgba(255,255,255,.14));background:var(--bg,#fff);',
-      'color:var(--text,#f5f5f5);font:500 12.5px/1 system-ui,-apple-system,sans-serif;cursor:pointer;',
-      'box-shadow:0 2px 14px rgba(0,0,0,.13)}',
+    '#bgTasksBtn{position:fixed;right:clamp(10px,2vw,16px);bottom:clamp(10px,2vw,16px);z-index:9998;display:none;align-items:center;gap:7px;',
+      'padding:8px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);',
+      'color:var(--text);font:500 12.5px/1 var(--sans);cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.18);',
+      'backdrop-filter:blur(10px);transition:transform var(--morph),opacity var(--morph)}',
     '#bgTasksBtn.on{display:flex}',
-    '#bgTasksBtn .pulse{width:7px;height:7px;border-radius:50%;background:#2f9e44;animation:bgPulse 1.5s infinite}',
+    '#bgTasksBtn .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:bgPulse 1.5s infinite}',
     '@keyframes bgPulse{0%,100%{opacity:1}50%{opacity:.28}}',
-    '#bgTasksPanel{position:fixed;top:54px;right:0;width:min(430px,100vw);height:calc(100vh - 54px);z-index:9999;display:none;',
-      'flex-direction:column;background:var(--bg,#fff);color:var(--text,#f5f5f5);border-left:1px solid var(--line,rgba(255,255,255,.14));',
-      'font:13px/1.45 system-ui,-apple-system,sans-serif;box-shadow:-8px 0 30px rgba(0,0,0,.09)}',
+    '#bgTasksPanel{position:fixed;top:clamp(48px,7vh,56px);right:0;width:min(440px,100vw);height:calc(100dvh - clamp(48px,7vh,56px));',
+      'z-index:9999;display:none;flex-direction:column;background:var(--surface);color:var(--text);',
+      'border-left:1px solid var(--line);font:13px/1.45 var(--sans);box-shadow:-10px 0 36px rgba(0,0,0,.22);',
+      'backdrop-filter:blur(14px);transition:transform var(--morph),opacity var(--morph)}',
     '#bgTasksPanel.open{display:flex}',
-    '#bgTasksPanel .bgHead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line,rgba(255,255,255,.14))}',
-    '#bgTasksPanel .bgHead h3{margin:0;font-size:14px;font-weight:600;flex:1}',
+    '@media (max-width:720px){#bgTasksPanel{width:100vw;top:0;height:100dvh}}',
+    '#bgTasksPanel .bgHead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}',
+    '#bgTasksPanel .bgHead h3{margin:0;font-size:14px;font-weight:600;flex:1;font-family:var(--display)}',
     '#bgTasksPanel .bgHead button{background:none;border:0;cursor:pointer;color:inherit;opacity:.55;padding:4px;font-size:15px;line-height:1}',
     '#bgTasksPanel .bgHead button:hover{opacity:1}',
     '#bgTasksPanel .bgBody{flex:1;overflow-y:auto;padding:12px 14px 22px}',
-    '#bgTasksPanel .bgLabel{font-size:11.5px;opacity:.55;margin:8px 2px 7px;font-weight:500}',
-    '#bgTasksPanel .bgCard{border:1px solid var(--line,rgba(255,255,255,.14));border-radius:10px;padding:11px 12px;margin-bottom:10px;background:var(--card,rgba(127,127,127,.045))}',
+    '#bgTasksPanel .bgLabel{font-size:11.5px;color:var(--muted);margin:8px 2px 7px;font-weight:500}',
+    '#bgTasksPanel .bgCard{border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px;background:var(--surface2)}',
     '#bgTasksPanel .bgTitle{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin-bottom:3px}',
     '#bgTasksPanel .bgTitle .sp{flex:1}',
     '#bgTasksPanel .bgX{background:none;border:0;cursor:pointer;color:inherit;opacity:.4;font-size:14px;padding:2px 4px}',
     '#bgTasksPanel .bgX:hover{opacity:.9}',
-    '#bgTasksPanel .bgMeta{font-size:11.5px;opacity:.62;display:flex;gap:11px;flex-wrap:wrap;margin-bottom:5px}',
-    '#bgTasksPanel .bgDesc{font-size:12px;opacity:.78;margin:6px 0 10px}',
-    '#bgTasksPanel .bgPhase{border-top:1px solid var(--border,#eee);padding:9px 0 4px}',
-    '#bgTasksPanel .bgPhaseHd{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:3px 4px;border-radius:6px}',
-    '#bgTasksPanel .bgPhaseHd:hover{background:rgba(127,127,127,.08)}',
+    '#bgTasksPanel .bgMeta{font-size:11.5px;color:var(--muted);display:flex;gap:11px;flex-wrap:wrap;margin-bottom:5px}',
+    '#bgTasksPanel .bgDesc{font-size:12px;opacity:.85;margin:6px 0 10px}',
+    '#bgTasksPanel .bgPhase{border-top:1px solid var(--line);padding:9px 0 4px}',
+    '#bgTasksPanel .bgPhaseHd{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:3px 4px;border-radius:8px}',
+    '#bgTasksPanel .bgPhaseHd:hover{background:var(--surface)}',
     '#bgTasksPanel .bgPhaseHd .nm{flex:1;font-size:12.5px;font-weight:500}',
-    '#bgTasksPanel .bgPhaseHd .cv{opacity:.4;font-size:10px;transition:transform .15s}',
+    '#bgTasksPanel .bgPhaseHd .cv{opacity:.4;font-size:10px;transition:transform var(--morph)}',
     '#bgTasksPanel .bgPhaseHd .cv.o{transform:rotate(90deg)}',
-    '#bgTasksPanel .dots{display:flex;gap:3px;padding:5px 6px 2px}',
-    '#bgTasksPanel .dots i{width:9px;height:5px;border-radius:2px;background:rgba(127,127,127,.26)}',
-    '#bgTasksPanel .dots i.run{background:#f59f00;animation:bgPulse 1.2s infinite}',
-    '#bgTasksPanel .dots i.done{background:#2f9e44}',
+    '#bgTasksPanel .dots{display:flex;gap:3px;padding:5px 6px 2px;flex-wrap:wrap}',
+    '#bgTasksPanel .dots i{width:9px;height:5px;border-radius:2px;background:rgba(127,127,127,.28)}',
+    '#bgTasksPanel .dots i.run{background:var(--warn);animation:bgPulse 1.2s infinite}',
+    '#bgTasksPanel .dots i.done{background:var(--ok)}',
     '#bgTasksPanel .dots i.err{background:#e03131}',
     '#bgTasksPanel table{width:100%;border-collapse:collapse;margin-top:4px}',
-    '#bgTasksPanel th{font-size:10.5px;font-weight:500;opacity:.45;text-align:right;padding:3px 5px}',
+    '#bgTasksPanel th{font-size:10.5px;font-weight:500;color:var(--muted);text-align:right;padding:3px 5px}',
     '#bgTasksPanel th:first-child{text-align:left}',
-    '#bgTasksPanel td{font-size:11.5px;padding:3px 5px;text-align:right;vertical-align:top}',
-    '#bgTasksPanel td:first-child{text-align:left;opacity:.9}',
-    '#bgTasksPanel td .pp{display:block;font-size:10.5px;opacity:.5}',
+    '#bgTasksPanel td{font-size:11.5px;padding:4px 5px;text-align:right;vertical-align:top}',
+    '#bgTasksPanel td:first-child{text-align:left;opacity:.95}',
+    '#bgTasksPanel td .pp{display:block;font-size:10.5px;color:var(--muted)}',
     '#bgTasksPanel .st{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;background:rgba(127,127,127,.35)}',
-    '#bgTasksPanel .st.run{background:#f59f00}.st.done{background:#2f9e44}.st.err{background:#e03131}',
-    '#bgTasksPanel .bgFoot{display:flex;align-items:center;gap:10px;padding:9px 4px 0;font-size:11.5px;opacity:.6}',
-    '#bgTasksPanel .bgFoot button{background:none;border:0;color:inherit;cursor:pointer;font-size:11.5px;padding:2px 4px}',
-    '#bgTasksPanel .bgFoot button:hover{opacity:1;text-decoration:underline}',
+    '#bgTasksPanel .st.run{background:var(--warn)}.st.done{background:var(--ok)}.st.err{background:#e03131}',
+    '#bgTasksPanel tr.agent-row{cursor:pointer}',
+    '#bgTasksPanel tr.agent-row:hover td{background:var(--surface)}',
+    '#bgTasksPanel .bgAudit{text-align:left!important;padding:6px 8px 10px!important;background:var(--bg);border-radius:8px}',
+    '#bgTasksPanel .bgAudit .ex{white-space:pre-wrap;font-size:11px;opacity:.85;margin:4px 0 8px;max-height:140px;overflow:auto}',
+    '#bgTasksPanel .bgAudit .tl{font-size:10.5px;color:var(--muted);margin:2px 0}',
+    '#bgTasksPanel .bgAudit .tl.bad{color:#e03131}',
+    '#bgTasksPanel .bgFoot{display:flex;align-items:center;gap:10px;padding:9px 4px 0;font-size:11.5px;color:var(--muted)}',
+    '#bgTasksPanel .bgFoot button{background:none;border:0;color:inherit;cursor:pointer;font-size:11.5px;padding:2px 4px;font-family:var(--sans)}',
+    '#bgTasksPanel .bgFoot button:hover{color:var(--text);text-decoration:underline}',
     '#bgTasksPanel .bgFoot .sp{flex:1}',
     '#bgTasksPanel .bgLaunch{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
-    '#bgTasksPanel .bgLaunch button{font:12px system-ui;padding:6px 10px;border-radius:7px;cursor:pointer;',
-      'border:1px solid var(--border,#e0e0e0);background:var(--bg,#fff);color:inherit}',
-    '#bgTasksPanel .bgLaunch button:hover{background:rgba(127,127,127,.09)}',
-    '#bgTasksPanel .bgEmpty{opacity:.45;font-size:12px;padding:16px 4px}'
+    '#bgTasksPanel .bgLaunch button{font:12px var(--sans);padding:6px 10px;border-radius:8px;cursor:pointer;',
+      'border:1px solid var(--line);background:var(--bg);color:var(--text);transition:background var(--morph)}',
+    '#bgTasksPanel .bgLaunch button:hover{background:var(--surface2)}',
+    '#bgTasksPanel .bgEmpty{color:var(--muted);font-size:12px;padding:16px 4px}',
+    '.bgtasks-title-btn{position:relative;min-width:34px;padding:0 8px!important}',
+    '.bgtasks-title-btn svg{width:15px;height:15px;display:block}',
+    '.bgtasks-title-dot{position:absolute;top:-3px;right:-2px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;',
+      'border-radius:999px;background:var(--ok);color:var(--bg);font-size:9px;font-weight:700;line-height:14px;text-align:center}'
   ].join('');
   document.head.appendChild(css);
 
@@ -11353,32 +11458,51 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
   function fmtTok(n){ n=+n||0; return n>=1000 ? (n/1000).toFixed(1)+'k' : String(n); }
   function fmtSec(s){ s=+s||0; return s<60 ? Math.round(s)+'s' : Math.floor(s/60)+'m '+Math.round(s%60)+'s'; }
-  function cls(st){ return st==='running'?'run':st==='done'?'done':(st==='error'?'err':''); }
+  function cls(st){ return st==='running'?'run':(st==='done'||st==='completed')?'done':(st==='error'?'err':''); }
+
+  function syncBadges(n){
+    var c = document.getElementById('bgTasksCount');
+    if(c) c.textContent = n + ' running';
+    btn.classList.toggle('on', n > 0 && !open);
+    [['bgTasksTopBtn','bgTasksTopDot'],['bgTasksTitleBtn','bgTasksTitleDot']].forEach(function(pair){
+      var b = document.getElementById(pair[0]), d = document.getElementById(pair[1]);
+      if(b) b.classList.toggle('busy', n > 0);
+      if(d){ d.textContent = String(n); d.hidden = n === 0; }
+    });
+  }
 
   function openPanel(v){
     open = v; panel.classList.toggle('open', v);
-    if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); }
+    if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
+    else { detachSse(); }
   }
 
+  function detachSse(){
+    if(sse){ try{ sse.close(); }catch(e){} sse = null; sseTask = ''; }
+  }
+  function attachSse(){
+    detachSse();
+    var run = (lastSnap.running || []).find(function(t){ return t && t.id && String(t.id).indexOf('agent_run_')!==0; });
+    if(!run || !window.EventSource) return;
+    sseTask = run.id;
+    try{
+      sse = new EventSource('/api/workflows/task/'+encodeURIComponent(run.id)+'/events');
+      sse.onmessage = function(){ poll(); };
+      sse.onerror = function(){};
+    }catch(e){}
+  }
+
+  // Workflows are invoked by the agent when a task actually calls for one, not
+  // clicked casually from this panel. The panel reports; it does not launch.
   function loadPresets(){
     var host = panel.querySelector('#bgTasksLaunch');
-    if(host.dataset.done) return;
-    fetch('/api/workflows').then(function(r){return r.json()}).then(function(d){
-      if(!d || !d.workflows) return;
-      host.dataset.done = '1';
-      host.innerHTML = d.workflows.map(function(w){
-        return '<button data-wf="'+esc(w.id)+'" title="'+esc(w.description)+'">▶ '+esc(w.name)+'</button>';
-      }).join('');
-      Array.prototype.forEach.call(host.querySelectorAll('button'), function(b){
-        b.onclick = function(){ runWorkflow(b.dataset.wf); };
-      });
-    }).catch(function(){});
+    if(host) host.innerHTML = '';
   }
 
   function runWorkflow(id, goal){
     fetch('/api/workflows/run', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({workflow_id:id||'', goal:goal||''})})
-      .then(function(r){return r.json()}).then(function(){ poll(); }).catch(function(){});
+      .then(function(r){return r.json()}).then(function(){ poll(); attachSse(); }).catch(function(){});
   }
 
   function cancelTask(id){
@@ -11386,42 +11510,62 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       body: JSON.stringify({task_id:id})}).then(poll).catch(function(){});
   }
 
-  function agentRows(ph){
+  function auditHtml(t, a){
+    var ak = t.id+':'+(a.node_id||a.id);
+    if(!agentOpen[ak]) return '';
+    var tools = (a.tool_detail || []).map(function(td){
+      return '<div class="tl'+(td.ok===false?' bad':'')+'">'+esc(td.tool||'?')+' · '+(td.ms||0)+'ms — '+esc(td.summary||'')+'</div>';
+    }).join('');
+    var bits = [];
+    if(a.model) bits.push('model '+a.model+(a.tier?' / '+a.tier:''));
+    if(a.prompt_tokens||a.completion_tokens) bits.push((a.prompt_tokens||0)+' in / '+(a.completion_tokens||0)+' out');
+    return '<tr><td class="bgAudit" colspan="4">' +
+      (bits.length ? '<div class="tl">'+esc(bits.join(' · '))+'</div>' : '') +
+      (a.excerpt ? '<div class="ex">'+esc(a.excerpt)+'</div>' : '') +
+      (tools || '<div class="tl">No tool calls recorded</div>') +
+      (a.error ? '<div class="tl bad">'+esc(a.error)+'</div>' : '') +
+      '</td></tr>';
+  }
+
+  function agentRows(t, ph){
     return '<table><thead><tr><th>Agent</th><th>Tokens</th><th>Tools</th><th>Time</th></tr></thead><tbody>' +
-      ph.agents.map(function(a){
-        return '<tr><td><span class="st '+cls(a.status)+'"></span>'+esc(a.id) +
+      (ph.agents||[]).map(function(a){
+        var ak = t.id+':'+(a.node_id||a.id);
+        return '<tr class="agent-row" data-ak="'+esc(ak)+'"><td><span class="st '+cls(a.status)+'"></span>'+esc(a.id) +
           (a.purpose ? '<span class="pp">'+esc(a.purpose)+'</span>' : '') + '</td>' +
           '<td>'+fmtTok(a.tokens)+'</td><td>'+(a.tool_count||0)+'</td>' +
-          '<td>'+fmtSec(a.elapsed)+'</td></tr>';
+          '<td>'+fmtSec(a.elapsed)+'</td></tr>' + auditHtml(t, a);
       }).join('') + '</tbody></table>';
   }
 
   function phaseHtml(t, ph){
     var key = t.id+':'+ph.id, isOpen = expanded[key] !== undefined ? expanded[key] : (ph.status==='running');
-    var dots = ph.agents.map(function(a){ return '<i class="'+cls(a.status)+'"></i>'; }).join('');
+    var dots = (ph.agents||[]).map(function(a){ return '<i class="'+cls(a.status)+'"></i>'; }).join('');
     return '<div class="bgPhase"><div class="bgPhaseHd" data-k="'+esc(key)+'">' +
       '<span class="nm">'+esc(ph.name)+'</span>' +
       '<span class="cv'+(isOpen?' o':'')+'">&#9654;</span></div>' +
       '<div class="dots">'+dots+'</div>' +
-      (isOpen ? agentRows(ph) : '') + '</div>';
+      (isOpen ? agentRows(t, ph) : '') + '</div>';
   }
 
   function taskHtml(t){
     var tot = t.totals || {};
     return '<div class="bgCard"><div class="bgTitle"><span>'+esc(t.name)+'</span><span class="sp"></span>' +
-      (t.status==='running' ? '<button class="bgX" data-cancel="'+esc(t.id)+'" title="Cancel">&#9723;</button>' : '') +
+      (t.status==='running' && String(t.id).indexOf('agent_run_')!==0
+        ? '<button class="bgX" data-cancel="'+esc(t.id)+'" title="Cancel">&#9723;</button>' : '') +
       '</div>' +
       '<div class="bgMeta"><span>'+esc(t.kind||'Workflow')+'</span><span>'+fmtSec(t.elapsed)+'</span>' +
       '<span>'+(tot.agents||0)+' agents</span><span>'+fmtTok(tot.tokens)+' tokens'+(t.tokens_estimated?' ~':'')+'</span>' +
       '<span>'+(tot.tools||0)+' tools</span></div>' +
       '<div class="bgDesc">'+esc(t.description)+'</div>' +
       '<div class="bgLabel">Phases <span style="opacity:.6">'+(tot.phases_done||0)+'/'+(tot.phases_total||0)+'</span></div>' +
-      t.phases.map(function(p){ return phaseHtml(t, p); }).join('') +
+      (t.phases||[]).map(function(p){ return phaseHtml(t, p); }).join('') +
       (t.error ? '<div class="bgDesc" style="color:#e03131">'+esc(t.error)+'</div>' : '') +
       '</div>';
   }
 
   function render(d){
+    lastSnap = d || lastSnap;
     var run = d.running || [], fin = d.finished || [];
     var list = panel.querySelector('#bgTasksList');
     var html = '';
@@ -11439,8 +11583,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
         expanded[k] = !(cur !== undefined ? cur : ph.querySelector('table') != null);
         poll(); };
     });
+    Array.prototype.forEach.call(list.querySelectorAll('.agent-row'), function(row){
+      row.onclick = function(){ var ak=row.dataset.ak; agentOpen[ak]=!agentOpen[ak]; poll(); };
+    });
     Array.prototype.forEach.call(list.querySelectorAll('[data-cancel]'), function(b){
-      b.onclick = function(){ cancelTask(b.dataset.cancel); };
+      b.onclick = function(ev){ ev.stopPropagation(); cancelTask(b.dataset.cancel); };
     });
     var tg = list.querySelector('#bgTasksToggleFin');
     if(tg) tg.onclick = function(){ showFinished = !showFinished; poll(); };
@@ -11448,9 +11595,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(cl) cl.onclick = function(){ fetch('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
 
     var n = run.length;
-    document.getElementById('bgTasksCount').textContent = n + ' running';
-    btn.classList.toggle('on', n > 0 && !open);
+    syncBadges(n);
     if(n === 0 && timer && !open){ clearInterval(timer); timer = null; }
+    if(open && (!sse || sseTask !== ((run[0]&&run[0].id)||''))) attachSse();
   }
 
   function poll(){
@@ -11458,19 +11605,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       .then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
   }
 
-  // Public hooks: chat / slash commands start work and surface the panel.
   window.bgTasks = {
     open: function(){ openPanel(true); },
+    close: function(){ openPanel(false); },
     research: function(topic){ runWorkflow('deep_research', topic); openPanel(true); },
-    run: function(id){ runWorkflow(id || 'smoothness_audit'); openPanel(true); },
+    run: function(id, goal){ runWorkflow(id || 'smoothness_audit', goal||''); openPanel(true); },
     refresh: poll
   };
 
-  // Keep the launcher honest even when the panel is shut.
   setInterval(function(){ if(!open) poll(); }, 5000);
   poll();
 })();
-
 /* ── Background tasks — top-bar entry point badge ─────────────────────────
    Lights the always-visible #bgTasksTopBtn (added to .topbar-actions) with a
    live running-count dot. Self-contained: reads only /api/workflows/tasks and
@@ -11493,14 +11638,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   document.head.appendChild(st);
 
   function upd(){
-    var btn = document.getElementById('bgTasksTopBtn');
-    if(!btn) return;
+    var n = 0;
     fetch('/api/workflows/tasks').then(function(r){return r.json()}).then(function(d){
       if(!d || !d.ok) return;
-      var n = (d.running || []).length;
-      var dot = btn.querySelector('.bgtasks-top-dot');
-      btn.classList.toggle('busy', n > 0);
-      if(dot){ dot.textContent = String(n); dot.hidden = n === 0; }
+      n = (d.running || []).length;
+      [['bgTasksTopBtn','bgTasksTopDot'],['bgTasksTitleBtn','bgTasksTitleDot']].forEach(function(pair){
+        var b = document.getElementById(pair[0]), dot = document.getElementById(pair[1]);
+        if(b) b.classList.toggle('busy', n > 0);
+        if(dot){ dot.textContent = String(n); dot.hidden = n === 0; }
+      });
     }).catch(function(){});
   }
   setInterval(upd, 4000);
