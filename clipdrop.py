@@ -517,6 +517,28 @@ def _chat_stream_events(
         yield {"type": "error", "text": str(e)[:800]}
 
 
+def _skill_tools(path: str) -> list[str]:
+    """Tools a skill pack actually names in its text.
+
+    Packs carry no front matter, so there is nothing to declare a tools list. Rather
+    than invent one, report the canonical tool names the pack mentions — an empty list
+    is an honest answer for a prose-only pack.
+    """
+    if not path:
+        return []
+    try:
+        import agent_tools
+
+        names = sorted(agent_tools.TOOLS.keys())
+    except Exception:
+        return []
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="ignore").lower()
+    except OSError:
+        return []
+    return [n for n in names if n in text][:8]
+
+
 def _file_capture_to_vault(msg: dict, msg_id: int, analysis: str, mode: str = "general", early: dict | None = None) -> None:
     """Categorize capture into fixed project category."""
     sid = int(msg.get("session_id") or 0)
@@ -1938,6 +1960,22 @@ class Handler(BaseHTTPRequestHandler):
         exclude_id = int(user_msg["id"]) if user_msg else 0
         history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
 
+        # A skill snippet modifies THIS send only. The raw user text is what gets stored
+        # above — the pack is prepended to the model's copy so the transcript stays
+        # readable and the chat history never accumulates skill preambles.
+        question = text
+        skill_id = str(data.get("skill") or "").strip().lower()
+        if skill_id:
+            pack = ""
+            try:
+                import invoke_registry
+
+                pack = invoke_registry.load_skill(skill_id, max_chars=2000).strip()
+            except Exception:
+                pack = ""
+            if pack:
+                question = f"[Skill: {skill_id}]\n{pack}\n\n---\n\n{text}"
+
         abort = threading.Event()
         event_q: queue.Queue = queue.Queue()
         done_ev: dict = {"analysis": "", "model": "", "error": ""}
@@ -1945,7 +1983,7 @@ class Handler(BaseHTTPRequestHandler):
         def _producer() -> None:
             try:
                 for ev in _chat_stream_events(
-                    text, mode, history, abort,
+                    question, mode, history, abort,
                     session_id=session_id,
                     model_tier=model_tier,
                     thinking=thinking_flag,
@@ -2825,6 +2863,31 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"agents": agent_store.list_agents(pinned_only=pinned_only)})
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/skills":
+            try:
+                import invoke_registry
+
+                skills = []
+                for s in invoke_registry.list_skills():
+                    summary = str(s.get("description") or "").strip()
+                    # A pack with no real prose is a scratch file, not a skill — showing
+                    # it as an empty card is worse than not showing it.
+                    if len(summary) < 24:
+                        continue
+                    skills.append(
+                        {
+                            "id": s.get("id"),
+                            "title": s.get("name") or s.get("id"),
+                            "summary": summary[:180],
+                            "tools": _skill_tools(s.get("path") or ""),
+                            "enabled": bool(s.get("enabled")),
+                            "scope": s.get("scope") or "off",
+                        }
+                    )
+                return self._json(200, {"ok": True, "skills": skills})
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200], "skills": []})
 
         if path.startswith("/api/agents/") and path.endswith("/runs"):
             try:
