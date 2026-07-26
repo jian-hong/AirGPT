@@ -705,7 +705,10 @@ def ingest_urls(space_id: int, urls: list[str], *, force: bool = False, max_byte
             continue
         body = body.strip()
         if len(body) < 80:
-            failed.append({"url": u, "reason": "no extractable text"})
+            failed.append({
+                "url": u,
+                "reason": "no extractable text (JS-rendered shell — needs headless browser or yt-dlp for video)",
+            })
             continue
         slug = re.sub(r"[^\w-]+", "-", u.split("//", 1)[-1])[:60].strip("-") or "link"
         f = out_dir / f"url_{slug}.md"

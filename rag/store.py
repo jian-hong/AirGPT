@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,9 +16,22 @@ DB_PATH = RAG_DIR / "rag.db"
 BLOB_DIR = RAG_DIR
 
 
-@contextmanager
-def _conn() -> Iterator[sqlite3.Connection]:
-    RAG_DIR.mkdir(parents=True, exist_ok=True)
+# One retrieval fans out ~50 short reads across sparse / dense / file / expand
+# channels, and every one of them used to open its own connection and re-run the whole
+# DDL script below. On a 37 MB index that was ~600 ms of pure setup for a corpus small
+# enough to fit in L2. `session()` lets a burst share one connection; `init()` now runs
+# the schema once per database file.
+_local = threading.local()
+_inited: set[str] = set()
+_init_lock = threading.Lock()
+
+
+def _open() -> sqlite3.Connection:
+    # Create the parent of the database we are about to open, not the module
+    # default. Tests and profile switches repoint DB_PATH, and creating RAG_DIR
+    # instead left the real target's directory missing ("unable to open
+    # database file").
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=60)
     c.row_factory = sqlite3.Row
     try:
@@ -25,6 +39,65 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute("PRAGMA busy_timeout=60000")
     except Exception:
         pass
+    return c
+
+
+def _live_session() -> dict | None:
+    """Active session for this thread, but only if it points at the current DB."""
+    live = getattr(_local, "session", None)
+    if live is not None and live.get("path") == str(DB_PATH):
+        return live
+    return None
+
+
+@contextmanager
+def session() -> Iterator[sqlite3.Connection]:
+    """Share one connection across a burst of reads. Nests safely; read-mostly.
+
+    Connections are closed when the outermost session exits, so no handle outlives the
+    call — temp-directory teardown on Windows keeps working.
+    """
+    live = _live_session()
+    if live is not None:
+        live["depth"] += 1
+        try:
+            yield live["conn"]
+        finally:
+            live["depth"] -= 1
+        return
+
+    c = _open()
+    prev = getattr(_local, "session", None)
+    _local.session = {"conn": c, "depth": 1, "path": str(DB_PATH)}
+    try:
+        yield c
+        c.commit()
+    except Exception:
+        try:
+            c.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        _local.session = prev
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+@contextmanager
+def _conn() -> Iterator[sqlite3.Connection]:
+    live = _live_session()
+    if live is not None:
+        live["depth"] += 1
+        try:
+            yield live["conn"]
+        finally:
+            live["depth"] -= 1
+        return
+
+    c = _open()
     try:
         yield c
         c.commit()
@@ -32,7 +105,43 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
-def init() -> None:
+def _db_fingerprint() -> tuple[str, int] | None:
+    """Identity of the database file, or None when the schema cannot be assumed.
+
+    Someone deleting `data/rag/rag.db` from Explorer must not leave the app querying
+    tables that no longer exist, so a missing or freshly-created (0-byte) file always
+    forces the DDL to run again. One stat() beats a 160 ms schema script.
+    """
+    try:
+        st = DB_PATH.stat()
+    except OSError:
+        return None
+    if st.st_size == 0:
+        return None
+    return (str(DB_PATH), st.st_ctime_ns)
+
+
+def init(*, force: bool = False) -> None:
+    fp = _db_fingerprint()
+    if not force and fp is not None and fp in _inited:
+        return
+    with _init_lock:
+        fp = _db_fingerprint()
+        if not force and fp is not None and fp in _inited:
+            return
+        _init_schema()
+        fp = _db_fingerprint()
+        if fp is not None:
+            _inited.add(fp)
+
+
+def reset_init_cache() -> None:
+    """Forget which databases have been initialised (tests / profile switches)."""
+    with _init_lock:
+        _inited.clear()
+
+
+def _init_schema() -> None:
     with _conn() as conn:
         conn.executescript(
             """

@@ -35,18 +35,54 @@ def set_mode(mode: str) -> dict:
     return data
 
 
-def approve(ip: str, name: str = "") -> dict:
+def approve(ip: str, name: str = "", *, capability: str = "llm_edit") -> dict:
+    """Approve a LAN/phone peer.
+
+    capability:
+      llm_edit — default: may chat / use host LLM via API; not blanket clipboard read+paste
+      read_paste — legacy: may also push clipboard to host
+    """
     ip = (ip or "").strip()
     if not ip:
         return {"ok": False, "error": "ip required"}
+    cap = capability if capability in ("llm_edit", "read_paste") else "llm_edit"
     data = _load()
     data["pending"] = [p for p in data.get("pending", []) if p.get("ip") != ip]
     data["denied"] = [d for d in data.get("denied", []) if d != ip]
     entries = data.setdefault("approved", [])
-    if not any(e.get("ip") == ip for e in entries):
-        entries.append({"ip": ip, "name": name[:80], "approved_at": time.time()})
+    existing = next((e for e in entries if e.get("ip") == ip), None)
+    if existing:
+        existing["name"] = (name or existing.get("name") or "")[:80]
+        existing["capability"] = cap
+        existing["approved_at"] = time.time()
+    else:
+        entries.append(
+            {
+                "ip": ip,
+                "name": name[:80],
+                "approved_at": time.time(),
+                "capability": cap,
+            }
+        )
     _save(data)
     return {"ok": True, "policy": data}
+
+
+def peer_capability(ip: str) -> str:
+    """Return capability for an approved peer (default llm_edit)."""
+    ip = (ip or "").strip()
+    data = _load()
+    for e in data.get("approved", []):
+        if e.get("ip") == ip:
+            return str(e.get("capability") or "llm_edit")
+    return "llm_edit"
+
+
+def may_clipboard_publish(ip: str, *, is_local: bool) -> bool:
+    """Clipboard publish from phone → host only when capability is read_paste."""
+    if is_local:
+        return True
+    return peer_capability(ip) == "read_paste"
 
 
 def deny(ip: str) -> dict:

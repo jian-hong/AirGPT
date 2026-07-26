@@ -1086,8 +1086,29 @@ body.theme-dark .rag-rebuild-fab{background:#fff;color:#111}
 .side-section-body > *{min-height:0;overflow:hidden}
 .sec-morph-inner{min-height:0;overflow:hidden}
 .hist-day{margin:4px 8px 8px;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:transparent;transition:opacity var(--sec-morph)}
-.hist-day.faded{opacity:.5}
+.hist-day.faded{opacity:.72}
 .hist-day.faded.open{opacity:1}
+.project-dd-menu .dd-label{padding:10px 12px 4px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;opacity:.65}
+.project-dd-menu button{margin:2px 0}
+.composer-pause-pill{
+  display:none;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:0 auto 8px;max-width:min(1100px,100%);padding:8px 12px;border-radius:12px;
+  background:rgba(232,184,74,.12);border:1px solid rgba(232,184,74,.35);color:var(--text);font-size:13px;
+}
+.composer-pause-pill[data-show="1"]{display:flex}
+.composer-pause-pill button{border-radius:999px;padding:4px 12px;font-size:12px}
+/* Project drift suggestion — quieter than the pause pill on purpose: it is an offer,
+   not a problem, and it must never read as an error the user has to clear. */
+.project-suggest-chip{
+  display:none;align-items:center;gap:8px;flex-wrap:wrap;
+  margin:0 auto 8px;max-width:min(1100px,100%);padding:6px 12px;border-radius:12px;
+  background:var(--panel,rgba(128,128,128,.10));border:1px solid var(--line,rgba(128,128,128,.28));
+  color:var(--text);font-size:12.5px;
+}
+.project-suggest-chip[data-show="1"]{display:flex}
+.project-suggest-chip .psc-text{color:var(--muted)}
+.project-suggest-chip .psc-text strong{color:var(--text);font-weight:600}
+.project-suggest-chip button{border-radius:999px;padding:3px 11px;font-size:12px}
 .hist-day-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:600;background:transparent;color:var(--text)}
 .hist-day-hdr small{margin-left:auto;font-size:11px;color:var(--muted);font-weight:500}
 .hist-day-body{
@@ -1460,6 +1481,20 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
   border:1px solid var(--line);background:rgba(128,128,128,.08);line-height:1.2;
 }
 .cortex-recent-item .cr-tool.hi{border-color:rgba(61,214,140,.45);background:rgba(61,214,140,.1)}
+/* Skill / subagent snippet cards — UI shell; invoke wiring is Claude */
+.snippet-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:8px 0 16px;text-align:left}
+.snippet-card{
+  border:1px solid var(--line);border-radius:14px;background:var(--surface);
+  padding:12px 12px 10px;display:flex;flex-direction:column;gap:6px;min-width:0;
+  box-shadow:var(--shadow-soft);cursor:default;transition:border-color .18s ease,transform .18s ease;
+}
+.snippet-card:hover{border-color:rgba(128,128,128,.4);transform:translateY(-1px)}
+.snippet-card .sn-kicker{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.snippet-card .sn-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
+.snippet-card .sn-body{font-size:12px;color:var(--muted);line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:1}
+.snippet-card .sn-actions{display:flex;gap:6px;margin-top:4px}
+.snippet-card .sn-actions .btn{padding:4px 10px;font-size:11px;border-radius:8px}
+.snippet-card[data-wired="0"] .sn-actions .btn.primary{opacity:.55}
 .session-item.with-kind{display:flex;align-items:flex-start;gap:8px}
 .session-item .sess-kind-ico{
   width:22px;height:22px;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center;
@@ -2015,7 +2050,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
   <header class="topbar">
     <button type="button" class="side-toggle-top" id="sideToggleTop" title="Show / hide left panel" aria-label="Toggle left panel" onclick="toggleSideCollapsed()">☰</button>
     <button class="menu-btn" onclick="openSide()">☰</button>
-    <div class="brand brand-exit" id="brandHome" title="AirGPT home" onclick="onBrandClick(event)" onclick="openAirgptHome()" title="AirGPT — vault + Cortex">
+    <div class="brand brand-exit" id="brandHome" title="AirGPT — vault + Cortex" onclick="onBrandClick(event)">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2.5L3.5 19.5h3.2l1.6-3.4h7.4l1.6 3.4H21L12 2.5zm0 5.2l2.7 5.8H9.3L12 7.7z" fill="currentColor"/>
@@ -2135,6 +2170,10 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/></svg>
           Hosting<span class="nav-beta">Beta</span>
         </button>
+        <button type="button" class="nav-item" id="navSeek" title="Active goal — engine seeks without being asked" onclick="showSeekPage()">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/><path d="M11 8v6M8 11h6"/></svg>
+          Seek
+        </button>
         <button type="button" class="nav-item" id="navVideo" title="LTX-2 video generator" onclick="showVideoPage()">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h12v12H4z"/><path d="M16 10l4-2v8l-4-2z"/></svg>
           Video
@@ -2222,6 +2261,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     </div>
     <div class="ctx-bar" id="ctxBar"></div>
     <div class="composer">
+      <div id="composerPausePill" class="composer-pause-pill" hidden></div>
+      <div id="projectSuggestChip" class="project-suggest-chip" hidden></div>
       <div class="composer-rail" id="composerRail"></div>
       <div class="composer-shell">
         <div class="composer-chrome" id="composerChrome">
@@ -4083,6 +4124,9 @@ function setProjectMode(on){
 }
 /** Tear down overlay workspaces (Hosting/OpenIDE/etc) so nav doesn't thrash or stick. */
 function leaveOverlayWorkspace(){
+  if(document.body.classList.contains('rag-mode')&&typeof ragMaybePromptPendingBuild==='function'){
+    try{ragMaybePromptPendingBuild()}catch(e){}
+  }
   stopCortexCrmPoll();
   if(typeof _videoPoll!=='undefined'&&_videoPoll){clearInterval(_videoPoll);_videoPoll=null}
   setProjectMode(false);
@@ -4863,7 +4907,7 @@ function syncNavSections(activeSec){
   });
 }
 function updateSideNav(){
-  const plat=['hub','marketplace','hosting','usage','video'];
+  const plat=['hub','marketplace','hosting','usage','video','seek'];
   const build=['openide','openforge'];
   const agents=['cortex','cortex-catalog','research','rag','vertex','routines','apps'];
   const onPlat=plat.includes(sideView);
@@ -4896,6 +4940,7 @@ function updateSideNav(){
   $('navLocalPorts')?.classList.toggle('on',sideView==='apps');
   $('navMarket')?.classList.toggle('on',sideView==='marketplace');
   $('navHosting')?.classList.toggle('on',sideView==='hosting');
+  $('navSeek')?.classList.toggle('on',sideView==='seek');
   $('navVideo')?.classList.toggle('on',sideView==='video');
   $('navUsage')?.classList.toggle('on',sideView==='usage');
   document.querySelectorAll('#navPinnedAgents .nav-item[data-agent-surface]').forEach(el=>{
@@ -5216,14 +5261,28 @@ function showSideView(view){
   closeSideDrawerOnly();
 }
 function openAirgptHome(){
-  try{leaveOverlayWorkspace?.()}catch(e){}
-  sideView='chats';
-  updateSideNav?.();
-  showCenterProjects?.({asChats:true,keepSession:true});
-  // Cortex rail companion — open agent surface without leaving vault
-  setTimeout(()=>{try{if(window.bgTasks&&window.bgTasks.open){/* keep */} }catch(e){}},0);
-  toast('Vault + chats · Cortex is in Agents');
+  // Brand click: vault + Cortex together (not chats-only toast).
+  openVaultAndCortex();
 }
+function openVaultAndCortex(){
+  try{
+    if(document.body.classList.contains('openide-mode')&&typeof exitOpenIDE==='function'){
+      exitOpenIDE();return;
+    }
+    if(document.body.classList.contains('openforge-mode')){
+      showWorkspace('home');return;
+    }
+  }catch(e){}
+  try{leaveOverlayWorkspace?.()}catch(e){}
+  try{openKeyVault({banner:'Keys stay on this PC — Cortex is open beside the vault.'})}catch(e){}
+  try{
+    if(typeof showCortexAgentChat==='function')showCortexAgentChat();
+    else{sideView='chats';updateSideNav?.();showCenterProjects?.({asChats:true,keepSession:true})}
+  }catch(e){}
+  toast('Vault + Cortex');
+}
+window.openVaultAndCortex=openVaultAndCortex;
+window.openAirgptHome=openAirgptHome;
 
 async function showHubPage(){
   leaveOverlayWorkspace();
@@ -5560,6 +5619,26 @@ function cortexRecentAgentsHtml(agents){
     </button>`;
   }).join('')}</div>`;
 }
+/** UI shell for skill/subagent snippets — cards render now; Use/Invoke wiring is Claude. */
+function cortexSnippetCardsHtml(){
+  const stubs=[
+    {kicker:'Skill',title:'Cite from RAG',body:'Ground the next answer in the active knowledge space with citations.',wired:false},
+    {kicker:'Subagent',title:'One-shot helper',body:'Spawn a short-lived subagent for the draft in the composer — no durable agent.',wired:true,action:'createSubagentQuick()'},
+    {kicker:'Skill',title:'Morning brief',body:'Pack overnight chats + memory into a short briefing (routine wiring later).',wired:false},
+  ];
+  return `<div class="snippet-cards" id="cortexSnippetCards">${stubs.map(s=>`
+    <article class="snippet-card" data-wired="${s.wired?'1':'0'}">
+      <div class="sn-kicker">${esc(s.kicker)}</div>
+      <div class="sn-title">${esc(s.title)}</div>
+      <div class="sn-body">${esc(s.body)}</div>
+      <div class="sn-actions">
+        ${s.wired
+          ? `<button type="button" class="btn primary" onclick="${s.action}">Use</button>`
+          : `<button type="button" class="btn primary" onclick="toast('Snippet wiring comes next — shell is ready')">Use</button>`}
+      </div>
+    </article>`).join('')}</div>`;
+}
+window.cortexSnippetCardsHtml=cortexSnippetCardsHtml;
 function touchRecentAgent(a){
   if(!a||!a.id)return;
   try{
@@ -5599,6 +5678,8 @@ async function showCortexAgentChat(){
     </div>
     <p class="hint" style="margin:0 0 6px;text-align:left">Suggested agents</p>
     <div class="cortex-suggest">${chips}</div>
+    <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 6px;text-align:left">Snippets</h3>
+    ${cortexSnippetCardsHtml()}
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
     <p class="hint" style="margin-top:14px">Browse <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showCortexPage()">Apps</button> or <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showRoutinesPage()">Routines</button> for every agent you’ve built.</p>
@@ -6518,7 +6599,11 @@ function engineActivityCardHtml(act){
   const drafts=(apps.pending_drafts||[]).slice(0,5).map(a=>`<li>${esc(a.name||a.id)} · ${esc(a.stack||'')}</li>`).join('')||'<li>—</li>';
   const runningApps=(apps.running||[]).slice(0,5).map(a=>`<li>${esc(a.name||a.id)} · :${esc(String(a.port||'?'))}</li>`).join('')||'<li>—</li>';
   return `<div class="cortex-card" id="engineActivityCard" style="margin-bottom:14px">
-    <h3>Engine activity</h3>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h3 style="margin:0;flex:1">Engine activity</h3>
+      <button type="button" class="btn primary" style="border-radius:10px;padding:6px 12px;font-size:12px" onclick="showSeekPage()">Seek now</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">The engine can pursue a bound goal even when nobody messages — open Seek to bind one and ask what to do next.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px;font-size:12px">
       <div>
         <b>Routines</b>
@@ -6593,11 +6678,13 @@ async function showHostingPage(quiet){
     <div class="cortex-card" id="justWorksCard" style="margin-top:14px">
       <h3 style="margin:0 0 6px">Set it up for me</h3>
       <p class="hint" style="margin:0 0 12px;line-height:1.5">Checks this computer and picks a setup that runs here. Nothing is installed or changed until you say so.</p>
-      <div class="btn-row" style="gap:10px;align-items:center">
+      <div class="btn-row" style="gap:10px;align-items:center;flex-wrap:wrap">
         <button type="button" class="btn primary" id="justWorksBtn" style="border-radius:12px;padding:12px 22px;font-size:15px;font-weight:650" onclick="engineJustWorks()">Set it up for me</button>
+        <button type="button" class="btn" id="bakeoffBtn" style="border-radius:12px;padding:10px 16px" onclick="engineBakeoff()">What runs here?</button>
         <span class="hint" id="justWorksState" style="font-size:12px"></span>
       </div>
       <div id="justWorksOut" style="margin-top:12px"></div>
+      <div id="bakeoffOut" style="margin-top:10px"></div>
     </div>
     ${cortexCrmBannerHtml(cx)}
     ${engineActivityCardHtml(act)}
@@ -6619,7 +6706,7 @@ async function showHostingPage(quiet){
 // does not know what a backend is.
 // House rule: no em dashes or arrows in user-facing copy. Engine strings carry
 // them, so normalise here and collapse the spacing they leave behind.
-function jwClean(s){return String(s||'').replace(/\s*[—→]\s*/g,' - ').replace(/\s{2,}/g,' ').trim()}
+function jwClean(s){return String(s||'').replace(/\s*[—–→←…]\s*/g,' - ').replace(/\s{2,}/g,' ').trim()}
 function jwAdvancedHtml(d){
   const c=d.config||{}, p=d.platform||{};
   const boosters=(d.boosters_available||[]).map(b=>
@@ -6657,6 +6744,36 @@ async function engineJustWorks(apply){
   }catch(e){
     if(out)out.innerHTML=`<div class="hint" style="color:#e03131">Could not reach the engine on this computer. Nothing was changed.</div>`;
     if(btn){btn.disabled=false;btn.textContent='Set it up for me';btn.onclick=()=>engineJustWorks();}
+  }
+}
+async function engineBakeoff(){
+  const btn=$('bakeoffBtn'), out=$('bakeoffOut');
+  if(btn){btn.disabled=true;btn.textContent='Checking…';}
+  try{
+    const r=await api('/api/engine/bakeoff',{method:'POST',body:JSON.stringify({write_report:false})}).then(x=>x.json());
+    if(!out)return;
+    if(!r||!r.ok){
+      out.innerHTML=`<div class="hint" style="color:#e03131">${esc(jwClean((r&&r.error)||'Bakeoff failed'))}</div>`;
+      return;
+    }
+    const rows=(r.probes||[]).map(p=>{
+      const ms=p.health_ms==null?'-':String(p.health_ms);
+      return `<tr><td>${esc(p.name||p.id)}</td><td>${p.ok?'live':'off'}</td><td>${esc(ms)} ms</td><td>${esc(String(p.score??'-'))}</td></tr>`;
+    }).join('');
+    out.innerHTML=`<div style="border-left:3px solid var(--ok,#2f9e44);padding:8px 0 8px 12px">
+      <div style="font-size:13px;line-height:1.55">Recommended: <strong>${esc(r.recommended_backend||'?')}</strong> (${esc(String(r.live_count||0))} live)</div>
+      <div class="hint" style="margin-top:4px;font-size:12px">Reachability check only - not full tokens/sec yet.</div>
+      <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;opacity:.7">Probe table</summary>
+        <table style="width:100%;margin-top:8px;font-size:12px;border-collapse:collapse">
+          <thead><tr><th align="left">Backend</th><th align="left">Status</th><th align="left">Health</th><th align="left">Score</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </details>
+    </div>`;
+  }catch(e){
+    if(out)out.innerHTML=`<div class="hint" style="color:#e03131">Could not reach the engine for a bakeoff.</div>`;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='What runs here?';}
   }
 }
 async function showAppsHubPage(quiet){
@@ -7322,12 +7439,138 @@ async function showRoutinesPage(){
   const bud=budget?`<p class="hint" style="margin:0 0 10px">Today's spend: RM${esc(String(budget.spent_myr??budget.spent??0))} / RM${esc(String(budget.cap_myr??budget.cap??25))}</p>`:'';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
-    <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing.</p>
+    <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing. For always-on goal pursuit (no schedule needed), open <button type="button" class="btn" style="display:inline;padding:2px 8px;font-size:11px;border-radius:8px" onclick="showSeekPage()">Seek</button>.</p>
     ${offline?'<p class="hint" style="color:#e03131">Cortex engine offline — start :8010, then refresh.</p>':''}
     ${bud}
     ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
   </div>`;
+}
+
+// ===== Seek — proactive goal page (G2.0/G2.1 settled contract) =====
+// Bind an EnterpriseGoal, then POST /api/engine/seek with an empty inbox.
+// Guesses (assumptions) always shown; proposals never auto-approve apps / send mail.
+let _seekLast=null;
+let _seekGoalId='';
+function seekProposalHtml(p){
+  const confirm=p.requires_confirm?'Needs you':'Draft';
+  const auto=p.auto_ok?' · may auto-run':'';
+  return `<div class="cortex-card" style="margin:0">
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <strong style="flex:1">${esc(p.title||'')}</strong>
+      <span class="sess-agent-tag">${confirm}${auto}</span>
+    </div>
+    <p class="hint" style="margin:6px 0 0">${esc(p.why||'')}</p>
+    <p class="hint" style="margin:4px 0 0;opacity:.7">action ${esc(p.action||'')} · ${esc(p.risk||'')} · score ${esc(String(p.relevance??''))}</p>
+  </div>`;
+}
+function seekGoalCardHtml(g, activeId){
+  const on=g.id===activeId;
+  const crit=(g.measurable_criteria||[]).map(c=>esc(c.name||c.metric||'')).filter(Boolean).join(', ');
+  const floor=(g.constraints_in_words||[]).slice(0,2).map(r=>`<li>${esc(r)}</li>`).join('');
+  return `<div class="cortex-card" style="margin:0;${on?'outline:1px solid var(--accent,#5b8cff);':''}">
+    <div style="display:flex;gap:8px;align-items:center">
+      <strong style="flex:1">${esc(g.statement||'Goal')}</strong>
+      ${on?'<span class="sess-agent-tag">active</span>':''}
+    </div>
+    ${crit?`<p class="hint" style="margin:6px 0 0">Measures: ${crit}</p>`:''}
+    ${floor?`<ul style="margin:6px 0 0 16px;font-size:11px;color:var(--muted)">${floor}</ul>`:''}
+    <div class="btn-row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+      <button type="button" class="btn primary" style="padding:4px 10px;font-size:12px" onclick="_seekGoalId='${esc(g.id)}';seekNow()">Seek</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" onclick="seekDeleteGoal('${esc(g.id)}')">Delete</button>
+    </div>
+  </div>`;
+}
+async function showSeekPage(){
+  sideView='seek';updateSideNav();closeSide();
+  const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
+  let goals=[], offline=false;
+  try{
+    const d=await api('/api/cortex/goals').then(x=>x.json());
+    if(d&&d.ok)goals=d.goals||[];
+    else offline=true;
+  }catch(e){offline=true}
+  if(!_seekGoalId && goals.length)_seekGoalId=goals[0].id;
+  const active=goals.find(g=>g.id===_seekGoalId)||goals[0]||null;
+  const inp='width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;margin-bottom:8px';
+  const goalCards=goals.map(g=>seekGoalCardHtml(g, active&&active.id)).join('')||'<p class="hint">No goal yet — write one sentence below. The engine adds an ethical floor you cannot remove.</p>';
+  let seekBlock='';
+  if(_seekLast&&_seekLast.ok){
+    const props=(_seekLast.proposals||[]).map(seekProposalHtml).join('')||'<p class="hint">No proposals.</p>';
+    const assumptions=(_seekLast.assumptions||[]).map(a=>`<li>${esc(a)}</li>`).join('');
+    seekBlock=`<div style="margin-top:16px">
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px">Last seek · ${esc(_seekLast.initiative||'proactive')} · ${esc(_seekLast.autonomy_level||'')}</h3>
+      ${assumptions?`<ul style="margin:0 0 12px 18px;font-size:12px;color:var(--muted);line-height:1.45">${assumptions}</ul>`:''}
+      <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${props}</div>
+    </div>`;
+  } else if(_seekLast && !_seekLast.ok){
+    seekBlock=`<p class="hint" style="color:#e03131;margin-top:12px">${esc(_explainedToast(_seekLast.detail||_seekLast.error))}</p>`;
+  }
+  $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
+    <h2>Seek</h2>
+    <p class="cortex-tag">The active engine. Bind a goal, then ask what to do next — even when the inbox is empty. Guesses are shown in words; sending mail, approving apps, or spending money always waits for you.</p>
+    ${offline?'<p class="hint" style="color:#e03131">Cortex engine offline — start :8010, then refresh.</p>':''}
+    <div class="cortex-card" style="margin-bottom:14px">
+      <h3 style="margin:0 0 8px">Bind a goal</h3>
+      <textarea id="seekStatement" rows="2" placeholder="Grow monthly revenue ethically without misleading anyone" style="${inp};resize:vertical"></textarea>
+      <input id="seekMetric" placeholder="Optional metric name (e.g. monthly recurring revenue)" style="${inp}"/>
+      <input id="seekTarget" placeholder="Optional target number" style="${inp}"/>
+      <input id="seekEvidence" placeholder="Optional evidence source (e.g. lakehouse)" style="${inp}"/>
+      <div class="btn-row" style="gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn primary" onclick="seekCreateGoal()">Create goal</button>
+        <button type="button" class="btn" onclick="seekNow()">Seek now</button>
+      </div>
+    </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px">Goals</h3>
+    <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:8px">${goalCards}</div>
+    ${seekBlock}
+  </div>`;
+}
+async function seekCreateGoal(){
+  const statement=(document.getElementById('seekStatement')?.value||'').trim();
+  if(!statement){toast('Describe the goal first');return}
+  const name=(document.getElementById('seekMetric')?.value||'').trim();
+  const targetRaw=(document.getElementById('seekTarget')?.value||'').trim();
+  const evidence=(document.getElementById('seekEvidence')?.value||'').trim();
+  const measurable=[];
+  if(name){
+    const c={name, metric:name};
+    if(targetRaw && !isNaN(Number(targetRaw)))c.target=Number(targetRaw);
+    if(evidence)c.evidence_source=evidence;
+    measurable.push(c);
+  }
+  try{
+    const body={statement};
+    if(measurable.length)body.measurable_criteria=measurable;
+    const r=await api('/api/cortex/goals',{method:'POST',body:JSON.stringify(body)}).then(x=>x.json());
+    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
+    _seekGoalId=(r.goal&&r.goal.id)||'';
+    toast('Goal bound · ethical floor attached');
+    _seekLast=null;
+    showSeekPage();
+  }catch(e){toast('Could not create goal')}
+}
+async function seekNow(){
+  try{
+    const body={trigger:'manual', limit:8};
+    if(_seekGoalId)body.goal_id=_seekGoalId;
+    const r=await api('/api/engine/seek',{method:'POST',body:JSON.stringify(body)}).then(x=>x.json());
+    _seekLast=r;
+    if(!r.ok)toast(_explainedToast(r.detail||r.error));
+    else toast((r.proposals||[]).length+' next steps · nothing irreversible done');
+    showSeekPage();
+  }catch(e){toast('Seek failed — is Cortex on :8010?')}
+}
+async function seekDeleteGoal(id){
+  if(!confirm('Delete this goal?'))return;
+  try{
+    const r=await api('/api/cortex/goals/'+encodeURIComponent(id),{method:'DELETE'}).then(x=>x.json());
+    if(r.ok===false){toast(_explainedToast(r.detail||r.error));return}
+    if(_seekGoalId===id)_seekGoalId='';
+    _seekLast=null;
+    toast('Goal deleted');
+    showSeekPage();
+  }catch(e){toast('Delete failed')}
 }
 
 // ===== Vertex — Edge AI monitoring window (precision manufacturing) =====
@@ -7766,6 +8009,30 @@ async function ragOpenSpace(id,opts){
   const t=(opts&&opts.tab)||'overview';
   ragState.tab=(t==='sources')?'build':t;
   ragRenderSpace();
+  // Silent ANN backfill: old spaces have blobs but empty vec tables. Never modal.
+  ragMaybeAnnBackfill(id);
+}
+async function ragMaybeAnnBackfill(sid){
+  if(!sid)return;
+  try{
+    const st=await api('/api/rag/spaces/'+sid+'/ann-status').then(r=>r.json()).catch(()=>null);
+    if(!st||!st.needs_backfill)return;
+    const line=document.querySelector('.rag-space-head');
+    let pill=$('ragAnnPill');
+    if(!pill&&line){
+      pill=document.createElement('span');
+      pill.id='ragAnnPill';
+      pill.className='hint';
+      pill.style.cssText='font-size:11px;opacity:.75;margin-left:8px';
+      line.appendChild(pill);
+    }
+    if(pill)pill.textContent='Speeding up search…';
+    const out=await api('/api/rag/spaces/'+sid+'/ann-backfill',{method:'POST',body:'{}'}).then(r=>r.json()).catch(()=>null);
+    if(pill){
+      if(out&&out.inserted){pill.textContent='Search index updated';setTimeout(()=>pill.remove(),2400);}
+      else pill.remove();
+    }
+  }catch(e){/* brute force still correct */}
 }
 async function ragRefreshSpace(){
   try{ragState.space=((await api('/api/rag/spaces').then(r=>r.json())).spaces||[]).find(s=>String(s.id)===String(ragState.spaceId))||ragState.space}catch(e){}
@@ -9785,23 +10052,41 @@ let _mermaidReady=false;
 function initMermaid(){
   if(_mermaidReady||!window.mermaid)return;
   try{
+    const dark=document.body.classList.contains('theme-dark')||!document.body.classList.contains('theme-light');
     mermaid.initialize({
       startOnLoad:false,
       securityLevel:'strict',
-      theme:'dark',
+      theme:dark?'dark':'neutral',
       fontFamily:'inherit',
-      themeVariables:{
-        background:'#0d1117',
-        primaryColor:'#161b22',
-        primaryTextColor:'#e6edf3',
-        primaryBorderColor:'#30363d',
-        secondaryColor:'#1f6feb',
-        tertiaryColor:'#161b22',
-        lineColor:'#7d8590',
-        textColor:'#e6edf3',
-        mainBkg:'#161b22',
-        nodeBorder:'#30363d',
-        clusterBkg:'#0d1117'
+      flowchart:{htmlLabels:true,curve:'basis',padding:12},
+      themeVariables:dark?{
+        background:'#0a0a0a',
+        primaryColor:'#111111',
+        primaryTextColor:'#f5f5f5',
+        primaryBorderColor:'rgba(255,255,255,.18)',
+        secondaryColor:'#1a1a1a',
+        tertiaryColor:'#111111',
+        lineColor:'rgba(255,255,255,.35)',
+        textColor:'#f5f5f5',
+        mainBkg:'#111111',
+        nodeBorder:'rgba(255,255,255,.18)',
+        clusterBkg:'rgba(17,17,17,.85)',
+        clusterBorder:'rgba(255,255,255,.14)',
+        titleColor:'#f5f5f5'
+      }:{
+        background:'#f7f7f5',
+        primaryColor:'#ffffff',
+        primaryTextColor:'#111',
+        primaryBorderColor:'rgba(0,0,0,.16)',
+        secondaryColor:'#f0f0ec',
+        tertiaryColor:'#fff',
+        lineColor:'rgba(0,0,0,.35)',
+        textColor:'#111',
+        mainBkg:'#fff',
+        nodeBorder:'rgba(0,0,0,.16)',
+        clusterBkg:'rgba(0,0,0,.03)',
+        clusterBorder:'rgba(0,0,0,.12)',
+        titleColor:'#111'
       }
     });
     _mermaidReady=true;
@@ -10326,6 +10611,71 @@ async function reconcileAfterSendFail(errToast){
   }
   if(errToast)toast(errToast);
 }
+let _pauseRetryTimer=null;
+function showComposerPause(msg,retrySec){
+  const pill=$('composerPausePill');if(!pill){toast(msg);return}
+  const sec=Math.max(1,Number(retrySec)||8);
+  pill.dataset.show='1';pill.hidden=false;
+  let left=sec;
+  const paint=()=>{
+    pill.innerHTML=`<span>${esc(msg)} · retry in ${left}s</span><button type="button" class="btn" id="composerPauseRetry">Retry</button>`;
+    $('composerPauseRetry')?.addEventListener('click',()=>{hideComposerPause();$('input')?.focus();});
+  };
+  paint();
+  if(_pauseRetryTimer)clearInterval(_pauseRetryTimer);
+  _pauseRetryTimer=setInterval(()=>{
+    left-=1;
+    if(left<=0){hideComposerPause();return}
+    paint();
+  },1000);
+}
+function hideComposerPause(){
+  if(_pauseRetryTimer){clearInterval(_pauseRetryTimer);_pauseRetryTimer=null}
+  const pill=$('composerPausePill');
+  if(pill){pill.dataset.show='';pill.hidden=true;pill.innerHTML='';}
+}
+
+// -- Project drift suggestion -------------------------------------------------
+// Suggest only. The server holds the 3-turn streak and the per-session dismissal, so
+// reloading the page cannot reset the counter and nag the user again from zero.
+function hideProjectSuggest(){
+  const chip=$('projectSuggestChip');
+  if(chip){chip.dataset.show='';chip.hidden=true;chip.innerHTML='';}
+}
+async function projectSuggestObserve(text){
+  if(!currentSession||!(text||'').trim())return;
+  try{
+    const out=await api('/api/chat/project-suggest',{method:'POST',body:JSON.stringify({
+      session_id:currentSession,text:String(text).slice(0,2000),mode:currentMode()
+    })}).then(r=>r.json()).catch(()=>null);
+    if(!out||!out.suggest){hideProjectSuggest();return}
+    renderProjectSuggest(out);
+  }catch(e){/* a missed suggestion is not worth surfacing */}
+}
+function renderProjectSuggest(out){
+  const chip=$('projectSuggestChip');if(!chip)return;
+  const label=esc(out.project||out.category||'another project');
+  chip.innerHTML=`<span class="psc-text">This looks like <strong>${label}</strong> — move?</span>
+    <button type="button" class="btn primary" id="pscMove">Move</button>
+    <button type="button" class="btn" id="pscNot">Not now</button>`;
+  chip.dataset.show='1';chip.hidden=false;
+  $('pscMove')?.addEventListener('click',()=>projectSuggestAct('move',out.category));
+  $('pscNot')?.addEventListener('click',()=>projectSuggestAct('dismiss'));
+}
+async function projectSuggestAct(action,category){
+  const sid=currentSession;
+  hideProjectSuggest();
+  if(!sid)return;
+  try{
+    const r=await api('/api/chat/project-suggest',{method:'POST',body:JSON.stringify({
+      session_id:sid,action,category:category||''
+    })}).then(r=>r.json()).catch(()=>null);
+    if(action==='move'&&r&&r.ok){
+      toast('Moved to '+(r.project||r.category));
+      try{pullHistory();renderProjectBar?.()}catch(e){}
+    }
+  }catch(e){}
+}
 let userPinnedScroll=false;
 // Set true right before (re)loading a chat so the first render lands at the newest message.
 let chatFreshOpen=false;
@@ -10562,8 +10912,8 @@ async function sendStream(text,extra={}){
       try{const ej=await r.json();if(ej.error)detail=ej.error}catch(e){}
       // Rate limit / provider busy: keep history, pause this send — never wipe chat or re-POST.
       if(r.status===429||/rate|wait|too many|quota/i.test(detail)){
-        await reconcileAfterSendFail(detail);
-        toast(detail);
+        await reconcileAfterSendFail('');
+        showComposerPause('Rate limited - chat saved', 12);
         return {ok:false, opened:false, paused:true};
       }
       await reconcileAfterSendFail(detail);
@@ -10633,6 +10983,8 @@ async function sendStream(text,extra={}){
     drainMessageQueue();
     updateQueueHint();
     updateMsgJumpBar();
+    // Off the critical path: the reply is already on screen before we ask.
+    projectSuggestObserve(text);
     return {ok:true, opened:true};
   }catch(e){
     if(e.name==='AbortError'){
@@ -11134,9 +11486,14 @@ function showNetworkBanner(d){
 
 async function pullInfo(){
   if(document.hidden)return;
+  const prevAlive=window._backendAlive!==false;
   try{
     const d=await fetchJson('/api/info');
     info=d;
+    window._backendAlive=true;
+    if(prevAlive===false){
+      toast('Backend restarted - your chats are intact');
+    }
     // Server mode is a suggestion, never an override: adopt only if the user
     // has never explicitly picked a project, and only when it actually changed
     // (the old unconditional updateModeBtn() forced a reflow every 3s).
@@ -11230,6 +11587,7 @@ async function pullInfo(){
     }
     refreshHubMini();
   }catch(e){
+    window._backendAlive=false;
     if($('subStatus'))$('subStatus').textContent='Offline';
   }
 }
@@ -12220,46 +12578,4 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       if(!d || !d.ok) return;
       n = (d.running || []).length;
       [['bgTasksTopBtn','bgTasksTopDot'],['bgTasksTitleBtn','bgTasksTitleDot']].forEach(function(pair){
-        var b = document.getElementById(pair[0]), dot = document.getElementById(pair[1]);
-        if(b) b.classList.toggle('busy', n > 0);
-        if(dot){ dot.textContent = String(n); dot.hidden = n === 0; }
-      });
-    }).catch(function(){});
-  }
-  setInterval(upd, 4000);
-  setTimeout(upd, 800);
-})();
-
-/* ── Compact chrome on short viewports ────────────────────────────────────
-   When the window is vertically small, shrink the composer and slide the top
-   nav away — it reappears on hover at the top edge — so more page shows.    */
-(function(){
-  if(window.__compactChromeReady) return; window.__compactChromeReady = true;
-  var st = document.createElement('style');
-  st.textContent = [
-    'header.topbar{transition:transform .2s ease,opacity .2s ease}',
-    'body.compact-chrome header.topbar{position:fixed;top:0;left:0;right:0;z-index:40;',
-      'transform:translateY(-100%);opacity:0;pointer-events:none}',
-    'body.compact-chrome.nav-peek header.topbar{transform:none;opacity:1;pointer-events:auto}',
-    'body.compact-chrome .composer{padding-top:5px;padding-bottom:5px}',
-    'body.compact-chrome .composer textarea,body.compact-chrome .composer #input{min-height:30px}',
-    'body.compact-chrome #navPeekZone{position:fixed;top:0;left:0;right:0;height:8px;z-index:41}'
-  ].join('');
-  document.head.appendChild(st);
-
-  var zone = document.createElement('div');
-  zone.id = 'navPeekZone';
-  document.body.appendChild(zone);
-
-  function apply(){ document.body.classList.toggle('compact-chrome', window.innerHeight < 560); }
-  window.addEventListener('resize', apply);
-  document.addEventListener('mousemove', function(e){
-    if(!document.body.classList.contains('compact-chrome')) return;
-    if(e.clientY <= 8) document.body.classList.add('nav-peek');
-    else if(e.clientY > 76) document.body.classList.remove('nav-peek');
-  });
-  apply();
-})();
-</script>
-</body>
-</html>
+        var b = document.getElementById(pair[0]

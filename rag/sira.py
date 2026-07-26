@@ -125,7 +125,7 @@ def llm_index_phrases(text: str, *, max_phrases: int = 24) -> list[str]:
         "Return a JSON array of strings only.\n\n"
         f"---\n{snippet}\n---"
     )
-    result, _provider = ai_engine._standard_llm(prompt, _LLM_SYSTEM, max_tokens=400)
+    result, _provider = ai_engine._standard_llm(prompt, _LLM_SYSTEM, max_tokens=400, task="rag")
     return _parse_phrase_json(result)[:max_phrases]
 
 

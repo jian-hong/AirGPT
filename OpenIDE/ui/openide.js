@@ -86,6 +86,9 @@ function onBrandClick(e){
   if(e&&e.target&&e.target.closest&&e.target.closest('.brand-tier,#brandTier,.tier-free,.tier-premium,.tier-icon'))return;
   if(document.body.classList.contains('openide-mode')){exitOpenIDE();return}
   if(document.body.classList.contains('openforge-mode')){showWorkspace('home');return}
+  // Main app: brand opens vault + Cortex together
+  if(typeof openVaultAndCortex==='function'){openVaultAndCortex();return}
+  if(typeof openAirgptHome==='function'){openAirgptHome();return}
 }
 function exitOpenIDE(){
   if(!document.body.classList.contains('openide-mode')&&sideView!=='openide')return;
@@ -321,6 +324,7 @@ async function showOpenIDEPage(){
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
               </button>
               <button type="button" class="btn primary" id="openideRunBtn" onclick="runOpenIDEAgent()">Run</button>
+              <button type="button" class="oide-glass-btn" id="oideBgTasksBtn" title="Background tasks" onclick="if(window.bgTasks&&window.bgTasks.open)window.bgTasks.open();else toast('Background tasks UI not ready')">Tasks</button>
             </div>
           </div>
           <div id="openideMentionPick"></div>
@@ -1487,11 +1491,22 @@ async function runOpenIDEAgent(opts){
       fullPrompt+=`\n\n[workspace] branch=${fp.branch||'?'} head=${(fp.head||'').slice(0,12)} dirty=${fp.dirty_count||0}`;
       fullPrompt+=`\n[cortex] orchestrate under git ${fp.head||'unknown'} · invoke rules/skills/subagents`;
     }
-    // Multitask: queue via Cortex then also run primary
+    // Multitask: queue via Cortex then also fan a background workflow when intent fits
     if(window._openideAgentMode==='multitask'&&aid){
       try{
         await api('/api/cortex/queue',{method:'POST',body:JSON.stringify({agent_id:aid,prompt:fullPrompt.slice(0,2000),session_id:currentSession||0,skill_pack:window.pendingSkillPack||''})});
       }catch(e){}
+      try{
+        if(window.bgTasks){
+          const low=fullPrompt.toLowerCase();
+          if(/\b(research|investigate|look into|survey)\b/.test(low)) window.bgTasks.research(fullPrompt.slice(0,400));
+          else if(/\b(smooth|jank|latency|animation|performance audit)\b/.test(low)) window.bgTasks.run('smoothness_audit', fullPrompt.slice(0,400));
+          else if(/\b(review|bug hunt|find bugs|critique)\b/.test(low)) window.bgTasks.run(/\bbug\b/.test(low)?'bug_hunt':'code_review', fullPrompt.slice(0,400));
+          else window.bgTasks.open();
+        }
+      }catch(e){}
+    } else if(window.bgTasks && /\b(invoke subagent|spin off|background|fan out|deep research)\b/i.test(prompt)){
+      try{ window.bgTasks.open(); }catch(e){}
     }
     const body={
       prompt:fullPrompt,session_id:currentSession||0,thinking_mode:mode,backend,

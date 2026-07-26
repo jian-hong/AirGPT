@@ -34,7 +34,12 @@ def install() -> dict:
     cmd = [sys.executable, "-m", "pip", "install", "sqlite-vec"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        out = {"ok": r.returncode == 0, "cmd": cmd, "stdout": (r.stdout or "")[-500], "stderr": (r.stderr or "")[-500]}
+        out = {
+            "ok": r.returncode == 0,
+            "cmd": cmd,
+            "stdout": (r.stdout or "")[-500:],
+            "stderr": (r.stderr or "")[-500:],
+        }
     except Exception as exc:
         out = {"ok": False, "error": str(exc)[:200], "cmd": cmd}
     out["check"] = check()

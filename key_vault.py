@@ -325,7 +325,7 @@ def snapshot(include_status: bool = True) -> dict[str, Any]:
         "product_name": "OpenVault Key Vault",
         "save_endpoint": "/api/settings",
         "source": "local_cache",
-        "free_fallback_order": ["omniroute", "groq", "openrouter", "gemini"],
+        "free_fallback_order": ["omniroute", "groq", "gemini", "openrouter", "sea-lion"],
     }
 
 

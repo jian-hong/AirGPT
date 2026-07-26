@@ -302,7 +302,7 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
                 "Do not mention chunking, embeddings, RAG pipelines, or “local knowledge space” boilerplate."
             )
             user = f"Space name: {space.get('name')}\n\nIndexed excerpts:\n{blob}\n\nSummary:"
-            text, _prov = ai_engine._standard_llm(user, system, max_tokens=280)  # noqa: SLF001
+            text, _prov = ai_engine._standard_llm(user, system, max_tokens=280, task="rag")  # noqa: SLF001
             text = (text or "").strip()
             if len(text) >= 40:
                 summary = text
@@ -505,7 +505,7 @@ def answer_events(
         text = "".join(parts)
         if not text.strip():
             full, model = ai_engine._standard_llm(  # noqa: SLF001
-                user, system, max_tokens=getattr(ai_engine, "CHAT_MAX_TOKENS", 2048)
+                user, system, max_tokens=getattr(ai_engine, "CHAT_MAX_TOKENS", 2048), task="rag"
             )
             text = str(full or "")
             for piece in _chunk_text(text):

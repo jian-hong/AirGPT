@@ -18,6 +18,8 @@ COMMANDS: list[dict[str, Any]] = [
     {"name": "skill", "description": "Enable a skill pack", "args": "<pack> [global|project|off]"},
     {"name": "rules", "description": "Show or edit workspace rules", "args": "[edit]"},
     {"name": "subagent", "description": "Queue a helper subagent", "args": "<prompt>"},
+    {"name": "research", "description": "Fan out background research subagents on a topic", "args": "<topic>"},
+    {"name": "workflow", "description": "Run a preset background workflow", "args": "[id]"},
 ]
 
 

@@ -114,14 +114,19 @@ def parent_child_chunk(
     child_tokens: int = 200,
     parent_max_tokens: int = 900,
     code: bool = False,
-) -> tuple[list[ChunkDraft], list[ChunkDraft]]:
+    salience_terms: list[str] | None = None,
+) -> tuple[list[ChunkDraft], list[ChunkDraft], dict]:
     """
     Build parent sections and child embed windows.
-    Returns (parents, children) where children.parent_index points into parents.
+    Returns (parents, children, metrics) where children.parent_index points into parents.
     code=True aligns parent chunks to function/class boundaries for source files.
+    Near-duplicate children (Jaccard >= 0.9) are demoted; salience_terms prefer rare phrases.
     """
+    from rag import normalize as norm
+
     parents: list[ChunkDraft] = []
     children: list[ChunkDraft] = []
+    demoted = 0
     for heading, body, start, end in _split_sections(text, code=code):
         # Cap oversized parents by further splitting on blank lines
         parent_bodies: list[tuple[str, str, int, int]] = [(heading, body, start, end)]
@@ -143,7 +148,16 @@ def parent_child_chunk(
                     meta={"headings": [ph] if ph else []},
                 )
             )
+            prev_text = ""
             for ct, cs, ce in _window_children(pb, ps, target_tokens=child_tokens):
+                if prev_text and norm.jaccard_tokens(prev_text, ct) >= 0.9:
+                    demoted += 1
+                    continue
+                # Prefer salient windows when terms provided (still keep all above floor)
+                if salience_terms and estimate_tokens(ct) < 40:
+                    if norm.salience_score(ct, salience_terms) < 0.15:
+                        demoted += 1
+                        continue
                 children.append(
                     ChunkDraft(
                         kind="child",
@@ -153,8 +167,10 @@ def parent_child_chunk(
                         span_end=ce,
                         token_est=estimate_tokens(ct),
                         parent_index=pidx,
+                        meta={"salience": round(norm.salience_score(ct, salience_terms), 3)},
                     )
                 )
+                prev_text = ct
     # Fallback: if no children (tiny doc), embed parents as children too
     if parents and not children:
         for i, p in enumerate(parents):
@@ -169,7 +185,8 @@ def parent_child_chunk(
                     parent_index=i,
                 )
             )
-    return parents, children
+    metrics = {"demoted_children": demoted, "child_count": len(children), "parent_count": len(parents)}
+    return parents, children, metrics
 
 
 def extract_headings(text: str) -> list[str]:

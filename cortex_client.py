@@ -299,11 +299,31 @@ def engine_just_works(body: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def engine_bakeoff(body: dict[str, Any] | None = None) -> dict[str, Any]:
-    """POST /api/engine/bakeoff — soft probe of local backends (reachability)."""
+    """POST /api/engine/bakeoff — soft probe of local backends (reachability).
+
+    Slow by nature: it dials every candidate backend and waits out the ones that
+    are not there. A cold probe can take most of a minute, so the timeout is
+    generous and a timeout is never reported as "engine offline" — saying the
+    engine is down when it is merely busy sends people to fix the wrong thing.
+    """
     if not available():
-        return {"ok": False, "error": "Cortex engine offline", "require_engine": True}
-    data = _post("/api/engine/bakeoff", body or {}, timeout=30.0)
-    return data if isinstance(data, dict) else {"ok": False, "error": "bakeoff failed"}
+        return {
+            "ok": False,
+            "require_engine": True,
+            "human": ["The Cortex engine is not running, so nothing could be checked."],
+            "error": "Cortex engine offline",
+        }
+    data = _post("/api/engine/bakeoff", body or {}, timeout=90.0)
+    if isinstance(data, dict):
+        return data
+    return {
+        "ok": False,
+        "human": [
+            "Checking the backends took too long, so this was stopped.",
+            "The engine is still running. Try again in a moment.",
+        ],
+        "error": "bakeoff timed out",
+    }
 
 
 def engine_config(body: dict[str, Any]) -> dict[str, Any]:
@@ -655,6 +675,52 @@ def cortex_apps_stop(app_id: str) -> dict[str, Any]:
 
 def cortex_apps_delete(app_id: str) -> dict[str, Any]:
     return _json_call("DELETE", f"/api/apps/{app_id}", timeout=6.0)
+
+
+def goals_list() -> dict[str, Any]:
+    ensure_engine(wait_sec=6.0)
+    data = _get("/api/goals", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
+def goals_create(statement: str, **extra: Any) -> dict[str, Any]:
+    ensure_engine(wait_sec=6.0)
+    body: dict[str, Any] = {"statement": statement}
+    for key in ("org_id", "measurable_criteria", "hard_constraints", "soft_preferences", "audit_required"):
+        if key in extra and extra[key] is not None:
+            body[key] = extra[key]
+    return _json_call("POST", "/api/goals", body, timeout=8.0)
+
+
+def goals_get(goal_id: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _get(f"/api/goals/{goal_id}", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
+def goals_delete(goal_id: str) -> dict[str, Any]:
+    return _json_call("DELETE", f"/api/goals/{goal_id}", timeout=4.0)
+
+
+def goals_seeks(goal_id: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _get(f"/api/goals/{goal_id}/seeks", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
+def engine_seek(goal_id: str | None = None, *, trigger: str = "manual", limit: int = 8) -> dict[str, Any]:
+    """POST /api/engine/seek — proactive proposals; no inbox required."""
+    ensure_engine(wait_sec=6.0)
+    body: dict[str, Any] = {"trigger": trigger, "limit": int(limit)}
+    if goal_id:
+        body["goal_id"] = goal_id
+    return _json_call("POST", "/api/engine/seek", body, timeout=12.0)
 
 
 # -- Background workflows (Cortex SoT) ---------------------------------------

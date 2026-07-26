@@ -106,8 +106,7 @@ def test_clipboard_then_screenshot_race():
     data = _normalize_image_bytes(raw)
     h = hashlib.sha256(data).hexdigest()
     img_sess = db.get_or_create_daily_image_session()
-    ai_sess = db.get_or_create_daily_screenshot_session()
-    before_img = db.list_sessions(5)  # noqa: F841
+    ai_sess = db.get_or_create_daily_screenshot_session()  # noqa: F841
     m1 = post_message(
         "127.0.0.1", "stress", file_data=data, filename="race_clip.png",
         source="clipboard", session_id=img_sess["id"], auto_analyze=False,
@@ -117,10 +116,7 @@ def test_clipboard_then_screenshot_race():
     m2 = post_capture_image(
         "127.0.0.1", "stress", data, "race_shot.png", "screenshot", with_ai=False,
     )
-    ok("screenshot still lands in AI chat after clipboard", bool(m2), f"msg={m2 and m2.get('id')}")
-    if m2:
-        ok("screenshot session is AI daily", int(m2.get("session_id") or 0) == int(ai_sess["id"]))
-        ok("session-scoped hash present", db.hash_seen_in_session(h, ai_sess["id"]))
+    ok("screenshot blocked after clipboard (one image one store)", m2 is None)
     # Second screenshot same bytes → skip
     m3 = post_capture_image(
         "127.0.0.1", "stress", data, "race_shot2.png", "screenshot", with_ai=False,

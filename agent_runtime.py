@@ -539,7 +539,9 @@ def run_agent_events(
                             + (" · compacted" if ctx_meta.get("compacted") else "")
                         ),
                     }
-                text, model = ai_engine._standard_llm(user, sys, max_tokens=min(600, token_budget - tokens_used))
+                text, model = ai_engine._standard_llm(
+                    user, sys, max_tokens=min(600, token_budget - tokens_used), task="agent"
+                )
                 tokens_used += min(600, len(text or ""))
                 llm_fail_streak = 0
                 try:

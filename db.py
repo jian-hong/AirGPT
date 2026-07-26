@@ -324,6 +324,30 @@ def hash_seen(content_hash: str) -> bool:
     return bool(row)
 
 
+def claim_hash(content_hash: str) -> bool:
+    """Atomically claim a content hash for first publish. True = this caller won."""
+    if not content_hash:
+        return False
+    with _lock, _connect() as conn:
+        if conn.execute("SELECT 1 FROM seen_hashes WHERE hash=?", (content_hash,)).fetchone():
+            return False
+        if conn.execute(
+            "SELECT 1 FROM messages WHERE content_hash=? LIMIT 1", (content_hash,)
+        ).fetchone():
+            conn.execute(
+                "INSERT OR IGNORE INTO seen_hashes(hash,created_at) VALUES(?,?)",
+                (content_hash, time.time()),
+            )
+            conn.commit()
+            return False
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO seen_hashes(hash,created_at) VALUES(?,?)",
+            (content_hash, time.time()),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def mark_hash(content_hash: str) -> None:
     if not content_hash:
         return
@@ -703,6 +727,15 @@ def create_reply_session(
     return dict(row)
 
 
+def get_session(session_id: int) -> dict | None:
+    """One session row by id, or None. No pruning — callers may hold a stale id."""
+    with _lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE id=?", (int(session_id),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def list_sessions(limit: int = 50) -> list[dict]:
     try:
         prune_empty_orphan_sessions()
@@ -952,12 +985,15 @@ def add_message(
     content_hash: str | None = None,
     session_id: int = 0,
     allow_duplicate: bool = False,
+    hash_preclaimed: bool = False,
 ) -> dict | None:
     if content_hash:
         if allow_duplicate and session_id:
             if hash_seen_in_session(content_hash, session_id):
                 return None
-        elif hash_seen(content_hash):
+        elif hash_preclaimed:
+            pass  # caller already won claim_hash
+        elif not claim_hash(content_hash):
             return None
     now = time.time()
     with _lock, _connect() as conn:
@@ -968,7 +1004,8 @@ def add_message(
         )
         conn.commit()
         row = conn.execute("SELECT * FROM messages WHERE id=?", (cur.lastrowid,)).fetchone()
-    if content_hash:
+    if content_hash and (allow_duplicate or not hash_preclaimed):
+        # Global claim already stored for preclaimed path; still mark for session-scoped dups
         mark_hash(content_hash)
     if session_id:
         touch_session(session_id)

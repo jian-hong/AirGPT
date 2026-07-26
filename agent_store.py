@@ -41,6 +41,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 def init() -> None:
     with _conn() as conn:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=10000")
+        except Exception:
+            pass
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS agents (

@@ -243,6 +243,19 @@ def search(
     debug: bool = False,
 ) -> dict:
     """Hybrid search with optional SiRA-constrained expansion terms."""
+    # All channels below share one connection instead of opening ~50 of their own.
+    with store.session():
+        return _search(space_id, query, depth=depth, top_k=top_k, debug=debug)
+
+
+def _search(
+    space_id: int,
+    query: str,
+    *,
+    depth: str | None = "high",
+    top_k: int = 8,
+    debug: bool = False,
+) -> dict:
     space = store.get_space(space_id)
     if not space:
         return {"ok": False, "error": "space not found"}
@@ -298,6 +311,12 @@ def search(
     # the exact query missed — widening recall without diluting MRR.
     sparse = sparse_search(space_id, query, k=sparse_k)
     dense = dense_vector_search(space_id, query, k=dense_k)
+    try:
+        from rag.vector_backends import last_search_meta
+
+        dense_meta = last_search_meta()
+    except Exception:
+        dense_meta = {}
     files = file_level_search(space_id, query, k=20)
     channels = {"sparse": sparse, "dense": dense, "file": files}
     if expanded_q and expanded_q.strip() != (query or "").strip():
@@ -370,6 +389,8 @@ def search(
         "n_dense": len(dense),
         "n_file": len(files),
         "n_fused_chunks": len(chunk_hits),
+        "backend_fallback": dense_meta.get("backend_fallback"),
+        "vector_profile": dense_meta.get("profile") or space.get("profile") or "local",
     }
     if debug:
         payload["top_fused"] = [

@@ -88,7 +88,7 @@ def test_extracted_xlsx_chunks(tmp_path):
     p = tmp_path / "big.xlsx"
     wb.save(str(p))
     text, _ = ingest.read_text_file(p)
-    parents, children = chunking.parent_child_chunk(text)
+    parents, children, _ = chunking.parent_child_chunk(text)
     assert children, "extracted spreadsheet produced no chunks"
     assert any("Frequency_Hz" in c.text for c in parents + children)
 

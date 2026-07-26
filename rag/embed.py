@@ -144,6 +144,7 @@ def _try_model():
 def reset_embedder_cache() -> None:
     """Clear lazy model cache (tests / after env changes)."""
     _try_model.cache_clear()
+    _dim_cache.clear()
 
 
 def embed_text(text: str, *, dim: int = DEFAULT_DIM) -> list[float]:
@@ -164,6 +165,36 @@ def embed_texts(texts: list[str], *, dim: int = DEFAULT_DIM) -> list[list[float]
 
 def backend_name() -> str:
     return "model" if _try_model() is not None else "hash"
+
+
+_dim_cache: dict[str, int] = {}
+
+
+def active_dim() -> int:
+    """Vector width the active embedder actually produces.
+
+    The hash backend is DEFAULT_DIM, but a model backend is whatever the model says
+    (384 for bge-small). Anything that builds a fixed-width index has to ask rather than
+    assume, or the index silently never matches. Probed once, then cached per backend.
+    """
+    name = backend_name()
+    cached = _dim_cache.get(name)
+    if cached:
+        return cached
+    dim = DEFAULT_DIM
+    if name == "model":
+        try:
+            probe = embed_text("dimension probe")
+            if probe:
+                dim = len(probe)
+        except Exception:
+            dim = DEFAULT_DIM
+    _dim_cache[name] = dim
+    return dim
+
+
+def reset_dim_cache() -> None:
+    _dim_cache.clear()
 
 
 def upgrade_available() -> dict:

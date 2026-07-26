@@ -59,7 +59,7 @@ class RagFoundationTests(unittest.TestCase):
         from rag.chunking import parent_child_chunk
 
         text = (self.fixture / "alpha.md").read_text(encoding="utf-8")
-        parents, children = parent_child_chunk(text)
+        parents, children, _ = parent_child_chunk(text)
         self.assertGreaterEqual(len(parents), 1)
         self.assertGreaterEqual(len(children), 1)
         self.assertTrue(any(c.parent_index >= 0 for c in children))
@@ -608,7 +608,7 @@ class RagFoundationTests(unittest.TestCase):
             'def bravo(y):\n    # inner comment\n    return y * 2\n\n'
             'class Charlie:\n    def method(self):\n        return 3\n'
         )
-        parents, _ = parent_child_chunk(code, code=True)
+        parents, _, _ = parent_child_chunk(code, code=True)
         heads = [p.text.strip().splitlines()[0] for p in parents]
         self.assertTrue(any(h.startswith("def alpha") for h in heads))
         self.assertTrue(any(h.startswith("def bravo") for h in heads))
@@ -617,7 +617,7 @@ class RagFoundationTests(unittest.TestCase):
         self.assertFalse(any(h.startswith("# a comment") for h in heads))
 
         # markdown path unaffected: '#' headings still split prose
-        md, _ = parent_child_chunk("# Title\n\nbody text here\n\n# Two\n\nmore text here\n", code=False)
+        md, _, _ = parent_child_chunk("# Title\n\nbody text here\n\n# Two\n\nmore text here\n", code=False)
         self.assertGreaterEqual(len(md), 2)
 
     def test_diversify_evidence(self):

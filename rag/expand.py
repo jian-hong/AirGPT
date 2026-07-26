@@ -27,7 +27,7 @@ def default_llm_expander(query: str, n: int = 4) -> list[str]:
             text = str(ai_engine.chat_text(prompt) or "")
         elif hasattr(ai_engine, "_standard_llm"):
             text, _ = ai_engine._standard_llm(  # noqa: SLF001
-                prompt, "You expand search queries.", max_tokens=160
+                prompt, "You expand search queries.", max_tokens=160, task="rag"
             )
         alts = [ln.strip("-•* \t").strip() for ln in str(text).splitlines() if ln.strip()]
         return [a for a in alts if a][:n]

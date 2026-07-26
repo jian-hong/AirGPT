@@ -113,39 +113,28 @@ UI to Connected, `GET /api/github/status` returns the login and granted scopes.
 
 ---
 
-## F. Video: understand each frame (and audio)
+## F. Any useful filetype + phased media
 
-**Goal:** ingest video so RAG can answer about its content, not just its filename.
+**Goal:** ingest whatever carries useful information (code, HTML/Next.js, YAML,
+Office, PDF, audio/video) with type-aware strip + salience, not filename-only.
 
-**Reality:** true per-frame understanding needs a vision model and is heavy. Do it
-in phases; be honest in the UI about what is indexed.
-
-**Where:** `rag/ingest.py` `read_text_file` (add a video branch) and
-`TEXT_SUFFIXES`. Follow the Office-extractor pattern already added
-(`_xlsx_text`/`_docx_text`).
+**Where:** `rag/normalize.py`, `rag/media.py`, `rag/ingest.py` `read_text_file` /
+`iter_files`, `rag/chunking.py` demotion.
 
 **Do (phased):**
-1. **Phase 1 - audio transcript (cheapest, highest value):** if `ffmpeg` is
-   present, extract the audio track and transcribe with a local Whisper (or the
-   configured provider). Index the timestamped transcript as text. Most videos
-   are carried by speech; this alone makes them answerable. Gate on ffmpeg like
-   pdf is gated on pypdf (`pdf_supported()` pattern).
-2. **Phase 2 - keyframe captions:** sample keyframes (scene-change or every N
-   seconds via ffmpeg), caption each with a vision model, and index
-   `"[t=MM:SS] <caption>"` lines. Cap frames per video (for example 60) and log
-   the cap so coverage is honest, never silent truncation.
-3. **Phase 3 - OCR on frames:** for slides/screens, run OCR on sampled frames and
-   index the text.
-4. Add `.mp4`, `.mov`, `.webm`, `.mkv` to `TEXT_SUFFIXES` only once at least
-   Phase 1 works, so folder walks include them.
+1. **Smart normalize (shipped):** HTML chrome strip; code imports → file_index
+   `import:` sidecar; license banners out; Jaccard ≥0.9 child demotion; salience
+   terms. Claude/cross-verify gate: `tests/test_rag_normalize.py` + fixtures
+   under `tests/fixtures/rag_normalize/`.
+2. **Phase 1 - audio transcript:** ffmpeg + Whisper, timestamped lines; gate
+   like PDF; add video/audio suffixes to walks only when
+   `video_audio_supported()`.
+3. **Phase 2 - keyframe captions:** sample frames, vision captions, cap ~60.
+4. **Phase 3 - OCR on frames / images:** until then images skip with
+   `image needs OCR (not built)`.
 
-**Dependencies:** ffmpeg (system), a local Whisper (optional), a vision-caption
-model (optional). All must be optional with graceful skip and a clear
-"video needs ffmpeg" message, matching the pdf gating.
-
-**Verify:** a short talking video ingests to a transcript; a query about a spoken
-phrase retrieves the right timestamped chunk. Keyframe captions appear for a
-silent clip. Frame cap is logged.
+**Verify:** Next.js fixture loses imports from embed body but keeps export
+symbols; talking video (when deps present) retrieves spoken phrases.
 
 ---
 

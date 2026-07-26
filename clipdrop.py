@@ -1834,6 +1834,50 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _handle_project_suggest(self) -> None:
+        """Observe a turn, or act on the chip. Suggestion only — never an auto-move.
+
+        Three actions on one endpoint so the streak state, the dismissal and the move
+        all live in one place instead of being spread across PATCH /api/sessions.
+        """
+        try:
+            import project_suggest
+        except Exception as e:
+            return self._json(503, {"suggest": False, "error": str(e)[:200]})
+        try:
+            body = json.loads(self._body().decode() or "{}")
+        except json.JSONDecodeError:
+            return self._json(400, {"error": "invalid json"})
+
+        sid = int(body.get("session_id") or 0)
+        action = str(body.get("action") or "observe").strip().lower()
+        if not sid:
+            return self._json(200, {"suggest": False, "reason": "no session"})
+
+        if action == "dismiss":
+            project_suggest.dismiss(sid)
+            return self._json(200, {"ok": True, "suggest": False})
+
+        session = db.get_session(sid) or {}
+
+        if action == "move":
+            cat = str(body.get("category") or "").strip().lower()
+            if cat not in db.MODE_TO_CATEGORY:
+                return self._json(400, {"ok": False, "error": "unknown category"})
+            proj = db.get_default_project_for_category(cat)
+            db.update_session_meta(sid, category=cat, project_id=proj["id"])
+            project_suggest.accepted(sid)
+            bump_sync()
+            return self._json(200, {"ok": True, "category": cat, "project": proj["name"]})
+
+        # Scratch is the deliberately uncategorised space — never nag there.
+        if str(session.get("capture_type") or "") == "scratch":
+            return self._json(200, {"suggest": False, "reason": "scratch"})
+
+        current = str(session.get("category") or body.get("mode") or "general").lower()
+        out = project_suggest.observe(sid, str(body.get("text") or ""), current)
+        return self._json(200, out)
+
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
@@ -2734,6 +2778,32 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/cortex/goals":
+            try:
+                import cortex_client
+                data = cortex_client.goals_list()
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/goals/") and path.endswith("/seeks"):
+            try:
+                import cortex_client
+                gid = path.split("/")[-2]
+                data = cortex_client.goals_seeks(gid)
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/goals/") and path.count("/") == 3:
+            try:
+                import cortex_client
+                gid = path.rstrip("/").split("/")[-1]
+                data = cortex_client.goals_get(gid)
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/engine/just-works":
             # GET = plan only, never applies. The apply path is POST + explicit
             # confirm, so the button can show what it would do first.
@@ -2815,6 +2885,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": True, "sources": rag_store.list_sources(sid)})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ann-status"):
+            try:
+                from rag import vectors as rag_vectors
+
+                sid = int(path.split("/")[4])
+                return self._json(200, rag_vectors.ann_index_status(sid))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/spaces/") and path.endswith("/samples"):
             try:
@@ -3404,6 +3483,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(403, {"error": "This share is view-only"})
             dname = hostname()
             return self._handle_chat_stream(ip, dname)
+
+        if path == "/api/chat/project-suggest":
+            return self._handle_project_suggest()
 
         if path == "/api/messages":
             # Share-guest ACL: view-only tokens cannot post
@@ -4215,6 +4297,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ann-backfill"):
+            try:
+                from rag import vectors as rag_vectors
+
+                sid = int(path.split("/")[4])
+                return self._json(200, rag_vectors.backfill_ann_index(sid))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/summary"):
             try:
                 from rag import answer as rag_answer
@@ -4926,6 +5017,34 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/cortex/goals":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.goals_create(
+                    str(body.get("statement") or ""),
+                    org_id=str(body.get("org_id") or ""),
+                    measurable_criteria=body.get("measurable_criteria") or None,
+                    soft_preferences=body.get("soft_preferences") or None,
+                )
+                return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/engine/seek":
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                out = cortex_client.engine_seek(
+                    str(body["goal_id"]) if body.get("goal_id") else None,
+                    trigger=str(body.get("trigger") or "manual"),
+                    limit=int(body.get("limit") or 8),
+                )
+                http = int(out.get("_http") or (200 if out.get("ok") else 404))
+                return self._json(http, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/workflows/run":
             try:
                 import workflow_engine
@@ -5189,6 +5308,14 @@ class Handler(BaseHTTPRequestHandler):
                 import cortex_client
                 app_id = path.rstrip("/").split("/")[-1]
                 out = cortex_client.cortex_apps_delete(app_id)
+                return self._json(int(out.get("_http") or 200), out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+        if path.startswith("/api/cortex/goals/"):
+            try:
+                import cortex_client
+                gid = path.rstrip("/").split("/")[-1]
+                out = cortex_client.goals_delete(gid)
                 return self._json(int(out.get("_http") or 200), out)
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})

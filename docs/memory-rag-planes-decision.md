@@ -57,14 +57,13 @@ SiRA is a lexical sidecar, not a store. GraphRAG / HybridRAG are query DAGs, not
 
 ## Gap vs the ask
 
-1. **Backends by profile.** Agreed (Phase 5). Not started as adapters:
-   `rag/vectors.py` is sqlite-vec/blob only. The `profile` field is unused for
-   backend selection.
+1. **Backends by profile.** Wired: `rag/vector_backends.py` dispatches on
+   `knowledge_spaces.profile`. Local+ needs `QDRANT_URL` + `qdrant-client`;
+   Business still "not built" (Postgres/pgvector).
 2. **Adaptive architecture by task/DAG.** `rag/adaptive.py` picks depth; the Max
    graph/agentic lanes and the Cortex `rag_*` DAG nodes are still thin.
-3. **Any filetype.** Text, code, YAML, Office (xlsx/docx/pptx), and PDF (+pypdf)
-   work now. Image/video/folder-as-blob multimodal is Phase 4 (see
-   `docs/plans-bcdf.md` item F for the phased video plan).
+3. **Any filetype.** Smart normalize + gated media Phase 1 landed; image OCR /
+   keyframe captions remain Phase 2–3.
 4. **Cortex temporary memory.** G1 Redis working set (2h / 10 turns) exists; the
    spin-up/teardown facade for gen-cFSM is still to wire.
 
@@ -80,14 +79,20 @@ SiRA is a lexical sidecar, not a store. GraphRAG / HybridRAG are query DAGs, not
   blob when the original upload path is gone). Verified end-to-end with the real
   embedder in an isolated data dir.
 
-## Sequenced next slices (not this pass)
+## Shipped next (adapters + smart ingest + C/D)
 
-1. **VectorStore adapters** in AirGPT RAG behind one `retrieve`/`answer`
-   contract: `local` (current) | `local_qdrant` | `business`, selected by
-   `knowledge_spaces.profile`. Start as stubs that raise a clear
-   "profile not built on this install" for the non-local profiles.
-2. **Keep the Memory Agent on SQLite/vault.** Wire Mem0/MemPalace only on the
-   agentic plane (Cortex `memory/vault_layers.py`, G1 P3). Do not pull it into
-   the RAG corpus.
-3. **Multimodal ingest** after Local+ vectors exist. Do not block corpus RAG on
-   video; land audio-transcript ingest first (see `docs/plans-bcdf.md` F).
+1. **VectorStore adapters** behind `knowledge_spaces.profile`:
+   `local` | `local_qdrant` | `business` via `rag/vector_backends.py`.
+   Local+ Qdrant upserts when `QDRANT_URL` + `qdrant-client` exist; otherwise
+   ingest fails loudly and search soft-falls to local with
+   `backend_fallback=local`. Redis is semantic-cache only (`rag/semantic_cache.py`).
+2. **Smart normalize** (`rag/normalize.py`) + Jaccard demotion in chunking;
+   media Phase 1 gated in `rag/media.py`.
+3. **C/D UX:** Settings no longer authors agents; Cortex one-click subagent +
+   trend chips; GitHub device OAuth (`github_auth.py`).
+
+## Sequenced later
+
+1. Wire Mem0/MemPalace only on the agentic plane (Cortex `memory/vault_layers.py`, G1 P3).
+2. Video keyframe captions + frame OCR (Phase 2–3).
+3. Full Business Postgres/pgvector.
