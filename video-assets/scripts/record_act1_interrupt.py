@@ -60,10 +60,7 @@ def run() -> Path:
             delay=28,
         )
         pause(host, 400)
-        if host.locator("button:has-text('Send')").count():
-            host.locator("button:has-text('Send')").first.click()
-        else:
-            host.keyboard.press("Enter")
+        host.locator("#input").first.press("Enter")
         pause(host, 5000)
 
         type_slowly(
@@ -72,10 +69,7 @@ def run() -> Path:
             "Hey Netie, would you mind to complete the VDML excel referencing RFQ, FCM and PO from our vendor NMD?",
             delay=28,
         )
-        if peer.locator("button:has-text('Send')").count():
-            peer.locator("button:has-text('Send')").first.click()
-        else:
-            peer.keyboard.press("Enter")
+        peer.locator("#input").first.press("Enter")
         pause(host, 5000)
         # Hold on presence + author chip
         pause(host, 3000)

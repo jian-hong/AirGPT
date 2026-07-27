@@ -1,0 +1,58 @@
+# Record YC multiplayer Playwright clips on GitHub-hosted runners.
+# Trigger: workflow_dispatch (manual). Artifacts upload under multiplayer/.
+name: yc-multiplayer-record
+
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright pillow
+          python -m playwright install chromium
+
+      - name: Seed + start demo mock
+        shell: pwsh
+        run: |
+          python seed_demo_mock.py --reset
+          $env:AIRGPT_DEMO_MOCK = "1"
+          $env:AIRGPT_DATA_DIR = Join-Path $pwd "data-demo-mock"
+          Start-Process python -ArgumentList "clipdrop.py" -WorkingDirectory $pwd
+          $ok = $false
+          for ($i = 0; $i -lt 45; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $info = Invoke-RestMethod "http://127.0.0.1:8765/api/info" -TimeoutSec 3
+              if ($info.demo_mock) { $ok = $true; break }
+            } catch {}
+          }
+          if (-not $ok) { throw "demo_mock not ready" }
+
+      - name: Record acts
+        shell: pwsh
+        run: |
+          $env:AIRGPT_PW_HEADLESS = "1"
+          python video-assets/scripts/record_act1_interrupt.py
+          python video-assets/scripts/record_act2_share.py
+          python video-assets/scripts/record_act3_hub.py
+          python video-assets/scripts/record_act4_lockdown_mock.py
+          python video-assets/scripts/record_act6_openvault.py
+
+      - name: Upload clips
+        uses: actions/upload-artifact@v4
+        with:
+          name: yc-multiplayer-clips
+          path: video-assets/03-demo-clips/multiplayer/
+          if-no-files-found: warn
+          retention-days: 14
