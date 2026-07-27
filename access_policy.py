@@ -121,3 +121,38 @@ def is_download_allowed(ip: str, *, is_local: bool, business: bool) -> bool:
         return False
     approved = {e.get("ip") for e in data.get("approved", [])}
     return ip in approved
+
+
+def get_ai_lockdown() -> dict:
+    """UI-mock emergency flag for YC film Act 4. Does NOT gate AI providers."""
+    data = _load()
+    ld = data.get("ai_lockdown") or {}
+    return {
+        "on": bool(ld.get("on")),
+        "reason": str(ld.get("reason") or ""),
+        "by": str(ld.get("by") or ""),
+        "started_at": float(ld.get("started_at") or 0),
+        "mock": True,
+    }
+
+
+def set_ai_lockdown(on: bool, *, reason: str = "", by: str = "host") -> dict:
+    """Flip the mock lockdown visual flag only — AI calls still succeed."""
+    data = _load()
+    if on:
+        data["ai_lockdown"] = {
+            "on": True,
+            "reason": (reason or "host cut-off")[:200],
+            "by": (by or "host")[:80],
+            "started_at": time.time(),
+        }
+    else:
+        data["ai_lockdown"] = {
+            "on": False,
+            "reason": "",
+            "by": (by or "host")[:80],
+            "started_at": 0,
+            "cleared_at": time.time(),
+        }
+    _save(data)
+    return {"ok": True, **get_ai_lockdown()}

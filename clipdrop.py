@@ -691,6 +691,16 @@ def _is_local_host(ip: str) -> bool:
         return False
 
 
+def _ai_lockdown_payload() -> dict:
+    """Mock emergency flag for film Act 4 — visuals only, does not gate AI."""
+    try:
+        import access_policy
+
+        return access_policy.get_ai_lockdown()
+    except Exception:
+        return {"on": False, "mock": True}
+
+
 # Host-only API surfaces (SECURITY_HARDENING #1/#5/#7). These can read/write host
 # files, run commands, expose the audit trail, or execute agents — never allowed
 # to remote peers (LAN/tunnel), even with a valid chat token or in the default
@@ -1478,8 +1488,30 @@ def _set_tunnel(url: str, provider: str) -> bool:
 def tunnel_health_loop():
     global _health_fails
     import urllib.request
+
+    # Backoff for the "no tunnel at all" case. tunnel_worker sweeps its four providers
+    # twice and then sets status=failed and stops forever, and the health check below
+    # only runs when a URL exists — so a tunnel that failed to come up stayed dead
+    # until somebody noticed and pressed Restart Tunnel. Cloudflare rate-limits quick
+    # tunnels, so retry slowly rather than hammering: 1m, 2m, 4m … capped at 15m.
+    retry_at = 0.0
+    retry_delay = 60.0
+    RETRY_MAX = 900.0
+
     while True:
         url = _tunnel.get("url")
+        if not url:
+            status = str(_tunnel.get("status") or "")
+            idle = status in ("", "failed") or status.endswith("unreachable")
+            if idle and time.monotonic() >= retry_at:
+                retry_at = time.monotonic() + retry_delay
+                print(f"[tunnel] down — retrying (next attempt in {retry_delay / 60:.0f}m if this fails)")
+                retry_delay = min(retry_delay * 2, RETRY_MAX)
+                restart_tunnel()
+            time.sleep(15)
+            continue
+        retry_delay = 60.0  # a live URL resets the ramp
+        retry_at = 0.0
         healthy = False
         if url:
             try:
@@ -1750,7 +1782,7 @@ class Handler(BaseHTTPRequestHandler):
         return join_url, qt
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -1977,6 +2009,10 @@ class Handler(BaseHTTPRequestHandler):
             if pack:
                 question = f"[Skill: {skill_id}]\n{pack}\n\n---\n\n{text}"
 
+        # Reserved for explicit cancellation. Deliberately NOT tripped by the client
+        # disconnecting any more — a dropped socket used to abandon generation and
+        # discard a finished answer, which is how an iPad on a flaky tunnel ended up
+        # with its question sitting there unanswered forever.
         abort = threading.Event()
         event_q: queue.Queue = queue.Queue()
         done_ev: dict = {"analysis": "", "model": "", "error": ""}
@@ -2024,6 +2060,11 @@ class Handler(BaseHTTPRequestHandler):
         # Immediate ack so UI can adopt session before model tokens arrive
         self._sse_send({"type": "thinking", "text": "Connected - generating...", "session_id": session_id})
 
+        # A phone on a flaky tunnel drops the stream mid-answer constantly. Losing the
+        # socket must stop the WRITING, not the WORK: the model has already been paid
+        # for, so let it finish and persist the result. The client picks the reply up
+        # on its next poll instead of the question sitting there forever unanswered.
+        client_gone = False
         idle_ticks = 0
         while True:
             try:
@@ -2031,21 +2072,21 @@ class Handler(BaseHTTPRequestHandler):
             except queue.Empty:
                 idle_ticks += 1
                 # Keepalive every ~2s so proxies/clients don't drop the stream
-                if idle_ticks % 8 == 0:
+                if idle_ticks % 8 == 0 and not client_gone:
                     if not self._sse_write_raw(b": keepalive\n\n"):
-                        abort.set()
-                        break
+                        client_gone = True
                 continue
             idle_ticks = 0
             if ev is None:
                 break
             if isinstance(ev, dict):
                 ev = {**ev, "session_id": session_id}
-            if not self._sse_send(ev):
-                abort.set()
-                break
+            if not client_gone and not self._sse_send(ev):
+                client_gone = True
 
-        if not abort.is_set() and done_ev["analysis"] and not done_ev["error"]:
+        # Persist whenever an answer exists. The old condition also required the client
+        # to still be attached, so a tunnel hiccup silently discarded a finished reply.
+        if done_ev["analysis"] and not done_ev["error"]:
             db.add_message(
                 device_ip="127.0.0.1",
                 device_name="AirGPT",
@@ -2305,7 +2346,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": "host only"})
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
-        if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/"):
+        if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
             db.register_device(ip, name, ua)
         q = parse_qs(urlparse(self.path).query)
 
@@ -2351,6 +2392,32 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # OpenIDE package static assets (CSS/JS under OpenIDE/ui/)
+        if path.startswith("/ui/") and ".." not in path:
+            # Design foundations (motion.js / apple.css). Kept out of index.html so the
+            # 700 KB single file does not grow, and so the motion maths can be unit
+            # tested in node instead of only being eyeballed in a browser.
+            rel = path.lstrip("/")
+            asset = (ROOT / rel).resolve()
+            try:
+                asset.relative_to((ROOT / "ui").resolve())
+            except (ValueError, OSError):
+                return self._json(400, {"error": "bad path"})
+            if not asset.is_file():
+                return self._json(404, {"error": "not found"})
+            body = asset.read_bytes()
+            mime = "application/javascript; charset=utf-8" if asset.suffix == ".js" else (
+                "text/css; charset=utf-8" if asset.suffix == ".css"
+                else (mimetypes.guess_type(str(asset))[0] or "application/octet-stream")
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=60")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path.startswith("/OpenIDE/ui/") and ".." not in path:
             rel = path.lstrip("/")
             asset = (ROOT / rel).resolve()
@@ -2498,6 +2565,7 @@ class Handler(BaseHTTPRequestHandler):
                 "data_dir": str(DATA_DIR),
                 "cortex": _cortex_info(quick=True),
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
+                "ai_lockdown": _ai_lockdown_payload(),
             })
 
         if path == "/api/input-notes":
@@ -2534,11 +2602,27 @@ class Handler(BaseHTTPRequestHandler):
             t_url = _tunnel.get("url") if _tunnel_allowed() else None
             j_url = t_url or (lan_url if _tunnel_allowed() else None) or ""
             j_url, qr_tok = self._join_url(j_url, ip) if j_url else ("", "")
+            # Every poll is a presence heartbeat — no second timer, no websocket.
+            room: list = []
+            if sid:
+                try:
+                    import presence
+
+                    presence.touch(
+                        sid,
+                        ip,
+                        name=(self.headers.get("X-Device-Name") or "").strip() or name,
+                        user_agent=ua,
+                    )
+                    room = presence.members(sid, exclude_ip=ip)
+                except Exception:
+                    room = []
             return self._json(200, {
                 "sync_version": _sync_version,
                 "latest_id": db.latest_id(),
                 "new_chat": new_chat,
                 "new_hist": new_hist,
+                "presence": room,
                 "tunnel_url": t_url,
                 "tunnel_healthy": _tunnel.get("healthy", False),
                 "tunnel_status": _tunnel.get("status"),
@@ -2547,7 +2631,20 @@ class Handler(BaseHTTPRequestHandler):
                 "join_url": j_url,
                 "qr_token": qr_tok,
                 "network_epoch": _network_epoch,
+                "ai_lockdown": _ai_lockdown_payload(),
             })
+
+        if path == "/api/presence":
+            try:
+                import presence
+
+                sid_raw = q.get("session_id", [None])[0]
+                sid = int(sid_raw) if sid_raw not in (None, "", "0") else None
+                if sid:
+                    return self._json(200, {"ok": True, "members": presence.members(sid, exclude_ip=ip)})
+                return self._json(200, {"ok": True, "rooms": presence.snapshot()})
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/history":
             since = int(q.get("since", ["0"])[0])
@@ -2818,11 +2915,25 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        # Hub drill-down. A read, so it lives on GET — the Hub UI calls it with fetch().
+        if path.startswith("/api/hub/peers/") and path.endswith("/activity"):
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import hub
+                peer_ip = unquote(path.split("/")[-2])
+                return self._json(200, hub.get_peer_activity(peer_ip, host_ip=ip))
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
         if path == "/api/cortex/health":
             try:
                 import cortex_client
                 # CRM snapshot: continuous poller + engine/memory planes
-                return self._json(200, cortex_client.snapshot())
+                # ?fresh=1 forces a live re-probe (Hosting page)
+                q = parse_qs(urlparse(self.path).query)
+                fresh = (q.get("fresh") or [""])[0].lower() in ("1", "true", "yes")
+                return self._json(200, cortex_client.snapshot(fresh=fresh))
             except ImportError:
                 return self._json(200, {"ok": False, "status": "unavailable"})
 
@@ -3421,6 +3532,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        if path == "/api/openvault/detect":
+            try:
+                import openvault_bridge
+                project = str(q.get("project", [""])[0] or "")
+                pth = str(q.get("path", [""])[0] or "")
+                return self._json(200, openvault_bridge.detect_project(project, pth))
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
         if path == "/api/openide/last-run":
             try:
                 import cursor_bridge
@@ -3585,6 +3705,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_local_host(ip):
             return self._json(403, {"error": "host only"})
+
+        if path == "/api/presence/typing":
+            try:
+                import presence
+
+                data = json.loads(self._body().decode() or "{}")
+                sid = int(data.get("session_id") or 0)
+                return self._json(200, presence.set_typing(sid, ip, bool(data.get("typing"))))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/chat/stream":
             if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
@@ -4083,6 +4213,24 @@ class Handler(BaseHTTPRequestHandler):
                 import hub
                 peer_ip = path.split("/")[-2]
                 return self._json(200, hub.kick_peer(peer_ip))
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/hub/lockdown":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import hub
+                data = json.loads(self._body().decode() or "{}")
+                on = bool(data.get("on"))
+                return self._json(
+                    200,
+                    hub.set_lockdown(
+                        on,
+                        reason=str(data.get("reason") or ""),
+                        by=str(data.get("by") or "host"),
+                    ),
+                )
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
@@ -4683,6 +4831,10 @@ class Handler(BaseHTTPRequestHandler):
                     current_state=data.get("current_state"),
                     next_goals=data.get("next_goals"),
                     long_term=data.get("long_term"),
+                    instructions=data.get("instructions"),
+                    memory=data.get("memory"),
+                    scheduled=data.get("scheduled") if isinstance(data.get("scheduled"), list) else None,
+                    context_files=data.get("context_files") if isinstance(data.get("context_files"), list) else None,
                 )
                 return self._json(200, {"ok": True, "goals": goals})
             except Exception as e:
@@ -5028,6 +5180,65 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/openvault/sync":
+            try:
+                import openvault_bridge
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(
+                    200,
+                    openvault_bridge.sync_project(
+                        str(data.get("project") or data.get("name") or ""),
+                        str(data.get("source") or data.get("path") or ""),
+                    ),
+                )
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/openvault/detect":
+            try:
+                import openvault_bridge
+                # GET query or POST body
+                project = ""
+                pth = ""
+                if self.command == "GET":
+                    project = str(q.get("project", [""])[0] or "")
+                    pth = str(q.get("path", [""])[0] or "")
+                else:
+                    data = json.loads(self._body().decode() or "{}")
+                    project = str(data.get("project") or data.get("name") or "")
+                    pth = str(data.get("path") or "")
+                return self._json(200, openvault_bridge.detect_project(project, pth))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/openvault/build":
+            try:
+                import openvault_bridge
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(
+                    200,
+                    openvault_bridge.build_project(
+                        str(data.get("project") or data.get("name") or ""),
+                        str(data.get("path") or ""),
+                    ),
+                )
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/openvault/ship":
+            try:
+                import openvault_bridge
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(
+                    200,
+                    openvault_bridge.ship_project(
+                        str(data.get("project") or data.get("name") or ""),
+                        str(data.get("path") or ""),
+                    ),
+                )
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
         if path == "/api/git/checkout":
             try:
                 import workspace_api
@@ -5107,6 +5318,25 @@ class Handler(BaseHTTPRequestHandler):
                 )
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/cortex/ensure":
+            try:
+                import cortex_client
+                data = json.loads(self._body().decode() or "{}")
+                force = bool(data.get("force", True))
+                wait_sec = float(data.get("wait_sec") or 20)
+                wait_sec = max(1.0, min(wait_sec, 60.0))
+                result = cortex_client.ensure_engine(force=force, wait_sec=wait_sec)
+                # Refresh CRM cache so Hosting UI sees live immediately
+                snap = cortex_client.refresh_snapshot()
+                return self._json(
+                    200 if result.get("ok") else 503,
+                    {**result, "snapshot": snap},
+                )
+            except ImportError:
+                return self._json(503, {"ok": False, "error": "cortex_client unavailable"})
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/engine/just-works":
             try:

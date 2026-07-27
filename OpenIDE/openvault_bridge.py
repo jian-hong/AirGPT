@@ -274,6 +274,194 @@ def status() -> dict[str, Any]:
     }
 
 
+def _apps_root() -> Path:
+    return OPENVAULT_ROOT / "apps"
+
+
+def sync_project(project: str, source: str = "") -> dict[str, Any]:
+    """Copy a project folder into D:\\OpenVault\\apps\\<name> for the one-shot ship path."""
+    import shutil
+
+    name = (project or "").strip().replace("\\", "/").split("/")[-1][:80]
+    src = Path(source) if source else None
+    if not name:
+        return {"ok": False, "error": "project name required"}
+    if src is None or not src.is_dir():
+        # Prefer an existing OpenVault app, else a demo fixture under AirGPT.
+        candidates = [
+            _apps_root() / name,
+            ROOT / "apps" / name,
+            ROOT / "fixtures" / name,
+            Path(r"D:\OpenVault") / "apps" / name,
+        ]
+        src = next((p for p in candidates if p.is_dir()), None)
+    if src is None or not src.is_dir():
+        # Create a minimal Next.js-shaped fixture so Detect stays honest on camera.
+        dest = _apps_root() / name
+        dest.mkdir(parents=True, exist_ok=True)
+        pkg = {
+            "name": name,
+            "private": True,
+            "scripts": {"build": "next build", "dev": "next dev"},
+            "dependencies": {"next": "14.2.5", "react": "18.3.1", "react-dom": "18.3.1"},
+        }
+        (dest / "package.json").write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
+        (dest / "README.md").write_text(f"# {name}\n\nDEMO fixture for AirGPT → OpenVault one-shot.\n", encoding="utf-8")
+        return {
+            "ok": True,
+            "project": name,
+            "dest": str(dest),
+            "files": 2,
+            "created_fixture": True,
+            "lines": [f"Created demo fixture at {dest}", "package.json with next dependency"],
+        }
+    dest = _apps_root() / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    file_count = 0
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+        lines.append(f"Cleared previous {dest}")
+    shutil.copytree(
+        src,
+        dest,
+        ignore=shutil.ignore_patterns("node_modules", ".git", ".next", "dist", "__pycache__", ".venv"),
+    )
+    for p in dest.rglob("*"):
+        if p.is_file():
+            file_count += 1
+    lines.append(f"Synced {file_count} files → {dest}")
+    return {"ok": True, "project": name, "dest": str(dest), "files": file_count, "lines": lines}
+
+
+def detect_project(project: str = "", path: str = "") -> dict[str, Any]:
+    """Actually read package.json — never hardcode the framework string."""
+    name = (project or "").strip()
+    root = Path(path) if path else (_apps_root() / name if name else None)
+    if root is None or not root.is_dir():
+        return {"ok": False, "error": "project path not found — sync first"}
+    pkg_path = root / "package.json"
+    evidence = ""
+    framework = "unknown"
+    build = ""
+    port = 3000
+    if pkg_path.is_file():
+        try:
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            return {"ok": False, "error": f"package.json unreadable: {e}"[:200]}
+        deps = {**(pkg.get("dependencies") or {}), **(pkg.get("devDependencies") or {})}
+        scripts = pkg.get("scripts") or {}
+        evidence = f"package.json · dependencies include: {', '.join(sorted(deps)[:8]) or '(none)'}"
+        if "next" in deps:
+            framework = "Next.js"
+            build = str(scripts.get("build") or "next build")
+            port = 3000
+        elif "vite" in deps:
+            framework = "Vite"
+            build = str(scripts.get("build") or "vite build")
+            port = 5173
+        elif "react-scripts" in deps:
+            framework = "Create React App"
+            build = str(scripts.get("build") or "react-scripts build")
+            port = 3000
+        else:
+            framework = "Node"
+            build = str(scripts.get("build") or "npm run build")
+    elif (root / "pyproject.toml").is_file():
+        framework = "Python"
+        build = "uv build"
+        evidence = "pyproject.toml present"
+        port = 8000
+    elif (root / "Cargo.toml").is_file():
+        framework = "Rust"
+        build = "cargo build --release"
+        evidence = "Cargo.toml present"
+        port = 8080
+    else:
+        return {"ok": False, "error": "no package.json / pyproject.toml / Cargo.toml", "path": str(root)}
+    return {
+        "ok": True,
+        "framework": framework,
+        "build": build,
+        "port": port,
+        "path": str(root),
+        "evidence": evidence,
+        "package_json": str(pkg_path) if pkg_path.is_file() else "",
+    }
+
+
+def build_project(project: str = "", path: str = "") -> dict[str, Any]:
+    """Run the detected build when deps exist; otherwise stream a honest short-circuit."""
+    import subprocess
+
+    det = detect_project(project, path)
+    if not det.get("ok"):
+        return det
+    root = Path(det["path"])
+    cmd = str(det.get("build") or "")
+    lines = [f"Detected: {det.get('framework')} — {det.get('evidence')}", f"$ {cmd}"]
+    # Prefer not to hang the demo on a full next build without node_modules.
+    has_nm = (root / "node_modules").is_dir()
+    if det.get("framework") == "Next.js" and not has_nm:
+        lines.append("node_modules missing — demo short-circuit (detect stayed real).")
+        lines.append("Would run: npm install && " + cmd)
+        lines.append("Build OK (simulated for camera)")
+        return {"ok": True, "simulated_build": True, "lines": lines, "detect": det}
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(root),
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        out = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()
+        lines.extend(out[-40:] or ["(no output)"])
+        lines.append(f"exit={proc.returncode}")
+        return {
+            "ok": proc.returncode == 0,
+            "simulated_build": False,
+            "lines": lines,
+            "detect": det,
+            "exit_code": proc.returncode,
+        }
+    except Exception as e:
+        lines.append(f"build error: {e}"[:200])
+        return {"ok": False, "lines": lines, "detect": det, "error": str(e)[:200]}
+
+
+def ship_project(project: str = "", path: str = "") -> dict[str, Any]:
+    """Return a deploy URL. Always label simulated targets on camera."""
+    det = detect_project(project, path)
+    name = (project or Path(det.get("path") or "app").name).strip() or "app"
+    port = int(det.get("port") or 3000) if det.get("ok") else 3000
+    # Prefer a real local preview if something is listening; otherwise simulated EC2-shaped URL.
+    local_url = f"http://127.0.0.1:{port}"
+    simulated = True
+    url = f"https://{name.lower().replace(' ', '-')}.demo.airgpt.local"
+    label = "Simulated target"
+    try:
+        with urllib.request.urlopen(local_url, timeout=0.6) as r:
+            if getattr(r, "status", 200) < 500:
+                url = local_url
+                simulated = False
+                label = "Local preview"
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "url": url,
+        "simulated": simulated,
+        "label": label,
+        "project": name,
+        "detect": det if det.get("ok") else None,
+        "ec2_hint": "ec2-12-34-56-78.compute-1.amazonaws.com" if simulated else "",
+    }
+
+
 def ensure_local_config() -> dict[str, Any]:
     """Write/refresh openvault.local.json so mesh URLs stay aligned."""
     path = next(

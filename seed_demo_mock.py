@@ -39,8 +39,27 @@ WORKERS = [
     ("10.10.20.11", "Alex Chen · Design", "iPhone 15 · DEMO"),
     ("10.10.20.12", "Jordan Lee · Eng", "Pixel 8 · DEMO"),
     ("10.10.20.13", "Sam Rivera · Ops", "iPad Air · DEMO"),
+    ("10.10.20.14", "Mia Park · Sales", "MacBook Pro · DEMO"),
+    ("10.10.20.15", "Chris Ng · Support", "Windows · DEMO"),
+    ("10.10.20.16", "Riley Quinn · Legal", "iPad Pro · DEMO"),
+    ("10.10.20.17", "Taylor Kim · Marketing", "Pixel Tablet · DEMO"),
+    ("10.10.20.18", "Casey Brooks · Analyst", "ThinkPad · DEMO"),
+    ("10.10.20.19", "Jamie Ortiz · Limited", "ChromeOS · DEMO"),
     (DEMO_LAN_IP, "DEMO Host PC", f"{DEMO_HOST} · BUSINESS MOCK"),
 ]
+
+# Mixed ACL for Hub Demo mode colours (green live / amber idle / red limited)
+WORKER_ACL = {
+    "10.10.20.11": "use_host_ai",
+    "10.10.20.12": "use_own_ai",
+    "10.10.20.13": "read_write",
+    "10.10.20.14": "use_host_ai",
+    "10.10.20.15": "read_only",
+    "10.10.20.16": "use_host_ai",
+    "10.10.20.17": "read_write",
+    "10.10.20.18": "use_own_ai",
+    "10.10.20.19": "limited",
+}
 
 
 def _wipe(mock_dir: Path) -> None:
@@ -332,10 +351,20 @@ def seed(mock_dir: Path) -> None:
     # SQLite chat + devices
     conn = _init_db(mock_dir / "clipdrop.db")
     t0 = now - 600
-    for ip, name, ua in WORKERS:
+    for i, (ip, name, ua) in enumerate(WORKERS):
+        # Stagger last_seen so Demo mode shows live / idle / offline colours.
+        if ip == "10.10.20.19":
+            seen = now - 400  # idle-ish then limited red
+        elif i >= 7:
+            seen = now - 400  # offline grey
+        elif i >= 5:
+            seen = now - 90  # amber idle
+        else:
+            seen = now - 12  # green live
+        acl = "host" if ip == DEMO_LAN_IP else WORKER_ACL.get(ip, "read_write")
         conn.execute(
             "INSERT OR REPLACE INTO devices(ip,name,user_agent,last_seen) VALUES(?,?,?,?)",
-            (ip, name, ua, now - 20),
+            (ip, name, ua, seen),
         )
         conn.execute(
             "INSERT OR REPLACE INTO hub_peers(ip,device_id,display_name,access_level,join_method,"
@@ -345,14 +374,14 @@ def seed(mock_dir: Path) -> None:
                 ip,
                 f"demo-{ip.replace('.', '-')}",
                 name,
-                "admin" if ip == DEMO_LAN_IP else "read_write",
+                "read_write" if acl == "host" else acl,
                 "lan",
-                1,
+                1 if seen > now - 200 else 0,
                 "DEMO Admin",
                 "",
                 t0,
                 now,
-                now - 15,
+                seen,
             ),
         )
 
@@ -522,8 +551,54 @@ def seed(mock_dir: Path) -> None:
         ai_category="engineering",
     )
 
+    # Jordan interrupt line for Act 1 / Hub drill-down View chat →
+    add_msg(
+        session_id=sid_connect,
+        text="Hey Netie, would you mind to complete the VDML excel referencing RFQ, FCM and PO from our vendor NMD?",
+        device_ip="10.10.20.12",
+        device_name="Jordan Lee · Eng",
+        created_at=t0 + 200,
+        source="ai-chat",
+    )
+    add_msg(
+        session_id=sid_connect,
+        text="Sure — picking that up in parallel with the slideshow.",
+        device_name="Netie Cortex",
+        created_at=t0 + 205,
+        source="ai",
+        ai_status="done",
+    )
+
     conn.commit()
     conn.close()
+
+    # Usage ledger with user/ip for Hub peer drawer tokens
+    usage_dir = mock_dir / "usage"
+    usage_dir.mkdir(parents=True, exist_ok=True)
+    usage_path = usage_dir / "events.jsonl"
+    usage_lines = []
+    for ip, name, _ua in WORKERS[:6]:
+        if ip == DEMO_LAN_IP:
+            continue
+        usage_lines.append(
+            json.dumps(
+                {
+                    "ts": now - 120,
+                    "date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 120)),
+                    "model": "netie-engine",
+                    "tokens": 4200 + (ord(ip[-1]) % 9) * 300,
+                    "cost": 0.042,
+                    "type": "included",
+                    "detail": "DEMO MOCK prompt",
+                    "user": name.split("·")[0].strip(),
+                    "ip": ip,
+                    "session_id": sid_connect,
+                    "tier": "demo",
+                }
+            )
+        )
+    usage_path.write_text("\n".join(usage_lines) + "\n", encoding="utf-8")
+
     print(f"SEEDED={mock_dir}")
     print(f"DEMO_LAN_IP={DEMO_LAN_IP}")
     print(f"DEMO_HOSTNAME={DEMO_HOST}")

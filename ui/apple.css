@@ -1,0 +1,219 @@
+/*
+ * AirGPT design foundations — materials, type, accessibility.
+ *
+ * Additive by design. This file defines tokens and utilities that surfaces adopt one
+ * at a time; it does not restyle anything that already works. The exception is the
+ * accessibility section at the bottom, which is deliberately global — the app ships 91
+ * CSS transitions and 39 backdrop-filters, and before this file exactly two of them
+ * respected prefers-reduced-motion and none respected reduced-transparency or
+ * increased-contrast. Those are correctness bugs for real users, not preferences.
+ */
+
+:root {
+  /* -- Motion ------------------------------------------------------------ */
+  /* For CSS-only, non-gesture transitions. Anything a finger can touch should use a
+     spring from motion.js instead — a transition cannot be caught mid-flight. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);      /* inverse of --ease-out */
+  --dur-press: 100ms;   /* pointer-down feedback: must feel instant */
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+
+  /* -- Material ---------------------------------------------------------- */
+  /* Weight encodes hierarchy: heavier separates structure, lighter draws the eye to
+     interactive things. Never stack a light material on another — legibility dies. */
+  --mat-thin-bg: rgba(255, 255, 255, 0.55);
+  --mat-regular-bg: rgba(255, 255, 255, 0.72);
+  --mat-thick-bg: rgba(245, 245, 247, 0.92);
+  --mat-thin-blur: blur(14px) saturate(180%);
+  --mat-regular-blur: blur(22px) saturate(180%);
+  --mat-thick-blur: blur(34px) saturate(190%);
+  --mat-edge: rgba(255, 255, 255, 0.45);  /* bright top edge = light catching glass */
+  --mat-hairline: rgba(0, 0, 0, 0.08);
+
+  /* Bigger surfaces read as thicker: more blur AND a deeper shadow. */
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.18);
+
+  --scrim: rgba(0, 0, 0, 0.35);
+
+  /* -- Type -------------------------------------------------------------- */
+  /* Tracking is size-specific. One letter-spacing for every size is wrong somewhere:
+     large text reads too loose as it grows, small text too tight. */
+  --track-display: -0.022em;
+  --track-title: -0.014em;
+  --track-body: 0em;
+  --track-caption: 0.006em;
+  --lead-display: 1.06;
+  --lead-title: 1.2;
+  --lead-body: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mat-thin-bg: rgba(28, 28, 30, 0.55);
+    --mat-regular-bg: rgba(28, 28, 30, 0.72);
+    --mat-thick-bg: rgba(18, 18, 20, 0.92);
+    --mat-edge: rgba(255, 255, 255, 0.12);
+    --mat-hairline: rgba(255, 255, 255, 0.10);
+    --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.6);
+    --scrim: rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* -- Materials ----------------------------------------------------------- */
+
+.mat-thin,
+.mat-regular,
+.mat-thick {
+  border: 1px solid var(--mat-hairline);
+}
+.mat-thin {
+  background: var(--mat-thin-bg);
+  -webkit-backdrop-filter: var(--mat-thin-blur);
+  backdrop-filter: var(--mat-thin-blur);
+  box-shadow: var(--shadow-chip);
+}
+.mat-regular {
+  background: var(--mat-regular-bg);
+  -webkit-backdrop-filter: var(--mat-regular-blur);
+  backdrop-filter: var(--mat-regular-blur);
+  box-shadow: var(--shadow-panel);
+}
+.mat-thick {
+  background: var(--mat-thick-bg);
+  -webkit-backdrop-filter: var(--mat-thick-blur);
+  backdrop-filter: var(--mat-thick-blur);
+  box-shadow: var(--shadow-sheet);
+  border-top-color: var(--mat-edge);
+}
+
+/* Vibrancy: flat grey text disappears over a moving blurred backdrop. Slightly
+   heavier and slightly wider, so it survives whatever scrolls underneath. */
+.on-material {
+  font-weight: 500;
+  letter-spacing: 0.004em;
+}
+
+/* Where floating chrome overlaps content, fade the content out instead of drawing a
+   1px rule across it. A hairline says "two boxes"; a fade says "one surface". */
+.scroll-edge-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+}
+.scroll-edge-bottom {
+  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 22px);
+  mask-image: linear-gradient(to top, transparent 0, #000 22px);
+}
+
+/* -- Feedback ------------------------------------------------------------ */
+
+/* On pointer-down, not on release. The instant lag appears the sense of directness
+   falls off a cliff, and :active is the only free way to get it.
+   NOTE: `.btn`, `.icon-btn`, `.nav-item`, `.qr-btn` and `.proj-page-card` already
+   scale on :active in index.html — adding `.press` to those is a no-op. Use it for
+   surfaces that currently have no press feedback at all: cards, chips, list rows. */
+.press,
+.press-sm {
+  transition: transform var(--dur-press) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.press:active { transform: scale(0.97); }
+.press-sm:active { transform: scale(0.985); }
+
+/* A sheet/panel being dragged must not animate — it tracks the finger 1:1. */
+.dragging { transition: none !important; }
+
+/* -- Type utilities ------------------------------------------------------ */
+
+.t-display {
+  font-size: clamp(1.75rem, 4.5vw, 3rem);
+  line-height: var(--lead-display);
+  letter-spacing: var(--track-display);
+  font-weight: 650;
+  font-optical-sizing: auto;
+}
+.t-title {
+  font-size: clamp(1.05rem, 2.2vw, 1.35rem);
+  line-height: var(--lead-title);
+  letter-spacing: var(--track-title);
+  font-weight: 600;
+}
+.t-body {
+  line-height: var(--lead-body);
+  letter-spacing: var(--track-body);
+}
+.t-caption {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  letter-spacing: var(--track-caption);
+}
+
+/* -- Touch targets ------------------------------------------------------- */
+/* A control smaller than a fingertip is a control you miss. Pad the hit area without
+   changing the painted size. */
+.hit-44 { position: relative; }
+.hit-44::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+  /* Invisible, non-painting, and never larger than the real control visually. */
+  pointer-events: auto;
+}
+
+/* =========================================================================
+   Accessibility. Global on purpose — see the file header.
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Reduced motion is not "no feedback". Keep opacity and colour changes, which aid
+     comprehension; remove the vestibular part — travel, spring, parallax. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    transition-property: opacity, background-color, border-color, color, fill, stroke !important;
+    scroll-behavior: auto !important;
+  }
+  .press:active,
+  .press-sm:active { transform: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  /* Frost the glass into a solid. Blur is the expensive, hard-to-read part. */
+  .mat-thin,
+  .mat-regular,
+  .mat-thick {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .mat-thin { background: rgba(255, 255, 255, 0.97); }
+  .mat-regular { background: rgba(255, 255, 255, 0.99); }
+  .mat-thick { background: #fff; }
+}
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+  .mat-thin { background: rgba(28, 28, 30, 0.97); }
+  .mat-regular { background: rgba(24, 24, 26, 0.99); }
+  .mat-thick { background: #121214; }
+}
+
+@media (prefers-contrast: more) {
+  .mat-thin,
+  .mat-regular,
+  .mat-thick {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  .on-material { font-weight: 600; letter-spacing: 0; }
+}

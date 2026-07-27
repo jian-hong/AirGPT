@@ -1,74 +1,54 @@
 # Cloud recording for AirGPT walkthroughs
 
-**Status (2026-07-17):** Pure Cursor Cloud Agent recording is **blocked**.
+**Status (2026-07-28):** Remote unlocked — `origin` → `https://github.com/jian-hong/AirGPT.git` (private). Cursor Cloud Agent can clone this repo.
 
-## Blocker
-
-Cursor cloud agent requires:
-
-> environment `"cloud"` requires exactly one known git remote; found 0
-
-On this machine, `d:\AirGPT` currently has **no `.git` directory at all** (so remotes cannot exist). Until the folder is a git repo with **exactly one** remote, Cursor Cloud Agent cannot run here.
-
-Verify locally:
+Verify:
 
 ```powershell
 cd d:\AirGPT
 git remote -v
+# origin  https://github.com/jian-hong/AirGPT.git (fetch/push)
 ```
-
-Expected when ready: one remote (e.g. `origin` → GitHub/GitLab URL).
 
 ---
 
 ## Option A — Cursor Cloud Agent (true cloud recording)
 
-1. Initialize git if missing: `git init` (only if intentional).
-2. Add **exactly one** remote, e.g. `git remote add origin <your-repo-url>`.
-3. Commit / push enough that the cloud environment can clone the repo.
-4. Re-run a Cursor **cloud** agent task that:
-   - Starts AirGPT (or uses a documented start script).
-   - Runs Playwright (or similar) and uploads/saves the `.webm` under `video-assets/03-demo-clips/`.
+1. Cloud agent clones `jian-hong/AirGPT`.
+2. Install Playwright: `pip install playwright && playwright install chromium`
+3. Seed + start demo mock:
+   ```powershell
+   python seed_demo_mock.py --reset
+   $env:AIRGPT_DEMO_MOCK=1
+   Start-Process python -ArgumentList "clipdrop.py" -WindowStyle Hidden
+   # wait until /api/info.demo_mock is true
+   ```
+4. Record acts:
+   ```powershell
+   python video-assets/scripts/record_act1_interrupt.py
+   python video-assets/scripts/record_act2_share.py
+   python video-assets/scripts/record_act3_hub.py
+   python video-assets/scripts/record_act4_lockdown_mock.py
+   python video-assets/scripts/record_act6_openvault.py
+   ```
+5. Commit/push clips under `video-assets/03-demo-clips/multiplayer/` (or leave as PR artefacts).
 
-**Unlock reply:** “Add git remote `origin` to `<url>` and retry cloud recording.”
-
----
-
-## Option B — Cloudflare Tunnel + remote browser
-
-1. Expose local AirGPT via Cloudflare Tunnel (QR / public HTTPS URL already used by Connect).
-2. Point a remote browser recording service (BrowserStack, Playwright on a VPS, etc.) at that public URL.
-3. Capture the session and drop the file into `video-assets/03-demo-clips/<shot>/`.
-
-Useful when you want “record from elsewhere” without Cursor Cloud Agent.
-
-**Unlock reply:** “Use tunnel URL + remote browser; keep Cursor local.”
-
----
-
-## Option C — Higgsfield plates + local UI capture
-
-1. Generate cinematic B-roll / brand plates in Higgsfield → `video-assets/05-higgsfield-plates/`.
-2. Keep **UI walkthroughs** as local capture (Playwright / OBS) under `video-assets/03-demo-clips/`.
-3. Composite in the editor (intro timeline in `04-intro-17-07/`).
-
-This is the hybrid path that does **not** need a git remote.
-
-**Unlock reply:** “Proceed hybrid: Higgsfield plates + local UI clips.”
+**Note:** Cloud VMs are headless — Playwright uses `headless=False` in scripts today. Cloud agent should patch launch to `headless=True` if display is missing, or set `HEADLESS=1` if scripts support it.
 
 ---
 
-## What works right now
-
-Local Playwright sample against `http://127.0.0.1:8765`:
+## Option B — Local Playwright (fastest for YC cut)
 
 ```powershell
 cd d:\AirGPT
-python video-assets\scripts\record_walkthrough_sample1.py
+.\start_demo_mock.bat
+python video-assets\scripts\record_act1_interrupt.py
 ```
 
-Output lands in:
+---
 
-`video-assets/03-demo-clips/connect-tunnel/UI_CONNECT_WALKTHROUGH_sample_v01_*.webm`
+## Option C — Higgsfield / LTX plates
 
-Do **not** batch all shots until this sample is reviewed.
+- Paste prompts from `docs/VIDEO_YC_PROMPTS.md`.
+- LTX cloud needs `LTX_API_KEY` in env (currently missing on this machine → mock mode only).
+- Drop plates in `video-assets/05-higgsfield-plates/` or `08-ltx2-outputs/`.
