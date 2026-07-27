@@ -7,6 +7,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from yc_rec_common import (
+    HEADLESS,
     BASE,
     VIEWPORT,
     finalize_video,
@@ -26,7 +27,7 @@ def run() -> Path:
     work.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=HEADLESS)
         ctx = browser.new_context(
             viewport=VIEWPORT,
             record_video_dir=str(work),

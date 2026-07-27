@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -10,6 +11,8 @@ from pathlib import Path
 BASE = "http://127.0.0.1:8765"
 VIEWPORT = {"width": 1440, "height": 900}
 ROOT = Path(__file__).resolve().parents[2]
+# Cloud / CI: set AIRGPT_PW_HEADLESS=1 when no display is available.
+HEADLESS = os.environ.get("AIRGPT_PW_HEADLESS", "").strip() in ("1", "true", "yes")
 
 
 def fetch_info() -> dict:
