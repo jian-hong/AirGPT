@@ -1430,15 +1430,32 @@ def persist_turn_memory(
     mode: str = "general",
     session_id: int = 0,
 ) -> None:
-    """Always save important turn gist into local memory wing (mem0-shaped)."""
+    """Save the turn gist into the local memory wing (mem0-shaped).
+
+    One thing is deliberately not saved: the assistant's own characterisation of a
+    link. A question carrying a URL is exactly where a parametric guess wears the
+    clothes of knowledge, and memory is injected into later prompts as context, so
+    persisting that answer turns a single fabrication into a durable "fact" the
+    model keeps rediscovering. The page is re-fetchable at any time, so there is
+    nothing to gain by freezing a summary of it. The question is still remembered,
+    so "we looked at netie.ai" stays recallable; the invented biography does not.
+    """
     q = (question or "").strip()
     a = (answer or "").strip()
     if len(q) < 12 or len(a) < 40:
         return
+    about_link = bool(_URL_RE.search(q)) if "_URL_RE" in globals() else ("http://" in q or "https://" in q)
     try:
         import memory_index as mi
 
-        body = f"Q: {q[:280]}\nA: {a[:600]}"
+        if about_link:
+            body = (
+                f"Q: {q[:280]}\n"
+                "A: [not stored] asked about a link. Re-read the page rather than "
+                "trusting a remembered summary of it."
+            )
+        else:
+            body = f"Q: {q[:280]}\nA: {a[:600]}"
         mi.add_memory(
             kind="memory",
             title=(q[:56].replace("\n", " ") or "chat"),
@@ -1453,7 +1470,8 @@ def persist_turn_memory(
     try:
         import vault as vault_mod
 
-        if len(a) > 120:
+        # Same reasoning as above: never freeze the model's account of a link.
+        if len(a) > 120 and not about_link:
             vault_mod.write_drawer(
                 project=mode or "general",
                 title=f"turn-{session_id or 0}",

@@ -266,11 +266,20 @@ def ingest_paths(
     *,
     force: bool = False,
     progress=None,
+    authority: str = "",
 ) -> dict:
     """Ingest files/folders into a knowledge space and rebuild the local hybrid index.
 
     progress(stage, percent, detail) is called through the pipeline so callers
     (e.g. the SSE build endpoint) can drive a real "ready for retrieval" bar.
+
+    ``authority`` records how the material entered rather than what it is called.
+    A caller that knows it is writing chat transcripts says so, and the class then
+    survives renaming, export and re-import. Left empty, each file is classified
+    from its path, which is only a fallback: an export pack names members
+    ``0001__chat_126.md``, and the chat regex needs ``chat_`` right after a
+    separator, so a round trip would otherwise promote a transcript to citable
+    evidence.
     """
     def _p(stage, pct, detail=""):
         if progress:
@@ -378,8 +387,18 @@ def ingest_paths(
                 ".c", ".h", ".cpp", ".hpp", ".sql", ".sh", ".ps1",
             }
             import_map = list(getattr(read_text_file, "last_import_map", []) or [])
+            cfg = space.get("config") if isinstance(space.get("config"), dict) else {}
+            chunk_cfg = cfg.get("chunk") if isinstance(cfg.get("chunk"), dict) else {}
+            child_tok = int(chunk_cfg.get("child_tokens") or cfg.get("child_tokens") or 200)
+            parent_tok = int(chunk_cfg.get("parent_tokens") or cfg.get("parent_tokens") or 900)
+            child_tok = max(80, min(child_tok, 600))
+            parent_tok = max(200, min(parent_tok, 2000))
             parents, children, chunk_metrics = chunking.parent_child_chunk(
-                text, code=is_code, salience_terms=import_map[:40] or None
+                text,
+                code=is_code,
+                salience_terms=import_map[:40] or None,
+                child_tokens=child_tok,
+                parent_max_tokens=parent_tok,
             )
             demoted_total += int(chunk_metrics.get("demoted_children") or 0)
             parent_row_ids: list[int] = []
@@ -396,6 +415,7 @@ def ingest_paths(
                     span_end=pdraft.span_end,
                     token_est=pdraft.token_est,
                     meta=pdraft.meta,
+                    authority=authority,
                 )
                 parent_row_ids.append(pid)
                 chunk_count += 1
@@ -413,6 +433,7 @@ def ingest_paths(
                     span_start=cdraft.span_start,
                     span_end=cdraft.span_end,
                     token_est=cdraft.token_est,
+                    authority=authority,
                 )
                 chunk_count += 1
                 child_pairs.append((cid, f"{cdraft.heading}\n{cdraft.text}"))
@@ -501,11 +522,36 @@ def ingest_paths(
         return {"ok": False, "error": str(e)[:500], "job_id": job_id}
 
 
-def write_session_transcripts(space_id: int, sessions: list[dict]) -> list[Path]:
+# Assistant output pasted back into a user turn. The netie.ai fabrication reached the
+# index exactly this way: the model wrote it, the human pasted the reply into a chat,
+# and the chat was frozen as `chat_126.md` under a `## user` heading — so filtering by
+# role alone would have missed it entirely.
+_PASTED_REPORT_RE = re.compile(
+    r"^[ \t]*[═=]{3,}.*?$.*?^[ \t]*[═=]{3,}[ \t]*(?:END[ \t]*)?[═=]*[ \t]*$",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+)
+_BLANK_RUN_RE = re.compile(r"\n{3,}")
+
+
+def scrub_assistant_text(text: str) -> str:
+    """Strip assistant-authored blocks that were pasted into a human turn."""
+    out = _PASTED_REPORT_RE.sub("", text or "")
+    return _BLANK_RUN_RE.sub("\n\n", out).strip()
+
+
+def write_session_transcripts(
+    space_id: int, sessions: list[dict], *, keep_assistant: bool = False
+) -> list[Path]:
     """Freeze chat sessions as markdown transcript files in the space blob dir.
 
     sessions: [{id, title, messages: [{role, text}]}] — pure (no db import) so
     tests can exercise it offline; ingest_sessions is the db-backed wrapper.
+
+    By default the assistant's own words are NOT written. A transcript is the one
+    source class that can contain the model's previous guesses, and once indexed those
+    guesses come back looking like evidence. Keeping only the human side means a chat
+    can still say what *you* asked for and decided, without re-importing what the model
+    made up. Pass keep_assistant=True to index replies too.
     """
     out_dir = store.BLOB_DIR / str(int(space_id)) / "sources"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -514,15 +560,30 @@ def write_session_transcripts(space_id: int, sessions: list[dict]) -> list[Path]
         sid = int(s.get("id") or 0)
         title = str(s.get("title") or f"Chat {sid}").strip()
         lines = [f"# Chat: {title}", ""]
+        dropped = 0
         for m in s.get("messages") or []:
             text = str(m.get("text") or "").strip()
             if not text:
                 continue
             role = str(m.get("role") or "user")
+            if role == "assistant" and not keep_assistant:
+                dropped += 1
+                continue
+            if not keep_assistant:
+                cleaned = scrub_assistant_text(text)
+                if cleaned != text:
+                    dropped += 1
+                text = cleaned
+                if not text:
+                    continue
             lines.append(f"## {role}")
             lines.append(text)
             lines.append("")
-        if len(lines) <= 2:
+        if dropped:
+            lines.append(
+                f"<!-- {dropped} assistant block(s) omitted: model output is not evidence -->"
+            )
+        if len([ln for ln in lines if ln.startswith("## ")]) == 0:
             continue
         p = out_dir / f"chat_{sid}.md"
         p.write_text("\n".join(lines), encoding="utf-8")
@@ -563,7 +624,12 @@ def ingest_sessions(space_id: int, session_ids: list[int], *, force: bool = Fals
     files = write_session_transcripts(space_id, sessions)
     if not files:
         return {"ok": False, "error": "selected chats have no text content"}
-    out = ingest_paths(space_id, files, force=force)
+    # These are transcripts by construction, whatever the files end up being called.
+    from rag import authority as authority_mod
+
+    out = ingest_paths(
+        space_id, files, force=force, authority=authority_mod.CONVERSATION
+    )
     if out.get("ok"):
         out["sessions_attached"] = len(files)
     return out
@@ -717,7 +783,9 @@ def ingest_urls(space_id: int, urls: list[str], *, force: bool = False, max_byte
 
     if not files:
         return {"ok": False, "error": "no links ingested", "failed_urls": failed}
-    out = ingest_paths(space_id, files, force=force)
+    from rag import authority as authority_mod
+
+    out = ingest_paths(space_id, files, force=force, authority=authority_mod.WEB)
     out["failed_urls"] = failed
     if out.get("ok"):
         out["urls_attached"] = len(files)

@@ -218,6 +218,10 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                     "mime": str(src.get("mime") or "text/plain"),
                     "bytes": int(src.get("bytes") or len(data)),
                     "original_path": Path(str(src.get("path") or title)).name,
+                    # How the material entered, so the importing space believes it
+                    # exactly as much as this one did. Pack member names are
+                    # prefixed (0001__chat_126.md), which defeats the path regex.
+                    "authority": store.source_authority(int(src.get("id") or 0)),
                     "meta": meta_out,
                 }
             )
@@ -336,6 +340,7 @@ def import_pack(
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         extracted: list[Path] = []
+        by_authority: dict[str, list[Path]] = {}
         for entry in manifest.get("sources") or []:
             pack_path = _safe_member_name(str(entry.get("pack_path") or ""))
             if not pack_path:
@@ -361,10 +366,22 @@ def import_pack(
                 raise ValueError(f"path jail violation: {target}") from e
             target.write_bytes(data)
             extracted.append(target)
+            by_authority.setdefault(str(entry.get("authority") or ""), []).append(target)
 
         ingest_out: dict = {"ok": True, "chunks": 0, "sources": 0}
         if extracted and rebuild:
-            ingest_out = ingest.ingest_paths(new_id, extracted, force=True)
+            # Ingest one batch per declared class so a pack holding both documents
+            # and transcripts does not flatten them into a single authority.
+            ingest_out = {"ok": True, "chunks": 0, "sources": 0}
+            for kind, files in by_authority.items():
+                if not files:
+                    continue
+                part = ingest.ingest_paths(new_id, files, force=False, authority=kind)
+                if not part.get("ok"):
+                    ingest_out = part
+                    break
+                ingest_out["chunks"] = int(ingest_out.get("chunks") or 0) + int(part.get("chunks") or 0)
+                ingest_out["sources"] = int(ingest_out.get("sources") or 0) + int(part.get("sources") or 0)
             if not ingest_out.get("ok"):
                 return {
                     "ok": False,

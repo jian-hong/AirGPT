@@ -15,6 +15,9 @@ RAG_DIR = DATA_DIR / "rag"
 DB_PATH = RAG_DIR / "rag.db"
 BLOB_DIR = RAG_DIR
 
+# Bump to force a one-off reclassification of chunks.authority on existing databases.
+AUTHORITY_SCHEMA_VERSION = 1
+
 
 # One retrieval fans out ~50 short reads across sparse / dense / file / expand
 # channels, and every one of them used to open its own connection and re-run the whole
@@ -190,9 +193,13 @@ def _init_schema() -> None:
               span_end INTEGER DEFAULT 0,
               token_est INTEGER DEFAULT 0,
               meta TEXT DEFAULT '{}',
+              authority TEXT DEFAULT 'document',
               created_at REAL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_space ON chunks(space_id);
+            -- idx_chunks_authority is created in _migrate_authority, not here: on a
+            -- database that predates the column, CREATE TABLE IF NOT EXISTS is a no-op
+            -- and indexing a column that does not exist yet aborts the whole script.
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source_id);
             CREATE INDEX IF NOT EXISTS idx_chunks_parent ON chunks(parent_id);
 
@@ -271,6 +278,63 @@ def _init_schema() -> None:
             );
             """
         )
+        _migrate_authority(conn)
+
+
+def _migrate_authority(conn: sqlite3.Connection) -> None:
+    """Add chunks.authority to existing databases and classify what is already there.
+
+    Spaces indexed before source authority existed hold thousands of chat-transcript
+    chunks marked as nothing in particular. Backfilling once at migration time means
+    retrieval can filter in SQL instead of running a regex over every hit.
+    """
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(chunks)")}
+    except sqlite3.Error:
+        return
+    if "authority" not in cols:
+        try:
+            # No DEFAULT: existing rows must come out NULL so they are distinguishable
+            # from rows genuinely classified as documents. Defaulting to 'document'
+            # silently marked 1178 chat-transcript chunks as trustworthy.
+            conn.execute("ALTER TABLE chunks ADD COLUMN authority TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_authority ON chunks(space_id, authority)"
+            )
+        except sqlite3.Error:
+            return
+    # Backfill through the same classifier retrieval uses, not a LIKE approximation —
+    # SQL patterns loose enough to catch `sources/chat_126.md` also catch
+    # `docs/chat_ui_notes.md`, which is a document about chat, not a transcript.
+    from rag import authority as authority_mod
+
+    # user_version gates the one-off full reclassification. An earlier build of this
+    # migration added the column with DEFAULT 'document', so rows on those databases
+    # carry a confident-but-wrong value that a "WHERE authority IS NULL" pass would
+    # skip forever. Version 1 re-derives every row exactly once; after that only
+    # unclassified rows are touched.
+    try:
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0] or 0)
+    except sqlite3.Error:
+        version = 0
+
+    where = "" if version < AUTHORITY_SCHEMA_VERSION else "WHERE authority IS NULL OR authority = ''"
+    try:
+        rows = conn.execute(f"SELECT id, path, heading FROM chunks {where}").fetchall()
+    except sqlite3.Error:
+        return
+
+    if rows:
+        updates = [(authority_mod.classify(r[1] or "", r[2] or ""), r[0]) for r in rows]
+        try:
+            conn.executemany("UPDATE chunks SET authority=? WHERE id=?", updates)
+        except sqlite3.Error:
+            return
+    if version < AUTHORITY_SCHEMA_VERSION:
+        try:
+            conn.execute(f"PRAGMA user_version = {AUTHORITY_SCHEMA_VERSION}")
+        except sqlite3.Error:
+            pass
 
 
 def _row(r: sqlite3.Row | None) -> dict | None:
@@ -461,6 +525,36 @@ def delete_source(source_id: int) -> dict:
         return {"ok": True, "space_id": int(src["space_id"]), "chunks_removed": len(ids)}
 
 
+def purge_chat_sources(space_id: int) -> dict:
+    """Remove ingested chat_*.md transcript sources so they stop competing with real docs.
+
+    RAG chat *sessions* (rag_chats) are untouched — only frozen transcript files that were
+    attached as knowledge sources. Authority already refuses to cite them; this clears the
+    pile when a space has swallowed hundreds of past chats (e.g. Space 5).
+    """
+    from rag import authority
+
+    init()
+    sid = int(space_id)
+    removed = 0
+    chunks = 0
+    for src in list_sources(sid):
+        path = str(src.get("path") or "")
+        title = str(src.get("title") or "")
+        if authority.classify(path, title) != authority.CONVERSATION:
+            continue
+        out = delete_source(int(src["id"]))
+        if out.get("ok"):
+            removed += 1
+            chunks += int(out.get("chunks_removed") or 0)
+    return {
+        "ok": True,
+        "space_id": sid,
+        "sources_removed": removed,
+        "chunks_removed": chunks,
+    }
+
+
 def archive_space(space_id: int) -> dict | None:
     init()
     with _conn() as conn:
@@ -529,6 +623,24 @@ def add_source(
             (now, int(space_id)),
         )
         return _row(conn.execute("SELECT * FROM sources WHERE id=?", (cur.lastrowid,)).fetchone())  # type: ignore[return-value]
+
+
+def source_authority(source_id: int) -> str:
+    """The class the chunks of this source were written with.
+
+    Export reads this so a pack carries how the material entered, not just what
+    the file is called. Without it, re-importing a chat transcript under a
+    pack-prefixed name would classify it as a document and make a past answer
+    citable as evidence.
+    """
+    init()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT authority, COUNT(*) AS n FROM chunks WHERE source_id=? "
+            "GROUP BY authority ORDER BY n DESC LIMIT 1",
+            (int(source_id),),
+        ).fetchone()
+    return (row["authority"] if row and row["authority"] else "") or ""
 
 
 def list_sources(space_id: int) -> list[dict]:
@@ -660,13 +772,22 @@ def insert_chunk(
     span_end: int = 0,
     token_est: int = 0,
     meta: dict | None = None,
+    authority: str = "",
 ) -> int:
     init()
     now = time.time()
+    # Decided once, at write time. Re-deriving the class from a path regex on every
+    # retrieved hit is both slower and fragile — a renamed or relocated file would
+    # silently change how much the engine is willing to believe it.
+    if not authority:
+        from rag import authority as authority_mod
+
+        authority = authority_mod.classify(path, heading)
     with _conn() as conn:
         cur = conn.execute(
             "INSERT INTO chunks(space_id,source_id,revision_id,parent_id,kind,text,path,heading,page,"
-            "span_start,span_end,token_est,meta,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "span_start,span_end,token_est,meta,authority,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 int(space_id),
                 int(source_id),
@@ -681,6 +802,7 @@ def insert_chunk(
                 int(span_end),
                 int(token_est),
                 json.dumps(meta or {}),
+                (authority or "document")[:20],
                 now,
             ),
         )
