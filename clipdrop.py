@@ -712,6 +712,7 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/rag",         # RAG Agent knowledge spaces / ingest / answer (host-only)
     "/api/github",      # GitHub OAuth device flow + status (token write)
     "/api/engine",      # engine plan/apply + bakeoff (changes how this PC serves models)
+    "/api/desktop",     # computer-use observe/plan/click/type (host PC only)
     "/api/admin",       # admin dashboard data (covers /api/admin[/*])
     "/api/audit",       # audit trail (covers /api/audit[/*])
 )
@@ -2084,6 +2085,10 @@ class Handler(BaseHTTPRequestHandler):
             depth = "high"
         chat_id = int(data.get("chat_id") or 0)
         use_llm = True if "use_llm" not in data else bool(data.get("use_llm"))
+        use_web = data.get("use_web", None)
+        if use_web is not None:
+            use_web = bool(use_web)
+        source_ids = [int(x) for x in data.get("source_ids") or [] if str(x).strip()] or None
         try:
             from rag import answer as rag_answer
             from rag import store as rag_store
@@ -2101,7 +2106,9 @@ class Handler(BaseHTTPRequestHandler):
         citations: list = []
         done: dict = {}
         try:
-            for ev in rag_answer.answer_events(sid, q, depth=depth, use_llm=use_llm):
+            for ev in rag_answer.answer_events(
+                sid, q, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids
+            ):
                 t = ev.get("type")
                 if t == "thinking":
                     if not self._sse_send({"type": "thinking", "text": ev.get("text") or "", "space_id": sid, "chat_id": chat_id}):
@@ -2577,6 +2584,23 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/docs":
+            try:
+                import docs_lib
+
+                return self._json(200, docs_lib.list_docs())
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/docs/file":
+            try:
+                import docs_lib
+
+                rel = (q.get("path") or [""])[0]
+                return self._json(200, docs_lib.read_doc(rel))
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/memory/thin":
             try:
                 import memory_index as mi
@@ -2635,6 +2659,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/desktop/status":
+            try:
+                import desktop_control
+                return self._json(200, desktop_control.available())
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/desktop/observe":
+            try:
+                import desktop_control
+                return self._json(200, desktop_control.observe())
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/openfree/status":
             try:
                 import openfree
@@ -2683,8 +2721,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, db.list_vault_tree())
 
         if path == "/api/summarize/today":
-            md = db.build_day_summary_markdown()
-            return self._json(200, {"markdown": md, "date": datetime.now().strftime("%Y-%m-%d")})
+            summary = db.build_day_summary()
+            return self._json(200, summary)
 
         if path == "/api/drops":
             return self._json(200, {"items": db.get_media_messages(), "latest_id": db.latest_id()})
@@ -2829,6 +2867,15 @@ class Handler(BaseHTTPRequestHandler):
                 import cortex_client
                 gid = path.split("/")[-2]
                 data = cortex_client.goals_seeks(gid)
+                return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/goals/") and path.endswith("/values"):
+            try:
+                import cortex_client
+                gid = path.split("/")[-2]
+                data = cortex_client.goals_values(gid)
                 return self._json(200 if data.get("ok") else 503, data)
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
@@ -3758,6 +3805,42 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "name required"})
             return self._json(200, {"project": db.create_project_under_category(name, cat)})
 
+        if path == "/api/access/passcode-required":
+            # Host-only, and deliberately NOT under /api/auth/ — _auth_ok lets every
+            # /api/auth/* path through unauthenticated, so a phone could have flipped
+            # its own gate off. A valid guest token is not enough either: the request
+            # must come from this machine, unproxied.
+            direct = self.client_address[0]
+            # Stricter than _forwarded_client_ip, which only trusts these headers when
+            # the Host looks like a known tunnel domain. The UI running on this PC never
+            # sends any of them, so their mere presence means something relayed the
+            # request — and a relayed request must not be able to open the LAN.
+            proxied = any(
+                (self.headers.get(h) or "").strip()
+                for h in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded")
+            )
+            if not _is_local_host(direct) or proxied:
+                if app_audit:
+                    app_audit.log("passcode_toggle", ip=ip, detail="refused: not host", ok=False)
+                return self._json(403, {"ok": False, "error": "Host only — change this on the PC"})
+            if not app_auth:
+                return self._json(503, {"ok": False, "error": "auth unavailable"})
+            try:
+                data = json.loads(self._body().decode() or "{}")
+            except json.JSONDecodeError:
+                return self._json(400, {"ok": False, "error": "invalid json"})
+            required = data.get("required", True)
+            if isinstance(required, str):
+                required = required.lower() not in ("0", "false", "no", "off")
+            out = app_auth.set_passcode_required(bool(required))
+            if app_audit:
+                app_audit.log(
+                    "passcode_toggle", ip=ip,
+                    detail=("armed" if required else "DISARMED — LAN open"),
+                    ok=bool(out.get("ok")),
+                )
+            return self._json(200 if out.get("ok") else 400, out)
+
         if path == "/api/access/approve":
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
@@ -4244,17 +4327,51 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(400, {"error": "path, paths, session_ids, research_ids, or urls required"})
 
                 force = bool(data.get("force", True))
-                out: dict = {"ok": True}
-                carry: dict = {}
-                for op in ops:
-                    out = op(force)
-                    force = False  # only the first ingest may rebuild
-                    for key in ("sessions_attached", "research_attached", "urls_attached", "skipped", "failed_urls"):
-                        if out.get(key):
-                            carry[key] = out[key]
-                    if not out.get("ok"):
-                        break
-                out.update(carry)
+                run_async = bool(data.get("async") or data.get("background"))
+
+                def _run_ops(force_flag: bool) -> dict:
+                    out_local: dict = {"ok": True}
+                    carry_local: dict = {}
+                    f = force_flag
+                    for op in ops:
+                        out_local = op(f)
+                        f = False  # only the first ingest may rebuild
+                        for key in ("sessions_attached", "research_attached", "urls_attached", "skipped", "failed_urls"):
+                            if out_local.get(key):
+                                carry_local[key] = out_local[key]
+                        if not out_local.get("ok"):
+                            break
+                    out_local.update(carry_local)
+                    return out_local
+
+                if run_async:
+                    box: dict = {"job_id": None, "out": None}
+
+                    def _bg() -> None:
+                        try:
+                            result = _run_ops(force)
+                            box["out"] = result
+                            if result.get("job_id"):
+                                box["job_id"] = result["job_id"]
+                        except Exception as exc:
+                            box["out"] = {"ok": False, "error": str(exc)[:200]}
+
+                    threading.Thread(target=_bg, daemon=True, name=f"rag-ingest-{sid}").start()
+                    for _ in range(50):
+                        if box["job_id"] or box["out"] is not None:
+                            break
+                        time.sleep(0.02)
+                    return self._json(
+                        202,
+                        {
+                            "ok": True,
+                            "async": True,
+                            "job_id": box.get("job_id"),
+                            "space_id": sid,
+                        },
+                    )
+
+                out = _run_ops(force)
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
@@ -4330,6 +4447,41 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/purge-chats"):
+            try:
+                from rag import store as rag_store
+
+                sid = int(path.split("/")[4])
+                out = rag_store.purge_chat_sources(sid)
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/scrub-authority"):
+            try:
+                from rag import store as rag_store
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                out = rag_store.scrub_authority(sid, dry_run=bool(data.get("dry_run")))
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/scrub-authority":
+            try:
+                from rag import store as rag_store
+
+                data = json.loads(self._body().decode() or "{}")
+                sid = data.get("space_id")
+                out = rag_store.scrub_authority(
+                    int(sid) if sid is not None else None,
+                    dry_run=bool(data.get("dry_run")),
+                )
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/spaces/") and path.endswith("/settings"):
             try:
@@ -4447,6 +4599,8 @@ class Handler(BaseHTTPRequestHandler):
                     depth=str(data.get("depth") or "high"),
                     top_k=int(data.get("top_k") or 8),
                     debug=bool(data.get("debug")),
+                    source_ids=[int(x) for x in data.get("source_ids") or [] if str(x).strip()]
+                    or None,
                 )
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
@@ -4470,6 +4624,9 @@ class Handler(BaseHTTPRequestHandler):
                     depth=str(data.get("depth") or "high"),
                     chat_id=int(data.get("chat_id") or 0),
                     use_llm=True if "use_llm" not in data else bool(data.get("use_llm")),
+                    use_web=bool(data["use_web"]) if "use_web" in data else None,
+                    source_ids=[int(x) for x in data.get("source_ids") or [] if str(x).strip()]
+                    or None,
                 )
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
@@ -4976,6 +5133,53 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/desktop/plan":
+            try:
+                import desktop_playbook
+                body = json.loads(self._body().decode() or "{}")
+                out = desktop_playbook.plan_task(
+                    str(body.get("goal") or ""),
+                    tokens_left=body.get("tokens_left"),
+                    prefer=str(body.get("prefer") or "") or None,
+                    act=bool(body.get("act")),
+                )
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/desktop/act":
+            # Unified input gate: click|type|scroll|drag|hotkey — always needs confirmed.
+            try:
+                import desktop_control
+                body = json.loads(self._body().decode() or "{}")
+                confirmed = bool(body.get("confirmed"))
+                kind = str(body.get("kind") or body.get("action") or "").lower()
+                if kind == "click":
+                    out = desktop_control.click(
+                        int(body.get("x") or 0), int(body.get("y") or 0),
+                        button=str(body.get("button") or "left"), confirmed=confirmed,
+                    )
+                elif kind == "type":
+                    out = desktop_control.type_text(str(body.get("text") or ""), confirmed=confirmed)
+                elif kind == "scroll":
+                    out = desktop_control.scroll(int(body.get("dy") or -3), confirmed=confirmed)
+                elif kind == "drag":
+                    out = desktop_control.drag(
+                        int(body.get("x1") or 0), int(body.get("y1") or 0),
+                        int(body.get("x2") or 0), int(body.get("y2") or 0),
+                        confirmed=confirmed,
+                    )
+                elif kind == "hotkey":
+                    keys = body.get("keys") or []
+                    if isinstance(keys, str):
+                        keys = keys.split("+")
+                    out = desktop_control.hotkey(*[str(k) for k in keys], confirmed=confirmed)
+                else:
+                    out = {"ok": False, "error": "unknown kind (click|type|scroll|drag|hotkey)"}
+                return self._json(200 if out.get("ok") or out.get("error") == "confirm_required" else 400, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/cortex/routines/draft":
             try:
                 import cortex_client
@@ -5105,6 +5309,20 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 http = int(out.get("_http") or (200 if out.get("ok") else 404))
                 return self._json(http, out)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/goals/") and path.endswith("/outcome"):
+            try:
+                import cortex_client
+                body = json.loads(self._body().decode() or "{}")
+                gid = path.split("/")[-2]
+                out = cortex_client.goals_outcome(
+                    gid,
+                    str(body.get("proposal_id") or ""),
+                    str(body.get("outcome") or ""),
+                )
+                return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
 

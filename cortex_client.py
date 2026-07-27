@@ -714,6 +714,25 @@ def goals_seeks(goal_id: str) -> dict[str, Any]:
     return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
 
 
+def goals_outcome(goal_id: str, proposal_id: str, outcome: str) -> dict[str, Any]:
+    """POST /api/goals/{id}/outcome — teach the value table from a user decision."""
+    ensure_engine(wait_sec=4.0)
+    return _json_call(
+        "POST",
+        f"/api/goals/{goal_id}/outcome",
+        {"proposal_id": proposal_id, "outcome": outcome},
+        timeout=8.0,
+    )
+
+
+def goals_values(goal_id: str) -> dict[str, Any]:
+    ensure_engine(wait_sec=4.0)
+    data = _get(f"/api/goals/{goal_id}/values", timeout=3.0)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+
+
 def engine_seek(goal_id: str | None = None, *, trigger: str = "manual", limit: int = 8) -> dict[str, Any]:
     """POST /api/engine/seek — proactive proposals; no inbox required."""
     ensure_engine(wait_sec=6.0)

@@ -432,6 +432,67 @@ def dms_action(action_id: str = "", params: dict | None = None, confirmed: bool 
     return out
 
 
+def desktop_observe(*, run_id: int = 0, agent_id: int = 0) -> dict:
+    """See the screen: cursor, foreground app, windows, screenshot meta."""
+    import desktop_control
+
+    out = desktop_control.observe()
+    # Never put megabyte screenshots into the audit log
+    audit_out = {k: v for k, v in out.items() if k != "screenshot"}
+    if isinstance(out.get("screenshot"), dict):
+        audit_out["screenshot"] = {
+            k: out["screenshot"].get(k)
+            for k in ("ok", "width", "height", "bytes", "png_omitted")
+        }
+    _audit("desktop_observe", {}, audit_out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def desktop_plan(goal: str = "", tokens_left: int = 0, prefer: str = "", *, run_id: int = 0, agent_id: int = 0) -> dict:
+    """Chill plan: pick Word vs ChatGPT vs Claude vs tutorial from what is open."""
+    import desktop_playbook
+
+    out = desktop_playbook.plan_task(
+        goal,
+        tokens_left=int(tokens_left) if tokens_left else None,
+        prefer=prefer or None,
+    )
+    _audit("desktop_plan", {"goal": goal[:200]}, out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def desktop_click(x: int = 0, y: int = 0, button: str = "left", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    import desktop_control
+
+    out = desktop_control.click(int(x), int(y), button=button or "left", confirmed=bool(confirmed))
+    _audit("desktop_click", {"x": x, "y": y, "confirmed": confirmed}, out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def desktop_type(text: str = "", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    import desktop_control
+
+    out = desktop_control.type_text(text or "", confirmed=bool(confirmed))
+    _audit("desktop_type", {"chars": len(text or ""), "confirmed": confirmed}, out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def desktop_scroll(dy: int = -3, confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    import desktop_control
+
+    out = desktop_control.scroll(int(dy), confirmed=bool(confirmed))
+    _audit("desktop_scroll", {"dy": dy, "confirmed": confirmed}, out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def desktop_drag(x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0, confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    import desktop_control
+
+    out = desktop_control.drag(int(x1), int(y1), int(x2), int(y2), confirmed=bool(confirmed))
+    _audit("desktop_drag", {"confirmed": confirmed}, out, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
 TOOLS: dict[str, Callable[..., dict]] = {
     "vault_read": vault_read,
     "vault_write": vault_write,
@@ -455,6 +516,12 @@ TOOLS: dict[str, Callable[..., dict]] = {
     "rag_answer": rag_answer,
     "dms_query": dms_query,
     "dms_action": dms_action,
+    "desktop_observe": desktop_observe,
+    "desktop_plan": desktop_plan,
+    "desktop_click": desktop_click,
+    "desktop_type": desktop_type,
+    "desktop_scroll": desktop_scroll,
+    "desktop_drag": desktop_drag,
     # Handled specially in agent_runtime (needs parent run context); stub keeps schema discovery working
     "subagent_dispatch": lambda prompt="", text="", agent_id=0, run_id=0, **kw: {
         "ok": False,
@@ -485,6 +552,12 @@ def tool_schemas(names: list[str] | None = None) -> list[dict]:
         "rag_answer": {"description": "Answer from a RAG space with citations", "params": ["query", "space_id", "depth", "chat_id"]},
         "dms_query": {"description": "Read DMS warehouse objects (inventory/suppliers/locations/shipments/transactions/alerts) via Cortex; PII columns are never returned", "params": ["object_type", "filters", "limit"]},
         "dms_action": {"description": "Invoke a governed DMS action type (e.g. export_pptx); may return confirm_required — ask the human, then retry with confirmed=true", "params": ["action_id", "params", "confirmed"]},
+        "desktop_observe": {"description": "See the desktop: cursor position, foreground app, open windows, screenshot", "params": []},
+        "desktop_plan": {"description": "Plan a human-style action path (Word vs ChatGPT vs Claude vs tutorial) from what is already open", "params": ["goal", "tokens_left", "prefer"]},
+        "desktop_click": {"description": "Click at screen x,y (needs confirmed=true)", "params": ["x", "y", "button", "confirmed"]},
+        "desktop_type": {"description": "Type/paste text into the focused app (needs confirmed=true)", "params": ["text", "confirmed"]},
+        "desktop_scroll": {"description": "Scroll the focused window (needs confirmed=true)", "params": ["dy", "confirmed"]},
+        "desktop_drag": {"description": "Drag cursor from x1,y1 to x2,y2 (needs confirmed=true)", "params": ["x1", "y1", "x2", "y2", "confirmed"]},
         "subagent_dispatch": {
             "description": "Queue an isolated child subagent (deep mode only, max 2)",
             "params": ["prompt", "agent_id"],

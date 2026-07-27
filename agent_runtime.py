@@ -14,7 +14,10 @@ try:
 except ImportError:
     ai_engine = None  # type: ignore
 
-WRITE_TOOLS = frozenset({"fs_write", "fs_patch", "vault_write"})
+WRITE_TOOLS = frozenset({
+    "fs_write", "fs_patch", "vault_write",
+    "desktop_click", "desktop_type", "desktop_scroll", "desktop_drag",
+})
 FILE_MENTION_RE = re.compile(r"@([\w.\-/\\]+(?:\.\w+)?)")
 
 
@@ -32,7 +35,8 @@ def _load_skill(skill_pack: str) -> str:
     p = DATA_DIR / "skills" / f"{skill_pack}.md"
     if p.is_file():
         try:
-            return p.read_text(encoding="utf-8")[:6000]
+            # utf-8-sig so a BOM never leaks into the prompt as a stray character
+            return p.read_text(encoding="utf-8-sig")[:6000]
         except OSError:
             pass
     return ""

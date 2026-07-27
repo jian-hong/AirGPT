@@ -341,6 +341,7 @@ def import_pack(
 
         extracted: list[Path] = []
         by_authority: dict[str, list[Path]] = {}
+        entry_by_target: dict[str, dict] = {}
         for entry in manifest.get("sources") or []:
             pack_path = _safe_member_name(str(entry.get("pack_path") or ""))
             if not pack_path:
@@ -367,6 +368,7 @@ def import_pack(
             target.write_bytes(data)
             extracted.append(target)
             by_authority.setdefault(str(entry.get("authority") or ""), []).append(target)
+            entry_by_target[str(target.resolve())] = entry
 
         ingest_out: dict = {"ok": True, "chunks": 0, "sources": 0}
         if extracted and rebuild:
@@ -382,6 +384,36 @@ def import_pack(
                     break
                 ingest_out["chunks"] = int(ingest_out.get("chunks") or 0) + int(part.get("chunks") or 0)
                 ingest_out["sources"] = int(ingest_out.get("sources") or 0) + int(part.get("sources") or 0)
+            # Stamp origin onto each source so a later scrub does not re-derive from
+            # the pack-prefixed filename alone.
+            for src in store.list_sources(new_id):
+                meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+                entry = None
+                for candidate in (src.get("path"), meta.get("blob")):
+                    if not candidate:
+                        continue
+                    try:
+                        entry = entry_by_target.get(str(Path(str(candidate)).resolve()))
+                    except Exception:
+                        entry = None
+                    if entry:
+                        break
+                if not entry:
+                    src_name = Path(str(src.get("path") or src.get("title") or "")).name
+                    for tpath, ent in entry_by_target.items():
+                        if Path(tpath).name == src_name:
+                            entry = ent
+                            break
+                if not entry:
+                    continue
+                meta = dict(meta)
+                meta["authority"] = str(entry.get("authority") or meta.get("authority") or "")
+                orig = str(entry.get("original_path") or "").strip()
+                if orig:
+                    meta["original_path"] = Path(orig).name
+                store.update_source_status(
+                    int(src["id"]), str(src.get("status") or "ready"), meta=meta
+                )
             if not ingest_out.get("ok"):
                 return {
                     "ok": False,

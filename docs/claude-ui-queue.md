@@ -9,6 +9,28 @@ research / measured foundation / UI polish that Claude plans.
 
 Full acceptance criteria stay below. Ship P0 first.
 
+## Build status — 2026-07-26 (Claude)
+
+| Item | State |
+|------|-------|
+| P0.1 ANN backfill | **Already shipped by Cursor** — verified, not rebuilt (`ragMaybeAnnBackfill`, `/ann-status`, `/ann-backfill`, silent + self-dismissing) |
+| P0.2 paused ≠ dead | **Already shipped by Cursor** — verified (`showComposerPause` countdown + Retry, `Backend restarted` notice) |
+| P1.3 project auto-suggest | **Built** — `project_suggest.py`, `POST /api/chat/project-suggest`, composer chip. 17 tests |
+| P1.4 skills registry | **Built** — `GET /api/skills`, real cards, armed-skill chip reaches the prompt. 10 tests |
+| P1.5 passcode off-switch | **Built** — `POST /api/access/passcode-required`, host-only, standing amber warning. 9 tests |
+
+Suite: **208 passed** (`tests/`, playwright excluded).
+
+Fixed in passing, outside the queue:
+- `invoke_registry.list_skills` / `load_skill` and `agent_runtime._load_skill` read
+  BOM-prefixed packs as `utf-8-sig`. Four packs were BOM'd, so `# heading` never
+  matched: `ml` was titled "Ml", its heading was served as the description, and
+  `finance` / `general` were dropped entirely. 13 packs now serve instead of 11.
+- `vectors._local_search` ANN branch returned `1/(1+distance)` — same ranking as brute
+  force but a different **scale** (orthogonal scored 0.5 instead of 0.0). Coverage and
+  fusion read the score, not the rank, so which path ran could change the answer. Now
+  returns `1 - distance`, numerically identical to the brute-force branch.
+
 ---
 
 ## P0 — the user is silently getting the worse behaviour
@@ -107,13 +129,30 @@ ships (Cursor); do not invent a second diagram format yet.
 - **Use-case model routing** (`data/routing.json`, `_TASK_CLOUD_ORDER`, Gemini before
   SEA-LION for English chat/RAG; multilingual promotes SEA-LION;
   `scripts/stress_model_routing.py`)
+- **RAG create BR toast** (1/6…chunking, spinning Create, prior-RAG import, **View** when done) — Cursor owns; do not dual-edit
+- **Authority / goal modules** — Claude authored; Cursor wired `refine_query` + UI gap card. Prefer extending `rag/goal.py` / `rag/authority.py` over rewrites in `index.html`
+
+---
+
+## New Claude work (2026-07-27) — after Cursor purge UI
+
+Cursor shipped Settings → **Evidence policy** (`chats_as_evidence`) + **Purge chat sources**.
+
+Your turn:
+
+1. **Live proof on Space 5** after restart: ask user to Purge (or uncheck chats), then `web search about cortex … jepa` and `what is netie ai`. Expect 0 `chat_*` citations.
+2. **Fabrication scrub** at chat-ingest (prefer next code).
+3. **Ingest-time authority** column + Settings already has exclude toggle — extend store schema if needed.
+4. Confirm skills cards + passcode toggle still green.
+
+Do **not** rebuild create-progress, Docs canvas, or purge UI.
 
 ---
 
 ## Claude start prompt (copy)
 
 ```
-Build docs/claude-ui-queue.md P0 items 1–2 first, then P1 3–5.
-Do not touch Mermaid normaliser, routing.json, or finished Cursor UI surfaces listed
-in "Do not touch". Verify each Done-when against the running app at :8765.
+Read docs/who-does-what.md (2026-07-27) + this queue.
+Live-verify Space 5 after purge; then fabrication scrub + ingest-time authority.
+Do not touch create toast / Docs canvas / purge UI / Mermaid / routing.json.
 ```

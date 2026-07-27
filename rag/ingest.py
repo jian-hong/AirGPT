@@ -202,6 +202,8 @@ def read_text_file(path: Path) -> tuple[str, str]:
         text = _pptx_text(path)
     elif suffix in media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES:
         text = media_mod.transcribe_media(path)
+    elif suffix in media_mod.IMAGE_SUFFIXES:
+        text = media_mod.ocr_image(path)
     elif suffix in (".html", ".htm"):
         title, body = html_to_text(_decode(raw))
         text = (f"# {title}\n\n{body}" if title else body).strip() or _decode(raw)
@@ -239,7 +241,8 @@ def iter_files(root: Path, *, max_files: int = 500) -> Iterable[Path]:
     suffixes = TEXT_SUFFIXES | ({".pdf"} if pdf_supported() else set())
     if media_mod.video_audio_supported():
         suffixes |= media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES
-    # Images intentionally omitted until OCR is built
+    if media_mod.image_ocr_supported():
+        suffixes |= media_mod.IMAGE_SUFFIXES
     if root.is_file():
         yield root
         return
@@ -365,6 +368,11 @@ def ingest_paths(
                     # the blob on rebuild would hash differently and duplicate the row.
                     dest.write_text(text, encoding="utf-8", newline="\n")
 
+            file_authority = (authority or "").strip() or ""
+            if not file_authority:
+                from rag import authority as authority_mod
+
+                file_authority = authority_mod.classify(str(path), path.name)
             src = store.add_source(
                 space_id,
                 path=str(path),
@@ -372,7 +380,11 @@ def ingest_paths(
                 content_hash=digest,
                 mime=mime,
                 bytes_n=len(text.encode("utf-8", errors="replace")),
-                meta={"blob": str(dest)},
+                meta={
+                    "blob": str(dest),
+                    "authority": file_authority,
+                    "original_path": path.name,
+                },
                 status="indexing",
             )
             source_id = int(src["id"])
@@ -415,7 +427,7 @@ def ingest_paths(
                     span_end=pdraft.span_end,
                     token_est=pdraft.token_est,
                     meta=pdraft.meta,
-                    authority=authority,
+                    authority=file_authority,
                 )
                 parent_row_ids.append(pid)
                 chunk_count += 1
@@ -433,7 +445,7 @@ def ingest_paths(
                     span_start=cdraft.span_start,
                     span_end=cdraft.span_end,
                     token_est=cdraft.token_est,
-                    authority=authority,
+                    authority=file_authority,
                 )
                 chunk_count += 1
                 child_pairs.append((cid, f"{cdraft.heading}\n{cdraft.text}"))
@@ -457,7 +469,13 @@ def ingest_paths(
             store.update_source_status(
                 source_id,
                 "ready",
-                meta={"blob": str(dest), "phrases": phrases[:12], "import_map": import_map[:24]},
+                meta={
+                    "blob": str(dest),
+                    "phrases": phrases[:12],
+                    "import_map": import_map[:24],
+                    "authority": file_authority,
+                    "original_path": path.name,
+                },
             )
 
         store.update_job(job_id, stage="embed", detail=f"{len(child_pairs)} children")

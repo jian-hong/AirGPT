@@ -36,7 +36,10 @@ def list_skills() -> list[dict[str, Any]]:
         desc = ""
         name = sid.replace("-", " ").replace("_", " ").title()
         try:
-            text = p.read_text(encoding="utf-8", errors="ignore")
+            # utf-8-sig: several packs are BOM-prefixed, and a leading ﻿ stops the
+            # "# heading" test from matching — the title silently fell back to the
+            # filename ("Ml") and the heading was served as the description.
+            text = p.read_text(encoding="utf-8-sig", errors="ignore")
             for line in text.splitlines():
                 s = line.strip()
                 if not s:
@@ -185,7 +188,7 @@ def load_skill(skill_id: str, *, max_chars: int = SKILL_CAP) -> str:
     if not p.is_file():
         return ""
     try:
-        return p.read_text(encoding="utf-8", errors="ignore")[: max(200, int(max_chars))]
+        return p.read_text(encoding="utf-8-sig", errors="ignore")[: max(200, int(max_chars))]
     except OSError:
         return ""
 

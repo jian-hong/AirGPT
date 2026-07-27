@@ -126,6 +126,41 @@ class AnnEquivalenceTest(_VecBase):
         self.assertEqual([c for c, _ in ann], [c for c, _ in brute])
 
     @needs_vec
+    def test_ann_scores_match_brute_force_numerically(self):
+        """Same SCALE, not just the same order.
+
+        Coverage and RRF downstream read the score itself, so a fast path that ranks
+        identically but scores on a different scale silently changes answers — and
+        shows up as an intermittent extra corrective round, not an obvious failure.
+        """
+        rng = random.Random(23)
+        rows = [(i, [rng.gauss(0, 1) for _ in range(self.DIM)]) for i in range(1, 201)]
+        self._insert(1, rows)
+        query = [rng.gauss(0, 1) for _ in range(self.DIM)]
+
+        brute = dict(self._search(1, query, use_vec=False))
+        ann = dict(self._search(1, query, use_vec=True))
+
+        shared = set(brute) & set(ann)
+        self.assertGreater(len(shared), 10, "not enough overlap to compare")
+        for cid in shared:
+            self.assertAlmostEqual(
+                ann[cid], brute[cid], places=4,
+                msg=f"chunk {cid}: ann={ann[cid]!r} brute={brute[cid]!r}",
+            )
+
+    @needs_vec
+    def test_orthogonal_scores_near_zero_on_both_paths(self):
+        """The concrete regression: 1/(1+d) scored orthogonal vectors 0.5, cosine 0.0."""
+        query = [1.0] + [0.0] * (self.DIM - 1)
+        orthogonal = [0.0, 1.0] + [0.0] * (self.DIM - 2)
+        self._insert(1, [(1, orthogonal)])
+
+        ann = self._search(1, query, use_vec=True)
+        if ann:
+            self.assertLess(ann[0][1], 0.05, f"orthogonal scored {ann[0][1]} on ANN path")
+
+    @needs_vec
     def test_cosine_not_l2(self):
         """A long vector pointing the wrong way must not beat a short aligned one.
 

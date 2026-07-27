@@ -7,7 +7,7 @@ import uuid
 from collections import Counter
 from typing import Any
 
-from rag import adaptive, sira, store, vectors
+from rag import adaptive, authority, sira, store, vectors
 from rag.fuse import RankedHit, fuse_channels
 from rag.rerank import rerank_hits
 
@@ -45,7 +45,7 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
         try:
             rows = conn.execute(
                 """
-                SELECT c.id, c.text, c.path, c.heading, c.parent_id, c.kind, c.source_id,
+                SELECT c.id, c.text, c.path, c.heading, c.parent_id, c.kind, c.source_id, c.authority,
                        bm25(chunks_fts) AS score
                 FROM chunks_fts
                 JOIN chunks c ON c.id = chunks_fts.chunk_id
@@ -83,6 +83,7 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
                     "heading": r["heading"],
                     "parent_id": int(r["parent_id"] or 0),
                     "source_id": int(r["source_id"] or 0),
+                    "authority": r["authority"] or "",
                     "channel": "sparse",
                 },
             )
@@ -241,11 +242,18 @@ def search(
     depth: str | None = "high",
     top_k: int = 8,
     debug: bool = False,
+    source_ids: list[int] | None = None,
 ) -> dict:
-    """Hybrid search with optional SiRA-constrained expansion terms."""
+    """Hybrid search with optional SiRA-constrained expansion terms.
+
+    source_ids narrows the answer to specific files — "ask this question of the lab
+    report only" — instead of letting the whole space vote.
+    """
     # All channels below share one connection instead of opening ~50 of their own.
     with store.session():
-        return _search(space_id, query, depth=depth, top_k=top_k, debug=debug)
+        return _search(
+            space_id, query, depth=depth, top_k=top_k, debug=debug, source_ids=source_ids
+        )
 
 
 def _search(
@@ -255,6 +263,7 @@ def _search(
     depth: str | None = "high",
     top_k: int = 8,
     debug: bool = False,
+    source_ids: list[int] | None = None,
 ) -> dict:
     space = store.get_space(space_id)
     if not space:
@@ -345,11 +354,42 @@ def _search(
         )
         chunk_hits.append(payload)
 
+    # File scoping happens after fusion so every channel still contributes its ranking
+    # within the chosen files, rather than each channel silently returning fewer hits.
+    if source_ids:
+        wanted = {int(s) for s in source_ids if str(s).strip()}
+        if wanted:
+            chunk_hits = [h for h in chunk_hits if int(h.get("source_id") or 0) in wanted]
+            file_hits = [f for f in file_hits if int(f.get("source_id") or 0) in wanted]
+
     # Prefer files that match: boost sibling chunks with same source_id
     hot_sources = {int(f.get("source_id") or 0) for f in file_hits[:5]}
     for h in chunk_hits:
         if int(h.get("source_id") or 0) in hot_sources:
             h["score"] = float(h.get("score") or 0) + 0.05
+
+    # Tag and weight by source class. A space that has swallowed 1000+ chat transcripts
+    # would otherwise rank the assistant's own past answers above fetched documents —
+    # which is how a fabricated netie.ai description came back as cited evidence.
+    space = store.get_space(space_id) or {}
+    cfg = space.get("config") if isinstance(space.get("config"), dict) else {}
+    # Default True: still retrieve (downweighted) for "what did we decide…".
+    # False: zero conversation scores so they cannot compete with docs/web.
+    chats_as_evidence = True if "chats_as_evidence" not in cfg else bool(cfg.get("chats_as_evidence"))
+    for h in chunk_hits:
+        # Prefer the class stored at ingest; fall back to path inference for rows
+        # written before the column existed.
+        kind = h.get("authority") or authority.classify(
+            h.get("path") or "", h.get("heading") or ""
+        )
+        h["authority"] = kind
+        w = authority.weight(kind)
+        if kind == authority.CONVERSATION and not chats_as_evidence:
+            w = 0.0
+        h["score"] = float(h.get("score") or 0) * w
+
+    if not chats_as_evidence:
+        chunk_hits = [h for h in chunk_hits if h.get("authority") != authority.CONVERSATION]
     chunk_hits.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
 
     # Cross-encoder rerank after RRF (feature-flagged; soft-falls to RRF order)

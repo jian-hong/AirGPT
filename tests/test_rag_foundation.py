@@ -194,8 +194,16 @@ class RagFoundationTests(unittest.TestCase):
         self.assertTrue(hi.get("ok"), hi)
         self.assertEqual(hi.get("rounds"), 2)
         self.assertEqual(hi.get("stop_reason"), "gaps_disclosed")
-        self.assertIn("may not cover", hi.get("answer") or "")
-        self.assertIn("zzzalphaterm", hi.get("answer") or "")
+        # Disclosure is now quantified by rag.goal instead of a bare "may not cover"
+        # note: the answer states how much of the question the sources actually reach
+        # and names the terms that are missing.
+        body = hi.get("answer") or ""
+        self.assertIn("zzzalphaterm", body)
+        self.assertIn("zzzbetaterm", body)
+        self.assertRegex(body, r"\d+% of the asked terms")
+        g = hi.get("goal") or {}
+        self.assertEqual(g.get("verdict"), "partial")
+        self.assertIn("zzzalphaterm", g.get("missing") or [])
 
         ba = answer.answer(sid, q, depth="basic", use_llm=False)
         self.assertEqual(ba.get("rounds"), 1)

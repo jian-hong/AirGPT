@@ -56,12 +56,42 @@ def _save(data: dict) -> None:
     WORKSPACE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def passcode_required() -> bool:
+    """Is the phone passcode gate armed? Default on whenever a passcode exists."""
+    ws = _load()
+    if not ws.get("pass_hash"):
+        return False
+    return not bool(ws.get("passcode_off"))
+
+
+def set_passcode_required(required: bool) -> dict:
+    """Arm or disarm the phone gate WITHOUT destroying the passcode.
+
+    Keeping `pass_hash` means re-arming is one tap instead of a fresh workspace setup —
+    the point of this switch is a way back in for someone locked out of their own
+    laptop, not a convenience default. Callers must enforce host-only; this function
+    does not know who is asking.
+    """
+    ws = _load()
+    if not ws.get("pass_hash"):
+        return {"ok": False, "error": "No passcode set on this machine yet"}
+    ws["passcode_off"] = not bool(required)
+    ws["passcode_changed_at"] = time.time()
+    _save(ws)
+    return {"ok": True, "passcode_required": passcode_required()}
+
+
 def status() -> dict:
     ws = _load()
+    required = passcode_required()
     return {
         "initialized": bool(ws.get("pass_hash")),
         "host_email": ws.get("email", ""),
-        "needs_auth": bool(ws.get("pass_hash")),
+        # Disarming the gate opens LAN access on purpose — the UI shows a standing
+        # warning while this is false.
+        "needs_auth": required,
+        "passcode_required": required,
+        "passcode_set": bool(ws.get("pass_hash")),
     }
 
 

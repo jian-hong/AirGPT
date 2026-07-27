@@ -898,22 +898,134 @@ def get_today_messages() -> list[dict]:
     return out
 
 
-def build_day_summary_markdown() -> str:
+def build_day_summary() -> dict:
+    """Structured day digest: copies, AI asks, manual notes, AI learnings."""
     msgs = get_today_messages()
     today = datetime.now().strftime("%Y-%m-%d")
-    lines = [f"# ClipDrop Daily Summary — {today}\n", f"Total items: {len(msgs)}\n"]
+    copies: list[dict] = []
+    asks: list[str] = []
+    ai_replies: list[str] = []
+    manual_notes: list[str] = []
+    ai_learned: list[str] = []
+    applied: list[str] = []
+
     for m in msgs:
-        lines.append(f"\n---\n\n## [{m['time']}] {m['device_name']} · {m['source']} · {m['kind']}\n")
-        if m.get("text"):
-            lines.append(m["text"] + "\n")
-        if m.get("vision_cache"):
-            lines.append(f"\n**Image context (compressed):**\n{m['vision_cache']}\n")
-        if m.get("ai_analysis") and m.get("ai_status") == "done":
-            lines.append(f"\n**AI analysis:**\n{m['ai_analysis']}\n")
-        elif m.get("filepath") and m.get("kind") == "image":
-            lines.append(f"\n*Image:* {m.get('filename', 'image')}\n")
-    lines.append("\n---\n*Export for external AI summarization.*\n")
-    return "".join(lines)
+        src = str(m.get("source") or "").lower()
+        kind = str(m.get("kind") or "").lower()
+        text = str(m.get("text") or "").strip()
+        fname = str(m.get("filename") or "").strip()
+        tlabel = m.get("time") or ""
+
+        if src in ("clipboard", "screenshot") or (
+            kind in ("image", "file", "text") and src in ("phone", "drop", "lan")
+        ):
+            label = fname or (text[:80] + ("…" if len(text) > 80 else "")) or kind or "item"
+            copies.append({"time": tlabel, "kind": kind or src, "label": label, "source": src})
+
+        if src == "ai-chat" and text:
+            asks.append(text)
+        elif src == "chat" and text and not m.get("ai_analysis"):
+            manual_notes.append(text)
+
+        if src == "ai" and text:
+            ai_replies.append(text)
+
+        if m.get("ai_status") == "done" and m.get("ai_analysis"):
+            snippet = str(m.get("ai_analysis") or "").strip()
+            if snippet:
+                head = snippet.split("\n", 1)[0][:160]
+                ai_learned.append(f"[{tlabel}] {head}" + ("…" if len(snippet) > 160 else ""))
+
+        # Applied = short AI answers that look like actions / confirmations
+        if src == "ai" and text and len(text) < 280:
+            low = text.lower()
+            if any(k in low for k in ("applied", "done", "saved", "updated", "created", "ok", "fallback")):
+                applied.append(f"[{tlabel}] {text[:140]}")
+
+    # Deduplicate asks / notes while preserving order
+    def _uniq(seq: list[str], lim: int = 12) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for s in seq:
+            key = s[:120].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(s)
+            if len(out) >= lim:
+                break
+        return out
+
+    asks_u = _uniq(asks, 10)
+    manual_u = _uniq(manual_notes, 10)
+    learned_u = _uniq(ai_learned, 10)
+    applied_u = _uniq(applied, 8)
+    replies_u = _uniq([r[:200] for r in ai_replies], 8)
+
+    lines = [
+        f"# AirGPT Day Summary — {today}\n",
+        f"**Copied:** {len(copies)}  ·  **AI asks:** {len(asks_u)}  ·  "
+        f"**Manual notes:** {len(manual_u)}  ·  **AI replies:** {len(ai_replies)}\n",
+    ]
+    lines.append("\n## Clipboard & captures\n")
+    if copies:
+        for c in copies[:20]:
+            lines.append(f"- [{c['time']}] {c['kind']} · {c['label']}\n")
+    else:
+        lines.append("_Nothing copied today._\n")
+
+    lines.append("\n## What you asked AI\n")
+    if asks_u:
+        for a in asks_u:
+            lines.append(f"- {a[:220]}{'…' if len(a) > 220 else ''}\n")
+    else:
+        lines.append("_No AI chat questions today._\n")
+
+    lines.append("\n## Manual mode — recorded\n")
+    if manual_u:
+        for n in manual_u:
+            lines.append(f"- {n[:220]}{'…' if len(n) > 220 else ''}\n")
+    else:
+        lines.append("_No manual-mode notes today._\n")
+
+    lines.append("\n## AI mode — learned\n")
+    if learned_u:
+        for n in learned_u:
+            lines.append(f"- {n}\n")
+    else:
+        lines.append("_No screenshot/image analyses today._\n")
+
+    lines.append("\n## AI mode — applied / short replies\n")
+    if applied_u or replies_u:
+        for n in (applied_u or replies_u):
+            lines.append(f"- {n}\n")
+    else:
+        lines.append("_No short AI actions recorded._\n")
+
+    lines.append("\n---\n*Local summary — stays on this PC.*\n")
+    md = "".join(lines)
+    return {
+        "date": today,
+        "markdown": md,
+        "stats": {
+            "copies": len(copies),
+            "asks": len(asks_u),
+            "manual": len(manual_u),
+            "ai_replies": len(ai_replies),
+            "learned": len(learned_u),
+            "applied": len(applied_u),
+            "total": len(msgs),
+        },
+        "copies": copies[:20],
+        "asks": asks_u,
+        "manual": manual_u,
+        "learned": learned_u,
+        "applied": applied_u or replies_u,
+    }
+
+
+def build_day_summary_markdown() -> str:
+    return build_day_summary()["markdown"]
 
 
 def touch_session(session_id: int) -> None:

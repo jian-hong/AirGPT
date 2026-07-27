@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Iterator
 
-from rag import retrieve, sira, store
+from rag import authority, goal, retrieve, sira, store
 
 # Sufficiency floor for the corrective loop: fraction of salient query tokens
 # that must appear in the evidence set before generation proceeds.
@@ -127,12 +127,21 @@ def extractive_answer(query: str, hits: list[dict]) -> str:
 def grounded_prompt(query: str, context: str) -> tuple[str, str]:
     """Return (system, user) for grounded generation — no vault/memory mix-in."""
     system = (
-        "You are AirGPT RAG — a precise grounded assistant. "
+        "You are AirGPT RAG — a precise grounded assistant for a local knowledge space. "
         "Write a clear, natural answer in full sentences for the user. "
         "Use ONLY the numbered evidence provided. Cite as [n] inline where claims come from. "
         "Do NOT paste raw file paths, do NOT list every excerpt as a numbered dump, "
         "and do NOT start with “Based on the indexed sources”. "
-        "If evidence is thin, say what is known and what is missing."
+        "If evidence is thin or off-topic for the question, say what is known and what is missing — "
+        "never invent JEPA / Cortex / edge-AI facts from unrelated resistor or demo docs. "
+        "If the user asked about JEPA and evidence has no JEPA, say so clearly, then describe "
+        "what architecture *is* evidenced (e.g. Netie search/agents) instead of forcing a match. "
+        "Never claim you cannot use tools, cannot modify “your system”, or are blocked by "
+        "safety protocols for ordinary knowledge questions. "
+        "Source deletes and mass wipes are Build-tab UI actions only — if asked, say so briefly "
+        "and answer the knowledge part of the question from evidence. "
+        "Web pages and [Wn] snippets were fetched for this turn — treat them like other sources. "
+        "Prefer web evidence over prior chat transcripts when both appear."
     )
     user = (
         f"Question: {query}\n\n"
@@ -140,6 +149,221 @@ def grounded_prompt(query: str, context: str) -> tuple[str, str]:
         "Write the answer now:"
     )
     return system, user
+
+
+_WEB_CUES = (
+    "web search", "search the web", "search online", "look up", "google ",
+    "from the internet", "from the web", "online about", "find online",
+    "add another source", "add a source", "search about", "browse for",
+)
+
+
+def wants_web(query: str) -> bool:
+    """True when the user asked to search/fetch the public web (not Build-only)."""
+    q = (query or "").strip().lower()
+    if not q:
+        return False
+    if any(c in q for c in _WEB_CUES):
+        return True
+    if re.match(r"^(please\s+)?(search|find|lookup|research)\b", q):
+        return True
+    if re.search(r"\b(web\s*search|/search\b)", q):
+        return True
+    # /edit … add source / change … without the words "web search" still means fetch
+    if q.startswith("/edit") and re.search(r"\b(source|sources|add|fetch|url|online|internet)\b", q):
+        return True
+    return False
+
+
+def destructive_injection_reply(query: str) -> str | None:
+    """Refuse chat-driven mass deletes — those are Build UI only."""
+    q = (query or "").lower()
+    if re.search(r"\b(delete|remove)\s+(all\s+)?(files|sources|the\s+index|everything)\b", q):
+        return (
+            "I will not delete sources from chat. Open the **Build** tab and press ✕ on a "
+            "source tile to remove one. Ask your knowledge question again (or say “search the web "
+            "for …”) and I will answer from the corpus — and fetch web pages when needed."
+        )
+    if re.search(r"\b(drop|wipe|erase|rm\s+-rf)\s+(the\s+)?(database|rag|index|space|files)\b", q):
+        return (
+            "Mass wipe via chat is blocked. Use Build → source ✕ for a single source, or manage "
+            "the space from Settings. I can still search the web and reason over your remaining corpus."
+        )
+    return None
+
+
+def web_query_from_ask(query: str) -> str:
+    """Strip command chrome so the search engine gets a clean topic."""
+    q = (query or "").strip()
+    q = re.sub(r"^/edit\s*", "", q, flags=re.I)
+    q = re.sub(r"^/search\s*", "", q, flags=re.I)
+    q = re.sub(
+        r"^(please\s+)?(delete all files and\s+)?(/edit\s+)?(add\s+)?(hmm\s+)?(another\s+)?(source\s+for\s+me\s+)?",
+        "",
+        q,
+        flags=re.I,
+    )
+    q = re.sub(
+        r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google)\s+(about\s+|for\s+)?",
+        "",
+        q,
+        flags=re.I,
+    )
+    q = re.sub(r"\b(then\s+)?(yup\s+)?reasoning\s+on\s+top\s+of\s+that\b", "", q, flags=re.I)
+    q = re.sub(r"\bif you don'?t know u? websearch\b", "", q, flags=re.I)
+    q = re.sub(r"\s+", " ", q).strip(" ,.-")
+    return q or (query or "").strip()
+
+
+def split_web_goals(query: str, *, max_goals: int = 5) -> list[str]:
+    """Break a compound ask into short search goals (long mega-queries retrieve junk)."""
+    q = web_query_from_ask(query)
+    # Split on sentence / "then" / "and what" boundaries
+    parts = re.split(r"[.?!\n]+|\bthen\b|\band (?:also\s+)?(?:what|how|who|why)\b", q, flags=re.I)
+    goals: list[str] = []
+    for p in parts:
+        p = re.sub(r"\b(blabla|hmm+|htign|wha tis)\b", " ", p, flags=re.I)
+        p = re.sub(r"\s+", " ", p).strip(" ,.-")
+        if len(p) < 8:
+            continue
+        # Cap length for DDG quality
+        if len(p) > 90:
+            p = p[:90].rsplit(" ", 1)[0]
+        if p and p.casefold() not in {g.casefold() for g in goals}:
+            goals.append(p)
+        if len(goals) >= max_goals:
+            break
+    if not goals and q:
+        goals = [q[:90]]
+    # Always include distinctive proper-ish tokens as solo goals when missing
+    for term in ("JEPA", "Netie.ai", "Claude Code", "Cortex"):
+        if term.casefold() in (query or "").casefold() and not any(term.casefold() in g.casefold() for g in goals):
+            goals.append(term + (" architecture" if term == "JEPA" else " AI"))
+    return goals[:max_goals]
+
+
+def _goal_covered(goal: str, blob: str) -> bool:
+    toks = [t for t in re.findall(r"[a-z0-9]{3,}", goal.casefold()) if t not in _STOPWORDS]
+    if not toks:
+        return True
+    hit = sum(1 for t in toks if t in blob)
+    return hit >= max(1, (len(toks) + 1) // 2)
+
+
+def goal_distance(goals: list[str], hits: list[dict], extra_text: str = "") -> dict:
+    """0 = all goals evidenced, 1 = none. Drive another web round when far."""
+    blob = (_evidence_blob(hits) + " " + (extra_text or "")).strip()
+    if not goals:
+        return {"distance": 0.0, "covered": [], "missing": []}
+    covered = [g for g in goals if _goal_covered(g, blob)]
+    missing = [g for g in goals if g not in covered]
+    return {
+        "distance": round(len(missing) / len(goals), 3),
+        "covered": covered,
+        "missing": missing,
+    }
+
+
+def _is_chat_path(path: str) -> bool:
+    p = (path or "").replace("\\", "/").lower()
+    name = p.rsplit("/", 1)[-1]
+    return name.startswith("chat_") or "/chats/" in p or p.startswith("session_")
+
+
+def _prefer_web_over_chats(hits: list[dict]) -> list[dict]:
+    """When the user asked for web search, demote frozen chat transcripts vs URLs/files."""
+    def key(h: dict) -> float:
+        score = float(h.get("score") or 0)
+        path = str(h.get("path") or "")
+        pl = path.lower()
+        if _is_chat_path(path):
+            score *= 0.25
+        elif pl.startswith("http://") or pl.startswith("https://") or "/web/" in pl.replace("\\", "/"):
+            score *= 1.55
+        return score
+
+    return sorted(hits, key=key, reverse=True)
+
+
+def _web_augment_space(space_id: int, query: str, *, max_pages: int = 6) -> dict:
+    """Multi-goal web search + ingest. Falls back to snippets when pages are JS shells."""
+    try:
+        from rag import ingest, websearch
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120], "chunks": 0, "urls": [], "snippets": []}
+
+    goals = split_web_goals(query)
+    all_results: list[dict] = []
+    seen_url: set[str] = set()
+    for goal in goals:
+        found = websearch.search_web(goal, max_results=4)
+        if not found.get("ok"):
+            continue
+        for r in found.get("results") or []:
+            u = str(r.get("url") or "")
+            if not u.startswith("http") or u in seen_url:
+                continue
+            seen_url.add(u)
+            all_results.append({**r, "goal": goal})
+
+    urls = [r["url"] for r in all_results][:max_pages]
+    snippets = [
+        {
+            "title": r.get("title") or r.get("url"),
+            "url": r.get("url"),
+            "snippet": r.get("snippet") or "",
+            "goal": r.get("goal") or "",
+        }
+        for r in all_results[:12]
+        if (r.get("snippet") or r.get("title"))
+    ]
+
+    chunks = 0
+    failed: list = []
+    if urls:
+        try:
+            ing = ingest.ingest_urls(space_id, urls, force=False)
+            chunks = int(ing.get("chunks") or 0)
+            failed = list(ing.get("failed_urls") or [])
+            ok = bool(ing.get("ok")) or chunks > 0 or bool(snippets)
+        except Exception as e:
+            return {
+                "ok": bool(snippets),
+                "error": str(e)[:120],
+                "chunks": 0,
+                "urls": urls,
+                "snippets": snippets,
+                "goals": goals,
+            }
+    else:
+        ok = bool(snippets)
+
+    return {
+        "ok": ok,
+        "chunks": chunks,
+        "urls": urls,
+        "snippets": snippets,
+        "goals": goals,
+        "failed_urls": failed,
+        "query": " | ".join(goals)[:200],
+        "error": None if ok else "no pages or snippets",
+    }
+
+
+def _snippets_context(snippets: list[dict], *, max_chars: int = 3500) -> str:
+    """Evidence block from search snippets when page fetch fails (JS shells)."""
+    parts: list[str] = []
+    used = 0
+    for i, s in enumerate(snippets, start=1):
+        title = (s.get("title") or "web")[:120]
+        url = s.get("url") or ""
+        snip = (s.get("snippet") or "")[:400]
+        chunk = f"[W{i}] {title}\nURL: {url}\n{snip}\n"
+        if used + len(chunk) > max_chars:
+            break
+        parts.append(chunk)
+        used += len(chunk)
+    return "\n".join(parts)
 
 
 def _chunk_text(text: str, size: int = 240) -> Iterator[str]:
@@ -325,22 +549,36 @@ def answer_events(
     depth: str = "high",
     use_llm: bool = True,
     model_tier: str | None = None,
+    use_web: bool | None = None,
+    source_ids: list[int] | None = None,
 ) -> Iterator[dict]:
     """Yield RAG SSE events: thinking?, meta, citations, delta*, done|error.
 
     Does not persist chat messages — caller owns that (avoids double-write).
+    When use_web is True (or auto when the ask clearly wants the web / coverage is
+    thin), DuckDuckGo results are ingested into the space before answering so chat
+    is not stuck on the Build-tab search box.
     """
+    refuse = destructive_injection_reply(query)
+    raw_q = (query or "").strip()
+    # Strip /edit · "web search about" chrome so retrieval + web ingest get a real topic
+    if refuse or wants_web(raw_q) or raw_q.lower().startswith("/edit"):
+        knowledge_q = web_query_from_ask(raw_q)
+    else:
+        knowledge_q = raw_q
+
     yield {"type": "thinking", "text": "Retrieving evidence…"}
     # Typo tolerance: correct out-of-vocabulary query terms against the corpus so
     # a misspelled distinctive term ("secuirty hardning") still retrieves.
     try:
         from rag import spell as _spell
-        _fixed = _spell.correct_query(query, space_id)
-        if _fixed and _fixed != query:
+        _fixed = _spell.correct_query(knowledge_q or query, space_id)
+        if _fixed and _fixed != (knowledge_q or query):
             yield {"type": "thinking", "text": "Corrected likely typos in the query…"}
-            query = _fixed
+            knowledge_q = _fixed
     except Exception:
         pass
+    query = knowledge_q or query
     top_k = {"basic": 6, "high": 8}.get((depth or "").lower(), 12)
     caps = _round_cap(depth, store.get_space(space_id))
 
@@ -361,9 +599,9 @@ def answer_events(
                 if step.get("expanded_queries"):
                     yield {"type": "thinking", "text": f"Expanded query {len(step['expanded_queries'])} ways for wider recall…"}
             except Exception:
-                step = retrieve.search(space_id, query_r, depth=depth, top_k=top_k, debug=False)
+                step = retrieve.search(space_id, query_r, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
         else:
-            step = retrieve.search(space_id, query_r, depth=depth, top_k=top_k, debug=False)
+            step = retrieve.search(space_id, query_r, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
         if not step.get("ok"):
             if rnd == 1:
                 yield {"type": "error", "error": str(step.get("error") or "retrieve failed")}
@@ -389,6 +627,83 @@ def answer_events(
 
     coverage = rounds[-1]["coverage"] if rounds else 0.0
     gap_terms = [t for t in _salient_tokens(query) if t not in _evidence_blob(hits)]
+
+    # Web augment only when asked (client use_web=true, or natural-language web cues).
+    web_snippets_ctx = ""
+    web_snippet_rows: list[dict] = []
+    web_error = ""
+    auto_web = bool(use_web) if use_web is not None else wants_web(raw_q)
+    if auto_web:
+        yield {"type": "thinking", "text": "Searching the public web (split goals)…"}
+        aug = _web_augment_space(space_id, raw_q or query, max_pages=6)
+        goals = list(aug.get("goals") or split_web_goals(raw_q or query))
+        if aug.get("ok"):
+            n_url = len(aug.get("urls") or [])
+            n_snip = len(aug.get("snippets") or [])
+            yield {
+                "type": "thinking",
+                "text": f"Web: {len(goals)} goal(s) · {n_url} page(s) · {aug.get('chunks') or 0} chunks · {n_snip} snippets",
+            }
+            if aug.get("chunks"):
+                step = retrieve.search(space_id, query, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
+                if step.get("ok"):
+                    result = step
+                    for h in step.get("hits") or []:
+                        cid = int(h.get("chunk_id") or 0)
+                        if cid and (cid not in merged or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)):
+                            merged[cid] = h
+                    hits = _diversify(
+                        _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                        top_k,
+                    )
+                    coverage = _coverage(query, hits)
+                    gap_terms = [t for t in _salient_tokens(query) if t not in _evidence_blob(hits)]
+                    rounds.append({"round": "web", "query": aug.get("query") or query, "n_new": len(step.get("hits") or []), "coverage": round(coverage, 3)})
+            # Snippets fill JS-shell gaps so we are never stuck on chat_* only
+            if aug.get("snippets"):
+                web_snippet_rows.extend(aug["snippets"])
+                web_snippets_ctx = _snippets_context(web_snippet_rows)
+            dist = goal_distance(goals, hits, web_snippets_ctx)
+            yield {
+                "type": "thinking",
+                "text": f"Goal distance {dist['distance']:.0%} — missing: {', '.join(dist['missing'][:3]) or 'none'}",
+            }
+            # Second web round for uncovered goals (measure distance → act)
+            if dist["distance"] >= 0.4 and dist["missing"]:
+                yield {"type": "thinking", "text": "Distance to goal still high — searching missing topics…"}
+                for miss in dist["missing"][:3]:
+                    aug2 = _web_augment_space(space_id, miss, max_pages=3)
+                    if aug2.get("chunks"):
+                        step = retrieve.search(space_id, query, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
+                        if step.get("ok"):
+                            for h in step.get("hits") or []:
+                                cid = int(h.get("chunk_id") or 0)
+                                if cid and (cid not in merged or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)):
+                                    merged[cid] = h
+                            hits = _diversify(
+                                _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                                top_k,
+                            )
+                    if aug2.get("snippets"):
+                        web_snippet_rows.extend(aug2["snippets"])
+                        web_snippets_ctx = _snippets_context(web_snippet_rows)
+                dist = goal_distance(goals, hits, web_snippets_ctx)
+                rounds.append({"round": "web2", "query": " | ".join(dist["missing"][:3]), "coverage": round(1.0 - dist["distance"], 3)})
+                yield {"type": "thinking", "text": f"After second pass, goal distance {dist['distance']:.0%}"}
+            # Final demote of chat_* even if no new chunks were embedded
+            if merged:
+                hits = _diversify(
+                    _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                    top_k,
+                )
+        else:
+            why = (aug.get("error") or "no pages").strip()
+            web_error = why
+            yield {"type": "thinking", "text": f"Web search skipped ({why[:80]}) — answering from local sources only."}
+            if aug.get("snippets"):
+                web_snippet_rows.extend(aug["snippets"])
+                web_snippets_ctx = _snippets_context(web_snippet_rows)
+
     if not hits:
         stop_reason = "no_evidence"
     elif coverage >= _COVERAGE_FLOOR:
@@ -396,8 +711,54 @@ def answer_events(
     else:
         stop_reason = "gaps_disclosed"
 
+    if refuse and not (knowledge_q and len(knowledge_q) > 12 and not re.search(r"\b(delete|wipe|erase)\b", knowledge_q, re.I)):
+        # Pure wipe / delete-all with nothing left to answer
+        for piece in _chunk_text(refuse):
+            yield {"type": "delta", "text": piece}
+        yield {
+            "type": "done",
+            "answer": refuse,
+            "trace_id": result.get("trace_id") if result else None,
+            "confidence": 1.0,
+            "stop_reason": "policy_refuse",
+            "rounds": len(rounds),
+            "coverage": coverage,
+            "faithfulness": 1.0,
+            "unsupported_claims": [],
+            "model": "policy",
+            "citations": [],
+            "hits": [],
+            "context": "",
+            "template_id": (result or {}).get("template_id"),
+            "depth": depth,
+        }
+        return
+
     citations = []
-    for h in hits:
+    # Web snippets first so the UI "sources visited" is not only chat_*
+    for i, sn in enumerate(web_snippet_rows[:8], start=1):
+        url = str(sn.get("url") or "")
+        citations.append(
+            {
+                "chunk_id": 0,
+                "path": url or f"web:{i}",
+                "path_full": url,
+                "title": (sn.get("title") or url or f"Web {i}")[:160],
+                "heading": "web",
+                "span_start": None,
+                "span_end": None,
+                "parent_id": None,
+                "score": 0.55,
+                "excerpt": (sn.get("snippet") or "")[:280],
+                "web": True,
+            }
+        )
+    # Only document/web chunks may be cited. Past chat transcripts contain the
+    # assistant's own earlier answers, so citing them lets a fabrication come back
+    # wearing a citation — which is exactly how an invented netie.ai description
+    # survived being corrected. They stay retrievable as context, never as proof.
+    evidence_hits, convo_hits = authority.split_evidence(list(hits))
+    for h in evidence_hits:
         cid = int(h.get("chunk_id") or 0)
         meta_row = store.get_chunk(cid) or {}
         raw_path = h.get("path") or meta_row.get("path") or ""
@@ -413,12 +774,34 @@ def answer_events(
                 "parent_id": meta_row.get("parent_id") or h.get("parent_id"),
                 "score": h.get("score"),
                 "excerpt": (h.get("text") or "")[:280],
+                "authority": h.get("authority") or "document",
             }
         )
-    context = build_context_block(hits)
+    context = build_context_block(evidence_hits)
+    if convo_hits and not evidence_hits:
+        # Nothing citable. Hand the transcripts over clearly marked so the model can
+        # talk about the conversation without presenting it as established fact.
+        context = (
+            "No documents or web pages matched. The only matches are transcripts of "
+            "earlier chats, which are NOT evidence — they may contain the assistant's "
+            "own past guesses. Do not state anything from them as fact:\n"
+            + build_context_block(convo_hits)
+        )
+    if web_snippets_ctx:
+        # Prefer web evidence ahead of chat_* when the user asked to search
+        context = (
+            "Web search evidence (cite as [Wn] when used):\n"
+            + web_snippets_ctx
+            + ("\n\nLocal corpus evidence:\n" + context if context.strip() else "")
+        )
+    # Confidence tracks citable evidence only — a pile of chat matches is not support.
     confidence = (
-        min(1.0, sum(float(h.get("score") or 0) for h in hits[:3]) / 3.0) if hits else 0.0
+        min(1.0, sum(float(h.get("score") or 0) for h in evidence_hits[:3]) / 3.0)
+        if evidence_hits
+        else 0.0
     )
+    if web_snippets_ctx and confidence < 0.35:
+        confidence = 0.45
 
     if result.get("trace_id") and len(rounds) > 1:
         try:
@@ -440,6 +823,82 @@ def answer_events(
     if tier not in ("basic", "high", "max"):
         tier = "high"
 
+    # Measure the gap before writing a word, so "I could not support this" is a
+    # measured outcome rather than something the model decides to feel bad about.
+    assessment = goal.assess(
+        query,
+        evidence_hits,
+        convo_hits,
+        web_ran=bool(auto_web),
+        web_error=str(web_error or ""),
+    )
+    if web_snippet_rows and assessment.verdict == "unsupported":
+        # Snippets are real fetched evidence even when nothing was indexed deeply.
+        assessment.verdict = "partial"
+
+    # One refined retrieval aimed only at missing terms (JEPA-style close-the-gap).
+    # It spends from the SAME budget as the corrective loop above — `_round_cap` is the
+    # documented promise that High costs at most two retrievals, and a gap-closing pass
+    # is still a retrieval. Without this guard High quietly did three.
+    if len(rounds) >= caps:
+        pass
+    elif assessment.verdict != "answerable" and assessment.missing:
+        refined = goal.refine_query(query, assessment)
+        if refined and refined.casefold() != (query or "").casefold():
+            yield {"type": "thinking", "text": f"Refining on missing terms: {refined[:80]}…"}
+            step = retrieve.search(space_id, refined, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
+            if step.get("ok"):
+                for h in step.get("hits") or []:
+                    cid = int(h.get("chunk_id") or 0)
+                    if cid and (cid not in merged or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)):
+                        merged[cid] = h
+                hits = _diversify(
+                    _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                    top_k,
+                )
+                evidence_hits, convo_hits = authority.split_evidence(list(hits))
+                citations = [c for c in citations if c.get("web")]
+                for h in evidence_hits:
+                    cid = int(h.get("chunk_id") or 0)
+                    meta_row = store.get_chunk(cid) or {}
+                    raw_path = h.get("path") or meta_row.get("path") or ""
+                    citations.append(
+                        {
+                            "chunk_id": cid,
+                            "path": _display_path(raw_path),
+                            "path_full": raw_path,
+                            "title": Path(str(raw_path).replace("\\", "/")).name if raw_path else "",
+                            "heading": h.get("heading") or meta_row.get("heading"),
+                            "span_start": meta_row.get("span_start"),
+                            "span_end": meta_row.get("span_end"),
+                            "parent_id": meta_row.get("parent_id") or h.get("parent_id"),
+                            "score": h.get("score"),
+                            "excerpt": (h.get("text") or "")[:280],
+                            "authority": h.get("authority") or "document",
+                        }
+                    )
+                context = build_context_block(evidence_hits)
+                if web_snippets_ctx:
+                    context = (
+                        "Web search evidence (cite as [Wn] when used):\n"
+                        + web_snippets_ctx
+                        + ("\n\nLocal corpus evidence:\n" + context if context.strip() else "")
+                    )
+                assessment = goal.assess(
+                    query,
+                    evidence_hits,
+                    convo_hits,
+                    web_ran=bool(auto_web),
+                    web_error=str(web_error or ""),
+                )
+                if web_snippet_rows and assessment.verdict == "unsupported":
+                    assessment.verdict = "partial"
+                rounds.append({"round": "refine", "query": refined[:200], "coverage": round(assessment.coverage, 3)})
+                yield {
+                    "type": "thinking",
+                    "text": f"After refine: goal distance {assessment.distance:.0%} · {assessment.verdict}",
+                }
+
     yield {
         "type": "meta",
         "depth": result.get("depth") or depth,
@@ -451,13 +910,25 @@ def answer_events(
         "coverage": coverage,
         "hits": hits,
         "context": context,
+        "goal": assessment.as_dict(),
     }
     yield {"type": "citations", "citations": citations}
 
-    if not use_llm or not context.strip() or not hits:
-        text = extractive_answer(query, hits)
-        if hits and gap_terms:
-            text += "\n\nNote: the indexed evidence may not cover: " + ", ".join(gap_terms[:6]) + "."
+    if not use_llm or (not context.strip() and not hits):
+        text = extractive_answer(query, evidence_hits) if evidence_hits else ""
+        if web_snippets_ctx and not text:
+            text = "From web search:\n" + web_snippets_ctx[:2000]
+        # Lead with the measured gap, then the diagnosis — an honest "here is what is
+        # missing and what to do" beats a fluent paragraph built on nothing.
+        lead = goal.summary_line(assessment)
+        if lead:
+            text = (lead + "\n\n" + text).strip()
+        if assessment.diagnosis:
+            text += "\n\nTo get a better answer:\n" + "\n".join(
+                f"- {d}" for d in assessment.diagnosis
+            )
+        if refuse:
+            text = refuse + "\n\n" + text
         for piece in _chunk_text(text):
             yield {"type": "delta", "text": piece}
         yield {
@@ -470,6 +941,7 @@ def answer_events(
             "coverage": coverage,
             "faithfulness": 1.0,
             "unsupported_claims": [],
+            "goal": assessment.as_dict(),
             "model": "extractive",
             "citations": citations,
             "hits": hits,
@@ -480,8 +952,21 @@ def answer_events(
         return
 
     system, user = grounded_prompt(query, context)
+    if assessment.verdict != "answerable":
+        system += (
+            " Evidence is incomplete for this question. Lead with what is known, name what is "
+            "missing, and do not invent facts to fill gaps. If diagnosis steps are implied by "
+            "missing terms, state them plainly."
+        )
+        if assessment.diagnosis:
+            user += "\n\nMeasured gaps / next actions:\n" + "\n".join(
+                f"- {d}" for d in assessment.diagnosis
+            )
     text = ""
     model = "llm"
+    if refuse:
+        for piece in _chunk_text(refuse + "\n\n"):
+            yield {"type": "delta", "text": piece}
     try:
         import ai_engine
 
@@ -517,6 +1002,9 @@ def answer_events(
         for piece in _chunk_text(text):
             yield {"type": "delta", "text": piece}
 
+    if refuse:
+        text = refuse + "\n\n" + (text or "")
+
     # Only real LLM output can hallucinate; extractive text is grounded by construction.
     if str(model).startswith("extractive"):
         faith = {"score": 1.0, "unsupported": []}
@@ -534,6 +1022,7 @@ def answer_events(
         "coverage": coverage,
         "faithfulness": faith["score"],
         "unsupported_claims": faith["unsupported"],
+        "goal": assessment.as_dict(),
         "model": model,
         "model_tier": tier,
         "citations": citations,
@@ -551,6 +1040,8 @@ def answer(
     depth: str = "high",
     chat_id: int = 0,
     use_llm: bool = True,
+    use_web: bool | None = None,
+    source_ids: list[int] | None = None,
 ) -> dict:
     """Blocking answer — collects answer_events."""
     text = ""
@@ -558,7 +1049,9 @@ def answer(
     hits: list = []
     context = ""
     done: dict = {}
-    for ev in answer_events(space_id, query, depth=depth, use_llm=use_llm):
+    for ev in answer_events(
+        space_id, query, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids
+    ):
         t = ev.get("type")
         if t == "citations":
             citations = ev.get("citations") or citations
@@ -602,6 +1095,7 @@ def answer(
         "stop_reason": done.get("stop_reason"),
         "faithfulness": done.get("faithfulness"),
         "unsupported_claims": done.get("unsupported_claims") or [],
+        "goal": done.get("goal") or {},
         "rounds": done.get("rounds"),
         "coverage": done.get("coverage"),
         "model": done.get("model"),

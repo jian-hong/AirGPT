@@ -35,14 +35,24 @@ def video_audio_supported() -> bool:
 
 
 def image_ocr_supported() -> bool:
-    """Phase later — always false this pass."""
-    return False
+    """Phase 2: Pillow + pytesseract when tesseract is on PATH."""
+    if not shutil.which("tesseract"):
+        return False
+    try:
+        import pytesseract  # noqa: F401
+        from PIL import Image  # noqa: F401
+
+        return True
+    except Exception:
+        return False
 
 
 def media_skip_reason(suffix: str) -> str | None:
     s = (suffix or "").lower()
     if s in IMAGE_SUFFIXES:
-        return "image needs OCR (not built)"
+        if image_ocr_supported():
+            return None
+        return "image needs OCR (install tesseract + pytesseract)"
     if s in VIDEO_SUFFIXES | AUDIO_SUFFIXES:
         if not ffmpeg_available():
             return "video/audio needs ffmpeg"
@@ -50,6 +60,32 @@ def media_skip_reason(suffix: str) -> str | None:
             return "video/audio needs Whisper (pip install openai-whisper)"
         return None
     return None
+
+
+def ocr_image(path: Path) -> str:
+    """Return OCR text from an image, or empty on soft-fail."""
+    path = Path(path)
+    if not path.is_file() or not image_ocr_supported():
+        return ""
+    try:
+        import pytesseract
+        from PIL import Image
+
+        text = pytesseract.image_to_string(Image.open(path))
+        return (text or "").strip()
+    except Exception:
+        return ""
+
+
+def extract_media_text(path: Path) -> str:
+    """Phase 2/3 entry: OCR images, transcribe A/V."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        return ocr_image(path)
+    if suffix in VIDEO_SUFFIXES | AUDIO_SUFFIXES:
+        return transcribe_media(path)
+    return ""
 
 
 def _run_ffmpeg_wav(src: Path, dst: Path) -> bool:

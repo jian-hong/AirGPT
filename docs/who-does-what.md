@@ -54,12 +54,16 @@ Tests: `test_authority_roundtrip.py` (6), `test_memory_scrub.py` (8),
 
 ## Next — Claude (prefer this order)
 
-1. **Live re-ask Space 5** after restart + **Purge chat sources**: prove 0 `chat_*` cites on Netie / JEPA asks.
-2. **File-scoped retrieval** (“what did the docx say” answers from that file only).
+1. ~~Live re-ask Space 5 after purge~~ — done 2026-07-27: purged 8 chat sources / 1178 chunks; `chats_as_evidence=false`; live retrieve+answer → 0 `chat_*` cites.
+2. ~~File-scoped retrieval UI~~ — ask-bar **Files** picker wires `source_ids` through `/api/rag/answers` SSE.
 3. Confirm skills cards + passcode toggle on hard-reload.
-4. **RAG-side scrub**: chat transcripts already indexed before ingest-time authority
-   still carry whatever `_migrate_authority` guessed. A re-classify pass keyed on
-   source origin (not path) would close the last gap for old spaces.
+4. ~~RAG-side scrub~~ — `store.scrub_authority` + Settings button; origin via `meta.authority` / `original_path`.
+
+## Cursor — landed 2026-07-27 (continue)
+
+1. ~~Async create ingest~~ — `/sources?async=true` + job poll on Create.
+2. Media Phase 2/3 — captions / OCR (`rag/media.py`) still open.
+3. Computer-use deepen — only when not dual-editing `index.html`.
 
 ## Claude start prompt
 

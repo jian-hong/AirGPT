@@ -217,8 +217,16 @@ def _local_search(space_id: int, query: str, *, k: int = 40) -> list[tuple[int, 
                     # no hits means fall through to the brute-force scan below, which is
                     # slower but always right.
                     if rows:
-                        # sqlite-vec distance: lower is better → invert
-                        return [(int(r[0]), 1.0 / (1.0 + float(r[1]))) for r in rows]
+                        # Same SCALE as the brute-force branch, not just the same order.
+                        # With distance_metric=cosine, distance == 1 - cosine_similarity,
+                        # so this recovers the identical number. The old 1/(1+d) form
+                        # preserved ranking but scored orthogonal vectors 0.5 instead of
+                        # 0.0 — and coverage / fusion downstream read the score, not the
+                        # rank, so which path ran could change the answer.
+                        return [
+                            (int(r[0]), max(0.0, min(1.0, 1.0 - float(r[1]))))
+                            for r in rows
+                        ]
                 except Exception:
                     pass
             # Stream ALL vectors in batches (no arbitrary cap — a LIMIT here silently

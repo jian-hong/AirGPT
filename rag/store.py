@@ -539,9 +539,9 @@ def purge_chat_sources(space_id: int) -> dict:
     removed = 0
     chunks = 0
     for src in list_sources(sid):
-        path = str(src.get("path") or "")
-        title = str(src.get("title") or "")
-        if authority.classify(path, title) != authority.CONVERSATION:
+        # Origin-aware: pack-prefixed names defeat path regex; meta/chunks still know.
+        kind = resolve_source_authority(src) or source_authority(int(src["id"]))
+        if kind != authority.CONVERSATION:
             continue
         out = delete_source(int(src["id"]))
         if out.get("ok"):
@@ -641,6 +641,105 @@ def source_authority(source_id: int) -> str:
             (int(source_id),),
         ).fetchone()
     return (row["authority"] if row and row["authority"] else "") or ""
+
+
+def resolve_source_authority(src: dict) -> str:
+    """Decide authority from how the source entered, not the live path alone.
+
+    Path regex is a fallback — pack members are named ``0001__chat_126.md``, which
+    defeats ``classify``. Prefer declared meta, then original basename, then path.
+    """
+    from rag import authority as authority_mod
+
+    meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+    declared = str(meta.get("authority") or "").strip().lower()
+    if declared in (
+        authority_mod.DOCUMENT,
+        authority_mod.WEB,
+        authority_mod.CONVERSATION,
+    ):
+        return declared
+    orig = str(meta.get("original_path") or "").strip()
+    title = str(src.get("title") or "")
+    if orig:
+        return authority_mod.classify(orig, title or Path(orig).name)
+    return authority_mod.classify(str(src.get("path") or ""), title)
+
+
+def scrub_authority(space_id: int | None = None, *, dry_run: bool = False) -> dict:
+    """Reclassify chunks from each source's origin (meta), closing the pre-tag gap.
+
+    Spaces indexed before ingest-time authority — or imported under pack-prefixed
+    names without a surviving class — still carry whatever path migration guessed.
+    This pass keys on ``meta.authority`` / ``meta.original_path`` first.
+    """
+    init()
+    spaces = [int(space_id)] if space_id is not None else [
+        int(s["id"]) for s in list_spaces(include_archived=True)
+    ]
+    sources_checked = 0
+    sources_changed = 0
+    chunks_updated = 0
+    details: list[dict] = []
+    for sid in spaces:
+        for src in list_sources(sid):
+            sources_checked += 1
+            want = resolve_source_authority(src) or "document"
+            cur = source_authority(int(src["id"])) or ""
+            meta = dict(src.get("meta") if isinstance(src.get("meta"), dict) else {})
+            # Stamp meta even when chunk classes already match — origin must survive
+            # a later path-only re-derivation. Only count as "changed" when something moved.
+            chunk_mismatch = cur != want
+            meta_needs = meta.get("authority") != want or (
+                not meta.get("original_path")
+            )
+            if not chunk_mismatch and not meta_needs:
+                continue
+            n = 0
+            if not dry_run:
+                with _conn() as conn:
+                    if chunk_mismatch:
+                        cur_ex = conn.execute(
+                            "UPDATE chunks SET authority=? WHERE source_id=? AND "
+                            "(authority IS NULL OR authority='' OR authority!=?)",
+                            (want[:20], int(src["id"]), want[:20]),
+                        )
+                        n = int(cur_ex.rowcount or 0)
+                meta["authority"] = want
+                if not meta.get("original_path"):
+                    meta["original_path"] = Path(str(src.get("path") or src.get("title") or "")).name
+                update_source_status(int(src["id"]), str(src.get("status") or "ready"), meta=meta)
+            else:
+                with _conn() as conn:
+                    n = int(
+                        conn.execute(
+                            "SELECT COUNT(*) AS n FROM chunks WHERE source_id=? AND "
+                            "(authority IS NULL OR authority='' OR authority!=?)",
+                            (int(src["id"]), want[:20]),
+                        ).fetchone()["n"]
+                        or 0
+                    )
+            if chunk_mismatch or meta_needs:
+                sources_changed += 1
+                chunks_updated += n
+                details.append(
+                    {
+                        "space_id": sid,
+                        "source_id": int(src["id"]),
+                        "from": cur or "(none)",
+                        "to": want,
+                        "chunks": n,
+                    }
+                )
+    return {
+        "ok": True,
+        "dry_run": bool(dry_run),
+        "spaces": len(spaces),
+        "sources_checked": sources_checked,
+        "sources_changed": sources_changed,
+        "chunks_updated": chunks_updated,
+        "changes": details[:50],
+    }
 
 
 def list_sources(space_id: int) -> list[dict]:
