@@ -23,17 +23,19 @@ git remote -v
    Start-Process python -ArgumentList "clipdrop.py" -WindowStyle Hidden
    # wait until /api/info.demo_mock is true
    ```
-4. Record acts:
+4. Record short demo + acts:
    ```powershell
+   $env:AIRGPT_PW_HEADLESS = "1"
+   python video-assets/scripts/record_short_demo.py   # ~45s assembled MP4
    python video-assets/scripts/record_act1_interrupt.py
    python video-assets/scripts/record_act2_share.py
    python video-assets/scripts/record_act3_hub.py
    python video-assets/scripts/record_act4_lockdown_mock.py
    python video-assets/scripts/record_act6_openvault.py
    ```
-5. Commit/push clips under `video-assets/03-demo-clips/multiplayer/` (or leave as PR artefacts).
+5. Commit/push clips under `video-assets/03-demo-clips/multiplayer/` (or leave as PR artefacts). Short master also lands in `video-assets/07-exports/AirGPT_SHORT_DEMO_MOCK_*.mp4`.
 
-**Note:** Cloud VMs are headless — Playwright uses `headless=False` in scripts today. Cloud agent should patch launch to `headless=True` if display is missing, or set `HEADLESS=1` if scripts support it.
+**Note:** Set `AIRGPT_PW_HEADLESS=1` on cloud/CI (no display). Local Windows can omit it for headed capture.
 
 ---
 

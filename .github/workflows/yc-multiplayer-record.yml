@@ -43,6 +43,7 @@ jobs:
         shell: pwsh
         run: |
           $env:AIRGPT_PW_HEADLESS = "1"
+          python video-assets/scripts/record_short_demo.py
           python video-assets/scripts/record_act1_interrupt.py
           python video-assets/scripts/record_act2_share.py
           python video-assets/scripts/record_act3_hub.py
@@ -53,6 +54,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: yc-multiplayer-clips
-          path: video-assets/03-demo-clips/multiplayer/
+          path: |
+            video-assets/03-demo-clips/multiplayer/
+            video-assets/07-exports/AirGPT_SHORT_DEMO_MOCK_*.mp4
           if-no-files-found: warn
           retention-days: 14

@@ -36,6 +36,10 @@ bin/cloudflared.exe
 # Finished masters should be distributed separately or through Git LFS.
 video-assets/07-exports/*
 !video-assets/07-exports/DROP_MASTERS_HERE.txt
+!video-assets/07-exports/AirGPT_SHORT_DEMO_MOCK_*.mp4
+
+# Playwright scratch dirs from recorders
+video-assets/03-demo-clips/**/_pw_*/
 
 # OpenFree vendored gateway (prebuilt npm, ~739MB) + runtime
 vendor/openfree/node_modules/

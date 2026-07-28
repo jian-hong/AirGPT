@@ -97,6 +97,7 @@ cd D:\AirGPT
 
 | Act | Command | Output |
 |-----|---------|--------|
+| Short | `AIRGPT_PW_HEADLESS=1 python video-assets/scripts/record_short_demo.py` | `03-demo-clips/multiplayer/short-demo/` + `07-exports/` (~45s MP4) |
 | 1 | `python video-assets/scripts/record_act1_interrupt.py` | `03-demo-clips/multiplayer/act1/` |
 | 2 | `python video-assets/scripts/record_act2_share.py` | `…/act2/` |
 | 3 | `python video-assets/scripts/record_act3_hub.py` | `…/act3/` |
