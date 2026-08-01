@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -79,6 +80,46 @@ def _row(r: sqlite3.Row | None) -> dict | None:
     return d
 
 
+# Credential shapes that must never be persisted. Deliberately NOT the whole
+# pii_guard set: an email address or a phone number can be a legitimate durable fact
+# ("my work email is ...") and refusing those would make the store useless. Only
+# things that are secret by construction are rejected.
+_ASSIGNED_SECRET_RE = re.compile(
+    r"(?i)\b(?:pass(?:word|wd|phrase)|secret|api[_ -]?key|access[_ -]?token|"
+    r"auth[_ -]?token|bearer|client[_ -]?secret|private[_ -]?key)\b"
+    r"\s*[:=]\s*\S{6,}"
+)
+_PEM_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
+
+
+def _secret_kind(text: str) -> str:
+    """Name the credential shape found in `text`, or "" if there is none.
+
+    Returns a description rather than a bool so the refusal can say what it saw
+    without ever echoing the value back.
+    """
+    s = text or ""
+    if not s:
+        return ""
+    if _PEM_RE.search(s):
+        return "private key"
+    if _ASSIGNED_SECRET_RE.search(s):
+        return "password or token assignment"
+    try:
+        import pii_guard
+
+        # Use the pattern directly, not redact(): redact() is a no-op when the
+        # PII toggle is off, and a credential must be refused either way.
+        for name, pattern in pii_guard._PATTERNS:
+            if name == "KEY" and pattern.search(s):
+                return "provider API key"
+    except Exception:
+        # Fall back to the two most common prefixes rather than failing open.
+        if re.search(r"\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16})\b", s):
+            return "provider API key"
+    return ""
+
+
 def add_memory(
     *,
     kind: str,
@@ -92,6 +133,26 @@ def add_memory(
     pinned: bool = False,
 ) -> dict:
     init()
+
+    # Fail closed on credentials, at the funnel rather than per caller.
+    # Six code paths reach this function and none of them scrubbed anything;
+    # pii_guard.redact ran only on the outbound cloud prompt. The likeliest route in
+    # is POST /api/memory/ingest, which stores a dropped file byte-for-byte - a .env
+    # or an exported key list lands verbatim. Memory is injected into later prompts,
+    # so a secret stored once is a secret re-sent on every subsequent turn.
+    # Refusing loudly, not redacting: a half-stored credential is still a leak, and a
+    # silent redaction hides that the user's paste went somewhere it should not.
+    leak = _secret_kind(f"{title}\n{body}")
+    if leak:
+        return {
+            "ok": False,
+            "refused": "secret",
+            "error": (
+                f"refused: this looks like a {leak}. Credentials belong in the vault, "
+                "not in memory - memory is replayed into later prompts."
+            ),
+        }
+
     kind = (kind or "memory").strip()[:40]
     if kind not in ("memory", "next_action", "global_goal", "note", "file"):
         kind = "memory"

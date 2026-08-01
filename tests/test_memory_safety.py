@@ -249,3 +249,69 @@ def test_already_scrubbed_drawers_are_not_touched_twice(tmp_path) -> None:
     memory_scrub.scrub_drawers(dry_run=False, root=root)
     r2 = memory_scrub.scrub_drawers(dry_run=True, root=root)
     assert r2["affected"] == 0 and r2["needs_review"] == 0
+
+
+# --- Secrets must never reach the store -------------------------------------------
+# pii_guard.redact ran only on the outbound cloud prompt; no memory write path
+# scrubbed anything. The likeliest route in is POST /api/memory/ingest, which stores
+# a dropped file byte-for-byte - a .env lands verbatim. Memory is replayed into later
+# prompts, so a credential stored once is re-sent on every subsequent turn.
+
+import memory_index  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "text,kind",
+    [
+        ("sk-abc123def456ghi789jkl012", "provider API key"),
+        ("AKIAIOSFODNN7EXAMPLE", "provider API key"),
+        ("gho_" + "a" * 36, "provider API key"),
+        ("my password = hunter2xyz", "password or token assignment"),
+        ("API_KEY: gsk_M0fau6csPEO3WWDeJNhLWG", "password or token assignment"),
+        ("-----BEGIN RSA PRIVATE KEY-----\nMIIE", "private key"),
+    ],
+)
+def test_credentials_are_named_and_refused(text: str, kind: str) -> None:
+    assert memory_index._secret_kind(text) == kind
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "my email is jh@netie.ai",
+        "call me JH not Jian Hong",
+        "The user's dog is called Xiaojimao",
+        "we decided to ship before the pilot demo",
+        "my phone is +60123456789",
+        "the secret to good code is tests",
+    ],
+)
+def test_ordinary_durable_facts_are_not_mistaken_for_secrets(text: str) -> None:
+    """Refusing a legitimate memory is a failure, not a win.
+
+    Emails and phone numbers are deliberately allowed - "my work email is ..." is
+    exactly the kind of durable fact this store exists for. Only things that are
+    secret by construction are rejected.
+    """
+    assert memory_index._secret_kind(text) == ""
+
+
+def test_the_gate_refuses_loudly_rather_than_redacting(monkeypatch, tmp_path) -> None:
+    """A half-stored credential is still a leak, and a silent redaction hides that
+    the user's paste went somewhere it should not have."""
+    out = memory_index.add_memory(
+        kind="memory", title="k", body="my api_key = sk-abc123def456ghi789jkl012"
+    )
+    assert out["ok"] is False
+    assert out["refused"] == "secret"
+    assert "vault" in out["error"]
+    # and it must never echo the value back
+    assert "sk-abc123" not in out["error"]
+
+
+def test_the_refusal_reaches_the_model_through_the_tool() -> None:
+    """Only true because memory_add stopped hardcoding {"ok": True} - otherwise the
+    gate would fire and the model would still be told the save succeeded."""
+    out = agent_tools.memory_add("the groq key is sk-abc123def456ghi789jkl012")
+    assert out["ok"] is False
+    assert out.get("refused") == "secret"
