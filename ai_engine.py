@@ -17,6 +17,17 @@ try:
 except ImportError:
     _security = None  # type: ignore
 
+
+def _lockdown_block() -> dict | None:
+    """Refuse new provider work when emergency AI cut-off is on."""
+    try:
+        import access_policy
+
+        return access_policy.lockdown_block()
+    except Exception:
+        return None
+
+
 MODES = {
     "general": """Domain: General knowledge and mixed topics.
 Focus: clear explanation, classification, practical notes. Derive from first principles when applicable.""",
@@ -567,6 +578,8 @@ def _msg_content(data: dict) -> tuple[str, str]:
 
 def _cheap_llm(prompt: str, system: str = "", *, max_tokens: int = ROUTER_MAX_TOKENS) -> tuple[str, str]:
     """T1 — Groq 8B → Gemini Flash → SEA-LION for router, classify, compress."""
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
     env = load_env()
@@ -635,12 +648,51 @@ def _provider_hot(label: str) -> bool:
     return time.monotonic() < float(_provider_cooldown.get(label, 0))
 
 
-def _provider_mark_fail(label: str, err: str = "", *, seconds: float = 90.0) -> None:
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Server-stated cooldown from a 429, or None if it did not say.
+
+    Groq (and most OpenAI-shaped APIs) answer 429 with `retry-after` in seconds and
+    `x-ratelimit-reset-tokens` like `7.66s`. Guessing a fixed penalty instead of
+    reading these turns a 2-second TPM blip into a multi-minute outage.
+    """
+    hdrs = getattr(exc, "headers", None)
+    if hdrs is None:
+        return None
+    raw = hdrs.get("retry-after") or hdrs.get("Retry-After")
+    if raw is None:
+        raw = hdrs.get("x-ratelimit-reset-tokens") or hdrs.get("x-ratelimit-reset-requests")
+    if raw is None:
+        return None
+    txt = str(raw).strip().lower()
+    try:  # plain seconds: "2"
+        return max(0.0, float(txt))
+    except ValueError:
+        pass
+    total, num = 0.0, ""
+    for ch in txt:  # duration form: "2m59.56s"
+        if ch.isdigit() or ch == ".":
+            num += ch
+            continue
+        if num:
+            total += float(num) * {"m": 60.0, "s": 1.0, "h": 3600.0}.get(ch, 0.0)
+            num = ""
+    return total or None
+
+
+def _provider_mark_fail(
+    label: str, err: str = "", *, seconds: float = 90.0, retry_after: float | None = None
+) -> None:
     import time
     e = (err or "").lower()
     # Billing / auth / quota — cool longer
     throttled = any(x in e for x in ("402", "403", "401", "429", "quota", "credit", "invalid api"))
-    if throttled:
+    if retry_after is not None:
+        # The server told us exactly when it will serve again. Honour that verbatim -
+        # never inflate it to the 180s throttle floor below, which is what made a
+        # short per-minute token cap look like the provider was down for good.
+        seconds = max(1.0, min(retry_after, 3600.0))
+        throttled = False
+    elif throttled:
         seconds = max(seconds, 180.0)
     _provider_cooldown[label] = time.monotonic() + seconds
     # Breadcrumb so "everything died after too many requests" is diagnosable later
@@ -653,6 +705,18 @@ def _provider_mark_fail(label: str, err: str = "", *, seconds: float = 90.0) -> 
 
 
 _LOCAL_LABELS = {"ollama", "vllm", "sglang", "colibri", "omniroute"}
+
+# Groq free-tier lineup, strongest first. Each entry has its OWN daily request and
+# token allowance, so walking the list multiplies the usable budget rather than
+# stopping at the first 429. TPD as published: gpt-oss-* and qwen 200K, llama-3.3 100K.
+# Verify against https://api.groq.com/openai/v1/models before editing - a retired ID
+# answers 404 and is indistinguishable from an outage (see the OpenRouter gemini case).
+_GROQ_MODELS: tuple[tuple[str, str], ...] = (
+    ("openai/gpt-oss-120b", "groq-oss-120b"),
+    ("qwen/qwen3.6-27b", "groq-qwen3.6-27b"),
+    ("openai/gpt-oss-20b", "groq-oss-20b"),
+    ("llama-3.3-70b-versatile", "groq-70b"),
+)
 
 # Cloud cascade default: primary BYOK first, then fast free-ish.
 # SEA-LION is last — strong for BM/中文/SEA, not the English default (was starving Gemini).
@@ -710,12 +774,50 @@ def _engine_config() -> dict:
     return cfg
 
 
+_LAST_DEGRADATION: dict = {}
+
+
+def _set_last_degradation(*, task: str, chosen: str, preferred, skipped) -> None:
+    """Publish what the cascade had to skip to produce the answer just returned.
+
+    Local engines being down is the normal resting state on a laptop and is not a
+    degradation worth showing; a configured cloud provider refusing is.
+    """
+    real = [s for s in skipped if not s.startswith(tuple(_LOCAL_LABELS))]
+    _LAST_DEGRADATION.clear()
+    _LAST_DEGRADATION.update(
+        {
+            "task": task,
+            "chosen": chosen,
+            "wanted": (list(preferred) or [None])[0],
+            "skipped": real,
+            "degraded": bool(real),
+        }
+    )
+
+
+def last_degradation() -> dict:
+    """What the most recent answer cost in fallbacks. Empty dict before any call.
+
+    `degraded=True` means the reply did NOT come from the preferred provider. Surface
+    it next to the model name - a silent fallback is a lie, and for weeks every answer
+    here quietly came from the last rung of the cascade.
+    """
+    return dict(_LAST_DEGRADATION)
+
+
 def _looks_multilingual(text: str) -> bool:
     """Heuristic: CJK / common SEA scripts → prefer SEA-LION over English defaults."""
     s = text or ""
     if not s:
         return False
-    # CJK Unified Ideographs + Hiragana/Katakana + Hangul
+    # CJK Unified Ideographs + Hiragana/Katakana + Hangul.
+    # Deliberately NOT "any single CJK char": `prompt` here can carry conversation
+    # history, so one stray character - a quoted name, an emoji-adjacent glyph, one
+    # earlier Chinese turn - used to pin every later English turn in that chat to the
+    # multilingual cascade (SEA-LION first) for the rest of the session. Require the
+    # CJK to actually carry the message: several characters AND a real share of it.
+    cjk = 0
     for ch in s:
         o = ord(ch)
         if (
@@ -723,7 +825,10 @@ def _looks_multilingual(text: str) -> bool:
             or 0x3040 <= o <= 0x30FF
             or 0xAC00 <= o <= 0xD7AF
         ):
-            return True
+            cjk += 1
+    dense = len("".join(s.split()))
+    if cjk >= 4 and dense and (cjk / dense) >= 0.10:
+        return True
     low = s.casefold()
     # Light Malay / Indonesian cues (word-ish; avoid firing on English "the")
     for cue in (
@@ -877,6 +982,8 @@ def _standard_llm(
     task: str = "chat",
 ) -> tuple[str, str]:
     """T2 — vLLM/Colibri (optional local) → SEA-LION → OpenRouter → Google → Groq → DeepSeek."""
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
     env = load_env()
@@ -908,13 +1015,16 @@ def _standard_llm(
             if text and text.strip():
                 return text, label
             last_err = "empty response"
-            tried.append(label)
+            # Record WHY, not just that it was tried. A bare label made a dead model
+            # slug (404) and an unpaid account (402) look identical in the log, and
+            # neither ever reached the user - see _set_last_degradation below.
+            tried.append(f"{label}(empty response)")
             _provider_mark_fail(label, last_err, seconds=45)
             return None
         except Exception as e:
-            tried.append(label)
             last_err = str(e)[:120]
-            _provider_mark_fail(label, last_err)
+            tried.append(f"{label}({last_err})")
+            _provider_mark_fail(label, last_err, retry_after=_retry_after_seconds(e))
             return None
 
     # Prefer local engines when UP — probe TCP first (≤0.6s). Dead locals never
@@ -999,13 +1109,21 @@ def _standard_llm(
         if not groq_key:
             tried.append("Groq(no key)")
             return None
-        return _try_openai(
-            "https://api.groq.com/openai/v1/chat/completions",
-            groq_key,
-            "llama-3.3-70b-versatile",
-            "groq-70b",
-            timeout=8,
-        )
+        # Walk the whole Groq lineup, not one model. Limits are per-model-per-day
+        # (1K RPD each), so a single pinned model turned one 429 into "Groq is dead"
+        # and dropped the request to the bottom of the cascade. Ordered strongest
+        # first; the last two carry the same 200K/100K TPD as a cushion.
+        for model, tag in _GROQ_MODELS:
+            hit = _try_openai(
+                "https://api.groq.com/openai/v1/chat/completions",
+                groq_key,
+                model,
+                tag,
+                timeout=10,
+            )
+            if hit:
+                return hit
+        return None
 
     def _p_openrouter() -> tuple[str, str] | None:
         if not or_key:
@@ -1013,7 +1131,11 @@ def _standard_llm(
             return None
         for model, tag in (
             ("meta-llama/llama-3.3-70b-instruct", "openrouter-llama"),
-            ("google/gemini-2.0-flash-001", "openrouter-gemini"),
+            # google/gemini-2.0-flash-001 was retired and OpenRouter answers 404 for
+            # it, which is what made this whole provider look dead and dropped every
+            # chat down to the last rung of the cascade. Verified against
+            # https://openrouter.ai/api/v1/models before pinning.
+            ("google/gemini-2.5-flash", "openrouter-gemini"),
         ):
             hit = _try_openai(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -1048,21 +1170,24 @@ def _standard_llm(
             tried.append("Google(cooldown)")
             return None
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={urllib.parse.quote(google_key)}"
+            # Key goes in a header, never `?key=`. Query strings land in proxy logs,
+            # crash reports and browser history; the header form is documented and
+            # equivalent.
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
             body = {"contents": [{"parts": [{"text": _cloud_prompt_text()}]}], "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens}}
             if system:
                 body["systemInstruction"] = {"parts": [{"text": system}]}
-            data = _http_post(url, {}, body, timeout=10)
+            data = _http_post(url, {"x-goog-api-key": google_key}, body, timeout=10)
             parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
             text = "".join(p.get("text", "") for p in parts).strip()
             if text:
                 return text, "gemini-2.0-flash"
-            tried.append("Google")
             last_err = "empty response"
+            tried.append(f"Google({last_err})")
             _provider_mark_fail("google", last_err)
         except Exception as e:
-            tried.append("Google")
             last_err = str(e)[:120]
+            tried.append(f"Google({last_err})")
             _provider_mark_fail("google", last_err)
         return None
 
@@ -1088,9 +1213,16 @@ def _standard_llm(
         "google": _p_google,
         "deepseek": _p_deepseek,
     }
-    for _name in _cloud_provider_order(tuple(_providers), task=task, prompt=prompt):
+    _order = _cloud_provider_order(tuple(_providers), task=task, prompt=prompt)
+    for _name in _order:
         hit = _providers[_name]()
         if hit:
+            # Everything already in `tried` failed BEFORE this provider answered, so
+            # a non-empty list means the user is reading a fallback, not the model the
+            # cascade wanted. Publish that instead of swallowing it (R-0011).
+            _set_last_degradation(
+                task=task, chosen=hit[1], preferred=_order, skipped=list(tried)
+            )
             return hit
 
     detail = " -> ".join(tried)
@@ -1108,6 +1240,8 @@ def _standard_llm_stream(
 
     Avoids mid-stream hangs on broken cloud SSE by keeping cloud path buffered.
     """
+    if _lockdown_block():
+        return iter(()), ["ai_lockdown"]
     model_ref: list[str] = ["fallback"]
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
@@ -1177,6 +1311,8 @@ def _standard_llm_stream(
 
 def _reasoning_llm(prompt: str, system: str = "") -> tuple[str, str, str]:
     """T4 — deepseek-reasoner only; returns (answer, model, reasoning)."""
+    if _lockdown_block():
+        return ("", "ai_lockdown", "")
     env = load_env()
     ds_key = env.get("DEEPSEEK_API_KEY", "")
     if not ds_key:
@@ -1201,6 +1337,8 @@ def _text_llm(prompt: str, system: str = "", *, prefer_reasoning: bool = False, 
 
 
 def _vision_llm(image_b64: str, mime: str, prompt: str, system: str, *, max_tokens: int = VISION_MAX_TOKENS) -> tuple[str, str]:
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     env = load_env()
     google_key = env.get("GOOGLE_API_KEY", "")
     if google_key:
@@ -1415,7 +1553,13 @@ def _prepare_text_chat(
                 "Web search returned nothing usable. Say you could not verify; do not invent.\n"
             )
     prompt = (
-        TEXT_CHAT_TEMPLATE.format(mode_prompt=MODES[mode], question=question[:6000])
+        # NOT .format(): the template teaches Mermaid, so it contains literal braces
+        # (`diamond {"?"}`, `id@{shape: tri, label: "Goal"}`). str.format reads those as
+        # placeholders and raises KeyError, which killed every text chat that reached
+        # this path. Plain substitution is immune to whatever the prompt text contains.
+        TEXT_CHAT_TEMPLATE
+        .replace("{mode_prompt}", MODES[mode])
+        .replace("{question}", question[:6000])
         + history_block
         + vault_block
         + url_block
@@ -1506,6 +1650,15 @@ def chat_text(
     *,
     business_require: bool = False,
 ) -> dict:
+    blocked = _lockdown_block()
+    if blocked:
+        return {
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "analysis": "",
+            "model": "",
+        }
     prompt, mode, _, gate = _prepare_text_chat(
         question, mode, session_id=session_id, business_require=business_require,
     )
@@ -1538,6 +1691,16 @@ def chat_text_stream(
     thinking: when False, skip emitting thinking events (answer still streams)
     force_web: user armed Web search from the + menu
     """
+    blocked = _lockdown_block()
+    if blocked:
+        yield {
+            "type": "error",
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "text": "Host disabled AI. Your work is saved.",
+        }
+        return
     tier = (model_tier or "high").strip().lower()
     if tier not in ("basic", "high", "max"):
         tier = "high"
@@ -1779,6 +1942,15 @@ def analyze_image(
     depth: str = "normal",
     early_classify: dict | None = None,
 ) -> dict:
+    blocked = _lockdown_block()
+    if blocked:
+        return {
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "analysis": "",
+            "model": "",
+        }
     mode = mode if mode in MODES else "engineering"
     mode_prompt = MODES[mode]
     chain_steps: list[str] = []

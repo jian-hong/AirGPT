@@ -124,7 +124,7 @@ def is_download_allowed(ip: str, *, is_local: bool, business: bool) -> bool:
 
 
 def get_ai_lockdown() -> dict:
-    """UI-mock emergency flag for YC film Act 4. Does NOT gate AI providers."""
+    """Emergency AI cut-off state. When on, providers must refuse new calls."""
     data = _load()
     ld = data.get("ai_lockdown") or {}
     return {
@@ -132,12 +132,11 @@ def get_ai_lockdown() -> dict:
         "reason": str(ld.get("reason") or ""),
         "by": str(ld.get("by") or ""),
         "started_at": float(ld.get("started_at") or 0),
-        "mock": True,
     }
 
 
 def set_ai_lockdown(on: bool, *, reason: str = "", by: str = "host") -> dict:
-    """Flip the mock lockdown visual flag only — AI calls still succeed."""
+    """Enable/disable emergency AI cut-off. Callers must gate providers when on."""
     data = _load()
     if on:
         data["ai_lockdown"] = {
@@ -156,3 +155,20 @@ def set_ai_lockdown(on: bool, *, reason: str = "", by: str = "host") -> dict:
         }
     _save(data)
     return {"ok": True, **get_ai_lockdown()}
+
+
+def lockdown_block() -> dict | None:
+    """Return an error payload if lockdown is on, else None.
+
+    Call at every AI provider entry point BEFORE any network call.
+    In-flight work that already passed this gate should finish and be saved.
+    """
+    ld = get_ai_lockdown()
+    if not ld.get("on"):
+        return None
+    return {
+        "ok": False,
+        "error": "ai_lockdown",
+        "by": str(ld.get("by") or "host"),
+        "reason": str(ld.get("reason") or ""),
+    }
