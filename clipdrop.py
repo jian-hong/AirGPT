@@ -2312,6 +2312,9 @@ class Handler(BaseHTTPRequestHandler):
             "faithfulness": done.get("faithfulness"),
             "unsupported_claims": done.get("unsupported_claims") or [],
             "model": done.get("model"),
+            # Empty string when the preferred provider answered. A fallback used to
+            # be indistinguishable from a first-choice reply.
+            "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
         })
         self._sse_end()

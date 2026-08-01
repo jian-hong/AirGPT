@@ -808,6 +808,21 @@ def _set_last_degradation(*, task: str, chosen: str, preferred, skipped) -> None
     )
 
 
+def degradation_note() -> str:
+    """One short line naming the fallback, or "" when the preferred provider answered.
+
+    Built for a UI badge, so it never contains a key, a URL or a stack trace - just
+    which provider was wanted, which answered, and why the first one did not.
+    """
+    d = _LAST_DEGRADATION
+    if not d or not d.get("degraded"):
+        return ""
+    wanted, chosen = d.get("wanted") or "?", d.get("chosen") or "?"
+    first = (d.get("skipped") or [""])[0]
+    reason = first.split("(", 1)[1].rstrip(")") if "(" in first else "unavailable"
+    return f"{wanted} {reason}; answered by {chosen}"
+
+
 def last_degradation() -> dict:
     """What the most recent answer cost in fallbacks. Empty dict before any call.
 
@@ -2323,6 +2338,10 @@ def analyze_image(
         "analysis": _finalize_answer(text), "model": model, "classification": classification,
         "vision_cache": cache, "early_category": early_category,
         "early_title": fast.get("title", ""), "chain_steps": chain_steps,
+        # Ride the degradation out with the answer. last_degradation() has been
+        # correct since the routing fix but nothing displayed it, so a reply from the
+        # last rung of the cascade still looked identical to a reply from the first.
+        "degraded": degradation_note(),
     }
 
 
