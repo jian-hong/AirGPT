@@ -62,6 +62,14 @@ def _spawn_subagent(
     max_children: int = 2,
 ) -> dict:
     """Queue a child agent run. Cap fan-out; never recurse from a child."""
+    try:
+        import access_policy
+
+        blocked = access_policy.lockdown_block()
+        if blocked:
+            return dict(blocked)
+    except Exception:
+        pass
     if children_spawned >= max_children:
         return {"ok": False, "error": f"subagent fan-out cap ({max_children}) reached"}
     if not (prompt or "").strip():
@@ -365,6 +373,27 @@ def run_agent_events(
     is_subagent: bool = False,
 ) -> Iterator[dict]:
     """Yield SSE-style events for an agent run with multi-step tool loop."""
+    try:
+        import access_policy
+
+        blocked = access_policy.lockdown_block()
+        if blocked:
+            if run_id:
+                try:
+                    agent_store.finish_run(int(run_id), status="error", error="ai_lockdown")
+                except Exception:
+                    pass
+            yield {
+                "type": "error",
+                "ok": False,
+                "error": blocked["error"],
+                "by": blocked.get("by") or "host",
+                "text": "Host disabled AI. Your work is saved.",
+            }
+            return
+    except Exception:
+        pass
+
     agent = agent_store.get_agent(agent_id)
     if not agent:
         yield {"type": "error", "text": "agent not found"}

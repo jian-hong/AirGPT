@@ -20,7 +20,45 @@ def test_wants_web_detects_natural_language():
     assert wants_web("web search about cortex edge ai for jepa")
     assert wants_web("please search for JEPA reasoning")
     assert wants_web("look up edge AI on cortex")
+    assert wants_web("/search who is jian hong and his netie ai startup")
+    assert wants_web("/web Netie AI")
     assert not wants_web("what is a resistor")
+
+
+def test_split_web_goals_person_company():
+    goals = split_web_goals("/search who is jian hong and his netie ai startup")
+    blob = " ".join(goals).lower()
+    assert "jian" in blob or "netie" in blob
+    assert "jepa" not in blob
+
+
+def test_wants_corpus_summary():
+    from rag.answer import wants_corpus_summary
+
+    assert wants_corpus_summary("summarise what is the rag contains about")
+    assert wants_corpus_summary("summarize what this space contains")
+    assert wants_corpus_summary("what is this corpus about")
+    assert wants_corpus_summary("list the sources")
+    assert wants_corpus_summary(
+        "summarise and tlel me what is the file about, ensure all thing sna dall files are mentioned"
+    )
+    assert wants_corpus_summary("summarise and tell me what is the file about")
+    assert wants_corpus_summary("ensure all files are mentioned")
+    assert not wants_corpus_summary("what is JEPA")
+    assert not wants_corpus_summary("/search who is jian hong")
+
+
+def test_goal_salient_ignores_ask_chrome():
+    from rag import goal
+
+    terms = goal.salient_terms(
+        "summarise and tell me what is the file about, ensure all things and all files are mentioned"
+    )
+    assert "summarise" not in terms
+    assert "file" not in terms
+    assert "ensure" not in terms
+    assert "mentioned" not in terms
+    assert "files" not in terms
 
 
 def test_web_query_strips_edit_and_wipe_chrome():

@@ -10,11 +10,18 @@ def test_snapshot_includes_netie_omniroute_cursor() -> None:
     by_id = {p["id"]: p for p in snap["providers"]}
     assert "netie_official" in by_id
     assert "omniroute" in by_id
-    assert by_id["omniroute"].get("label") == "OpenFree"
+    # The label is branding owned by OpenVault and resolved live through
+    # openvault_bridge.keyvault_snapshot() — it currently ships "FreeRoute" where the
+    # static default here still says "OpenFree". Pinning the string made this test fail
+    # whenever OpenVault rebrands or is simply running. Assert the structural fact.
+    assert by_id["omniroute"].get("label")
     assert "cursor" in by_id
-    assert by_id["cursor"].get("ui_hidden") is True
-    assert by_id["ollama"].get("ui_hidden") is True
-    assert by_id["vllm"].get("ui_hidden") is True
+    # Cards AirGPT deliberately hides must stay hidden whether or not OpenVault is
+    # running. When OV is live it supplies its own cursor/ollama cards without the flag,
+    # and index.html filters on `!p.ui_hidden` — so losing this leaked them into the UI.
+    # A card OV omits entirely (vllm) is equally hidden, hence the absent-or-hidden form.
+    for pid in ("cursor", "ollama", "vllm"):
+        assert by_id.get(pid, {}).get("ui_hidden", True) is True, f"{pid} must not surface in the Key Vault UI"
     assert "groq" in by_id
     assert "github_cli" in by_id
     assert "openship" in by_id

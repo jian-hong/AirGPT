@@ -55,6 +55,20 @@ def _display_path(path: str | None) -> str:
     if not p:
         return "source"
     name = Path(p.replace("\\", "/")).name
+    # url_en-wikipedia-org-wiki-Yann_LeCun.md → Yann_LeCun (readable cite chip)
+    if name.lower().startswith("url_"):
+        stem = name[4:]
+        if stem.lower().endswith(".md"):
+            stem = stem[:-3]
+        stem = stem.replace("-", "_").replace(".", "_")
+        skip = {
+            "+", "-", "www", "com", "org", "html", "https", "http", "edu", "net",
+            "en", "wikipedia", "wiki", "linkedin", "in", "company", "news",
+            "books", "pages", "psychology", "2e",
+        }
+        parts = [x for x in stem.split("_") if x and x.casefold() not in skip and len(x) > 1]
+        if parts:
+            name = " ".join(parts[-4:])[:72]
     return name or p[-48:]
 
 
@@ -163,11 +177,22 @@ def wants_web(query: str) -> bool:
     q = (query or "").strip().lower()
     if not q:
         return False
+    # Slash commands: /search and /web always mean live web (UI may strip the prefix)
+    if q.startswith("/search") or q.startswith("/web"):
+        return True
     if any(c in q for c in _WEB_CUES):
+        return True
+    # Typo-tolerant "search" / "find who" / paper lookups
+    if re.search(r"\b(sear+ch|serach|searhc|lookup|look\s*up|google)\b", q):
+        return True
+    if re.search(r"\b(help\s+me\s+find|find\s+who|check\s+who|who\s+is)\b", q):
+        return True
+    if re.search(r"\b(what\s+paper|papers?\s+(did|has|have)|google\s+scholar|publish(ed)?)\b", q):
         return True
     if re.match(r"^(please\s+)?(search|find|lookup|research)\b", q):
         return True
-    if re.search(r"\b(web\s*search|/search\b)", q):
+    # Do not require a leading word-boundary before "/search" — \b fails at "^/…"
+    if re.search(r"(?:^|\s)/(?:search|web)\b", q) or re.search(r"\bweb\s*search\b", q):
         return True
     # /edit … add source / change … without the words "web search" still means fetch
     if q.startswith("/edit") and re.search(r"\b(source|sources|add|fetch|url|online|internet)\b", q):
@@ -204,7 +229,7 @@ def web_query_from_ask(query: str) -> str:
         flags=re.I,
     )
     q = re.sub(
-        r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google)\s+(about\s+|for\s+)?",
+        r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google|searhc|serach)\s+(about\s+|for\s+)?",
         "",
         q,
         flags=re.I,
@@ -215,31 +240,146 @@ def web_query_from_ask(query: str) -> str:
     return q or (query or "").strip()
 
 
-def split_web_goals(query: str, *, max_goals: int = 5) -> list[str]:
-    """Break a compound ask into short search goals (long mega-queries retrieve junk)."""
+_GOAL_FILLER = re.compile(
+    r"\b(help\s+me|find|who\s+is|the\s+best\s+ppl|people|about|also|hmm+|maybe|next|"
+    r"explain|thne|then|bro|check|what\s+is|that\s+file\s+mentioning|searhc|serach|"
+    r"search\s+for\s+it|athen|do\s+you\s+think|i\s+can\s+get\s+rich|what\s+product|"
+    r"can\s+i\s+ma?ke|from\s+this\s+rag|ensure|auot|auto|distirbution|distribution|"
+    r"and\s+rich|ad|ppl)\b",
+    re.I,
+)
+
+
+def _clean_goal(text: str) -> str:
+    g = re.sub(r"\s+", " ", (text or "").strip(" ,.-;:"))
+    g = _GOAL_FILLER.sub(" ", g)
+    g = re.sub(r"\s+", " ", g).strip(" ,.-;:")
+    return g
+
+
+def _goal_ok(goal: str) -> bool:
+    g = (goal or "").strip()
+    if len(g) < 8:
+        return False
+    # Reject junk single-token / symbol goals that DDG interprets as "+" or "hong"
+    toks = re.findall(r"[a-z0-9]{2,}", g.casefold())
+    if len(toks) < 2 and g not in ("JEPA", "Netie", "Cortex"):
+        return False
+    if g in {"+", "-", "&", "hong", "ad", "hmm", "bro", "next", "then"}:
+        return False
+    return True
+
+
+def split_web_goals(query: str, *, max_goals: int = 6) -> list[str]:
+    """Break a compound ask into short, entity-clean search goals.
+
+    Long mega-queries retrieve junk; single-token goals like \"hong\" or \"+\"
+    ingest unrelated pages that then pollute citations.
+    """
     q = web_query_from_ask(query)
-    # Split on sentence / "then" / "and what" boundaries
-    parts = re.split(r"[.?!\n]+|\bthen\b|\band (?:also\s+)?(?:what|how|who|why)\b", q, flags=re.I)
+    # Split on sentence / next / then / also / and what boundaries
+    parts = re.split(
+        r"[.?!\n]+|\b(?:next|then|thne|also)\b|\band (?:also\s+)?(?:what|how|who|why)\b",
+        q,
+        flags=re.I,
+    )
     goals: list[str] = []
-    for p in parts:
-        p = re.sub(r"\b(blabla|hmm+|htign|wha tis)\b", " ", p, flags=re.I)
-        p = re.sub(r"\s+", " ", p).strip(" ,.-")
-        if len(p) < 8:
-            continue
-        # Cap length for DDG quality
+
+    def _add(raw: str) -> None:
+        p = _clean_goal(raw)
+        if not _goal_ok(p):
+            # Keep a lightly cleaned version if cleaning wiped too much
+            p2 = re.sub(r"\s+", " ", (raw or "").strip(" ,.-"))
+            if len(p2) > 90:
+                p2 = p2[:90].rsplit(" ", 1)[0]
+            p = p2 if _goal_ok(p2) else p
+        if not _goal_ok(p):
+            return
         if len(p) > 90:
             p = p[:90].rsplit(" ", 1)[0]
         if p and p.casefold() not in {g.casefold() for g in goals}:
             goals.append(p)
+
+    for part in parts:
+        _add(part)
         if len(goals) >= max_goals:
             break
-    if not goals and q:
-        goals = [q[:90]]
-    # Always include distinctive proper-ish tokens as solo goals when missing
-    for term in ("JEPA", "Netie.ai", "Claude Code", "Cortex"):
-        if term.casefold() in (query or "").casefold() and not any(term.casefold() in g.casefold() for g in goals):
-            goals.append(term + (" architecture" if term == "JEPA" else " AI"))
+
+    # Named entities first — replace noisy mega-goals when entities are present
+    q_cf = (query or "").casefold()
+    entity_goals = [
+        ("jian hong", "Jian Hong Netie AI founder"),
+        ("yanlecun", "Yann LeCun papers publications"),
+        ("yann lecun", "Yann LeCun papers publications"),
+        ("lecun", "Yann LeCun Google Scholar papers"),
+        ("jepa", "JEPA vs transfer learning Yann LeCun"),
+        ("cognition", "what is cognition psychology OpenStax"),
+        ("netie", "Netie AI startup"),
+    ]
+    entity_out: list[str] = []
+    for needle, goal in entity_goals:
+        if needle in q_cf and goal.casefold() not in {g.casefold() for g in entity_out}:
+            if needle == "lecun" and any("lecun" in g.casefold() for g in entity_out):
+                continue
+            entity_out.append(goal)
+    if entity_out:
+        extra: list[str] = []
+        for g in goals:
+            gl = g.casefold()
+            if any(n in gl for n, _ in entity_goals):
+                continue
+            if any(x in gl for x in ("rich", "product", "distir", "distribut", "money", "rag to")):
+                continue
+            if _goal_ok(g):
+                extra.append(g)
+        goals = entity_out + extra
+    elif not goals and q:
+        fallback = _clean_goal(q[:90]) or q[:90]
+        if _goal_ok(fallback):
+            goals = [fallback]
+        elif len(q) >= 8:
+            goals = [q[:90]]
+
     return goals[:max_goals]
+
+
+def _tokens_for_match(text: str) -> set[str]:
+    return {
+        t
+        for t in re.findall(r"[a-z0-9]{3,}", (text or "").casefold())
+        if t not in _STOPWORDS
+    }
+
+
+def _result_matches_goal(result: dict, goal: str) -> bool:
+    """Drop DDG hits that share no content tokens with the goal (stops +/hong junk)."""
+    gtoks = _tokens_for_match(goal)
+    if not gtoks:
+        return True
+    blob = f"{result.get('title') or ''} {result.get('url') or ''} {result.get('snippet') or ''}"
+    rtoks = _tokens_for_match(blob)
+    return bool(gtoks & rtoks)
+
+
+def _filter_hits_to_goals(hits: list[dict], goals: list[str], query: str) -> list[dict]:
+    """Keep only chunks that overlap at least one goal (or the query).
+
+    Stops resistor/config docs from riding along on a Jian Hong / LeCun ask just
+    because they live in the same Demo space.
+    """
+    pools = [_tokens_for_match(g) for g in (goals or []) if g]
+    pools.append(_tokens_for_match(query))
+    pools = [p for p in pools if p]
+    if not pools:
+        return hits
+    kept: list[dict] = []
+    for h in hits or []:
+        blob = _tokens_for_match(
+            f"{h.get('heading') or ''} {h.get('path') or ''} {h.get('text') or ''} {h.get('title') or ''}"
+        )
+        if any(blob & p for p in pools):
+            kept.append(h)
+    return kept if kept else hits  # never empty the set if nothing matched — caller decides
 
 
 def _goal_covered(goal: str, blob: str) -> bool:
@@ -302,6 +442,8 @@ def _web_augment_space(space_id: int, query: str, *, max_pages: int = 6) -> dict
         for r in found.get("results") or []:
             u = str(r.get("url") or "")
             if not u.startswith("http") or u in seen_url:
+                continue
+            if not _result_matches_goal(r, goal):
                 continue
             seen_url.add(u)
             all_results.append({**r, "goal": goal})
@@ -379,6 +521,8 @@ _STOPWORDS = {
     "do", "does", "did", "can", "could", "should", "would", "will", "please", "me", "my", "our",
     "your", "tell", "explain", "describe", "give", "summarise", "summarize", "summary", "talking",
     "document", "documents", "content", "contents", "first", "thing", "things", "stuff", "here",
+    "ensure", "mention", "mentioned", "mentions", "file", "files", "doc", "docs", "detail", "details",
+    "every", "each", "entire", "whole", "full", "complete", "all", "any", "some", "info", "information",
 }
 
 
@@ -468,29 +612,173 @@ def _round_cap(depth: str, space: dict | None) -> int:
     return {"basic": 1, "high": 2, "max": 3}.get(d, 2)
 
 
+def wants_corpus_summary(query: str) -> bool:
+    """True when the user wants an inventory of what this space holds — not a topical retrieve."""
+    q = (query or "").strip().lower()
+    if not q:
+        return False
+    # Explicit inventory / "what's in this RAG" asks
+    if re.search(
+        r"\b(summaris[e]|summarize|summary|overview|inventory|catalogue|catalog)\b.{0,60}\b"
+        r"(rag|space|corpus|knowledge(\s+base)?|sources?|indexed|contains?|about|files?|docs?|documents?)\b",
+        q,
+    ):
+        return True
+    if re.search(
+        r"\bwhat('?s| is| does| do)?\s+(this|the|my|each|every|all)?\s*"
+        r"(rag|space|corpus|knowledge(\s+base)?|index|file|files|doc|docs|document|documents)\b.{0,40}\b"
+        r"(contain|about|cover|hold|include|have|say|mean)\b",
+        q,
+    ):
+        return True
+    if re.search(
+        r"\b(what('?s| is) in (this|the) (rag|space|corpus)|list (the )?(sources|files|docs|documents))\b",
+        q,
+    ):
+        return True
+    if re.search(r"\b(this|the)\s+(rag|space|corpus)\s+(contains?|is about|covers)\b", q):
+        return True
+    # "ensure all files are mentioned" / "mention every source"
+    if re.search(
+        r"\b(all|every|each|entire|whole)\s+(the\s+)?(files?|sources?|docs?|documents?|links?)\b.{0,30}\b"
+        r"(mention|mentioned|list|listed|include|included|cover|covered)\b",
+        q,
+    ):
+        return True
+    if re.search(
+        r"\b(mention|list|include|cover)\b.{0,30}\b(all|every|each)\s+(the\s+)?"
+        r"(files?|sources?|docs?|documents?|links?)\b",
+        q,
+    ):
+        return True
+    # Typo-tolerant: starts with summarise/summarize + asks about file(s)
+    if re.match(r"^(please\s+)?(summaris[e]|summarize)\b", q) and re.search(
+        r"\b(files?|sources?|docs?|documents?|corpus|space|rag)\b", q
+    ):
+        return True
+    return False
+
+
+def _inventory_answer_events(space_id: int, *, use_llm: bool, depth: str, refuse: str | None):
+    """Shared SSE path for corpus inventory (no topical retrieve)."""
+    yield {"type": "thinking", "text": "Inventorying sources in this space…"}
+    # Always force a fresh inventory so every file is listed (cached summaries drop links).
+    inv = summarize_space(space_id, use_llm=use_llm, force=True)
+    sources = list(inv.get("sources") or [])
+    # Guarantee a full numbered file list even if the LLM blurb omits some.
+    listing = "\n".join(
+        f"{i}. {s.get('title') or s.get('path') or f'source:{i}'}"
+        for i, s in enumerate(sources, 1)
+    )
+    blurb = str(inv.get("summary") or "").strip()
+    if listing:
+        if blurb and listing.split("\n")[0][:20] in blurb:
+            text = blurb
+        else:
+            head = f"This space holds {len(sources)} source{'s' if len(sources) != 1 else ''}:"
+            text = (blurb + "\n\n" if blurb else "") + head + "\n" + listing
+    else:
+        text = blurb or "No sources indexed yet."
+    if refuse:
+        text = refuse + "\n\n" + text
+    cites = []
+    for i, s in enumerate(sources, 1):
+        cites.append(
+            {
+                "i": i,
+                "path": s.get("path") or s.get("title") or f"source:{i}",
+                "title": s.get("title") or s.get("path") or f"Source {i}",
+                "excerpt": "",
+                "heading": "source",
+                "score": 1.0,
+                "web": False,
+            }
+        )
+    yield {
+        "type": "meta",
+        "depth": depth,
+        "space_id": space_id,
+        "confidence": 1.0 if cites else 0.0,
+        "rounds": 0,
+        "coverage": 1.0 if cites else 0.0,
+        "hits": len(cites),
+        "context": "",
+        "goal": {
+            "verdict": "answerable" if cites else "unsupported",
+            "coverage": 1.0 if cites else 0.0,
+            "distance": 0.0 if cites else 1.0,
+            "missing": [],
+            "diagnosis": [] if cites else ["Add sources on the Build tab."],
+        },
+    }
+    yield {"type": "citations", "citations": cites}
+    for piece in _chunk_text(text):
+        yield {"type": "delta", "text": piece}
+    yield {
+        "type": "done",
+        "answer": text,
+        "confidence": 1.0 if cites else 0.0,
+        "model": inv.get("mode") or "inventory",
+        "citations": cites,
+        "hits": [],
+        "context": "",
+        "depth": depth,
+        "source_count": inv.get("source_count") or len(cites),
+    }
+
+
+_WEAK_THEME = re.compile(
+    r"^(slide\s*\d+|sheet\s*:?.*|page\s*\d+|untitled|contents?|weekly sync|"
+    r"agenda|notes?|appendix|references?|toc|table of contents)$",
+    re.I,
+)
+
+
+def _good_theme(heading: str) -> bool:
+    h = (heading or "").strip()
+    if len(h) < 8 or len(h) > 72:
+        return False
+    if _WEAK_THEME.match(h):
+        return False
+    # Prefer topical phrases over deck chrome / sheet labels
+    if re.match(r"^(sheet|slide|tab|figure|table)\b", h, re.I):
+        return False
+    return True
+
+
 def heuristic_space_blurb(space: dict, chunks: list[dict], sources: list[dict]) -> str:
-    """Offline summary from titles/headings/chunk openings — not pipeline boilerplate."""
+    """Offline summary from titles/headings — prose first, then a clean source list."""
     name = str(space.get("name") or "This RAG")
-    titles = [str(s.get("title") or Path(str(s.get("path") or "")).name) for s in sources[:12]]
+    titles = [str(s.get("title") or Path(str(s.get("path") or "")).name) for s in sources]
     titles = [t for t in titles if t]
     headings: list[str] = []
     openings: list[str] = []
     for c in chunks[:16]:
         h = (c.get("heading") or "").strip()
-        if h and h not in headings and len(h) > 2:
+        if h and h not in headings and _good_theme(h):
             headings.append(h[:80])
         tx = (c.get("text") or "").strip().replace("\n", " ")
         if tx and len(tx) > 40:
             openings.append(tx[:160] + ("…" if len(tx) > 160 else ""))
-    themes = headings[:5] or titles[:5]
-    theme_bit = "; ".join(themes) if themes else "ingested documents"
-    open_bit = openings[0] if openings else ""
     n = len(sources)
-    out = f"{name} covers {theme_bit}."
-    if open_bit:
-        out += f" From the indexed text: “{open_bit}”"
-    out += f" ({n} source{'s' if n != 1 else ''} indexed locally.)"
-    return out
+    if not n:
+        return f"{name} has no sources indexed yet."
+    # Prose block (justify-friendly) + inventory block (rendered as a list in UI)
+    prose = (
+        f"{name} currently holds {n} indexed source{'s' if n != 1 else ''}. "
+        "Ask from Overview or Chats for grounded answers over this corpus."
+    )
+    themes = headings[:4]
+    if themes:
+        prose += " Topics that show up in the indexed text include " + ", ".join(themes) + "."
+    elif openings:
+        prose += f" Opening excerpt: “{openings[0]}”"
+    lines = [prose, "", "Sources:"]
+    for i, t in enumerate(titles[:24], 1):
+        lines.append(f"{i}. {t}")
+    if len(titles) > 24:
+        lines.append(f"… and {len(titles) - 24} more.")
+    return "\n".join(lines)
 
 
 def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False) -> dict:
@@ -504,32 +792,62 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
         return {"ok": True, "summary": cached, "mode": "cached", "space_id": space_id}
 
     sources = store.list_sources(int(space_id))
-    chunks = store.sample_parent_chunks(int(space_id), limit=20)
+    chunks = store.sample_parent_chunks(int(space_id), limit=24)
     heuristic = heuristic_space_blurb(space, chunks, sources)
     summary = heuristic
     mode = "heuristic"
+    source_rows = [
+        {
+            "title": str(s.get("title") or Path(str(s.get("path") or "")).name)[:160],
+            "path": str(s.get("path") or "")[:240],
+            "id": s.get("id"),
+        }
+        for s in sources
+    ]
 
-    if use_llm and chunks:
+    if use_llm and (chunks or sources):
         try:
             import ai_engine
 
+            inv = "\n".join(
+                f"{i}. {r['title']}" + (f" ({r['path']})" if r.get("path") else "")
+                for i, r in enumerate(source_rows[:30], 1)
+            )
             blob_parts = []
-            for c in chunks[:14]:
+            for c in chunks[:12]:
                 path = _display_path(c.get("path"))
                 heading = c.get("heading") or ""
-                text = (c.get("text") or "")[:500]
+                text = (c.get("text") or "")[:400]
                 blob_parts.append(f"- {path}" + (f" / {heading}" if heading else "") + f": {text}")
-            blob = "\n".join(blob_parts)[:5000]
+            blob = "\n".join(blob_parts)[:4000]
             system = (
-                "Summarize what this knowledge base is about in 2–4 natural sentences. "
-                "Be specific to the content (topics, projects, docs). "
-                "Do not mention chunking, embeddings, RAG pipelines, or “local knowledge space” boilerplate."
+                "You inventory a local knowledge base. Write 2–3 calm prose sentences "
+                "(no bullet dump in the prose) naming what topics the SOURCES cover. "
+                "Do not list every filename in the prose — a Sources: numbered list will "
+                "be appended separately. Skip slide numbers, sheet names, and meeting chrome. "
+                "If sources are mostly one theme, say so clearly. "
+                "Do not describe RAG pipelines, chunking, or embeddings. "
+                "Do not invent sources that are not listed."
             )
-            user = f"Space name: {space.get('name')}\n\nIndexed excerpts:\n{blob}\n\nSummary:"
-            text, _prov = ai_engine._standard_llm(user, system, max_tokens=280, task="rag")  # noqa: SLF001
+            user = (
+                f"Space name: {space.get('name')}\n\n"
+                f"Source inventory:\n{inv or '(none)'}\n\n"
+                f"Indexed excerpts:\n{blob or '(none)'}\n\n"
+                "Write only the short prose overview (no numbered list):"
+            )
+            text, _prov = ai_engine._standard_llm(user, system, max_tokens=420, task="rag")  # noqa: SLF001
             text = (text or "").strip()
             if len(text) >= 40:
-                summary = text
+                # Strip any accidental inventory the model still emitted, then append ours
+                prose = re.split(r"\n\s*(?:Sources?|Files?)\s*:\s*\n", text, maxsplit=1, flags=re.I)[0]
+                prose = re.sub(r"\n\s*\d+\.\s+.+$", "", prose, flags=re.M).strip()
+                if len(prose) < 40:
+                    prose = text.strip()
+                if source_rows:
+                    prose = prose.rstrip() + "\n\nSources:\n" + "\n".join(
+                        f"{i}. {r['title']}" for i, r in enumerate(source_rows, 1)
+                    )
+                summary = prose
                 mode = "llm"
         except Exception:
             mode = "heuristic"
@@ -539,7 +857,14 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
         store.update_space_settings(int(space_id), config=cfg)
     except Exception:
         pass
-    return {"ok": True, "summary": summary, "mode": mode, "space_id": space_id}
+    return {
+        "ok": True,
+        "summary": summary,
+        "mode": mode,
+        "space_id": space_id,
+        "sources": source_rows,
+        "source_count": len(source_rows),
+    }
 
 
 def answer_events(
@@ -566,6 +891,11 @@ def answer_events(
         knowledge_q = web_query_from_ask(raw_q)
     else:
         knowledge_q = raw_q
+
+    # "What does this RAG contain?" → inventory, not topical retrieve (avoids JEPA wall)
+    if wants_corpus_summary(raw_q) and not wants_web(raw_q):
+        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse)
+        return
 
     yield {"type": "thinking", "text": "Retrieving evidence…"}
     # Typo tolerance: correct out-of-vocabulary query terms against the corpus so
@@ -633,10 +963,11 @@ def answer_events(
     web_snippet_rows: list[dict] = []
     web_error = ""
     auto_web = bool(use_web) if use_web is not None else wants_web(raw_q)
+    goals = split_web_goals(raw_q or knowledge_q or query)
     if auto_web:
         yield {"type": "thinking", "text": "Searching the public web (split goals)…"}
         aug = _web_augment_space(space_id, raw_q or query, max_pages=6)
-        goals = list(aug.get("goals") or split_web_goals(raw_q or query))
+        goals = list(aug.get("goals") or goals)
         if aug.get("ok"):
             n_url = len(aug.get("urls") or [])
             n_snip = len(aug.get("snippets") or [])
@@ -645,21 +976,34 @@ def answer_events(
                 "text": f"Web: {len(goals)} goal(s) · {n_url} page(s) · {aug.get('chunks') or 0} chunks · {n_snip} snippets",
             }
             if aug.get("chunks"):
-                step = retrieve.search(space_id, query, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
-                if step.get("ok"):
-                    result = step
-                    for h in step.get("hits") or []:
-                        cid = int(h.get("chunk_id") or 0)
-                        if cid and (cid not in merged or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)):
-                            merged[cid] = h
-                    hits = _diversify(
-                        _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
-                        top_k,
+                # Re-retrieve per goal so resistor docs don't dominate a LeCun ask
+                for g in goals[:4]:
+                    step = retrieve.search(
+                        space_id, g, depth=depth, top_k=max(4, top_k // 2), debug=False, source_ids=source_ids
                     )
-                    coverage = _coverage(query, hits)
-                    gap_terms = [t for t in _salient_tokens(query) if t not in _evidence_blob(hits)]
-                    rounds.append({"round": "web", "query": aug.get("query") or query, "n_new": len(step.get("hits") or []), "coverage": round(coverage, 3)})
-            # Snippets fill JS-shell gaps so we are never stuck on chat_* only
+                    if step.get("ok"):
+                        for h in step.get("hits") or []:
+                            cid = int(h.get("chunk_id") or 0)
+                            if cid and (
+                                cid not in merged
+                                or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)
+                            ):
+                                merged[cid] = h
+                hits = _diversify(
+                    _prefer_web_over_chats(_lexical_rerank(" ".join(goals), list(merged.values()))),
+                    top_k,
+                )
+                hits = _filter_hits_to_goals(hits, goals, knowledge_q or query)
+                coverage = _coverage(" ".join(goals), hits)
+                gap_terms = [t for t in _salient_tokens(" ".join(goals)) if t not in _evidence_blob(hits)]
+                rounds.append(
+                    {
+                        "round": "web",
+                        "query": aug.get("query") or query,
+                        "n_new": len(hits),
+                        "coverage": round(coverage, 3),
+                    }
+                )
             if aug.get("snippets"):
                 web_snippet_rows.extend(aug["snippets"])
                 web_snippets_ctx = _snippets_context(web_snippet_rows)
@@ -668,41 +1012,69 @@ def answer_events(
                 "type": "thinking",
                 "text": f"Goal distance {dist['distance']:.0%} — missing: {', '.join(dist['missing'][:3]) or 'none'}",
             }
-            # Second web round for uncovered goals (measure distance → act)
             if dist["distance"] >= 0.4 and dist["missing"]:
                 yield {"type": "thinking", "text": "Distance to goal still high — searching missing topics…"}
                 for miss in dist["missing"][:3]:
+                    if not _goal_ok(miss):
+                        continue
                     aug2 = _web_augment_space(space_id, miss, max_pages=3)
                     if aug2.get("chunks"):
-                        step = retrieve.search(space_id, query, depth=depth, top_k=top_k, debug=False, source_ids=source_ids)
+                        step = retrieve.search(
+                            space_id, miss, depth=depth, top_k=max(4, top_k // 2), debug=False, source_ids=source_ids
+                        )
                         if step.get("ok"):
                             for h in step.get("hits") or []:
                                 cid = int(h.get("chunk_id") or 0)
-                                if cid and (cid not in merged or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)):
+                                if cid and (
+                                    cid not in merged
+                                    or float(h.get("score") or 0) > float(merged[cid].get("score") or 0)
+                                ):
                                     merged[cid] = h
                             hits = _diversify(
-                                _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                                _prefer_web_over_chats(
+                                    _lexical_rerank(" ".join(goals), list(merged.values()))
+                                ),
                                 top_k,
                             )
                     if aug2.get("snippets"):
                         web_snippet_rows.extend(aug2["snippets"])
                         web_snippets_ctx = _snippets_context(web_snippet_rows)
+                hits = _filter_hits_to_goals(hits, goals, knowledge_q or query)
                 dist = goal_distance(goals, hits, web_snippets_ctx)
-                rounds.append({"round": "web2", "query": " | ".join(dist["missing"][:3]), "coverage": round(1.0 - dist["distance"], 3)})
+                rounds.append(
+                    {
+                        "round": "web2",
+                        "query": " | ".join(dist["missing"][:3]),
+                        "coverage": round(1.0 - dist["distance"], 3),
+                    }
+                )
                 yield {"type": "thinking", "text": f"After second pass, goal distance {dist['distance']:.0%}"}
-            # Final demote of chat_* even if no new chunks were embedded
             if merged:
                 hits = _diversify(
-                    _prefer_web_over_chats(_lexical_rerank(query, list(merged.values()))),
+                    _prefer_web_over_chats(
+                        _lexical_rerank(" ".join(goals) if goals else query, list(merged.values()))
+                    ),
                     top_k,
                 )
+                hits = _filter_hits_to_goals(hits, goals, knowledge_q or query)
         else:
             why = (aug.get("error") or "no pages").strip()
             web_error = why
-            yield {"type": "thinking", "text": f"Web search skipped ({why[:80]}) — answering from local sources only."}
+            yield {
+                "type": "thinking",
+                "text": f"Web search skipped ({why[:80]}) — answering from local sources only.",
+            }
             if aug.get("snippets"):
                 web_snippet_rows.extend(aug["snippets"])
                 web_snippets_ctx = _snippets_context(web_snippet_rows)
+
+    # Drop off-topic local docs (resistors on a LeCun ask) even without web
+    if goals and hits:
+        hits = _filter_hits_to_goals(hits, goals, knowledge_q or query)
+        coverage = _coverage(
+            " ".join(goals) if len(goals) > 1 else (knowledge_q or query),
+            hits,
+        )
 
     if not hits:
         stop_reason = "no_evidence"
@@ -836,6 +1208,22 @@ def answer_events(
         # Snippets are real fetched evidence even when nothing was indexed deeply.
         assessment.verdict = "partial"
 
+    # Safety net: inventory asks that slipped past the opener (typos, "all files", …)
+    # used to fall through to "missing: summarise, tlel, file" — never do that again.
+    if (
+        not wants_web(raw_q)
+        and assessment.verdict == "unsupported"
+        and (
+            wants_corpus_summary(raw_q)
+            or (
+                re.search(r"\b(summaris|summariz|overview|inventory|list)\b", raw_q, re.I)
+                and re.search(r"\b(file|files|source|sources|doc|docs|about|mention)\b", raw_q, re.I)
+            )
+        )
+    ):
+        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse)
+        return
+
     # One refined retrieval aimed only at missing terms (JEPA-style close-the-gap).
     # It spends from the SAME budget as the corrective loop above — `_round_cap` is the
     # documented promise that High costs at most two retrievals, and a gap-closing pass
@@ -898,6 +1286,21 @@ def answer_events(
                     "type": "thinking",
                     "text": f"After refine: goal distance {assessment.distance:.0%} · {assessment.verdict}",
                 }
+
+    # An unsupported verdict must not arrive wearing eight citations.
+    #
+    # Asking "what is netie ai" of a space holding only JEPA pages scored every chunk
+    # at ~0.045 — noise — yet still attached them as sources and pasted their text as
+    # the answer. The user reads "8 sources visited" and a wall of JEPA prose under a
+    # sentence saying nothing could be supported. Citing unrelated documents is its own
+    # kind of fabrication, so when the evidence does not reach the question we show the
+    # gap and nothing else. Pages fetched live this turn stay listed: those really were
+    # visited, and saying so is honest.
+    if assessment.verdict == "unsupported":
+        citations = [c for c in citations if c.get("web")]
+        context = ""
+        evidence_hits = []
+        confidence = 0.0  # no bar for an answer we just declined to give
 
     yield {
         "type": "meta",

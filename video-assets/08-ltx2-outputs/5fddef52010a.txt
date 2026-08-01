@@ -1,0 +1,3 @@
+LTX2 mock job 5fddef52010a
+prompt: Cinematic product film, anamorphic 2.39:1 framing inside a 16:9 frame, shallow depth of field, deep matte-black background, cool neutral grade with a single warm practical, subtle film grain, no text artefacts, no watermark, no UI mockups, no faces in focus. White point unfolds into laptop, tablet, phone side by side with DARK BLANK screens. Studio product shot, soft key, cool rim, slow orbit.
+Install ffmpeg or set LTX_API_KEY / local LTX-2 for real video.

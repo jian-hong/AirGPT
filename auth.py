@@ -472,3 +472,117 @@ def redeem_session_share(share_token: str) -> dict:
         "acl": entry.get("acl", "view"),
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
     }
+
+
+# --- Project-level share (same mint/redeem shape as session share) ---
+PROJECT_SHARES_FILE = DATA_DIR / "project_shares.json"
+_project_shares: dict[str, dict] = {}
+PROJECT_SHARE_TTL = 86400 * 7
+
+
+def _load_project_shares() -> None:
+    global _project_shares
+    if not PROJECT_SHARES_FILE.is_file():
+        _project_shares = {}
+        return
+    try:
+        raw = json.loads(PROJECT_SHARES_FILE.read_text(encoding="utf-8"))
+        now = time.time()
+        _project_shares = {
+            k: v for k, v in raw.items()
+            if isinstance(v, dict) and float(v.get("exp", 0)) > now
+        }
+    except Exception:
+        _project_shares = {}
+
+
+def _save_project_shares() -> None:
+    PROJECT_SHARES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROJECT_SHARES_FILE.write_text(json.dumps(_project_shares), encoding="utf-8")
+
+
+_load_project_shares()
+
+
+def issue_project_share(
+    project_key: str,
+    acl: str = "read_only",
+    *,
+    host_token: str | None = None,
+    host_verified: bool = False,
+) -> dict:
+    """Mint a share token for a project category key. Defaults to read_only."""
+    key = (project_key or "").strip()
+    if not key:
+        return {"ok": False, "error": "project_key required"}
+    level = (acl or "read_only").strip().lower()
+    if level not in ACL_LEVELS:
+        level = "read_only"
+    view_acl = _level_to_acl(level)
+    ws = _load()
+    if ws.get("pass_hash") and not host_verified:
+        if not host_token or not verify_token(host_token):
+            return {"ok": False, "error": "host auth required to share"}
+    tok = secrets.token_urlsafe(20)
+    exp = time.time() + PROJECT_SHARE_TTL
+    _project_shares[tok] = {
+        "project_key": key,
+        "acl": view_acl,
+        "access_level": level,
+        "exp": exp,
+        "created_at": time.time(),
+    }
+    _save_project_shares()
+    return {
+        "ok": True,
+        "share_token": tok,
+        "token": tok,
+        "project_key": key,
+        "acl": view_acl,
+        "access_level": level,
+        "expires_at": exp,
+    }
+
+
+def redeem_project_share(share_token: str) -> dict:
+    """Redeem a project share → workspace token with project-scoped ACL."""
+    share_token = (share_token or "").strip()
+    _load_project_shares()
+    entry = _project_shares.get(share_token)
+    if not entry or float(entry.get("exp", 0)) <= time.time():
+        _project_shares.pop(share_token, None)
+        _save_project_shares()
+        return {"ok": False, "error": "Share link expired — ask host for a fresh QR"}
+    tok = _issue_token()
+    _tokens_acl = DATA_DIR / "token_session_acl.json"
+    try:
+        acl_map = json.loads(_tokens_acl.read_text(encoding="utf-8")) if _tokens_acl.is_file() else {}
+    except Exception:
+        acl_map = {}
+    level = entry.get("access_level", "read_only")
+    acl_map[tok] = {
+        "project_key": entry.get("project_key"),
+        "acl": entry.get("acl", "view"),
+        "access_level": level,
+        "ai_mode": "host" if level == "use_host_ai" else (
+            "own" if level == "use_own_ai" else ""
+        ),
+        "limited": level == "limited",
+        "exp": time.time() + TOKEN_TTL,
+    }
+    _tokens_acl.parent.mkdir(parents=True, exist_ok=True)
+    _tokens_acl.write_text(json.dumps(acl_map), encoding="utf-8")
+    _set_token_meta(tok, {
+        "access_level": level,
+        "join_method": "qr",
+        "role": "project_guest",
+        "project_key": entry.get("project_key"),
+    })
+    return {
+        "ok": True,
+        "token": tok,
+        "role": "project_guest",
+        "project_key": entry.get("project_key"),
+        "acl": entry.get("acl", "view"),
+        "access_level": level,
+    }

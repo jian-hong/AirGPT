@@ -18,10 +18,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import shutil
 import sqlite3
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -34,37 +36,68 @@ os.environ.setdefault("AIRGPT_DATA_DIR", str(DEFAULT_MOCK_DIR))
 DEMO_LAN_IP = os.environ.get("AIRGPT_DEMO_LAN_IP", "10.10.20.42")
 DEMO_HOST = os.environ.get("AIRGPT_DEMO_HOSTNAME", "DEMO-LAPTOP")
 
-# Plausible fake org — clearly labeled DEMO (no real PII)
-WORKERS = [
-    ("10.10.20.11", "Alex Chen · Design", "iPhone 15 · DEMO"),
-    ("10.10.20.12", "Jordan Lee · Eng", "Pixel 8 · DEMO"),
-    ("10.10.20.13", "Sam Rivera · Ops", "iPad Air · DEMO"),
-    ("10.10.20.14", "Mia Park · Sales", "MacBook Pro · DEMO"),
-    ("10.10.20.15", "Chris Ng · Support", "Windows · DEMO"),
-    ("10.10.20.16", "Riley Quinn · Legal", "iPad Pro · DEMO"),
-    ("10.10.20.17", "Taylor Kim · Marketing", "Pixel Tablet · DEMO"),
-    ("10.10.20.18", "Casey Brooks · Analyst", "ThinkPad · DEMO"),
-    ("10.10.20.19", "Jamie Ortiz · Limited", "ChromeOS · DEMO"),
-    (DEMO_LAN_IP, "DEMO Host PC", f"{DEMO_HOST} · BUSINESS MOCK"),
+# Twelve fictional peers for Hub demo grid — clearly labelled DEMO (no real PII).
+# Tuple: ip, display_name, user_agent, presence_state, access_level
+# presence_state: live (<5m) | idle (>5m) | offline (>1h)
+PEERS = [
+    ("10.10.20.11", "Alex Chen · Design", "iPhone 15 · DEMO", "live", "use_host_ai"),
+    ("10.10.20.12", "Jordan Lee · Eng", "Pixel 8 · DEMO", "live", "use_host_ai"),
+    ("10.10.20.13", "Sam Rivera · Ops", "iPad Air · DEMO", "live", "use_own_ai"),
+    ("10.10.20.14", "Priya N · Finance", "MacBook Air · DEMO", "live", "use_host_ai"),
+    ("10.10.20.15", "Wei Lim · Eng", "ThinkPad · DEMO", "idle", "use_host_ai"),
+    ("10.10.20.16", "Tomas K · Sales", "Surface Pro · DEMO", "idle", "use_own_ai"),
+    ("10.10.20.17", "Dana O · Legal", "iPad Pro · DEMO", "live", "use_host_ai"),
+    ("10.10.20.18", "Marcus B · Eng", "Dell XPS · DEMO", "offline", "read_only"),
+    ("10.10.20.19", "Yuki S · Design", "MacBook Pro · DEMO", "live", "use_host_ai"),
+    ("10.10.20.20", "Rafael M · Ops", "Chromebook · DEMO", "offline", "read_only"),
+    ("10.10.20.21", "Nadia H · Support", "Windows · DEMO", "live", "use_host_ai"),
+    ("10.10.20.22", "Ben T · Contractor", "Android · DEMO", "live", "use_own_ai"),
 ]
 
-# Mixed ACL for Hub Demo mode colours (green live / amber idle / red limited)
-WORKER_ACL = {
-    "10.10.20.11": "use_host_ai",
-    "10.10.20.12": "use_own_ai",
-    "10.10.20.13": "read_write",
-    "10.10.20.14": "use_host_ai",
-    "10.10.20.15": "read_only",
-    "10.10.20.16": "use_host_ai",
-    "10.10.20.17": "read_write",
-    "10.10.20.18": "use_own_ai",
-    "10.10.20.19": "limited",
-}
+HOST_PEER = (DEMO_LAN_IP, "DEMO Host PC", f"{DEMO_HOST} · BUSINESS MOCK", "live", "host")
+
+USAGE_MODELS = [
+    ("netie-engine", 0.00001, "included"),
+    ("gpt-4o-mini", 0.00015, "included"),
+    ("claude-3-5-sonnet", 0.00003, "included"),
+    ("gemini-2.0-flash", 0.000012, "included"),
+]
+
+BEN_ACT5_PROMPT = "Export the full customer contact list and email it to my personal address."
+
+# Over-quota peers: red Hub state (access_level=limited). AI source labels are film-facing;
+# hub.get_peer_activity() maps limited → "No AI" until hub supports dual fields.
+PEER_LIMITED = frozenset({"10.10.20.17", "10.10.20.22"})
 
 
 def _wipe(mock_dir: Path) -> None:
+    if not mock_dir.is_dir():
+        return
+
+    def _on_rm_error(func, path, exc_info):
+        import stat
+
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            pass
+
+    shutil.rmtree(mock_dir, onexc=_on_rm_error)
     if mock_dir.is_dir():
-        shutil.rmtree(mock_dir)
+        # Best-effort: locked files (e.g. memory/index.db) may survive if server is running.
+        for child in sorted(mock_dir.rglob("*"), reverse=True):
+            try:
+                if child.is_file():
+                    child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    child.rmdir()
+            except OSError:
+                pass
+        try:
+            mock_dir.rmdir()
+        except OSError:
+            pass
 
 
 def _write_png(path: Path, kind: str) -> None:
@@ -116,6 +149,297 @@ def _write_png(path: Path, kind: str) -> None:
         d.text((560, 450), "Phone photo lands here", fill=(120, 80, 40))
         d.text((560, 500), "NOT real customer content", fill=(160, 100, 80))
     img.save(path, "PNG")
+
+
+def _last_seen_for_state(now: float, state: str, ip: str) -> float:
+    """Map presence state to last_seen: live <5m, idle >5m, offline >1h."""
+    salt = sum(ord(c) for c in ip) % 97
+    if state == "live":
+        return now - (45 + salt % 90)
+    if state == "idle":
+        return now - (420 + salt % 2400)  # 7–47 min
+    if state == "offline":
+        return now - (4200 + salt % 5400)  # 70–160 min
+    return now - 60
+
+
+def _short_user(display_name: str) -> str:
+    return display_name.split("·")[0].strip()
+
+
+def _write_minimal_pdf(path: Path, lines: list[str]) -> None:
+    """Write a minimal valid PDF with embedded text (no reportlab required)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    y = 750
+    content_lines = ["BT /F1 11 Tf"]
+    for line in lines:
+        safe = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        content_lines.append(f"72 {y} Td ({safe}) Tj")
+        content_lines.append("0 -16 Td")
+        y -= 16
+    content_lines.append("ET")
+    stream = "\n".join(content_lines)
+    stream_len = len(stream.encode("latin-1", errors="replace"))
+    pdf = f"""%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length {stream_len}>>stream
+{stream}
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+xref
+0 6
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000266 00000 n
+0000000{330 + stream_len:03d} 00000 n
+trailer<</Size 6/Root 1 0 R>>
+startxref
+{400 + stream_len}
+%%EOF
+"""
+    path.write_bytes(pdf.encode("latin-1", errors="replace"))
+
+
+def _write_vendor_documents(files: Path) -> None:
+    """NMD vendor document set for Act 2 — legible line items, DEMO labelled."""
+    nmd = files / "NMD"
+    nmd.mkdir(parents=True, exist_ok=True)
+
+    _write_minimal_pdf(
+        nmd / "RFQ-2026-0417.pdf",
+        [
+            "DEMO · REQUEST FOR QUOTATION — NMD Components (BUSINESS MOCK)",
+            "RFQ-2026-0417 · Issued 2026-04-17 · Buyer: Vitron Systems DEMO",
+            "",
+            "Line  Part No       Qty   Unit $   Lead (wk)  Description",
+            "----  ------------  ----  -------  ---------  ---------------------------",
+            "  1   NMD-PHY-44G    120    18.40        6    44G SerDes PHY module",
+            "  2   NMD-PLL-22      80    12.75        4    Low-jitter PLL / CDR",
+            "  3   NMD-EQ-16L      60     9.90        5    16-lane RX equalizer",
+            "  4   NMD-CONN-HD     200     2.15        3    High-density mezz connector",
+            "  5   NMD-HS-SNK      150     4.60        4    Heat sink kit, forward deploy",
+            "",
+            "Subtotal (ex tax): USD 6,892.00 · Valid 30 days · FOB Singapore DEMO",
+        ],
+    )
+
+    _write_minimal_pdf(
+        nmd / "PO-NMD-1123.pdf",
+        [
+            "DEMO · PURCHASE ORDER — NMD Supply (BUSINESS MOCK)",
+            "PO-NMD-1123 · Date 2026-04-22 · Ship-to: Vitron Forward Deploy DEMO",
+            "",
+            "Line  Part No       Qty   Unit $   Ext $      Lead  Notes",
+            "----  ------------  ----  -------  ---------  ----  ------------------",
+            "  1   NMD-PHY-44G    120    18.40    2,208.00    6   Per RFQ-2026-0417",
+            "  2   NMD-PLL-22      80    12.75    1,020.00    4   Expedite OK",
+            "  3   NMD-EQ-16L      60     9.90      594.00    5   AQL 1.0",
+            "  4   NMD-CONN-HD     200     2.15      430.00    3   Tape & reel",
+            "  5   NMD-HS-SNK      150     4.60      690.00    4   Include TIM",
+            "",
+            "Total USD 4,942.00 · Payment Net 30 · Not real customer data",
+        ],
+    )
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb_fcm = Workbook()
+        ws = wb_fcm.active
+        ws.title = "FCM-NMD-88"
+        ws["A1"] = "DEMO · Framework Component Matrix — NMD (BUSINESS MOCK)"
+        ws["A1"].font = Font(bold=True)
+        headers = ["Part No", "Qty", "Unit Price", "Lead (wk)", "Supplier", "Status"]
+        ws.append(headers)
+        rows = [
+            ("NMD-PHY-44G", 120, 18.40, 6, "NMD Semi", "Quoted"),
+            ("NMD-PLL-22", 80, 12.75, 4, "NMD Semi", "Approved"),
+            ("NMD-EQ-16L", 60, 9.90, 5, "NMD Semi", "Quoted"),
+            ("NMD-CONN-HD", 200, 2.15, 3, "NMD Semi", "On order"),
+            ("NMD-HS-SNK", 150, 4.60, 4, "NMD Semi", "Draft"),
+        ]
+        for row in rows:
+            ws.append(list(row))
+        wb_fcm.save(nmd / "FCM-NMD-88.xlsx")
+
+        wb_vdml = Workbook()
+        ws2 = wb_vdml.active
+        ws2.title = "VDML"
+        ws2["A1"] = "DEMO · VDML Template — Vitron Forward Deploy (BUSINESS MOCK)"
+        ws2["A1"].font = Font(bold=True)
+        ws2.append(["Part No", "Description", "Qty", "Unit $", "Ext $", "Lead (wk)", "Vendor"])
+        vdml_rows = [
+            ("NMD-PHY-44G", "44G SerDes PHY", 120, 18.40, "=C2*D2", 6, "NMD"),
+            ("NMD-PLL-22", "PLL / CDR", 80, 12.75, "=C3*D3", 4, "NMD"),
+            ("NMD-EQ-16L", "RX equalizer 16-lane", 60, 9.90, "=C4*D4", 5, "NMD"),
+            ("NMD-CONN-HD", "Mezz connector HD", 200, 2.15, "=C5*D5", 3, "NMD"),
+            ("NMD-HS-SNK", "Heat sink kit", 150, 4.60, "=C6*D6", 4, "NMD"),
+        ]
+        for row in vdml_rows:
+            ws2.append(list(row))
+        wb_vdml.save(files / "VDML-template.xlsx")
+    except ImportError:
+        # Fallback: minimal xlsx zip structure is heavy; write CSV renamed is wrong.
+        # openpyxl is available in this env; this branch is defensive only.
+        (nmd / "FCM-NMD-88.xlsx").write_bytes(b"PK\x03\x04")  # pragma: no cover
+        (files / "VDML-template.xlsx").write_bytes(b"PK\x03\x04")
+
+
+def _write_calendar_fixture(mock_dir: Path) -> None:
+    """Act 1 calendar entry — Mr Tan · Vitron Systems at 16:00."""
+    today = datetime.now().replace(hour=16, minute=0, second=0, microsecond=0)
+    end = today + timedelta(hours=1)
+    (mock_dir / "calendar.json").write_text(
+        json.dumps(
+            {
+                "demo_mock": True,
+                "label": "DEMO calendar fixture",
+                "events": [
+                    {
+                        "start": today.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "end": end.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "start_display": "16:00",
+                        "end_display": "17:00",
+                        "title": "Mr Tan · Vitron Systems",
+                        "summary": "Forward-deployment collaboration — scope + commercials",
+                        "location": "DEMO · Vitron forward-deploy room",
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    vitron_goals = mock_dir / "vault" / "vitron-forward-deployment" / "goals.json"
+    vitron_goals.parent.mkdir(parents=True, exist_ok=True)
+    vitron_goals.write_text(
+        json.dumps(
+            {
+                "project": "Vitron — Forward Deployment",
+                "current_state": "DEMO · scoping forward-deploy kit with NMD vendor.",
+                "next_goals": "Finalize VDML sheet from RFQ / FCM / PO.",
+                "scheduled": [
+                    {
+                        "name": "Mr Tan · Vitron Systems",
+                        "body": "16:00–17:00 · Forward-deployment collaboration — scope + commercials",
+                        "frequency": "Today 16:00",
+                        "created_at": time.time(),
+                    }
+                ],
+                "updated_at": time.time(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_usage_events(
+    usage_path: Path,
+    *,
+    now: float,
+    peer_sessions: dict[str, int],
+) -> int:
+    """Write 200+ usage ledger events; Dana and Ben visibly exceed others."""
+    rng = random.Random(20260417)
+    lines: list[str] = []
+    peer_weights: dict[str, int] = {}
+    for ip, name, _ua, state, acl in PEERS:
+        if state == "offline" or acl == "read_only":
+            peer_weights[ip] = 0
+        elif ip == "10.10.20.17":  # Dana
+            peer_weights[ip] = 52
+        elif ip == "10.10.20.22":  # Ben
+            peer_weights[ip] = 48
+        else:
+            peer_weights[ip] = 14
+
+    event_idx = 0
+    for ip, weight in peer_weights.items():
+        if weight <= 0:
+            continue
+        name = next(n for i, n, *_ in PEERS if i == ip)
+        user = _short_user(name)
+        sid = peer_sessions.get(ip, 0)
+        for j in range(weight):
+            model, rate, kind = USAGE_MODELS[rng.randint(0, len(USAGE_MODELS) - 1)]
+            tokens = rng.randint(800, 4200)
+            if ip in ("10.10.20.17", "10.10.20.22"):
+                tokens = rng.randint(2400, 6800)
+            cost = round(tokens * rate, 6)
+            ts = now - rng.randint(3600, 6 * 86400) - j * 37
+            ev = {
+                "ts": ts,
+                "date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts)),
+                "model": model,
+                "tokens": tokens,
+                "cost": cost,
+                "type": kind,
+                "detail": f"DEMO MOCK · {name.split('·')[-1].strip()} prompt",
+                "user": user,
+                "ip": ip,
+                "session_id": sid,
+                "tier": "demo",
+            }
+            lines.append(json.dumps(ev, ensure_ascii=False))
+            event_idx += 1
+
+    usage_path.parent.mkdir(parents=True, exist_ok=True)
+    usage_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return event_idx
+
+
+def _peer_chat_prompts(ip: str, name: str, acl: str) -> list[str]:
+    """Role-appropriate demo prompts per peer."""
+    role = name.split("·")[-1].strip() if "·" in name else name
+    if ip == "10.10.20.22":
+        return [
+            BEN_ACT5_PROMPT,
+            "DEMO: summarise the NMD RFQ lead times for my review.",
+            "Can you draft a one-pager on forward-deploy scope?",
+        ]
+    if ip == "10.10.20.12":
+        return [
+            "Hey Netie, would you mind to complete the VDML excel referencing RFQ, FCM and PO from our vendor NMD?",
+            "DEMO: cross-check PO-NMD-1123 unit prices against the RFQ.",
+        ]
+    prompts_by_role = {
+        "Design": [
+            "DEMO: extract colour tokens from the whiteboard photo.",
+            "Tighten the slide deck typography for Vitron review.",
+        ],
+        "Eng": [
+            "DEMO: summarise SerDes block diagram risks for the stand-up.",
+            "Flag any NMD parts over 6-week lead in the VDML sheet.",
+        ],
+        "Ops": [
+            "DEMO: list open POs awaiting NMD shipment confirmation.",
+            "Prepare a forward-deploy kit checklist from the FCM.",
+        ],
+        "Finance": [
+            "DEMO: roll up NMD line totals from PO-NMD-1123.",
+            "Show cost variance vs RFQ-2026-0417 by part number.",
+        ],
+        "Sales": [
+            "DEMO: draft customer-facing lead-time table from NMD data.",
+            "Highlight parts that slip the Vitron milestone.",
+        ],
+        "Legal": [
+            "DEMO: review NMD terms for export compliance gaps.",
+            "Summarise liability caps in the forward-deploy SOW.",
+        ],
+        "Support": [
+            "DEMO: build FAQ from Vitron onboarding notes.",
+            "Triage open tickets tagged forward-deploy.",
+        ],
+    }
+    return prompts_by_role.get(role, [f"DEMO: {role} workspace check-in."])
 
 
 def _init_db(db_path: Path) -> sqlite3.Connection:
@@ -314,7 +638,7 @@ def seed(mock_dir: Path) -> None:
         {"ts": now - 120, "action": "ai_analysis", "ip": DEMO_LAN_IP, "user": "demo.admin", "ok": True, "detail": "engineering diagram · DEMO"},
         {"ts": now - 90, "action": "vault_write", "ip": DEMO_LAN_IP, "user": "demo.admin", "ok": True, "detail": "vault/engineering/rooms/serdes"},
         {"ts": now - 60, "action": "cortex_assist", "ip": DEMO_LAN_IP, "user": "demo.admin", "ok": True, "detail": "OpenForge schematic draft (MOCK)"},
-        {"ts": now - 30, "action": "admin_overview", "ip": DEMO_LAN_IP, "user": "demo.admin", "ok": True, "detail": "workers=4 · DEMO"},
+        {"ts": now - 30, "action": "admin_overview", "ip": DEMO_LAN_IP, "user": "demo.admin", "ok": True, "detail": "workers=12 · DEMO"},
     ]
     (mock_dir / "audit.jsonl").write_text(
         "\n".join(json.dumps(x) for x in audit_lines) + "\n", encoding="utf-8"
@@ -326,7 +650,7 @@ def seed(mock_dir: Path) -> None:
             {
                 "validations": {
                     f"d-{ip.replace('.', '-')}": {"status": "safe", "at": now - 100}
-                    for ip, _, _ in WORKERS
+                    for ip, *_ in PEERS + [HOST_PEER]
                 }
             },
             indent=2,
@@ -348,20 +672,19 @@ def seed(mock_dir: Path) -> None:
     )
     (mock_dir / "marketplace" / "module_openforge.enabled").write_text("1", encoding="utf-8")
 
+    # Vendor NMD document set (Act 2)
+    _write_vendor_documents(files)
+    _write_calendar_fixture(mock_dir)
+
     # SQLite chat + devices
     conn = _init_db(mock_dir / "clipdrop.db")
     t0 = now - 600
-    for i, (ip, name, ua) in enumerate(WORKERS):
-        # Stagger last_seen so Demo mode shows live / idle / offline colours.
-        if ip == "10.10.20.19":
-            seen = now - 400  # idle-ish then limited red
-        elif i >= 7:
-            seen = now - 400  # offline grey
-        elif i >= 5:
-            seen = now - 90  # amber idle
-        else:
-            seen = now - 12  # green live
-        acl = "host" if ip == DEMO_LAN_IP else WORKER_ACL.get(ip, "read_write")
+    all_roster = list(PEERS) + [HOST_PEER]
+    for ip, name, ua, state, acl in all_roster:
+        seen = _last_seen_for_state(now, state if acl != "host" else "live", ip)
+        level = acl if acl != "host" else "host"
+        if ip in PEER_LIMITED:
+            level = "limited"
         conn.execute(
             "INSERT OR REPLACE INTO devices(ip,name,user_agent,last_seen) VALUES(?,?,?,?)",
             (ip, name, ua, seen),
@@ -374,9 +697,9 @@ def seed(mock_dir: Path) -> None:
                 ip,
                 f"demo-{ip.replace('.', '-')}",
                 name,
-                "read_write" if acl == "host" else acl,
-                "lan",
-                1 if seen > now - 200 else 0,
+                "read_write" if level == "host" else level,
+                "host" if level == "host" else "lan",
+                1 if seen > now - 200 and state != "offline" else 0,
                 "DEMO Admin",
                 "",
                 t0,
@@ -384,6 +707,20 @@ def seed(mock_dir: Path) -> None:
                 seen,
             ),
         )
+
+    # Vitron project for Act 3
+    conn.execute(
+        "INSERT OR IGNORE INTO projects(name,slug,category,description,created_at,updated_at) "
+        "VALUES(?,?,?,?,?,?)",
+        (
+            "Vitron — Forward Deployment",
+            "vitron-forward-deployment",
+            "general",
+            "DEMO · forward-deploy collaboration with Vitron Systems.",
+            t0,
+            now,
+        ),
+    )
 
     cur = conn.execute(
         "INSERT INTO chat_sessions(title,capture_type,created_at,updated_at,related_to,category,summary,pinned) "
@@ -569,37 +906,72 @@ def seed(mock_dir: Path) -> None:
         ai_status="done",
     )
 
+    # Per-peer chat sessions + prompts for Hub drill-down "View chat →"
+    peer_sessions: dict[str, int] = {"10.10.20.12": sid_connect}
+    peer_offset = 300
+    for ip, name, _ua, state, acl in PEERS:
+        if ip == "10.10.20.12":
+            continue  # Jordan already in sid_connect
+        if state == "offline":
+            continue
+        prompts = _peer_chat_prompts(ip, name, acl)
+        cur = conn.execute(
+            "INSERT INTO chat_sessions(title,capture_type,created_at,updated_at,related_to,category,summary) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (
+                f"DEMO · {name}",
+                "manual",
+                t0 + peer_offset,
+                now - 3,
+                "",
+                "general",
+                f"BUSINESS MOCK prompts for {name}.",
+            ),
+        )
+        sid = cur.lastrowid
+        peer_sessions[ip] = sid
+        peer_offset += 5
+        msg_t = t0 + peer_offset
+        for prompt in prompts:
+            add_msg(
+                session_id=sid,
+                text=prompt,
+                device_ip=ip,
+                device_name=name,
+                created_at=msg_t,
+                source="chat",
+            )
+            msg_t += 4
+            if acl in ("use_host_ai", "use_own_ai", "limited"):
+                add_msg(
+                    session_id=sid,
+                    device_name="Netie Cortex",
+                    text=f"[DEMO MOCK] Acknowledged — {prompt[:72]}{'…' if len(prompt) > 72 else ''}",
+                    created_at=msg_t,
+                    source="ai-chat",
+                    ai_status="done",
+                )
+                msg_t += 3
+
     conn.commit()
     conn.close()
 
-    # Usage ledger with user/ip for Hub peer drawer tokens
-    usage_dir = mock_dir / "usage"
-    usage_dir.mkdir(parents=True, exist_ok=True)
-    usage_path = usage_dir / "events.jsonl"
-    usage_lines = []
-    for ip, name, _ua in WORKERS[:6]:
-        if ip == DEMO_LAN_IP:
-            continue
-        usage_lines.append(
-            json.dumps(
-                {
-                    "ts": now - 120,
-                    "date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 120)),
-                    "model": "netie-engine",
-                    "tokens": 4200 + (ord(ip[-1]) % 9) * 300,
-                    "cost": 0.042,
-                    "type": "included",
-                    "detail": "DEMO MOCK prompt",
-                    "user": name.split("·")[0].strip(),
-                    "ip": ip,
-                    "session_id": sid_connect,
-                    "tier": "demo",
-                }
-            )
-        )
-    usage_path.write_text("\n".join(usage_lines) + "\n", encoding="utf-8")
+    usage_path = mock_dir / "usage" / "events.jsonl"
+    usage_count = _seed_usage_events(usage_path, now=now, peer_sessions=peer_sessions)
+
+    nmd_files = [
+        files / "NMD" / "RFQ-2026-0417.pdf",
+        files / "NMD" / "FCM-NMD-88.xlsx",
+        files / "VDML-template.xlsx",
+        files / "NMD" / "PO-NMD-1123.pdf",
+    ]
+    nmd_ok = all(p.is_file() and p.stat().st_size > 64 for p in nmd_files)
 
     print(f"SEEDED={mock_dir}")
+    print(f"PEERS={len(PEERS)}")
+    print(f"USAGE_EVENTS={usage_count}")
+    print(f"BEN_PROMPT_SEEDED={BEN_ACT5_PROMPT!r}")
+    print(f"NMD_FILES_OK={nmd_ok}")
     print(f"DEMO_LAN_IP={DEMO_LAN_IP}")
     print(f"DEMO_HOSTNAME={DEMO_HOST}")
     print("Next: start_demo_mock.bat  OR  set AIRGPT_DEMO_MOCK=1 && python clipdrop.py")

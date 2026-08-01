@@ -1,0 +1,3 @@
+LTX2 mock job 216d463f87cc
+prompt: AirGPT mock plate test
+Install ffmpeg or set LTX_API_KEY / local LTX-2 for real video.

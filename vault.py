@@ -103,14 +103,19 @@ def goals_path(project: str) -> Path:
 
 
 def get_goals(project: str) -> dict:
-    """Project memory layer: current state, next goals, long-term goals."""
+    """Project memory layer: instructions, narrative memory, goals fields."""
     path = goals_path(project)
     defaults = {
         "project": project,
         "current_state": "",
         "next_goals": "",
         "long_term": "",
+        "instructions": "",
+        "memory": "",
+        "scheduled": [],
+        "context_files": [],
         "updated_at": 0,
+        "memory_updated_at": 0,
     }
     if not path.is_file():
         return defaults
@@ -120,7 +125,19 @@ def get_goals(project: str) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return defaults
-        defaults.update({k: data.get(k, defaults[k]) for k in defaults})
+        for k, v in defaults.items():
+            if k in data:
+                defaults[k] = data[k]
+        # Back-compat: if narrative memory empty, stitch older fields.
+        if not str(defaults.get("memory") or "").strip():
+            parts = []
+            if defaults.get("long_term"):
+                parts.append(f"Purpose & context\n{defaults['long_term'].strip()}")
+            if defaults.get("current_state"):
+                parts.append(f"Current state\n{defaults['current_state'].strip()}")
+            if defaults.get("next_goals"):
+                parts.append(f"Next goals\n{defaults['next_goals'].strip()}")
+            defaults["memory"] = "\n\n".join(parts)
         return defaults
     except Exception:
         return defaults
@@ -132,17 +149,30 @@ def set_goals(
     current_state: str | None = None,
     next_goals: str | None = None,
     long_term: str | None = None,
+    instructions: str | None = None,
+    memory: str | None = None,
+    scheduled: list | None = None,
+    context_files: list | None = None,
 ) -> dict:
     import json
     import time
 
     cur = get_goals(project)
     if current_state is not None:
-        cur["current_state"] = str(current_state)[:4000]
+        cur["current_state"] = str(current_state)[:8000]
     if next_goals is not None:
-        cur["next_goals"] = str(next_goals)[:4000]
+        cur["next_goals"] = str(next_goals)[:8000]
     if long_term is not None:
-        cur["long_term"] = str(long_term)[:4000]
+        cur["long_term"] = str(long_term)[:8000]
+    if instructions is not None:
+        cur["instructions"] = str(instructions)[:12000]
+    if memory is not None:
+        cur["memory"] = str(memory)[:20000]
+        cur["memory_updated_at"] = time.time()
+    if scheduled is not None and isinstance(scheduled, list):
+        cur["scheduled"] = scheduled[:40]
+    if context_files is not None and isinstance(context_files, list):
+        cur["context_files"] = context_files[:80]
     cur["project"] = project
     cur["updated_at"] = time.time()
     path = goals_path(project)
@@ -170,6 +200,22 @@ def set_goals(
                 project=project,
                 title="Long-term goals",
                 body=cur["long_term"],
+                room="goals",
+                source="memory_layer",
+            )
+        if str(cur.get("memory") or "").strip():
+            write_drawer(
+                project=project,
+                title="Project memory",
+                body=str(cur["memory"]),
+                room="goals",
+                source="memory_layer",
+            )
+        if str(cur.get("instructions") or "").strip():
+            write_drawer(
+                project=project,
+                title="Project instructions",
+                body=str(cur["instructions"]),
                 room="goals",
                 source="memory_layer",
             )

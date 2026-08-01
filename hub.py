@@ -1,14 +1,48 @@
 """Coherent Access Hub — host roster, join codes, peer ACL, disconnect history."""
 from __future__ import annotations
 
+import ipaddress
 import socket
 import time
 from typing import Any
+from urllib.parse import quote, unquote
 
 import db
 
 ONLINE_WINDOW_SEC = 300  # 5 min
 ACL_LEVELS = ("read_only", "read_write", "use_host_ai", "use_own_ai", "limited")
+
+
+def normalize_peer_ip(raw: str) -> str:
+    """Decode path/segment IPs and collapse IPv6 forms.
+
+    Frontend calls encodeURIComponent(ip) for /api/hub/peers/<ip>/… — without
+    unquote, kick/acl upsert a ghost row whose key is literally `2a02%3A…`,
+    then `%253A…` on the next click. Always normalize before DB writes.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    # Unquote until stable (handles single- and double-encoding).
+    for _ in range(4):
+        nxt = unquote(s)
+        if nxt == s:
+            break
+        s = nxt
+    s = s.strip()
+    # Still looks URL-encoded → junk, refuse.
+    if "%" in s:
+        return ""
+    try:
+        addr = ipaddress.ip_address(s)
+        # Canonical form: IPv6 compressed lowercase; IPv4 dotted.
+        return str(addr)
+    except ValueError:
+        # Allow hostnames / opaque device ids already stored historically,
+        # but never percent-encoded garbage.
+        if ":" in s and any(c in s for c in "{}[]"):
+            return ""
+        return s[:80]
 
 
 def _hostname() -> str:
@@ -18,21 +52,33 @@ def _hostname() -> str:
         return "host"
 
 
-def _device_icon(name: str, ua: str = "") -> str:
+def _device_icon(name: str, ua: str = "", *, prefer_laptop: bool = False) -> str:
     blob = f"{name} {ua}".lower()
     if any(x in blob for x in ("iphone", "android", "mobile", "phone")):
         return "phone"
     if any(x in blob for x in ("ipad", "tablet")):
         return "tablet"
-    if any(x in blob for x in ("laptop", "macbook")):
+    if prefer_laptop or any(x in blob for x in ("laptop", "macbook", "notebook")):
         return "laptop"
     return "desktop"
+
+
+def _is_host_ip(ip: str, host_ip: str) -> bool:
+    a = normalize_peer_ip(ip)
+    b = normalize_peer_ip(host_ip)
+    if not a:
+        return False
+    if a in ("127.0.0.1", "::1"):
+        return True
+    if b and a == b:
+        return True
+    return False
 
 
 def _peer_role(peer: dict, host_ip: str) -> str:
     ip = peer.get("ip") or ""
     method = (peer.get("join_method") or "").lower()
-    if ip in ("127.0.0.1", "::1", host_ip):
+    if _is_host_ip(ip, host_ip) or (peer.get("access_level") or "") == "host":
         return "host"
     if method == "team":
         return "guest_team"
@@ -58,10 +104,16 @@ def get_hub_snapshot(
 ) -> dict:
     import auth
 
+    # Self-heal: wipe ghost rows left by encodeURIComponent without unquote.
+    try:
+        db.purge_junk_hub_peers()
+    except Exception:
+        pass
+
     ws = auth.status()
     devices = db.list_devices()
     peers_db = {p["ip"]: p for p in db.list_hub_peers(80)}
-    now = time.time()
+    host_ip_n = normalize_peer_ip(host_ip) or "127.0.0.1"
     host_name = ws.get("host_email", "").split("@")[0] or _hostname()
 
     host_node = {
@@ -69,8 +121,8 @@ def get_hub_snapshot(
         "role": "host",
         "label": "Host",
         "username": host_name,
-        "ip": host_ip,
-        "icon": "desktop",
+        "ip": host_ip_n,
+        "icon": "laptop",  # this machine — distinct from guest desktops
         "logged_in": True,
         "online": True,
         "access_level": "host",
@@ -81,20 +133,29 @@ def get_hub_snapshot(
     peer_nodes: list[dict[str, Any]] = []
     seen_ips: set[str] = set()
 
-    for dev in devices:
-        ip = dev.get("ip") or ""
+    def _append_peer(ip_raw: str, meta: dict, dev: dict | None = None) -> None:
+        ip = normalize_peer_ip(ip_raw)
         if not ip or ip in seen_ips:
-            continue
+            return
+        # Host is the centre node — never also list it as a Guest.
+        if _is_host_ip(ip, host_ip_n):
+            return
         seen_ips.add(ip)
-        meta = peers_db.get(ip, {})
-        last_seen = float(dev.get("last_seen") or meta.get("last_seen") or 0)
+        last_seen = float((dev or {}).get("last_seen") or meta.get("last_seen") or 0)
         online = _is_online(last_seen)
-        display = meta.get("display_name") or meta.get("admin_name") or dev.get("name") or ip
+        display = (
+            meta.get("display_name")
+            or meta.get("admin_name")
+            or (dev or {}).get("name")
+            or ip
+        )
+        if display == ip_raw or "%" in str(display):
+            display = meta.get("display_name") or (dev or {}).get("name") or ip
         peer = {
             "id": meta.get("device_id") or ip,
             "ip": ip,
             "username": display,
-            "icon": _device_icon(display, dev.get("user_agent") or ""),
+            "icon": _device_icon(display, (dev or {}).get("user_agent") or ""),
             "logged_in": bool(meta.get("logged_in")),
             "online": online,
             "access_level": meta.get("access_level") or "read_write",
@@ -104,7 +165,7 @@ def get_hub_snapshot(
             "last_seen": last_seen,
             "dull": not online,
         }
-        peer["role"] = _peer_role(peer, host_ip)
+        peer["role"] = _peer_role(peer, host_ip_n)
         peer["label"] = {
             "host": "Host",
             "sub": "sub",
@@ -114,33 +175,18 @@ def get_hub_snapshot(
         }.get(peer["role"], "Guest")
         peer_nodes.append(peer)
 
-    # Include historical peers not in recent devices list
-    for ip, meta in peers_db.items():
-        if ip in seen_ips:
+    for dev in devices:
+        ip = dev.get("ip") or ""
+        if not ip or "%" in ip:
             continue
-        last_seen = float(meta.get("last_seen") or 0)
-        online = _is_online(last_seen)
-        peer = {
-            "id": meta.get("device_id") or ip,
-            "ip": ip,
-            "username": meta.get("display_name") or meta.get("admin_name") or ip,
-            "icon": _device_icon(meta.get("display_name") or ""),
-            "logged_in": bool(meta.get("logged_in")),
-            "online": online,
-            "access_level": meta.get("access_level") or "read_write",
-            "join_method": meta.get("join_method") or "lan",
-            "chat_sessions": meta.get("chat_sessions") or "",
-            "admin_name": meta.get("admin_name") or "",
-            "last_seen": last_seen,
-            "dull": not online,
-        }
-        peer["role"] = _peer_role(peer, host_ip)
-        peer["label"] = {
-            "sub": "sub",
-            "guest_team": "Guest (Team)",
-            "guest_qr": "Guest (QR)",
-        }.get(peer["role"], "Guest")
-        peer_nodes.append(peer)
+        key = normalize_peer_ip(ip) or ip
+        meta = peers_db.get(key, {}) or peers_db.get(ip, {})
+        _append_peer(ip, meta, dev)
+
+    for ip, meta in peers_db.items():
+        if "%" in (ip or ""):
+            continue
+        _append_peer(ip, meta, None)
 
     online_count = sum(1 for p in peer_nodes if p.get("online"))
     codes = auth._load_join_codes() if hasattr(auth, "_load_join_codes") else {}
@@ -174,6 +220,9 @@ def touch_peer(
     logged_in: bool = True,
     access_level: str = "",
 ) -> dict:
+    ip = normalize_peer_ip(ip)
+    if not ip:
+        return {}
     existing = db.get_hub_peer(ip) or db.find_hub_peer_by_device_id(device_id)
     name = display_name
     if not name and existing:
@@ -194,6 +243,9 @@ def touch_peer(
 
 
 def set_peer_acl(ip: str, access_level: str, *, admin_name: str = "") -> dict:
+    ip = normalize_peer_ip(ip)
+    if not ip:
+        return {"ok": False, "error": "invalid peer ip"}
     level = (access_level or "read_write").strip().lower()
     if level not in ACL_LEVELS:
         return {"ok": False, "error": f"access_level must be one of {ACL_LEVELS}"}
@@ -204,20 +256,23 @@ def set_peer_acl(ip: str, access_level: str, *, admin_name: str = "") -> dict:
 
 def get_peer_activity(ip: str, *, host_ip: str = "127.0.0.1") -> dict:
     """Join hub identity + usage ledger + recent prompts for Hub drill-down."""
-    ip = (ip or "").strip()
+    ip = normalize_peer_ip(ip)
     if not ip:
         return {"ok": False, "error": "ip required"}
     snap = get_hub_snapshot(host_ip=host_ip)
     peer = None
     for p in snap.get("peers") or []:
-        if (p.get("ip") or "") == ip:
+        if normalize_peer_ip(p.get("ip") or "") == ip:
             peer = p
             break
-    if not peer and (snap.get("host") or {}).get("ip") == ip:
+    if not peer and normalize_peer_ip((snap.get("host") or {}).get("ip") or "") == ip:
         peer = snap["host"]
     meta = db.get_hub_peer(ip) or {}
     events = db.list_hub_events(40, ip=ip)
-    stats = next((s for s in db.device_activity_stats() if s.get("ip") == ip), None)
+    stats = next(
+        (s for s in db.device_activity_stats() if normalize_peer_ip(s.get("ip") or "") == ip),
+        None,
+    )
     usage_events: list[dict[str, Any]] = []
     tokens_today = 0
     tokens_week = 0
@@ -231,7 +286,7 @@ def get_peer_activity(ip: str, *, host_ip: str = "127.0.0.1") -> dict:
         day_ago = now - 86400
         week_ago = now - 7 * 86400
         for e in summary.get("events") or []:
-            e_ip = str(e.get("ip") or "")
+            e_ip = normalize_peer_ip(str(e.get("ip") or ""))
             e_user = str(e.get("user") or "")
             name = (peer or {}).get("username") or meta.get("display_name") or ""
             if e_ip != ip and e_user != ip and (not name or e_user.lower() not in name.lower()):
@@ -257,7 +312,6 @@ def get_peer_activity(ip: str, *, host_ip: str = "127.0.0.1") -> dict:
         ai_source = {"mode": "host", "label": "Host AI · netie-engine"}
     else:
         ai_source = {"mode": "none", "label": "No AI"}
-    # Recent human prompts from this device (for View chat →)
     prompts: list[dict[str, Any]] = []
     try:
         with db._lock, db._connect() as conn:  # type: ignore[attr-defined]
@@ -313,6 +367,9 @@ def get_lockdown() -> dict:
 
 
 def rename_peer(ip: str, display_name: str) -> dict:
+    ip = normalize_peer_ip(ip)
+    if not ip:
+        return {"ok": False, "error": "invalid peer ip"}
     name = (display_name or "").strip()[:120]
     if not name:
         return {"ok": False, "error": "display_name required"}
@@ -322,12 +379,33 @@ def rename_peer(ip: str, display_name: str) -> dict:
 
 
 def kick_peer(ip: str) -> dict:
-    import auth
-
-    peer = db.get_hub_peer(ip)
-    db.upsert_hub_peer(ip, logged_in=False)
-    db.log_hub_event(ip, "kick", "disconnected by host")
-    return {"ok": True, "peer": peer, "note": "Peer marked offline; revoke active tokens separately if needed"}
+    """Disconnect: delete the peer row (and encoded aliases). Never upsert the
+    raw path segment — that is what spawned `2a02%3A…` / `%253A…` ghosts."""
+    raw = (ip or "").strip()
+    ip_n = normalize_peer_ip(raw)
+    targets: list[str] = []
+    if ip_n:
+        targets.append(ip_n)
+    if raw and raw not in targets:
+        targets.append(raw)
+    if ip_n and ":" in ip_n:
+        enc = quote(ip_n, safe="")
+        if enc not in targets:
+            targets.append(enc)
+        enc2 = quote(enc, safe="")
+        if enc2 not in targets:
+            targets.append(enc2)
+    peer = db.get_hub_peer(ip_n) if ip_n else None
+    deleted = db.delete_hub_peers_like(targets)
+    if ip_n:
+        try:
+            with db._lock, db._connect() as conn:  # type: ignore[attr-defined]
+                conn.execute("DELETE FROM devices WHERE ip=?", (ip_n,))
+                conn.commit()
+        except Exception:
+            pass
+    db.log_hub_event(ip_n or raw, "kick", f"disconnected by host (removed {deleted})")
+    return {"ok": True, "peer": peer, "deleted": deleted, "ip": ip_n or raw}
 
 
 def create_join_code(
@@ -358,5 +436,5 @@ def redeem_join_code(code: str, ip: str = "", device_id: str = "", display_name:
             logged_in=True,
             access_level=r.get("access_level", "read_write"),
         )
-        db.log_hub_event(ip, "join_team", code[:6], device_id=device_id)
+        db.log_hub_event(normalize_peer_ip(ip) or ip, "join_team", code[:6], device_id=device_id)
     return r

@@ -92,9 +92,10 @@ def _get(path: str, timeout: float = 1.5) -> dict | list | None:
 
 def health() -> dict[str, Any]:
     base, key = _cfg()
+    # 1.2s: cold Cortex / Windows Defender can miss a 0.45s probe and falsely show offline
     try:
         req = urllib.request.Request(f"{base}/health", headers=_headers(key))
-        with urllib.request.urlopen(req, timeout=0.45) as r:
+        with urllib.request.urlopen(req, timeout=1.2) as r:
             data = json.loads(r.read().decode())
         _avail_cache["t"] = time.monotonic()
         _avail_cache["ok"] = True
@@ -396,12 +397,22 @@ def refresh_snapshot() -> dict[str, Any]:
     return snap
 
 
-def snapshot() -> dict[str, Any]:
-    """Cached CRM snapshot (updated by background poller)."""
+def snapshot(*, fresh: bool = False) -> dict[str, Any]:
+    """Cached CRM snapshot (updated by background poller).
+
+    Pass fresh=True from Hosting UI so a stale offline cache cannot linger
+    after Cortex has come up.
+    """
     ensure_poller()
+    if fresh:
+        return refresh_snapshot()
     with _poll_lock:
         snap = dict(_poll.get("snapshot") or {})
+        age = time.monotonic() - float(_poll.get("t") or 0)
     if not snap:
+        return refresh_snapshot()
+    # Re-probe when last sample said offline or is older than two poll cycles
+    if (not snap.get("ok")) or age > (POLL_INTERVAL_SEC * 2):
         return refresh_snapshot()
     return snap
 
@@ -755,7 +766,10 @@ def workflows_list() -> dict[str, Any]:
 
 def workflows_snapshot() -> dict[str, Any]:
     ensure_engine(wait_sec=4.0)
-    data = _get("/api/workflows/tasks", timeout=3.0)
+    # This endpoint aggregates every workflow run and measures ~4.5s on a warm engine,
+    # so the old 3.0s budget could never succeed — it soft-failed on every single poll
+    # and the Hub silently showed no tasks. Give it real headroom.
+    data = _get("/api/workflows/tasks", timeout=12.0)
     if isinstance(data, dict) and data.get("ok"):
         return data
     return {**_wf_down(), "running": [], "finished": []}

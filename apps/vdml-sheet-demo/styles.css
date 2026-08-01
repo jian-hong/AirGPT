@@ -1,0 +1,7 @@
+body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0f1115;color:#e8eaed}
+.sheet{padding:16px}h1{font-size:18px;margin:4px 0 8px}.brand{opacity:.6;font-size:11px;margin:0}
+.lede{font-size:12px;opacity:.75;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid #2a2f3a;padding:6px 8px}th{background:#1a1f29;text-align:left}
+td input{width:100%;background:transparent;border:0;color:inherit;font:inherit}
+.hint{font-size:11px;opacity:.6;margin-top:10px}
+body.readonly input{pointer-events:none;opacity:.85}

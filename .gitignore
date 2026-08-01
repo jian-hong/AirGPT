@@ -46,3 +46,6 @@ data/openfree/
 # live env.local). Same for any Vertex mirror.
 CortexOS/
 Vertex/
+
+# Personal / non-product material - not part of the AirGPT product tree
+Interview Resources/

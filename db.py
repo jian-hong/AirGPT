@@ -202,7 +202,8 @@ def upsert_hub_peer(
     chat_sessions: str = "",
 ) -> dict:
     ip = (ip or "").strip()
-    if not ip:
+    # Never persist URL-encoded ghost keys (2a02%3A… from kick without unquote).
+    if not ip or "%" in ip:
         return {}
     now = time.time()
     with _lock, _connect() as conn:
@@ -266,6 +267,42 @@ def get_hub_peer(ip: str) -> dict | None:
     with _lock, _connect() as conn:
         row = conn.execute("SELECT * FROM hub_peers WHERE ip=?", ((ip or "").strip(),)).fetchone()
     return dict(row) if row else None
+
+
+def delete_hub_peer(ip: str) -> bool:
+    """Remove a hub peer row. Returns True if a row was deleted."""
+    ip = (ip or "").strip()
+    if not ip:
+        return False
+    with _lock, _connect() as conn:
+        cur = conn.execute("DELETE FROM hub_peers WHERE ip=?", (ip,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_hub_peers_like(ips: list[str]) -> int:
+    """Delete many peer rows (exact IP match). Returns count deleted."""
+    cleaned = [((ip or "").strip()) for ip in ips if (ip or "").strip()]
+    if not cleaned:
+        return 0
+    with _lock, _connect() as conn:
+        n = 0
+        for ip in cleaned:
+            cur = conn.execute("DELETE FROM hub_peers WHERE ip=?", (ip,))
+            n += cur.rowcount
+        conn.commit()
+        return n
+
+
+def purge_junk_hub_peers() -> int:
+    """Drop URL-encoded ghost IPs created by kick/acl without unquote (%3A / %253A)."""
+    with _lock, _connect() as conn:
+        # Any IP key that still contains % is not a real address.
+        cur = conn.execute("DELETE FROM hub_peers WHERE ip LIKE '%\\%%' ESCAPE '\\'")
+        # Also wipe the same junk from devices so they don't reappear via list_devices.
+        cur2 = conn.execute("DELETE FROM devices WHERE ip LIKE '%\\%%' ESCAPE '\\'")
+        conn.commit()
+        return int(cur.rowcount or 0) + int(cur2.rowcount or 0)
 
 
 def list_hub_peers(limit: int = 50) -> list[dict]:

@@ -1,7 +1,7 @@
 /**
  * YC Multiplayer film surfaces — presence authorship, Hub demo mode,
- * Edit access popover, mock AI lockdown, OpenVault one-shot, project share.
- * Loaded after Motion (optional). Does not gate real AI providers.
+ * access popover hooks, emergency AI lockdown, OpenVault ship, project share.
+ * Loaded after Motion (optional). Lockdown gates real AI providers via the API.
  */
 (function (global) {
   "use strict";
@@ -12,6 +12,12 @@
   }[c])));
   const api = (...args) => global.api(...args);
   const toast = (m) => (global.toast ? global.toast(m) : console.log(m));
+
+  function accessPopover(ev, opts) {
+    const fn = global.__openAccessPopover;
+    if (typeof fn === "function") return fn(ev, opts);
+    toast("Access control unavailable");
+  }
 
   /* ---------- Presence ---------------------------------------------------- */
   const _presence = { session: 0, by: new Map(), announced: new Set() };
@@ -138,7 +144,13 @@
     });
   }
 
-  /* ---------- Edit access (3 radios + can edit) --------------------------- */
+  /* ---------- Edit access (delegates to index.html five-row popover) ------ */
+  function closeAccessPopover() {
+    document.querySelectorAll(".access-pop").forEach((x) => x.remove());
+  }
+  function openAccessPopover(ev, opts) {
+    return accessPopover(ev, opts);
+  }
   function decodeAcl(level) {
     const l = level || "read_only";
     if (l === "use_host_ai") return { ai: "host", canEdit: true };
@@ -152,86 +164,26 @@
     if (ai === "own") return canEdit ? "use_own_ai" : "read_only";
     return canEdit ? "read_write" : "read_only";
   }
-  function closeAccessPopover() {
-    document.querySelectorAll(".access-pop").forEach((x) => x.remove());
-  }
-  function openAccessPopover(ev, opts) {
-    ev && ev.stopPropagation && ev.stopPropagation();
-    closeAccessPopover();
-    const o = opts || {};
-    const cur = decodeAcl(o.level || "read_only");
-    const pop = document.createElement("div");
-    pop.className = "access-pop";
-    const rows = [
-      { ai: "none", label: "Read only", hint: "can watch, cannot type" },
-      { ai: "host", label: "Use Host AI", hint: "spends your tokens" },
-      { ai: "own", label: "Use Own AI", hint: "brings their own key" },
-    ];
-    pop.innerHTML =
-      `<div class="access-pop-title">${esc(o.title || "Edit access")}</div>` +
-      rows.map((r) =>
-        `<button type="button" class="access-row${cur.ai === r.ai ? " on" : ""}" data-ai="${r.ai}">
-           <span class="access-radio" aria-hidden="true"></span>
-           <span class="access-row-main"><b>${esc(r.label)}</b><small>${esc(r.hint)}</small></span>
-         </button>`
-      ).join("") +
-      `<label class="access-check"><input type="checkbox" id="accessCanEdit"${cur.canEdit ? " checked" : ""}/> Can edit messages</label>` +
-      ((o.extras || []).length ? `<div class="access-pop-sep"></div>` : "") +
-      (o.extras || []).map((x, i) => `<button type="button" class="access-extra" data-x="${i}">${esc(x.label)}</button>`).join("");
-    document.body.appendChild(pop);
-    const apply = () => {
-      const ai = pop.querySelector(".access-row.on")?.dataset.ai || "none";
-      const canEdit = !!pop.querySelector("#accessCanEdit")?.checked;
-      const level = encodeAcl({ ai, canEdit });
-      closeAccessPopover();
-      o.onPick && o.onPick(level);
-    };
-    pop.querySelectorAll(".access-row").forEach((b) => {
-      b.onclick = () => {
-        pop.querySelectorAll(".access-row").forEach((x) => x.classList.remove("on"));
-        b.classList.add("on");
-        apply();
-      };
-    });
-    pop.querySelector("#accessCanEdit")?.addEventListener("change", apply);
-    pop.querySelectorAll(".access-extra").forEach((b) => {
-      b.onclick = () => {
-        const x = (o.extras || [])[+b.dataset.x];
-        closeAccessPopover();
-        x && x.onClick && x.onClick();
-      };
-    });
-    const r = pop.getBoundingClientRect();
-    const x = Math.min(Math.max(8, (ev?.clientX || 120) - 12), innerWidth - r.width - 8);
-    const y = Math.min(Math.max(8, (ev?.clientY || 120) + 8), innerHeight - r.height - 8);
-    pop.style.left = x + "px";
-    pop.style.top = y + "px";
-    const M = global.Motion;
-    if (M && M.Spring && !document.hidden && !(M.prefersReducedMotion && M.prefersReducedMotion())) {
-      try {
-        pop.style.transform = "translate3d(0,-6px,0)";
-        pop.style.opacity = "0";
-        const sp = new M.Spring({
-          preset: "snappy",
-          from: -6,
-          onRest: () => { pop.style.transform = ""; pop.style.opacity = ""; },
-          onUpdate: (v) => {
-            pop.style.transform = `translate3d(0,${v}px,0)`;
-            pop.style.opacity = String(Math.max(0, Math.min(1, 1 - Math.abs(v) / 6)));
-          },
-        });
-        sp.setTarget(0);
-      } catch (e) { /* ignore */ }
-    }
-    setTimeout(() => document.addEventListener("click", closeAccessPopover, { once: true }), 0);
-    return pop;
-  }
 
-  /* ---------- Mock lockdown (film Act 4) ---------------------------------- */
+  /* ---------- Emergency AI lockdown (Act 4) -------------------------------- */
   let _lockdownTimer = 0;
+  let _lockdownWasOn = false;
+  function setComposerLockdown(on) {
+    const el = $("input");
+    const send = document.querySelector(".composer .send");
+    if (el) {
+      // Disable but NEVER clear — typed draft must survive cut-off + clear.
+      el.disabled = !!on;
+      el.setAttribute("aria-disabled", on ? "true" : "false");
+      if (on) el.blur();
+    }
+    if (send) send.disabled = !!on;
+    document.body.classList.toggle("composer-ai-locked", !!on);
+  }
   function applyLockdownUi(ld) {
     const on = !!(ld && ld.on);
     document.body.classList.toggle("ai-lockdown", on);
+    setComposerLockdown(on);
     let bar = $("aiLockdownBar");
     if (!bar) {
       bar = document.createElement("div");
@@ -243,17 +195,26 @@
       bar.hidden = true;
       bar.textContent = "";
       clearInterval(_lockdownTimer);
+      if (_lockdownWasOn) toast("AI restored");
+      _lockdownWasOn = false;
       return;
     }
+    _lockdownWasOn = true;
     const started = Number(ld.started_at || Date.now() / 1000);
+    const frozen = Number(
+      (global.info && (global.info.online_sessions || global.info.session_count)) ||
+      (global._hubOnlineCount) ||
+      0
+    );
     const tick = () => {
       const sec = Math.max(0, Math.floor(Date.now() / 1000 - started));
       const mm = String(Math.floor(sec / 60)).padStart(2, "0");
       const ss = String(sec % 60).padStart(2, "0");
       const isHost = typeof global.isLocalHost === "function" ? global.isLocalHost() : true;
       bar.hidden = false;
+      const frozenLabel = frozen > 0 ? `${frozen} sessions frozen` : "sessions frozen";
       bar.innerHTML = isHost
-        ? `AI disabled · sessions frozen · ${mm}:${ss} <button type="button" class="btn" id="lockdownClearBtn">Cleared</button>`
+        ? `AI disabled · ${frozenLabel} · ${mm}:${ss} <button type="button" class="btn" id="lockdownClearBtn">Clear</button>`
         : `Host disabled AI. Your work is saved.`;
       const btn = $("lockdownClearBtn");
       if (btn) btn.onclick = () => setLockdown(false);
@@ -271,11 +232,12 @@
     try {
       const r = await api("/api/hub/lockdown", {
         method: "POST",
-        body: JSON.stringify({ on: !!on, reason: on ? "demo cut-off" : "cleared" }),
+        body: JSON.stringify({ on: !!on, reason: on ? "host cut-off" : "cleared" }),
       }).then((x) => x.json());
+      if (global.info) global.info.ai_lockdown = r;
       applyLockdownUi(r);
       if (typeof global.renderHubPage === "function" && global.sideView === "hub") global.renderHubPage();
-      toast(on ? "AI cut-off (demo)" : "Danger cleared");
+      toast(on ? "AI cut off for everyone" : "AI restored");
     } catch (e) {
       toast("Lockdown failed");
     }
@@ -289,7 +251,7 @@
     if ((p.access_level || "") === "limited") return "state-limited";
     if (!p.online) return "state-offline";
     const age = Date.now() / 1000 - Number(p.last_seen || 0);
-    if (age > 60) return "state-idle";
+    if (age > 300) return "state-idle"; // >5 min — film legend
     return "state-live";
   }
 
@@ -315,8 +277,8 @@
   }
 
   function openPeerAccess(ev, ip, level) {
-    openAccessPopover(ev, {
-      title: "Edit access",
+    accessPopover(ev, {
+      title: "Access",
       level: level || "read_only",
       onPick: async (v) => {
         try {
@@ -393,36 +355,101 @@
     drawer.innerHTML = `
       <div class="hub-drawer-hdr">
         <h3>${esc(peer.username || peer.name || ip)}</h3>
-        <button type="button" class="btn" onclick="window.MP.closePeerDrawer()">Close</button>
+        <button type="button" class="btn" data-hub-drawer-close>Close</button>
       </div>
-      <p class="hint">${esc(peer.ip || ip)} · ${esc(global.hubAccessLabel ? global.hubAccessLabel(peer.access_level) : peer.access_level || "")}</p>
-      <div class="hub-drawer-card">
-        <div class="hub-drawer-k">AI source</div>
-        <div class="hub-drawer-v">${esc(ai.label || "—")}</div>
+      <p class="hint">${esc(peer.ip || ip)} · ${esc(peer.join_method || "")} · ${esc(global.hubAccessLabel ? global.hubAccessLabel(peer.access_level) : peer.access_level || "")}</p>
+      <div class="hub-drawer-card hub-drawer-ai">
+        <div class="hub-drawer-k">AI SOURCE</div>
+        <div class="hub-drawer-v hub-drawer-ai-label">${esc(ai.label || "—")}</div>
       </div>
       <div class="hub-drawer-card">
         <div class="hub-drawer-k">Tokens today / week</div>
         <div class="hub-drawer-v">${act.tokens_today || 0} / ${act.tokens_week || 0}</div>
         <div class="hint">Cost $${Number(act.cost || 0).toFixed(4)}</div>
+        ${(() => {
+          const models = act.by_model || [];
+          const total = models.reduce((s, m) => s + Number(m.tokens || 0), 0) || 1;
+          return models.length
+            ? `<div class="hub-token-stack">${models.map((m) => {
+                const pct = Math.max(4, Math.round(100 * Number(m.tokens || 0) / total));
+                return `<div class="hub-token-seg" style="width:${pct}%" title="${esc(m.model||'')}: ${m.tokens||0}"></div>`;
+              }).join("")}</div>`
+            : "";
+        })()}
       </div>
+      <button type="button" class="btn" style="margin-top:12px" data-hub-edit-access>Edit access</button>
       <h4 style="margin:14px 0 8px;font-size:12px;color:var(--muted)">Recent prompts</h4>
       <div class="hub-prompt-list">${prompts}</div>
-      <button type="button" class="btn" style="margin-top:12px" onclick="window.MP.openPeerAccess(event,'${esc(ip)}','${esc(peer.access_level || "read_only")}')">Edit access</button>
     `;
+    const closeBtn = drawer.querySelector("[data-hub-drawer-close]");
+    if (closeBtn) closeBtn.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); closePeerDrawer(); };
+    const editBtn = drawer.querySelector("[data-hub-edit-access]");
+    if (editBtn) editBtn.onclick = (ev) => openPeerAccess(ev, ip, peer.access_level || "read_only");
     drawer.classList.add("open");
+    // Fail-visible: rest state is open; spring animates from offset and clears onRest.
+    drawer.style.opacity = "";
+    drawer.style.transform = "";
     const M = global.Motion;
-    if (M && M.springTo) {
+    if (M && M.Spring && !document.hidden && !(M.prefersReducedMotion && M.prefersReducedMotion())) {
       try {
         drawer.style.transform = "translateX(100%)";
-        M.springTo(drawer, { transform: "translateX(0%)" }, { preset: "sheet" });
+        const rest = () => { drawer.style.transform = ""; drawer.style.opacity = ""; };
+        const sp = new M.Spring({
+          preset: "sheet",
+          from: 100,
+          onRest: rest,
+          onUpdate: (v) => {
+            drawer.style.transform = `translateX(${v}%)`;
+          },
+        });
+        sp.setTarget(0);
+        if (M.draggable) {
+          try {
+            M.draggable(drawer, {
+              axis: "x",
+              onRelease: (vel) => {
+                if (vel > 0.4 || (parseFloat(drawer.style.transform) || 0) > 40) closePeerDrawer();
+                else if (sp) sp.setTarget(0);
+              },
+            });
+          } catch (e) { /* ignore */ }
+        }
       } catch (e) { /* ignore */ }
     }
   }
   function closePeerDrawer() {
     const drawer = $("hubPeerDrawer");
     if (!drawer) return;
-    drawer.classList.remove("open");
-    _hubDrawerIp = "";
+    // Inline transform from the open spring overrides CSS .hub-peer-drawer
+    // { transform: translateX(100%) } — so removing .open alone left the panel stuck.
+    if (drawer.dataset.closing === "1") return;
+    drawer.dataset.closing = "1";
+    const finish = () => {
+      drawer.classList.remove("open");
+      drawer.style.transform = "";
+      drawer.style.opacity = "";
+      delete drawer.dataset.closing;
+      _hubDrawerIp = "";
+    };
+    const M = global.Motion;
+    if (M && M.Spring && !document.hidden && !(M.prefersReducedMotion && M.prefersReducedMotion())) {
+      try {
+        const fromMatch = /translateX\(([-\d.]+)%\)/.exec(drawer.style.transform || "");
+        const from = fromMatch ? parseFloat(fromMatch[1]) : 0;
+        const sp = new M.Spring({
+          preset: "sheet",
+          from,
+          onRest: finish,
+          onUpdate: (v) => {
+            drawer.style.transform = `translateX(${v}%)`;
+          },
+        });
+        sp.setTarget(100);
+        setTimeout(finish, 500);
+        return;
+      } catch (e) { /* fall through */ }
+    }
+    finish();
   }
   function viewChatMsg(sessionId, msgId) {
     closePeerDrawer();
@@ -441,14 +468,25 @@
 
   function enhanceRenderHubPage(d) {
     const host = d.host || {};
-    const allPeers = (d.peers || []).slice();
+    // Never list the host machine again as a Guest / second Host card.
+    const hostIp = String(host.ip || "");
+    const allPeers = (d.peers || []).filter((p) => {
+      const role = String(p.role || "");
+      const ip = String(p.ip || "");
+      if (role === "host") return false;
+      if (hostIp && ip === hostIp) return false;
+      if (ip === "127.0.0.1" || ip === "::1") return false;
+      return true;
+    });
     const ld = (global.info && global.info.ai_lockdown) || {};
     const lockdownOn = !!ld.on;
     const demo = _hubDemo;
+    global._hubOnlineCount = d.online_count || 0;
     let graphHtml = "";
     if (demo) {
-      const cards = allPeers.map((p, i) =>
-        `<div class="hub-demo-cell" style="animation-delay:${i * 40}ms">${hubNodeHtml(p, { showMenu: true, clickable: true })}</div>`
+      const nodes = [host, ...allPeers];
+      const cards = nodes.map((p, i) =>
+        `<div class="hub-demo-cell" style="animation-delay:${i * 40}ms">${hubNodeHtml(p, { showMenu: p.role !== "host", clickable: true })}</div>`
       ).join("");
       graphHtml = `<div class="hub-demo-grid">${cards || '<p class="hint">No peers</p>'}</div>`;
     } else {
@@ -501,21 +539,22 @@
         if (typeof global.renderHubPage === "function") global.renderHubPage();
       };
     }
-    // Stagger hub nodes with Motion
+    // Fail-visible stagger: rest state is visible; spring from offset when foreground.
     const M = global.Motion;
     document.querySelectorAll(".hub-node").forEach((el, i) => {
+      el.style.opacity = "";
+      el.style.transform = "";
       if (!M || !M.Spring || document.hidden) return;
       try {
-        el.style.opacity = "0";
         el.style.transform = "scale(0.92)";
         setTimeout(() => {
+          const rest = () => { el.style.transform = ""; el.style.opacity = ""; };
           const sp = new M.Spring({
             preset: "snappy",
             from: 0.92,
-            onRest: () => { el.style.transform = ""; el.style.opacity = ""; },
+            onRest: rest,
             onUpdate: (v) => {
               el.style.transform = `scale(${v})`;
-              el.style.opacity = String(Math.max(0, Math.min(1, (v - 0.85) / 0.15)));
             },
           });
           sp.setTarget(1);
@@ -526,7 +565,7 @@
 
   function pickShareLevel(ev) {
     const btn = $("hubShareLevelBtn");
-    openAccessPopover(ev, {
+    accessPopover(ev, {
       title: "Share access",
       level: btn?.dataset.level || "read_only",
       onPick: (v) => {
@@ -543,61 +582,74 @@
       setLockdown(false);
       return;
     }
-    if (!confirm("Cut all AI for everyone? (Demo visual — work is saved.)")) return;
+    if (!confirm("Cut all AI for everyone?\n\nPeers keep their typed text. In-flight answers are saved. AI stays off until you Clear.")) return;
     setLockdown(true);
   }
 
   /* ---------- Project share + OpenVault ship ------------------------------ */
   async function shareProject(catKey, level) {
     level = level || "read_only";
-    const sessions = (global.cachedCategories || []).find((c) => (c.key || c.name) === catKey)?.sessions || [];
-    const sid = sessions[0]?.id || global.currentSession || 0;
-    if (!sid) {
-      toast("Open a chat in this project first");
-      return;
-    }
-    const acl = level === "read_only" || level === "limited" ? "view" : "post";
     try {
-      const r = await api("/api/sessions/" + sid + "/share", {
+      const r = await api("/api/projects/" + encodeURIComponent(catKey) + "/share", {
         method: "POST",
-        body: JSON.stringify({ acl }),
+        body: JSON.stringify({ acl: level, access_level: level }),
       }).then((x) => x.json());
       if (!r.ok) {
-        toast(r.error || "Share failed");
-        return;
+        // Fallback: session share if project route unavailable
+        const sessions = (global.cachedCategories || []).find((c) => (c.key || c.name) === catKey)?.sessions || [];
+        const sid = sessions[0]?.id || global.currentSession || 0;
+        if (!sid) {
+          toast(r.error || "Share failed");
+          return;
+        }
+        const acl = level === "read_only" || level === "limited" ? "view" : "post";
+        const rs = await api("/api/sessions/" + sid + "/share", {
+          method: "POST",
+          body: JSON.stringify({ acl, access_level: level }),
+        }).then((x) => x.json());
+        if (!rs.ok) {
+          toast(rs.error || "Share failed");
+          return;
+        }
+        return showProjectShareModal(catKey, level, rs.share_url || "");
       }
-      const url = r.share_url || "";
-      if (typeof global.netieOpenModal === "function") {
-        global.__projectShareUrl = url;
-        global.__projectShareLevel = level;
-        global.netieOpenModal("Share this project", `
-          <p class="hint" style="margin:0 0 10px">Default is <strong>Read only</strong>. Raise access on purpose.</p>
-          <button type="button" class="btn" id="projShareAclBtn" data-level="${esc(level)}">${esc(global.hubAccessLabel ? global.hubAccessLabel(level) : level)} ▾</button>
-          <div class="share-qr-actions" style="max-width:240px;margin:12px auto 0">
-            <img class="qr-img" id="qrProjectShareModal" alt="Share QR"/>
-            <button type="button" class="qr-share-btn" onclick="copyText(window.__projectShareUrl||'')">Copy link</button>
-          </div>
-          <p class="hint" style="margin-top:10px;word-break:break-all">${esc(url)}</p>`);
-        setTimeout(() => {
-          const el = $("qrProjectShareModal");
-          if (el && typeof global.setQR === "function") global.setQR(el, url);
-          const btn = $("projShareAclBtn");
-          if (btn) {
-            btn.onclick = (ev) => openAccessPopover(ev, {
-              title: "Project access",
-              level: btn.dataset.level || "read_only",
-              onPick: (v) => {
-                btn.dataset.level = v;
-                btn.textContent = (global.hubAccessLabel ? global.hubAccessLabel(v) : v) + " ▾";
-                shareProject(catKey, v);
-              },
-            });
-          }
-        }, 30);
-      } else toast("Project share ready");
+      return showProjectShareModal(catKey, level, r.share_url || "");
     } catch (e) {
       toast("Share failed");
     }
+  }
+  function showProjectShareModal(catKey, level, url) {
+    if (typeof global.netieOpenModal !== "function") {
+      toast(url || "Share ready");
+      return;
+    }
+    global.__projectShareUrl = url;
+    global.__projectShareKey = catKey;
+    global.__projectShareLevel = level;
+    global.netieOpenModal("Share this project", `
+      <p class="hint" style="margin:0 0 10px">Default is <strong>Manual</strong> — no AI. Raise access on purpose.</p>
+      <button type="button" class="btn" id="projShareAclBtn" data-level="${esc(level)}">${esc(global.hubAccessLabel ? global.hubAccessLabel(level) : level)} ▾</button>
+      <div class="share-qr-actions" style="max-width:240px;margin:12px auto 0">
+        <img class="qr-img" id="qrProjectShareModal" alt="Share QR"/>
+        <button type="button" class="qr-share-btn" onclick="copyText(window.__projectShareUrl||'')">Copy link</button>
+      </div>
+      <p class="hint" style="margin-top:10px;word-break:break-all">${esc(url)}</p>`);
+    setTimeout(() => {
+      const el = $("qrProjectShareModal");
+      if (el && typeof global.setQR === "function") global.setQR(el, url);
+      const btn = $("projShareAclBtn");
+      if (btn) {
+        btn.onclick = (ev) => accessPopover(ev, {
+          title: "Project access",
+          level: btn.dataset.level || "read_only",
+          onPick: (v) => {
+            btn.dataset.level = v;
+            btn.textContent = (global.hubAccessLabel ? global.hubAccessLabel(v) : v) + " ▾";
+            shareProject(catKey, v);
+          },
+        });
+      }
+    }, 30);
   }
 
   async function shipProjectFlow(projectName) {
@@ -608,7 +660,12 @@
     }
     global.netieOpenModal("Ship to OpenVault", `
       <div class="ov-ship-steps" id="ovShipSteps">
-        <p class="hint">One-shot: Sync → Detect → Build → Ship</p>
+        <ol class="ov-stepper" id="ovStepper">
+          <li data-step="sync">Sync</li>
+          <li data-step="detect">Detect</li>
+          <li data-step="build">Build</li>
+          <li data-step="ship">Ship</li>
+        </ol>
         <pre id="ovShipLog" class="ov-ship-log">Ready.</pre>
         <div class="hub-actions">
           <button type="button" class="btn primary" id="ovShipGo">Run pipeline</button>
@@ -620,25 +677,38 @@
       const el = $("ovShipLog");
       if (el) el.textContent += "\n" + line;
     };
+    const mark = (step) => {
+      document.querySelectorAll("#ovStepper li").forEach((li) => {
+        li.classList.toggle("on", li.dataset.step === step);
+        if (li.dataset.step === step) li.classList.add("done");
+      });
+    };
     $("ovShipGo").onclick = async () => {
       try {
+        mark("sync");
         log("Syncing…");
         const sync = await api("/api/openvault/sync", {
           method: "POST",
           body: JSON.stringify({ project: name }),
         }).then((r) => r.json());
         (sync.lines || []).forEach(log);
+        if (sync.files_copied != null) log(`Files copied: ${sync.files_copied}`);
         if (!sync.ok) { log("Sync failed"); return; }
+        mark("detect");
         log("Detecting…");
         const det = await api("/api/openvault/detect?project=" + encodeURIComponent(name)).then((r) => r.json());
         if (!det.ok) { log(det.error || "Detect failed"); return; }
-        log(`Detected: ${det.framework} — ${det.evidence || ""}`);
+        log(`Framework: ${det.framework || "—"}`);
+        if (det.evidence) log(`Evidence: ${det.evidence}`);
+        mark("build");
         log("Building…");
         const bld = await api("/api/openvault/build", {
           method: "POST",
           body: JSON.stringify({ project: name }),
         }).then((r) => r.json());
         (bld.lines || []).forEach(log);
+        if (bld.stdout) log(String(bld.stdout).slice(0, 2000));
+        mark("ship");
         log("Shipping…");
         const ship = await api("/api/openvault/ship", {
           method: "POST",
@@ -647,16 +717,24 @@
         const box = $("ovShipResult");
         if (box) {
           box.hidden = false;
+          const sim = !!ship.simulated;
+          const label = sim
+            ? "<strong>Simulated target</strong>"
+            : esc(ship.label || "");
+          const fw = (ship.detect && ship.detect.framework) || det.framework || "";
+          const evidence = (ship.detect && ship.detect.evidence) || det.evidence || "";
+          // ec2_hint is fake layout reference — never render as deploy target.
           box.innerHTML = `<p><a href="${esc(ship.url || "#")}" target="_blank" rel="noopener">${esc(ship.url || "")}</a></p>
-            <p class="hint">${ship.simulated ? "<strong>Simulated target</strong>" : esc(ship.label || "")}</p>`;
+            <p class="hint">${label}</p>
+            ${fw ? `<p class="hint"><strong>${esc(fw)}</strong>${evidence ? " · " + esc(evidence) : ""}</p>` : ""}`;
         }
         const sh = $("ovShipShare");
         if (sh) {
           sh.hidden = false;
-          sh.onclick = (ev) => openAccessPopover(ev, {
+          sh.onclick = (ev) => accessPopover(ev, {
             title: "Share shipped app",
             level: "read_only",
-            onPick: (v) => toast("Shared as " + v),
+            onPick: (v) => shareProject(name, v),
           });
         }
       } catch (e) {
@@ -695,6 +773,11 @@
   function boot() {
     ensurePresenceHost();
     bindPresenceTyping();
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && $("hubPeerDrawer")?.classList.contains("open")) {
+        closePeerDrawer();
+      }
+    });
     // Hash deep-link #msg-N
     const m = /^#msg-(\d+)$/.exec(location.hash || "");
     if (m) setTimeout(() => viewChatMsg(0, +m[1]), 800);

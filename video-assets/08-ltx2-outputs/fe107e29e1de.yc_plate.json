@@ -1,0 +1,11 @@
+{
+  "plate": "plate05_cleared",
+  "duration": 2,
+  "prompt": "Cinematic product film, anamorphic 2.39:1 framing inside a 16:9 frame, shallow depth of field, deep matte-black background, cool neutral grade with a single warm practical, subtle film grain, no text artefacts, no watermark, no UI mockups, no faces in focus. Grey network reilluminates with a green pulse from centre outward. Colour and motion return. Relief. Slow dolly out.",
+  "job": {
+    "ok": true,
+    "id": "fe107e29e1de",
+    "status": "queued",
+    "mode": "mock"
+  }
+}

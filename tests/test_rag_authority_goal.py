@@ -103,6 +103,26 @@ class GoalDistanceTest(unittest.TestCase):
         self.assertIn("cortex", a.missing)
         self.assertIn("jepa", a.covered)
 
+    def test_acronyms_survive_the_typo_crumb_filter(self):
+        """RRF/SNR/PLL are the terms this corpus is about, not typing debris.
+
+        The crumb heuristic (short, ≤1 vowel, no digit) matches almost every acronym
+        in an engineering corpus. Dropping them made the goal layer report full
+        coverage while the one term the question asked about was missing.
+        """
+        for acronym in ("RRF", "SNR", "PLL", "CDR", "ADC", "LDO", "API", "SQL"):
+            terms = goal.salient_terms(f"what is the {acronym} here")
+            self.assertIn(acronym.lower(), terms, f"{acronym} was dropped as a typo")
+
+    def test_lowercase_typo_crumbs_are_still_dropped(self):
+        for crumb in ("tlel", "sna", "dall", "hjk"):
+            self.assertNotIn(crumb, goal.salient_terms(f"please {crumb} the report"))
+
+    def test_missing_acronym_is_reported_as_missing(self):
+        ev = [{"path": "url_x.md", "text": "Dense and sparse retrieval are fused together."}]
+        a = goal.assess("how does hybrid search RRF work", evidence=ev)
+        self.assertIn("rrf", a.missing, "coverage claimed a term the evidence lacks")
+
     def test_question_words_are_not_treated_as_content(self):
         for noise in ("hmm", "yup", "please", "what", "how", "web", "search"):
             self.assertNotIn(noise, goal.salient_terms(f"{noise} what is jepa"))
@@ -173,6 +193,34 @@ class EndToEndAuthorityTest(unittest.TestCase):
         body = (out.get("answer") or "").lower()
         self.assertNotIn("knowledge graph", body, "the fabrication was repeated")
         self.assertNotIn("semantic search", body, "the fabrication was repeated")
+
+    def test_unsupported_verdict_cites_nothing_and_dumps_no_text(self):
+        """Irrelevant sources attached to a refusal are their own fabrication.
+
+        A space of JEPA pages asked "what is netie ai" scored every chunk at ~0.045 and
+        still returned 8 citations plus a wall of JEPA prose under a sentence saying
+        nothing could be supported.
+        """
+        from rag import answer, ingest
+
+        corpus = Path(self._tmp.name) / "offtopic"
+        corpus.mkdir()
+        (corpus / "jepa.md").write_text(
+            "# JEPA\n\nJoint Embedding Predictive Architecture predicts in latent space. "
+            "V-JEPA processes video frames and reasons about the physical world.\n",
+            encoding="utf-8",
+        )
+        sid = int(store.create_space("Offtopic")["id"])
+        ingest.ingest_paths(sid, [corpus], force=True)
+
+        out = answer.answer(sid, "what is netie ai", depth="high", use_llm=False, use_web=False)
+        self.assertEqual((out.get("goal") or {}).get("verdict"), "unsupported")
+        self.assertEqual(out.get("citations"), [], "unrelated sources were cited")
+        self.assertEqual(out.get("confidence"), 0.0)
+        body = out.get("answer") or ""
+        self.assertNotIn("Predictive Architecture", body, "off-topic prose was dumped as an answer")
+        self.assertIn("could not support", body)
+        self.assertIn("netie", body.lower())
 
     def test_confidence_does_not_count_conversation(self):
         from rag import answer
