@@ -196,6 +196,16 @@ def _image_file_path(msg: dict) -> Path | None:
     return p2 if p2.is_file() else None
 
 
+def _ai_lockdown_block() -> dict | None:
+    """Return error payload when emergency cut-off is on."""
+    try:
+        import access_policy
+
+        return access_policy.lockdown_block()
+    except Exception:
+        return None
+
+
 def _ai_allowed() -> bool:
     if not app_license:
         return True
@@ -260,6 +270,16 @@ def _check_ai_rate() -> str | None:
 
 
 def run_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
+    blocked = _ai_lockdown_block()
+    if blocked:
+        err = "Host disabled AI. Your work is saved."
+        if question:
+            db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=err, kind="text", source="ai", session_id=session_id)
+            bump_sync()
+        else:
+            db.update_ai(msg_id, status="error", analysis=err)
+            bump_sync()
+        return
     if not _is_online():
         err = "AI mode requires internet. Offline storage still works — export anytime."
         if question:
@@ -313,6 +333,14 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "general"
             vision_cache=cache or None,
             depth=depth,
         )
+        if result.get("error") == "ai_lockdown":
+            err = "Host disabled AI. Your work is saved."
+            if question:
+                db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=err, kind="text", source="ai", session_id=session_id)
+            else:
+                db.update_ai(msg_id, status="error", analysis=err)
+            bump_sync()
+            return
         cat = result.get("early_category") or msg.get("ai_category") or "general"
         sid = int(session_id or msg.get("session_id") or 0)
         ai_title = _title_from_ai_text(
@@ -362,6 +390,18 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
 
 
 def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+    blocked = _ai_lockdown_block()
+    if blocked:
+        db.add_message(
+            device_ip="127.0.0.1",
+            device_name="AirGPT",
+            text="Host disabled AI. Your work is saved.",
+            kind="text",
+            source="ai",
+            session_id=session_id,
+        )
+        bump_sync()
+        return
     if not _is_online():
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text="AI chat needs internet or local API keys. Manual local chat still works.", kind="text", source="ai", session_id=session_id)
         bump_sync()
@@ -377,6 +417,17 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> 
     try:
         business = bool((app_license.get_status() if app_license else {}).get("business_features"))
         result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business)
+        if result.get("error") == "ai_lockdown":
+            db.add_message(
+                device_ip="127.0.0.1",
+                device_name="AirGPT",
+                text="Host disabled AI. Your work is saved.",
+                kind="text",
+                source="ai",
+                session_id=session_id,
+            )
+            bump_sync()
+            return
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=result["analysis"], kind="text", source="ai", session_id=session_id)
         if session_id:
             db.maybe_set_ai_session_title(
@@ -488,6 +539,16 @@ def _chat_stream_events(
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
+        return
+    blocked = _ai_lockdown_block()
+    if blocked:
+        yield {
+            "type": "error",
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "text": "Host disabled AI. Your work is saved.",
+            "ok": False,
+        }
         return
     if not _is_online():
         yield {"type": "error", "text": "AI chat needs internet or local API keys. Manual local chat still works."}
@@ -692,13 +753,28 @@ def _is_local_host(ip: str) -> bool:
 
 
 def _ai_lockdown_payload() -> dict:
-    """Mock emergency flag for film Act 4 — visuals only, does not gate AI."""
+    """Emergency AI cut-off state for /api/info and /api/wait."""
     try:
         import access_policy
 
         return access_policy.get_ai_lockdown()
     except Exception:
-        return {"on": False, "mock": True}
+        return {"on": False}
+
+
+def _app_state_payload(q) -> dict:
+    """Live App Card shared state delta for /api/wait (no websocket)."""
+    try:
+        import apps_hub
+
+        since = 0
+        try:
+            since = int((q.get("app_epoch") or ["0"])[0])
+        except Exception:
+            since = 0
+        return apps_hub.app_state_poll(since)
+    except Exception:
+        return {"epoch": 0, "updates": []}
 
 
 # Host-only API surfaces (SECURITY_HARDENING #1/#5/#7). These can read/write host
@@ -1713,9 +1789,26 @@ class Handler(BaseHTTPRequestHandler):
     # backend crashed. Track whether the body was consumed and drain it before replying.
     _DRAIN_MAX = 4 * 1024 * 1024
 
+    # A phone walking out of WiFi range, a closed tab, or a tunnel reconnect all abort
+    # the socket mid-request. That is normal operation, not a fault, but socketserver
+    # prints a full traceback for each one — which buried real errors in the console and
+    # made a healthy server look like it was crashing. Swallow only the disconnect
+    # family; everything else still propagates.
+    _BENIGN_DISCONNECTS = (
+        ConnectionAbortedError,   # WinError 10053 — host software aborted the connection
+        ConnectionResetError,     # WinError 10054 — peer vanished
+        BrokenPipeError,
+        TimeoutError,             # socket timeout on an idle keep-alive
+    )
+
     def handle_one_request(self):
         self._body_consumed = False
-        super().handle_one_request()
+        try:
+            super().handle_one_request()
+        except self._BENIGN_DISCONNECTS as e:
+            self.close_connection = True
+            if os.environ.get("AIRGPT_DEBUG_SOCKETS"):
+                print(f"[http] client disconnected: {type(e).__name__}")
 
     def _drain_request_body(self) -> None:
         if getattr(self, "_body_consumed", True):
@@ -1936,6 +2029,17 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
+        blocked = _ai_lockdown_block()
+        if blocked:
+            return self._json(
+                403,
+                {
+                    "ok": False,
+                    "error": blocked["error"],
+                    "by": blocked.get("by") or "host",
+                    "reason": blocked.get("reason") or "",
+                },
+            )
         rate_err = _check_ai_rate()
         if rate_err:
             return self._json(429, {"error": rate_err})
@@ -2515,6 +2619,15 @@ class Handler(BaseHTTPRequestHandler):
                     lan_blocked=lan["lan_likely_blocked"],
                 )
             mdns_u = wifi_access.mdns_url() if wifi_access else None
+            share_meta: dict = {}
+            if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
+                scoped = app_auth.token_session_acl(self._request_token())
+                if scoped:
+                    share_meta = {
+                        "share_acl": scoped.get("acl"),
+                        "access_level": scoped.get("access_level"),
+                        "session_id": scoped.get("session_id"),
+                    }
             return self._json(200, {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
@@ -2566,6 +2679,7 @@ class Handler(BaseHTTPRequestHandler):
                 "cortex": _cortex_info(quick=True),
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
                 "ai_lockdown": _ai_lockdown_payload(),
+                **share_meta,
             })
 
         if path == "/api/input-notes":
@@ -2632,6 +2746,7 @@ class Handler(BaseHTTPRequestHandler):
                 "qr_token": qr_tok,
                 "network_epoch": _network_epoch,
                 "ai_lockdown": _ai_lockdown_payload(),
+                "app_state": _app_state_payload(q),
             })
 
         if path == "/api/presence":
@@ -2699,12 +2814,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/memory/thin":
-            try:
-                import memory_index as mi
-
-                return self._json(200, mi.thin_memories())
-            except Exception as e:
-                return self._json(500, {"error": str(e)[:200]})
+            # GET must never mutate. This one called thin_memories(), which
+            # irreversibly truncates every unpinned body over 160 chars down to ~140
+            # in place - so a link prefetch, a browser preconnect or an accidental
+            # reload silently destroyed memory text with no undo. Nothing in the UI
+            # ever called it, and the destructive path already exists on
+            # POST /api/memory/forget {"thin":true}.
+            return self._json(
+                405,
+                {
+                    "ok": False,
+                    "error": "GET /api/memory/thin is retired - it mutated on a GET",
+                    "use": 'POST /api/memory/forget {"thin": true}',
+                },
+            )
 
         if path == "/api/export":
             if q.get("package", ["0"])[0] == "1":
@@ -2910,7 +3033,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hub/peers/") and path.endswith("/events"):
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
                 return self._json(200, {"events": db.list_hub_events(80, ip=peer_ip)})
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -2921,7 +3044,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = unquote(path.split("/")[-2])
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
                 return self._json(200, hub.get_peer_activity(peer_ip, host_ip=ip))
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -3319,11 +3442,30 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        if path.startswith("/api/apps/") and path.endswith("/state") and path.count("/") == 4:
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                return self._json(200, apps_hub.get_app_state(app_id))
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/apps/ports":
+            try:
+                import apps_hub
+
+                return self._json(200, {"ok": True, "ports": apps_hub.allowlisted_ports()})
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
         if path.startswith("/api/apps/") and path.count("/") == 3:
             # /api/apps/{id} — probe one
             try:
                 import apps_hub
                 app_id = path.rsplit("/", 1)[-1]
+                if app_id in ("ports", "register", "start", "stop", "open"):
+                    return self._json(404, {"error": "not found"})
                 st = apps_hub.status()
                 hit = next((a for a in st.get("apps") or [] if a.get("id") == app_id), None)
                 return self._json(200, hit or {"ok": False, "error": "unknown app"})
@@ -3792,6 +3934,16 @@ class Handler(BaseHTTPRequestHandler):
                 sid = int(data.get("session_id", 0) or 0)
                 mode = str(data.get("mode", "general"))
                 if data.get("ai_mode"):
+                    blocked = _ai_lockdown_block()
+                    if blocked:
+                        return self._json(
+                            403,
+                            {
+                                "ok": False,
+                                "error": blocked["error"],
+                                "by": blocked.get("by") or "host",
+                            },
+                        )
                     if not text.strip():
                         return self._json(400, {"error": "question required"})
                     reply_to_id = int(data.get("reply_to_id", 0) or 0)
@@ -4185,7 +4337,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                # Must normalize — encodeURIComponent IPv6 without unquote used to
+                # create ghost peers keyed as 2a02%3A… / 2a02%253A…
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
+                if not peer_ip:
+                    return self._json(400, {"error": "invalid peer ip"})
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, hub.set_peer_acl(
                     peer_ip,
@@ -4200,7 +4356,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
+                if not peer_ip:
+                    return self._json(400, {"error": "invalid peer ip"})
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, hub.rename_peer(peer_ip, str(data.get("display_name", ""))))
             except Exception as e:
@@ -4211,7 +4369,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2]) or path.split("/")[-2]
                 return self._json(200, hub.kick_peer(peer_ip))
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -4241,6 +4399,24 @@ class Handler(BaseHTTPRequestHandler):
             qr_tok = str(data.get("qr_token", ""))
             # Prefer session-share redeem when token is a share token
             r = None
+            if hasattr(app_auth, "redeem_project_share"):
+                r = app_auth.redeem_project_share(qr_tok)
+                if r.get("ok"):
+                    if app_audit:
+                        app_audit.log("auth_project_share_ok", ip=ip, detail=qr_tok[:20], ok=True)
+                    try:
+                        import hub
+                        hub.touch_peer(
+                            ip,
+                            device_id=str(data.get("device_id", "") or self.headers.get("X-Device-Id", ""))[:80],
+                            display_name=str(data.get("display_name", "") or self.headers.get("X-Device-Name", ""))[:120],
+                            join_method="qr",
+                            logged_in=True,
+                            access_level=r.get("access_level", "read_only"),
+                        )
+                    except Exception:
+                        pass
+                    return self._json(200, r)
             if hasattr(app_auth, "redeem_session_share"):
                 r = app_auth.redeem_session_share(qr_tok)
                 if not r.get("ok"):
@@ -4301,6 +4477,52 @@ class Handler(BaseHTTPRequestHandler):
                     "session_share",
                     ip=ip,
                     detail=f"session={sid} acl={acl}",
+                    ok=True,
+                )
+            return self._json(200, {**r, "share_url": share_url})
+
+        if path.endswith("/share") and path.startswith("/api/projects/"):
+            if not app_auth:
+                return self._json(503, {"error": "auth unavailable"})
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            parts = path.rstrip("/").split("/")
+            # /api/projects/<key>/share
+            try:
+                key_idx = parts.index("projects") + 1
+                project_key = parts[key_idx]
+            except (ValueError, IndexError):
+                return self._json(400, {"error": "bad project key"})
+            if not project_key or project_key == "share":
+                return self._json(400, {"error": "project key required"})
+            data = json.loads(self._body().decode() or "{}")
+            acl = str(data.get("acl") or data.get("access_level") or "read_only")
+            if not hasattr(app_auth, "issue_project_share"):
+                return self._json(503, {"error": "project share unavailable"})
+            r = app_auth.issue_project_share(
+                project_key,
+                acl=acl,
+                host_token=self._request_token(),
+                host_verified=_is_local_host(ip),
+            )
+            if not r.get("ok"):
+                return self._json(400, r)
+            base = ""
+            with _tunnel_lock:
+                base = (_tunnel.get("url") or "").rstrip("/")
+            if not base:
+                ips = local_ips()
+                if ips:
+                    base = f"http://{ips[0]}:{PORT}"
+            share_url = ""
+            tok = r.get("share_token") or r.get("token")
+            if base and tok:
+                share_url = f"{base}/?qr={tok}&project={project_key}"
+            if app_audit:
+                app_audit.log(
+                    "project_share",
+                    ip=ip,
+                    detail=f"project={project_key} acl={acl}",
                     ok=True,
                 )
             return self._json(200, {**r, "share_url": share_url})
@@ -4367,6 +4589,16 @@ class Handler(BaseHTTPRequestHandler):
                 prompt = str(data.get("prompt") or data.get("text") or "").strip()
                 if not prompt:
                     return self._json(400, {"error": "prompt required"})
+                blocked = _ai_lockdown_block()
+                if blocked:
+                    return self._json(
+                        403,
+                        {
+                            "ok": False,
+                            "error": blocked["error"],
+                            "by": blocked.get("by") or "host",
+                        },
+                    )
                 session_id = int(data.get("session_id") or 0)
                 settings = cortex_orchestrator.get_settings()
                 thinking_mode = str(data.get("thinking_mode") or settings.get("thinking_mode") or "assist")
@@ -4963,6 +5195,86 @@ class Handler(BaseHTTPRequestHandler):
                 import apps_hub
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, apps_hub.start(str(data.get("id") or "")))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/apps/register":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import apps_hub
+
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, apps_hub.register_app(data if isinstance(data, dict) else {}))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/start") and path.count("/") == 4:
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                return self._json(200, apps_hub.start(app_id))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/state") and path.count("/") == 4:
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                # read_only peers cannot write shared card state
+                if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
+                    scoped = app_auth.token_session_acl(self._request_token()) or {}
+                    level = str(scoped.get("access_level") or "")
+                    if scoped.get("acl") == "view" or level in ("read_only", "limited"):
+                        return self._json(403, {"ok": False, "error": "view only"})
+                data = json.loads(self._body().decode() or "{}")
+                state = data.get("state") if isinstance(data, dict) else {}
+                if not isinstance(state, dict):
+                    state = {"value": state}
+                return self._json(200, apps_hub.set_app_state(app_id, state))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/mount") and path.count("/") == 4:
+            # Start app + insert app_card message into session
+            try:
+                import apps_hub
+                import json as _json
+
+                app_id = path.split("/")[3]
+                data = json.loads(self._body().decode() or "{}")
+                session_id = int(data.get("session_id") or 0)
+                started = apps_hub.start(app_id)
+                health = "live" if started.get("ok") else "error"
+                if started.get("status") == "already_running":
+                    health = "live"
+                app = started.get("app") or {}
+                port = int(app.get("port") or data.get("port") or 0)
+                name = str(data.get("name") or app.get("name") or app_id)
+                card = {
+                    "app_id": app_id,
+                    "name": name,
+                    "port": port,
+                    "health": health if started.get("ok") or health == "live" else "error",
+                    "slug": app_id,
+                    "error": started.get("error") or "",
+                }
+                msg = None
+                if session_id:
+                    msg = db.add_message(
+                        device_ip="127.0.0.1",
+                        device_name="AirGPT",
+                        text=_json.dumps(card),
+                        kind="app_card",
+                        source="ai",
+                        session_id=session_id,
+                    )
+                    bump_sync()
+                return self._json(200, {"ok": True, "card": card, "start": started, "message": msg})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 

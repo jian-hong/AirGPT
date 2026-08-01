@@ -238,6 +238,180 @@ def run_command(cmd: str, *, cwd: str = "", run_id: int = 0, agent_id: int = 0) 
         return out
 
 
+def _slugify(name: str) -> str:
+    import re
+
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", (name or "app").strip().lower()).strip("-")
+    return (s or "app")[:48]
+
+
+def _default_scaffold_files(name: str, kind: str) -> dict[str, str]:
+    """Minimal shared table tool — VDML-shaped sheet for the Small Software beat."""
+    title = name or "Live sheet"
+    if kind in ("table", "vdml", "sheet", "static", ""):
+        return {
+            "index.html": (
+                "<!DOCTYPE html>\n<html lang=\"en\"><head>\n"
+                "<meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n"
+                f"<title>{title}</title>\n<link rel=\"stylesheet\" href=\"styles.css\"/>\n"
+                "</head><body>\n<main class=\"sheet\">\n"
+                f"  <header><p class=\"brand\">AirGPT Live</p><h1>{title}</h1>\n"
+                "  <p class=\"lede\">Shared in this chat — edits sync to teammates.</p></header>\n"
+                "  <table id=\"grid\"><thead><tr><th>Part</th><th>Qty</th><th>Unit</th><th>Lead (wks)</th></tr></thead>\n"
+                "  <tbody></tbody></table>\n"
+                "  <p class=\"hint\" id=\"status\">Loading shared state…</p>\n"
+                "</main>\n<script src=\"app.js\"></script>\n</body></html>\n"
+            ),
+            "styles.css": (
+                "body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0f1115;color:#e8eaed}\n"
+                ".sheet{padding:16px}h1{font-size:18px;margin:4px 0 8px}.brand{opacity:.6;font-size:11px;margin:0}\n"
+                ".lede{font-size:12px;opacity:.75;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:13px}\n"
+                "th,td{border:1px solid #2a2f3a;padding:6px 8px}th{background:#1a1f29;text-align:left}\n"
+                "td input{width:100%;background:transparent;border:0;color:inherit;font:inherit}\n"
+                ".hint{font-size:11px;opacity:.6;margin-top:10px}\n"
+                "body.readonly input{pointer-events:none;opacity:.85}\n"
+            ),
+            "app.js": r"""(function(){
+  const params=new URLSearchParams(location.search);
+  const appId=params.get('app')||'';
+  const readonly=params.get('ro')==='1';
+  if(readonly)document.body.classList.add('readonly');
+  const tbody=document.querySelector('#grid tbody');
+  const status=document.getElementById('status');
+  let rows=[{part:'NMD-PHY-44G',qty:'120',unit:'18.40',lead:'6'},{part:'NMD-PLL-22',qty:'80',unit:'12.75',lead:'4'}];
+  function render(){
+    tbody.innerHTML=rows.map((r,i)=>'<tr>'+
+      '<td><input data-r="'+i+'" data-k="part" value="'+(r.part||'')+'"/></td>'+
+      '<td><input data-r="'+i+'" data-k="qty" value="'+(r.qty||'')+'"/></td>'+
+      '<td><input data-r="'+i+'" data-k="unit" value="'+(r.unit||'')+'"/></td>'+
+      '<td><input data-r="'+i+'" data-k="lead" value="'+(r.lead||'')+'"/></td>'+
+      '</tr>').join('');
+    tbody.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('change',()=>{
+        const i=+inp.dataset.r;const k=inp.dataset.k;
+        rows[i]=rows[i]||{};rows[i][k]=inp.value;save();
+      });
+    });
+  }
+  function load(){
+    if(!appId){render();status.textContent='Local only';return}
+    status.textContent='Loading…';
+    try{parent.postMessage({type:'airgpt_app_state_read',appId:appId},'*')}catch(e){}
+    render();
+  }
+  function save(){
+    if(readonly||!appId)return;
+    status.textContent='Saving…';
+    try{parent.postMessage({type:'airgpt_app_state_write',appId:appId,state:{rows:rows}},'*')}catch(e){}
+  }
+  window.addEventListener('message',(ev)=>{
+    const d=ev.data||{};
+    if(d.type==='airgpt_app_state'&&d.appId===appId&&d.state&&Array.isArray(d.state.rows)){
+      rows=d.state.rows;render();status.textContent=d.saved?'Synced':'Updated';
+    }
+  });
+  load();
+})();
+""",
+        }
+    return {
+        "index.html": f"<!DOCTYPE html><html><body><h1>{title}</h1><p>Scaffolded by AirGPT.</p></body></html>\n",
+    }
+
+
+def app_scaffold(
+    name: str,
+    kind: str = "table",
+    files: dict | None = None,
+    *,
+    run_id: int = 0,
+    agent_id: int = 0,
+) -> dict:
+    """Write apps/<slug>/, register a unique port, return mount info for Live App Card."""
+    args = {"name": name, "kind": kind, "files": len(files or {})}
+    try:
+        import apps_hub
+        from config import ROOT
+
+        slug = _slugify(name)
+        app_id = slug
+        base = app_id
+        n = 2
+        while True:
+            existing = None
+            try:
+                for a in (apps_hub.registry().get("apps") or []):
+                    if a.get("id") == app_id:
+                        existing = a
+                        break
+            except Exception:
+                existing = None
+            if not existing:
+                break
+            app_id = f"{base}-{n}"
+            n += 1
+
+        root = ROOT / "apps" / app_id
+        root.mkdir(parents=True, exist_ok=True)
+        payload = files if isinstance(files, dict) and files else _default_scaffold_files(name, kind)
+        written = []
+        for rel, content in payload.items():
+            rel_s = str(rel).replace("\\", "/").lstrip("/")
+            if ".." in rel_s or rel_s.startswith("/") or ":" in rel_s:
+                continue
+            path = root / rel_s
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(str(content), encoding="utf-8")
+            written.append(rel_s)
+
+        port = apps_hub.next_free_port()
+        entry = {
+            "id": app_id,
+            "name": (name or app_id)[:80],
+            "port": port,
+            "health": "/",
+            "url": f"http://127.0.0.1:{port}/",
+            "cwd": f"apps/{app_id}",
+            "start": ["python", "-m", "http.server", str(port)],
+            "kind": "sidecar",
+            "open": "card",
+            "scaffold": True,
+        }
+        reg = apps_hub.register_app(entry)
+        if not reg.get("ok"):
+            out = {"ok": False, "error": reg.get("error") or "register failed"}
+            _audit("app_scaffold", args, out, ok=False, run_id=run_id, agent_id=agent_id)
+            return out
+        apps_hub.set_app_state(app_id, {"rows": [
+            {"part": "NMD-PHY-44G", "qty": "120", "unit": "18.40", "lead": "6"},
+            {"part": "NMD-PLL-22", "qty": "80", "unit": "12.75", "lead": "4"},
+        ]})
+        out = {
+            "ok": True,
+            "app_id": app_id,
+            "name": entry["name"],
+            "port": port,
+            "cwd": str(root),
+            "files": written,
+            "url": entry["url"],
+            "health": "scaffolding",
+            "card": {
+                "kind": "app_card",
+                "app_id": app_id,
+                "name": entry["name"],
+                "port": port,
+                "health": "scaffolding",
+                "slug": app_id,
+            },
+        }
+        _audit("app_scaffold", args, out, ok=True, run_id=run_id, agent_id=agent_id)
+        return out
+    except Exception as e:
+        out = {"ok": False, "error": str(e)[:300]}
+        _audit("app_scaffold", args, out, ok=False, run_id=run_id, agent_id=agent_id)
+        return out
+
+
 def git_status(*, run_id: int = 0, agent_id: int = 0) -> dict:
     return run_command("git status", run_id=run_id, agent_id=agent_id)
 
@@ -250,14 +424,35 @@ def git_diff(path: str = "", *, run_id: int = 0, agent_id: int = 0) -> dict:
     return run_command(cmd, run_id=run_id, agent_id=agent_id)
 
 
-def memory_add(fact: str, *, run_id: int = 0, agent_id: int = 0) -> dict:
-    args = {"fact": (fact or "")[:500]}
+def memory_add(fact: str, project: str = "general", *, run_id: int = 0, agent_id: int = 0) -> dict:
+    """Remember one durable fact.
+
+    Two faults fixed here, both of which made this the most misleading call in the
+    tool set:
+
+    `project` defaulted to "" and carry_pack's predicate is `(?='' OR project=?)`
+    against the *caller's* project, so every fact written by the model landed in a
+    drawer chat could never open. The one tool the assistant has for deliberately
+    remembering something wrote to nowhere.
+
+    And the return value of add_memory was discarded in favour of a hardcoded
+    `{"ok": True}`, so a refusal - a fail-closed secret gate, a classifier reject,
+    a disk error - was reported to both the model and the user as success.
+    """
+    args = {"fact": (fact or "")[:500], "project": project}
     try:
         import memory_index
 
-        memory_index.add_memory(kind="memory", title="agent fact", body=fact, source="agent")
-        out = {"ok": True}
-        _audit("memory_add", args, out, ok=True, run_id=run_id, agent_id=agent_id)
+        res = memory_index.add_memory(
+            kind="memory",
+            title=(fact or "fact")[:48].replace("\n", " "),
+            body=fact,
+            project=(project or "general"),
+            source="agent",
+        )
+        ok = bool(res.get("ok", True)) if isinstance(res, dict) else True
+        out = res if isinstance(res, dict) else {"ok": True}
+        _audit("memory_add", args, out, ok=ok, run_id=run_id, agent_id=agent_id)
         return out
     except Exception as e:
         out = {"ok": False, "error": str(e)[:300]}
@@ -504,6 +699,7 @@ TOOLS: dict[str, Callable[..., dict]] = {
     "fs_patch": fs_patch,
     "fs_search": fs_search,
     "fs_glob": fs_glob,
+    "app_scaffold": app_scaffold,
     "run_command": run_command,
     "git_status": git_status,
     "git_diff": git_diff,
@@ -541,6 +737,11 @@ def tool_schemas(names: list[str] | None = None) -> list[dict]:
         "fs_write": {"description": "Write workspace file", "params": ["path", "content"]},
         "fs_patch": {"description": "Patch workspace file", "params": ["path", "old", "new"]},
         "fs_search": {"description": "Search workspace files", "params": ["query"]},
+        "fs_glob": {"description": "Glob workspace paths", "params": ["pattern"]},
+        "app_scaffold": {
+            "description": "Scaffold a small shared app under apps/<slug>, register a unique port, return Live App Card payload",
+            "params": ["name", "kind", "files"],
+        },
         "run_command": {"description": "Run allowlisted shell command", "params": ["cmd", "cwd"]},
         "git_status": {"description": "Git status in workspace", "params": []},
         "git_diff": {"description": "Git diff for path", "params": ["path"]},

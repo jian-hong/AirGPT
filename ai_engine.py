@@ -1692,6 +1692,22 @@ def _prepare_text_chat(
     return prompt, mode, bool(vault), gate
 
 
+def is_about_link(text: str) -> bool:
+    """True when the text carries a URL, so the model's account of it must not persist.
+
+    One definition, used by every writer. It used to be computed inline inside
+    persist_turn_memory only, and _finish_chat_side_effects wrote the same answer to a
+    vault drawer 250 lines later with no such check - so the guard passed its test
+    while the fabrication landed on disk anyway and was grepped back into later
+    prompts. data/vault/company/rooms/feedback/ already holds one.
+    """
+    s = text or ""
+    try:
+        return bool(_URL_RE.search(s))
+    except NameError:
+        return "http://" in s or "https://" in s
+
+
 def persist_turn_memory(
     *,
     question: str,
@@ -1713,7 +1729,7 @@ def persist_turn_memory(
     a = (answer or "").strip()
     if len(q) < 12 or len(a) < 40:
         return
-    about_link = bool(_URL_RE.search(q)) if "_URL_RE" in globals() else ("http://" in q or "https://" in q)
+    about_link = is_about_link(q)
     try:
         import memory_index as mi
 
@@ -1993,7 +2009,16 @@ def _finish_chat_side_effects(
     _record_chat_usage(model=model, text=answer, tier=tier, session_id=session_id)
     persist_turn_memory(question=question, answer=answer, mode=mode, session_id=session_id)
     try:
-        if tier in ("high", "max") and answer and len(answer) > 80:
+        # Same refusal as persist_turn_memory. Without it this drawer defeated the
+        # anti-fabrication guard entirely: the memory row correctly said
+        # "[not stored] asked about a link" while the invented biography was written
+        # here and grepped back into later prompts by retrieve_vault_snippets.
+        if (
+            tier in ("high", "max")
+            and answer
+            and len(answer) > 80
+            and not is_about_link(question)
+        ):
             import vault as vault_mod
 
             vault_mod.write_drawer(
