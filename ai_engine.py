@@ -721,12 +721,18 @@ _GROQ_MODELS: tuple[tuple[str, str], ...] = (
 # Cloud cascade default: primary BYOK first, then fast free-ish.
 # SEA-LION is last — strong for BM/中文/SEA, not the English default (was starving Gemini).
 # User-tunable via Hosting config (primary_provider / provider_order) or data/routing.json.
-_DEFAULT_CLOUD_ORDER = ("anthropic", "openai", "groq", "google", "openrouter", "deepseek", "sea-lion")
+# `openvault` leads every cascade: it is the custody plane, so it holds the freshest
+# keys and the verified per-provider model ids. The direct providers after it are the
+# fallback for a laptop running AirGPT alone. Multilingual still names sea-lion early
+# because that preference is about the model, not about who holds the key.
+_DEFAULT_CLOUD_ORDER = (
+    "openvault", "anthropic", "openai", "groq", "google", "openrouter", "deepseek", "sea-lion",
+)
 _TASK_CLOUD_ORDER = {
-    "chat": ("groq", "google", "openrouter", "anthropic", "openai", "deepseek", "sea-lion"),
-    "rag": ("google", "groq", "openrouter", "deepseek", "anthropic", "openai", "sea-lion"),
-    "agent": ("groq", "openrouter", "google", "deepseek", "anthropic", "openai", "sea-lion"),
-    "multilingual": ("sea-lion", "google", "openrouter", "groq", "anthropic", "openai", "deepseek"),
+    "chat": ("openvault", "groq", "google", "openrouter", "anthropic", "openai", "deepseek", "sea-lion"),
+    "rag": ("openvault", "google", "groq", "openrouter", "deepseek", "anthropic", "openai", "sea-lion"),
+    "agent": ("openvault", "groq", "openrouter", "google", "deepseek", "anthropic", "openai", "sea-lion"),
+    "multilingual": ("sea-lion", "openvault", "google", "openrouter", "groq", "anthropic", "openai", "deepseek"),
     "router": ("groq", "google", "sea-lion"),
 }
 _engine_cfg_cache: list = [0.0, {}]
@@ -894,6 +900,15 @@ def _cloud_provider_order(
     order = [str(p).lower().replace("_", "-") for p in base]
     # Normalise aliases
     order = [{"sea_lion": "sea-lion", "gemini": "google", "sealion": "sea-lion"}.get(p, p) for p in order]
+
+    # OpenVault is the custody plane, not a peer provider. A routing file written
+    # before it existed simply omits it, and because file order outranks the defaults
+    # above that would silently disable custody and send AirGPT back to its own
+    # env.local copies - exactly the drift that left a dead GROQ_API_KEY here beside a
+    # working one in the vault. Lead with it unless the config names it somewhere.
+    # An explicit primary_provider below still outranks this.
+    if "openvault" in known and "openvault" not in order:
+        order = ["openvault"] + order
 
     primary = str(cfg.get("primary_provider") or "").strip().lower()
     if primary and primary != "auto":
@@ -1204,7 +1219,34 @@ def _standard_llm(
             timeout=12,
         )
 
+    def _p_openvault() -> tuple[str, str] | None:
+        """Custody-first hop: let OpenVault hold the keys and pick the model.
+
+        AirGPT keeping its own copies in env.local is how a dead GROQ_API_KEY here
+        sat next to a working one in the vault for weeks. OpenVault owns the secrets,
+        the per-provider model ids, the free-tier limits and the circuit breakers, so
+        asking it is strictly better than guessing locally.
+
+        It stays FIRST but never mandatory - when OpenVault is not running the cascade
+        falls through to the direct providers below, so a laptop without the stack up
+        still answers.
+        """
+        base = (env.get("OPENVAULT_URL") or "http://127.0.0.1:5000").rstrip("/")
+        if not _endpoint_reachable(f"{base}/v1"):
+            tried.append("OpenVault(not running)")
+            return None
+        # `auto` is deliberate: OpenVault resolves it per provider. Sending a concrete
+        # id from here would recreate the model-id drift this hop exists to remove.
+        return _try_openai(
+            f"{base}/v1/chat/completions",
+            env.get("OPENVAULT_TOKEN") or "openvault-loopback",
+            "auto",
+            "openvault",
+            timeout=30,
+        )
+
     _providers = {
+        "openvault": _p_openvault,
         "anthropic": _p_anthropic,
         "openai": _p_openai,
         "groq": _p_groq,
