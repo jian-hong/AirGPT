@@ -315,3 +315,122 @@ def test_the_refusal_reaches_the_model_through_the_tool() -> None:
     out = agent_tools.memory_add("the groq key is sk-abc123def456ghi789jkl012")
     assert out["ok"] is False
     assert out.get("refused") == "secret"
+
+
+# --- Salience: what is worth remembering ------------------------------------------
+# The only filter used to be `len(q) < 12 or len(a) < 40`, evaluated before anything
+# else. It threw away exactly the durable turns - "call me JH" is 10 chars, and 12
+# characters is a whole sentence in CJK - while every long disposable exchange sailed
+# through. That is how the store filled with "what is the largest ocean in malaysia".
+
+
+@pytest.mark.parametrize(
+    "q,a,why",
+    [
+        ("call me JH not Jian Hong", "Noted.", "identity-or-preference"),
+        ("please remember my dog is called Xiaojimao", "Noted.", "explicit-remember"),
+        ("我叫欧健鸿，记住", "好的", "explicit-remember"),
+        ("i prefer short answers", "Understood.", "identity-or-preference"),
+        ("we decided to ship before the pilot demo", "Got it.", "decision-or-commitment"),
+        ("actually that was wrong, it was Tuesday", "Corrected.", "correction"),
+        ("from now on always answer in English", "Will do.", "explicit-remember"),
+    ],
+)
+def test_short_but_durable_turns_are_kept(q: str, a: str, why: str) -> None:
+    """Every one of these was verified dropped by the old length gate."""
+    keep, reason = ai_engine.memory_salience(q, a)
+    assert keep is True, f"{q!r} was dropped"
+    assert reason == why
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "what is the largest ocean in malaysia",
+        "what is the most underrated invention",
+        "how many continents are there",
+        "who invented the zipper",
+        # the polite lead-in that defeated an anchored rule - this exact row is in
+        # the live store and is the one the user pointed at as junk
+        "I want to know what is the largest ocean in malaysia",
+        "tell me who invented the zipper",
+        "hey, can you tell me what time zone singapore is in",
+        "do you know how many continents there are",
+    ],
+)
+def test_general_knowledge_lookups_are_dropped(q: str) -> None:
+    keep, why = ai_engine.memory_salience(q, "A long re-derivable answer. " * 10)
+    assert keep is False
+    assert why == "general-knowledge-lookup"
+
+
+def test_identity_beats_a_question_shaped_leadin() -> None:
+    """Stripping the lead-in must not start eating durable turns."""
+    keep, why = ai_engine.memory_salience(
+        "I want to know if my dog Xiaojimao is on the list", "Yes."
+    )
+    assert keep is True and why == "identity-or-preference"
+
+
+def test_substantive_work_talk_is_still_kept() -> None:
+    keep, why = ai_engine.memory_salience(
+        "the ingest pipeline keeps dropping sheet 3 of the workbook",
+        "That is the triage classifier misreading the header row. " * 3,
+    )
+    assert keep is True and why == "substantive"
+
+
+def test_keep_rules_run_before_any_size_rule() -> None:
+    """The ordering IS the fix - a one-word answer must not lose the memory."""
+    keep, _ = ai_engine.memory_salience("remember my dog is Xiaojimao", "ok")
+    assert keep is True
+
+
+# --- Retrieval: carry_pack was recency-only, and it IS the injected memory ---------
+# retrieve_vault_snippets returns carry_pack early whenever it is non-empty, so FTS
+# and Chroma are never consulted on the chat path. Twelve disposable exchanges could
+# bury a durable fact and no write-side filter could bring it back.
+
+import memory_index as mi_mod  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        "what is my favourite pet?",   # fts5: syntax error near "?"
+        "what's my name",              # syntax error near "'"
+        "dog: name",                   # no such column: dog
+        "who is my pet",               # AND-of-terms found nothing
+        "男生可以生小狗",
+    ],
+)
+def test_question_shaped_queries_produce_a_valid_fts_expression(q: str) -> None:
+    """Each of these raised OperationalError, was swallowed by a bare except, and
+    fell through to a scorer that returns unrelated drawers."""
+    expr = mi_mod.fts_query(q)
+    assert expr, f"{q!r} produced no searchable terms"
+    assert "?" not in expr and "'" not in expr
+    mi_mod.search(q)  # must not raise
+
+
+def test_fts_terms_are_ored_not_anded() -> None:
+    """FTS5 defaults to AND, so 'who is my pet' missed rows lacking the word 'who'."""
+    assert " OR " in mi_mod.fts_query("favourite pet name")
+
+
+def test_stopwords_do_not_produce_an_empty_query() -> None:
+    assert mi_mod.fts_query("the a an of")
+
+
+def test_carry_pack_accepts_a_query_and_stays_backward_compatible() -> None:
+    """Without a query it must behave exactly as before - recency only."""
+    assert isinstance(mi_mod.carry_pack(project="general"), str)
+    assert isinstance(mi_mod.carry_pack(project="general", query="favourite pet"), str)
+
+
+def test_relevance_scoring_prefers_a_matching_row() -> None:
+    terms = {"favourite", "pet"}
+    on_topic = mi_mod._relevance(terms, "pet", "he is my favourite pet")
+    off_topic = mi_mod._relevance(terms, "ocean", "the largest ocean in malaysia")
+    assert on_topic > off_topic
+    assert mi_mod._relevance(set(), "a", "b") == 0.0

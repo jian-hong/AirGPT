@@ -276,6 +276,44 @@ def list_memories(
         return [_row(r) for r in conn.execute(q, args).fetchall() if _row(r)]
 
 
+# FTS5 treats ?, ', : and - as operators, so a natural question was a syntax error,
+# not a miss: "what is my favourite pet?" raised `fts5: syntax error near "?"` and
+# "dog: name" raised `no such column: dog`. Every one of those was swallowed by the
+# bare `except` below and fell through to a scorer that returns unrelated drawers, so
+# the store looked empty for exactly the phrasing people actually type.
+_FTS_TOKEN_RE = re.compile(r"[0-9A-Za-z_]+|[一-鿿぀-ヿ가-힯]+")
+_FTS_STOPWORDS = frozenset(
+    "a an and are as at be by do does did for from had has have how i in is it its me "
+    "my of on or our that the their them then there these this to was were what when "
+    "where which who whom why will with you your".split()
+)
+
+
+def fts_query(text: str) -> str:
+    """Turn free text into a valid FTS5 MATCH expression, or "" if nothing is usable.
+
+    Every term is quoted, which neutralises the operator characters, and they are
+    joined with OR because FTS5 defaults to AND - "who is my pet" found nothing purely
+    because the row did not contain the word "who".
+    """
+    terms: list[str] = []
+    for tok in _FTS_TOKEN_RE.findall(text or ""):
+        low = tok.lower()
+        if low in _FTS_STOPWORDS:
+            continue
+        if tok.isascii() and len(tok) < 2:
+            continue
+        terms.append(tok.replace('"', ""))
+    if not terms:
+        # All stopwords: keep the longest raw token rather than returning everything.
+        raw = [t for t in _FTS_TOKEN_RE.findall(text or "") if t]
+        if not raw:
+            return ""
+        terms = [max(raw, key=len)]
+    unique = list(dict.fromkeys(terms))[:12]
+    return " OR ".join(f'"{t}"' for t in unique)
+
+
 def search(query: str, *, project: str = "", session_id: int = 0, k: int = 8) -> list[dict]:
     """Hybrid: Chroma if available, else FTS, else vault keyword."""
     query = (query or "").strip()
@@ -286,18 +324,20 @@ def search(query: str, *, project: str = "", session_id: int = 0, k: int = 8) ->
         return hits
     init()
     out: list[dict] = []
-    try:
-        with _conn() as conn:
-            rows = conn.execute(
-                """SELECT m.* FROM memories_fts f
-                   JOIN memories m ON m.id=f.rowid
-                   WHERE memories_fts MATCH ?
-                   ORDER BY rank LIMIT ?""",
-                (query.replace('"', ""), k),
-            ).fetchall()
-            out = [_row(r) for r in rows if _row(r)]
-    except Exception:
-        out = []
+    match = fts_query(query)
+    if match:
+        try:
+            with _conn() as conn:
+                rows = conn.execute(
+                    """SELECT m.* FROM memories_fts f
+                       JOIN memories m ON m.id=f.rowid
+                       WHERE memories_fts MATCH ?
+                       ORDER BY rank LIMIT ?""",
+                    (match, k),
+                ).fetchall()
+                out = [_row(r) for r in rows if _row(r)]
+        except Exception:
+            out = []
     if not out:
         try:
             import vault as vault_mod
@@ -539,17 +579,61 @@ def content_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
 
 
-def carry_pack(*, project: str = "", session_id: int = 0, max_chars: int = 1200) -> str:
-    """Compressed hot/warm memory for prompt injection (JEPA-light carry)."""
+def _relevance(query_terms: set[str], title: str, body: str) -> float:
+    """Fraction of the query's terms present in this row. 0.0 when nothing matches."""
+    if not query_terms:
+        return 0.0
+    hay = f"{title} {body}".lower()
+    hit = sum(1 for t in query_terms if t in hay)
+    return hit / len(query_terms)
+
+
+def carry_pack(
+    *, project: str = "", session_id: int = 0, max_chars: int = 1200, query: str = ""
+) -> str:
+    """Compressed hot/warm memory for prompt injection (JEPA-light carry).
+
+    `query` makes this relevant rather than merely recent. Without it the function
+    took the 12 newest rows and nothing else, and because retrieve_vault_snippets
+    returns carry_pack early whenever it is non-empty, those 12 rows WERE the entire
+    injected memory - FTS and Chroma were never consulted on the chat path. So twelve
+    disposable exchanges could bury a durable fact, and no amount of filtering on the
+    write side would surface it again.
+
+    Recency still counts, and pinned rows still win, but a row that actually mentions
+    what was asked now outranks a newer row that does not.
+    """
     init()
     parts: list[str] = []
+    terms = {
+        t.lower()
+        for t in _FTS_TOKEN_RE.findall(query or "")
+        if t.lower() not in _FTS_STOPWORDS and (len(t) > 1 or not t.isascii())
+    }
     with _conn() as conn:
+        # Widen the candidate window when there is a query to rank within; the LIMIT
+        # 12 below is applied after scoring, not before it.
         rows = conn.execute(
             """SELECT kind,title,body,pinned,updated_at FROM memories
                WHERE (?='' OR project=?) AND (?=0 OR session_id=? OR kind='global_goal')
-               ORDER BY pinned DESC, updated_at DESC LIMIT 12""",
-            (project, project, int(session_id or 0), int(session_id or 0)),
+               ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
+            (project, project, int(session_id or 0), int(session_id or 0), 60 if terms else 12),
         ).fetchall()
+
+    if terms:
+        newest = max((r["updated_at"] or 0) for r in rows) if rows else 0
+        oldest = min((r["updated_at"] or 0) for r in rows) if rows else 0
+        span = max(1.0, float(newest - oldest))
+
+        def _rank(r) -> tuple:
+            rel = _relevance(terms, r["title"] or "", r["body"] or "")
+            recency = ((r["updated_at"] or 0) - oldest) / span
+            # Pinned first, then relevance, then recency as the tie-break. Relevance
+            # dominates recency so one on-topic row survives a burst of chatter.
+            return (int(r["pinned"] or 0), rel, recency)
+
+        rows = sorted(rows, key=_rank, reverse=True)[:12]
+
     used = 0
     for r in rows:
         kind = r["kind"] or "memory"

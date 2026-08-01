@@ -408,7 +408,13 @@ def retrieve_vault_snippets(query: str, category: str = "", k: int = 5) -> str:
     try:
         import memory_index as mi
 
-        pack = mi.carry_pack(project=category or "", session_id=0, max_chars=CARRY_CHARS)
+        # Pass the question. carry_pack used to rank on recency alone, and this early
+        # return means it IS the injected memory - FTS and Chroma below are never
+        # reached while it is non-empty. So twelve disposable exchanges could bury a
+        # durable fact and nothing downstream could recover it.
+        pack = mi.carry_pack(
+            project=category or "", session_id=0, max_chars=CARRY_CHARS, query=query
+        )
         if pack:
             return pack[:CARRY_CHARS]
     except Exception:
@@ -1692,6 +1698,99 @@ def _prepare_text_chat(
     return prompt, mode, bool(vault), gate
 
 
+# --- what is worth remembering ----------------------------------------------------
+# The store filled with rows like "what is the largest ocean in malaysia" because the
+# only filter was length. These rules are deliberately explicit and deterministic
+# rather than a model call: this runs on every turn, a classifier would add a network
+# hop and a failure mode to the write path, and "why was this kept" has to be
+# answerable when the user asks.
+
+_REMEMBER_RE = re.compile(
+    r"(?i)\b(?:remember|memoris[ez]|memoriz[ez]|don'?t forget|keep in mind|note that|"
+    r"take note|for future reference|from now on|going forward|always|never)\b"
+    r"|记住|记得|别忘|以后都|从现在开始"
+)
+_IDENTITY_RE = re.compile(
+    r"(?i)\b(?:my name is|call me|i am|i'?m|my email|my phone|my birthday|"
+    r"i prefer|i like|i hate|i work at|my role|my team|my dog|my cat|my pet|"
+    r"my favourite|my favorite)\b"
+    r"|我叫|我的名字|我喜欢|我不喜欢|我的"
+)
+_DECISION_RE = re.compile(
+    # "what did we decide about the ingest fix" was being dropped as trivia because
+    # this only matched the past tense "we decided".
+    r"(?i)\b(?:we (?:decide|decided|agreed|chose|settled)|did we decide|let'?s go with|"
+    r"the plan is|deadline|due on|must|should always|the goal is|priority is|agreed|"
+    r"policy|convention|rule)\b"
+    r"|决定|计划|截止"
+)
+# Throwaway general-knowledge lookups: the answer is re-derivable and the question
+# says nothing durable about the user.
+_TRIVIA_RE = re.compile(
+    r"(?i)^\s*(?:what|who|when|where|which|how much|how many|how tall|how far|"
+    r"is|are|was|were|does|do|did|can|could)\b"
+)
+# Anchoring the rule at the start was not enough: "I want to know what is the largest
+# ocean in malaysia" - the row the user pointed at as junk - slipped past it and was
+# classified substantive. Strip the polite lead-in and re-test the real question.
+_LEADIN_RE = re.compile(
+    r"(?i)^\s*(?:i (?:want|would like|'?d like) to know|i wonder|tell me|"
+    r"(?:can|could|would) you (?:please )?(?:tell me|explain|say)|do you know|"
+    r"please tell me|explain|quick question[,:]?|question[,:]|hey[,: ]|hi[,: ])\s*"
+    r"(?:about\s+)?(?:that\s+)?"
+)
+
+
+def _strip_leadin(text: str) -> str:
+    prev = None
+    s = (text or "").strip()
+    while s != prev:  # "hey, can you tell me what ..." peels in two passes
+        prev = s
+        s = _LEADIN_RE.sub("", s).strip()
+    return s
+
+
+def memory_salience(question: str, answer: str) -> tuple[bool, str]:
+    """(keep, why). `why` names the rule so a kept row can always be explained.
+
+    KEEP rules are evaluated before any size rule, because the shortest turns are
+    often the most durable ones.
+    """
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q:
+        return False, "empty"
+
+    if _REMEMBER_RE.search(q):
+        return True, "explicit-remember"
+    if _IDENTITY_RE.search(q):
+        return True, "identity-or-preference"
+    if _DECISION_RE.search(q):
+        return True, "decision-or-commitment"
+
+    # A question the user answered themselves, or a correction, is signal.
+    if re.search(r"(?i)\b(?:actually|no,|wrong|correct(?:ion)?|not right|i meant)\b", q):
+        return True, "correction"
+
+    # A question carrying a URL is kept on purpose, even though it is usually
+    # question-shaped: persist_turn_memory stores the question and refuses the answer,
+    # so "we looked at netie.ai" stays recallable while the invented biography does
+    # not. Dropping it here would delete the record of having looked at all.
+    if is_about_link(q):
+        return True, "link-question"
+
+    # Everything below here is a plain lookup. Re-derivable, and it crowds out the
+    # rows above - twelve of these were the entire injected memory.
+    if _TRIVIA_RE.match(_strip_leadin(q)) and not _IDENTITY_RE.search(q):
+        return False, "general-knowledge-lookup"
+
+    # Fall back to the old size heuristic for anything unclassified, so this is a
+    # narrowing of what gets stored rather than a rewrite of it.
+    if len(q) < 12 or len(a) < 40:
+        return False, "too-thin"
+    return True, "substantive"
+
+
 def is_about_link(text: str) -> bool:
     """True when the text carries a URL, so the model's account of it must not persist.
 
@@ -1727,7 +1826,17 @@ def persist_turn_memory(
     """
     q = (question or "").strip()
     a = (answer or "").strip()
-    if len(q) < 12 or len(a) < 40:
+    if not q:
+        return
+
+    # Salience decides this, not length. The old `len(q) < 12 or len(a) < 40` gate ran
+    # first and threw away exactly the turns worth keeping: "call me JH" is 10 chars,
+    # "please remember my dog is called Xiaojimao" was dropped because the assistant
+    # only answered "Noted.", and 12 characters is a whole sentence in CJK. Meanwhile
+    # every long disposable exchange sailed through, which is how the store filled
+    # with "what is the largest ocean in malaysia".
+    keep, why = memory_salience(q, a)
+    if not keep:
         return
     about_link = is_about_link(q)
     try:
