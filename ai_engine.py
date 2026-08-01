@@ -812,6 +812,82 @@ def last_degradation() -> dict:
     return dict(_LAST_DEGRADATION)
 
 
+# Tool calling in ordinary chat. Tools existed only inside agent_runtime, behind a
+# prompt convention, so plain chat never advertised any and the model answered - truth-
+# fully - that it had none. Off by default so a single env flag can disable it without
+# a redeploy if a provider mishandles the `tools` field.
+MAX_TOOL_HOPS = 4
+
+
+def _chat_tools_enabled() -> bool:
+    import os
+
+    v = (load_env().get("AIRGPT_CHAT_TOOLS") or os.environ.get("AIRGPT_CHAT_TOOLS") or "1").strip()
+    return v.lower() not in ("0", "false", "off", "no")
+
+
+def _chat_tool_defs(task: str) -> list[dict]:
+    """Tool schemas for this task, or [] when tools should not be offered.
+
+    The `router` task picks a route and must answer in one hop; handing it tools
+    would let a routing decision fan out into real work.
+    """
+    if task == "router" or not _chat_tools_enabled():
+        return []
+    try:
+        import chat_tools
+
+        return chat_tools.openai_tools()
+    except Exception:
+        return []
+
+
+def _resolve_tool_calls(
+    data: dict, url: str, headers: dict, body: dict, msgs: list, *, timeout: int, label: str
+) -> dict:
+    """Run the model's tool calls and feed results back until it answers in prose.
+
+    Bounded by MAX_TOOL_HOPS: a model that keeps calling tools forever would hold a
+    chat turn open indefinitely. On the last hop tools are withdrawn, which forces a
+    text answer instead of truncating mid-loop and returning nothing.
+    """
+    import chat_tools
+
+    convo = list(msgs)
+    for hop in range(MAX_TOOL_HOPS):
+        choice = ((data.get("choices") or [{}])[0]) or {}
+        message = choice.get("message") or {}
+        calls = message.get("tool_calls") or []
+        if not calls:
+            return data
+
+        convo.append(message)
+        for call in calls:
+            fn = (call.get("function") or {}) if isinstance(call, dict) else {}
+            name = fn.get("name") or ""
+            result = chat_tools.run_chat_tool(name, fn.get("arguments") or "{}")
+            convo.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or name,
+                    "name": name,
+                    "content": json.dumps(result)[:6000],
+                }
+            )
+            try:
+                import audit
+
+                audit.log("chat_tool_call", tool=name, provider=label, ok=bool(result.get("ok", True)))
+            except Exception:
+                pass
+
+        follow = {**body, "messages": convo}
+        if hop == MAX_TOOL_HOPS - 1:
+            follow.pop("tools", None)  # last hop: answer in words, do not call again
+        data = _http_post(url, headers, follow, timeout=timeout)
+    return data
+
+
 def _looks_multilingual(text: str) -> bool:
     """Heuristic: CJK / common SEA scripts → prefer SEA-LION over English defaults."""
     s = text or ""
@@ -1025,7 +1101,14 @@ def _standard_llm(
             headers = {"Authorization": f"Bearer {key}"}
             if extra_headers:
                 headers.update(extra_headers)
+            tool_defs = _chat_tool_defs(task)
+            if tool_defs:
+                body["tools"] = tool_defs
             data = _http_post(url, headers, body, timeout=timeout)
+            if tool_defs:
+                data = _resolve_tool_calls(
+                    data, url, headers, body, msgs, timeout=timeout, label=label
+                )
             text, _ = _msg_content(data)
             if text and text.strip():
                 return text, label
