@@ -214,6 +214,46 @@ def scrub_drawers(*, dry_run: bool = True, root: str = "") -> dict[str, Any]:
     }
 
 
+def scrub_paths(paths: list[str], *, dry_run: bool = True) -> dict[str, Any]:
+    """Rewrite specific drawers an operator has reviewed and confirmed.
+
+    The automatic rules in `_classify_drawer` are deliberately conservative, so
+    drawers where the URL sits in the answer rather than the question land in
+    `needs_review` instead of being rewritten. Six of the twelve fabrication drawers
+    were in exactly that state, alongside two legitimate engineering notes that a
+    looser rule would have destroyed. This is the confirmed-by-a-human path: the
+    caller names the files, so nothing is guessed.
+
+    Rewrite, never delete, and the heading is kept so the drawer still says what it
+    was about.
+    """
+    from pathlib import Path
+
+    changed: list[dict[str, Any]] = []
+    for raw in paths:
+        path = Path(raw)
+        if not path.is_file():
+            changed.append({"path": str(path), "error": "not found"})
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if "[removed]" in text or "[not stored]" in text:
+            continue  # already scrubbed
+        m = _FRONTMATTER_RE.match(text)
+        head = m.group("meta") if m else ""
+        body = m.group("rest") if m else text
+        title = next((ln for ln in body.splitlines() if ln.startswith("# ")), "")
+        new_body = (title + "\n\n" if title else "") + REPLACEMENT
+        new_text = f"---\n{head}\n---\n{new_body}" if m else new_body
+        entry = {"path": str(path), "why": "operator-confirmed", "before": body.strip()[:160]}
+        if not dry_run:
+            try:
+                path.write_text(new_text, encoding="utf-8")
+            except Exception as exc:
+                entry["error"] = str(exc)[:120]
+        changed.append(entry)
+    return {"ok": True, "dry_run": dry_run, "affected": len(changed), "items": changed}
+
+
 if __name__ == "__main__":  # pragma: no cover - operator entry point
     import argparse
     import json

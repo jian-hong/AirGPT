@@ -434,3 +434,41 @@ def test_relevance_scoring_prefers_a_matching_row() -> None:
     off_topic = mi_mod._relevance(terms, "ocean", "the largest ocean in malaysia")
     assert on_topic > off_topic
     assert mi_mod._relevance(set(), "a", "b") == 0.0
+
+
+def test_scrub_paths_rewrites_only_what_the_operator_named(tmp_path) -> None:
+    """The confirmed-by-a-human path for drawers the conservative rules flag but
+    cannot prove. Six real fabrication drawers sat in `needs_review` next to two
+    legitimate engineering notes, so a looser automatic rule would have destroyed
+    real work."""
+    root = _vault(tmp_path, {"fab.md": _QA_DRAWER, "keep.md": _ORDINARY_DRAWER})
+    target = str(tmp_path / "fab.md")
+
+    dry = memory_scrub.scrub_paths([target], dry_run=True)
+    assert dry["affected"] == 1
+    assert "Carnegie Mellon" in (tmp_path / "fab.md").read_text(encoding="utf-8")
+
+    memory_scrub.scrub_paths([target], dry_run=False)
+    assert "Carnegie Mellon" not in (tmp_path / "fab.md").read_text(encoding="utf-8")
+    assert "[removed]" in (tmp_path / "fab.md").read_text(encoding="utf-8")
+    # the file that was NOT named must be byte-identical
+    assert "Ship it before the pilot demo" in (tmp_path / "keep.md").read_text(encoding="utf-8")
+
+
+def test_scrub_paths_is_idempotent_and_survives_a_missing_file(tmp_path) -> None:
+    root = _vault(tmp_path, {"a.md": _QA_DRAWER})
+    target = str(tmp_path / "a.md")
+    memory_scrub.scrub_paths([target], dry_run=False)
+    again = memory_scrub.scrub_paths([target], dry_run=False)
+    assert again["affected"] == 0, "an already-scrubbed drawer must not be rewritten twice"
+    missing = memory_scrub.scrub_paths([str(tmp_path / "nope.md")], dry_run=False)
+    assert missing["items"][0]["error"] == "not found"
+
+
+def test_scrub_paths_keeps_the_frontmatter_and_heading(tmp_path) -> None:
+    """The drawer must still say what it was about after the claim is removed."""
+    root = _vault(tmp_path, {"f.md": _FEEDBACK_DRAWER})
+    memory_scrub.scrub_paths([str(tmp_path / "f.md")], dry_run=False)
+    text = (tmp_path / "f.md").read_text(encoding="utf-8")
+    assert "project: _company" in text
+    assert "# session-130-feedback" in text
