@@ -1009,6 +1009,41 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
    it just did not come from the provider that was asked for. */
 .degraded-note{margin-top:10px;padding:6px 10px;border-radius:8px;font-size:11.5px;line-height:1.4;
   color:#e8c07d;background:rgba(232,192,125,.08);border:1px solid rgba(232,192,125,.22)}
+
+/* ---- ds-*: one editing pattern for every list of configured things -------------
+   Rules, Skills and Hooks each shipped a permanently-open textarea, so a panel with
+   nothing in it still looked like a form waiting to be filled in. The rule is:
+
+     empty   -> a single dashed "+ Add" row and nothing else
+     filled  -> one line per item, with icon-only edit / delete on the right
+     editing -> the editor appears only after a press, and closes again
+
+   Icon-only because the actions repeat per row and the words are noise once the
+   shape is learned; each still carries a title= for hover and screen readers. */
+.ds-add{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;margin-top:6px;
+  border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);
+  font:inherit;font-size:12.5px;cursor:pointer;text-align:left;transition:border-color .15s,color .15s}
+.ds-add:hover{border-color:rgba(128,128,128,.55);color:var(--text)}
+.ds-add .ds-plus{font-size:14px;line-height:1;opacity:.8}
+.ds-list{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.ds-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;
+  border:1px solid var(--line);background:rgba(255,255,255,.02);font-size:12.5px;min-width:0}
+.ds-row:hover{border-color:rgba(128,128,128,.4)}
+.ds-row .ds-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.ds-row .ds-sub{color:var(--muted);font-size:11px;flex:0 0 auto}
+.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:.55;transition:opacity .15s}
+.ds-row:hover .ds-acts{opacity:1}
+.ds-ico{width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:7px;
+  background:transparent;color:var(--muted);font-size:12px;line-height:1;cursor:pointer;padding:0}
+.ds-ico:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.ds-ico.danger:hover{background:rgba(255,120,120,.12);color:#ff9a9a}
+/* The editor is display:none until a press, so an untouched panel is never a wall
+   of empty inputs. */
+.ds-editor{display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;
+  background:rgba(255,255,255,.02)}
+.ds-editor.open{display:block}
+.ds-editor .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ds-empty{color:var(--muted);font-size:12px;margin:6px 0 0}
 .ai-pending{color:var(--muted);font-style:italic;font-size:11px}
 .ai-actions{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .ai-actions button{font-size:10px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);cursor:pointer}
@@ -1170,9 +1205,14 @@ body.theme-light .project-hub-hdr .back:hover{color:var(--text);background:rgba(
 .main.project-mode.rail-open .project-rail{display:block!important}
 /* Claude-style project workspace */
 .proj-workspace{display:flex;flex-direction:column;min-height:100%;width:100%;max-width:1100px;margin:0 auto;padding:0 8px 48px;box-sizing:border-box;text-align:left}
+/* The background used to fade to transparent at 72%, so the page title scrolled
+   through the bottom of this sticky bar and showed as stray text sitting above
+   "Projects / General". Opaque, with a hairline instead of a gradient - a sticky
+   header has to actually cover what passes under it. Top padding trimmed with it,
+   since the fade was also reserving empty space nothing was drawn in. */
 .proj-crumb{
-  position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;padding:12px 4px 10px;
-  background:linear-gradient(180deg,var(--bg) 72%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;padding:8px 4px;
+  background:var(--bg);border-bottom:1px solid var(--line);
   font-size:13px;color:var(--muted);
 }
 .proj-crumb button{border:0;background:transparent;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;padding:4px 6px;border-radius:6px}
@@ -3238,21 +3278,42 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <h3>Rules &amp; Skills</h3>
           <p class="hint">Cursor/Claude model: Rules always-on · Skills via <code>/skill</code>. Subagents live under <strong>Subagents</strong>.</p>
           <div class="settings-section">
-            <h4>Create Rule</h4>
+            <h4>Rules</h4>
             <p class="hint" id="scRulesMeta">Loads from workspace .airgpt/rules.md or AGENTS.md</p>
-            <textarea id="scRulesBody" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
-            <div class="btn-row" style="margin-top:8px;gap:8px;display:flex;flex-wrap:wrap">
-              <button type="button" class="btn primary" onclick="settingsSaveRules('airgpt')">Save .airgpt/rules.md</button>
-              <button type="button" class="btn" onclick="settingsSaveRules('agents')">Save AGENTS.md</button>
+            <div id="scRulesRow"></div>
+            <button type="button" class="ds-add" id="scRulesAdd" onclick="dsToggleEditor('scRulesEditor',true)">
+              <span class="ds-plus">+</span> New rule
+            </button>
+            <div class="ds-editor" id="scRulesEditor">
+              <textarea id="scRulesBody" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
+              <div class="btn-row">
+                <button type="button" class="btn primary" onclick="settingsSaveRules('airgpt')">Save .airgpt/rules.md</button>
+                <button type="button" class="btn" onclick="settingsSaveRules('agents')">Save AGENTS.md</button>
+                <button type="button" class="btn" onclick="dsToggleEditor('scRulesEditor',false)">Cancel</button>
+              </div>
             </div>
           </div>
           <div class="settings-section">
-            <h4>Create Skill</h4>
-            <div class="field-row"><input id="scSkillId" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
-            <div class="field-row"><input id="scSkillTitle" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
-            <textarea id="scSkillBody" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
-            <button type="button" class="btn primary" style="margin-top:8px" onclick="settingsSaveSkill()">Create Skill</button>
-            <div id="scSkillsList" class="sc-list" style="margin-top:12px"></div>
+            <h4>Skills</h4>
+            <div id="scSkillsList" class="ds-list"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="ds-add" style="flex:1;min-width:150px" onclick="dsToggleEditor('scSkillEditor',true)">
+                <span class="ds-plus">+</span> New skill
+              </button>
+              <button type="button" class="ds-add" style="flex:1;min-width:150px" onclick="document.getElementById('scSkillUpload').click()" title="Import a .md playbook">
+                <span class="ds-plus">⬆</span> Upload .md
+              </button>
+              <input type="file" id="scSkillUpload" accept=".md,.markdown,.txt" style="display:none" onchange="settingsUploadSkill(this)"/>
+            </div>
+            <div class="ds-editor" id="scSkillEditor">
+              <div class="field-row"><input id="scSkillId" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
+              <div class="field-row"><input id="scSkillTitle" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
+              <textarea id="scSkillBody" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
+              <div class="btn-row">
+                <button type="button" class="btn primary" onclick="settingsSaveSkill()">Create skill</button>
+                <button type="button" class="btn" onclick="dsToggleEditor('scSkillEditor',false)">Cancel</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3266,11 +3327,32 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <div class="sc-panel" id="scPanel-hooks" data-panel="hooks">
           <h3>Hooks</h3>
           <p class="hint">Policy hooks (deterministic): approve_write · path jail · audit.jsonl · safe_tool_result. Cursor-style PreToolUse parity is the approve gate.</p>
-          <ul class="hint" style="margin:8px 0 0 18px;line-height:1.6">
-            <li>Pre write → write_preview Approve/Reject</li>
-            <li>Post tool → redaction via cortex_runtime</li>
-            <li>Audit → every tool call ledgered</li>
-          </ul>
+          <h4 style="margin-top:12px">Built in</h4>
+          <div class="ds-list">
+            <div class="ds-row"><span class="ds-name">Pre write → write_preview Approve/Reject</span><span class="ds-sub">always on</span></div>
+            <div class="ds-row"><span class="ds-name">Post tool → redaction via cortex_runtime</span><span class="ds-sub">always on</span></div>
+            <div class="ds-row"><span class="ds-name">Audit → every tool call ledgered</span><span class="ds-sub">always on</span></div>
+          </div>
+          <h4 style="margin-top:14px">Your hooks</h4>
+          <div id="scHooksList" class="ds-list"></div>
+          <button type="button" class="ds-add" onclick="dsToggleEditor('scHookEditor',true)">
+            <span class="ds-plus">+</span> New hook
+          </button>
+          <div class="ds-editor" id="scHookEditor">
+            <div class="field-row"><input id="scHookName" class="side-search" placeholder="hook name (e.g. block-secrets)"/><span class="field-tick">✓</span></div>
+            <div class="field-row">
+              <select id="scHookEvent" class="side-search">
+                <option value="pre_tool">Pre tool — runs before a tool call</option>
+                <option value="post_tool">Post tool — runs on the result</option>
+                <option value="pre_write">Pre write — runs before a file write</option>
+              </select>
+            </div>
+            <textarea id="scHookBody" class="side-search" rows="5" placeholder="What should happen. Plain instructions; the gate is deterministic, this describes intent."></textarea>
+            <div class="btn-row">
+              <button type="button" class="btn primary" onclick="settingsSaveHook()">Create hook</button>
+              <button type="button" class="btn" onclick="dsToggleEditor('scHookEditor',false)">Cancel</button>
+            </div>
+          </div>
         </div>
 
         <div class="sc-panel" id="scPanel-index" data-panel="index">
@@ -13108,22 +13190,71 @@ async function refreshSettingsInvokePanel(){
         :'No rules yet — open a workspace folder, then save';
     }
     if($('scRulesBody')&&d.rules&&d.rules.text)$('scRulesBody').value=d.rules.text;
+    // One line for existing rules, with icon-only edit/delete, instead of a textarea
+    // sitting open whether or not anything is configured.
+    const rr=$('scRulesRow'), addBtn=$('scRulesAdd');
+    if(rr){
+      const has=d.rules&&d.rules.present;
+      rr.innerHTML=has?`<div class="ds-list"><div class="ds-row">
+          <span class="ds-name">${esc(d.rules.source||'rules.md')}</span>
+          <span class="ds-sub">${esc(String(d.rules.chars||0))} chars</span>
+          <span class="ds-acts">
+            <button type="button" class="ds-ico" title="Edit rules" onclick="dsToggleEditor('scRulesEditor',true)">✎</button>
+            <button type="button" class="ds-ico danger" title="Clear rules" onclick="settingsClearRules()">✕</button>
+          </span></div></div>`:'';
+      if(addBtn)addBtn.style.display=has?'none':'';
+    }
     const host=$('scSkillsList');
     if(host){
       const skills=d.skills||[];
+      // Several skills can be on at once - each carries its own scope, so "multiple
+      // skills" is a matter of leaving more than one set to global or project.
       host.innerHTML=skills.length?skills.map(s=>{
         const sc=s.scope||(s.enabled?'global':'off');
-        return `<div class="sc-row"><span><strong>${esc(s.id)}</strong> · ${esc(s.description||'')}</span>
-          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Enable scope" style="max-width:120px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:12px">
+        return `<div class="ds-row">
+          <span class="ds-name" title="${esc(s.description||s.id)}">${esc(s.id)}</span>
+          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Where this skill is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
             <option value="off"${sc==='off'?' selected':''}>Off</option>
             <option value="global"${sc==='global'?' selected':''}>Global</option>
             <option value="project"${sc==='project'?' selected':''}>Project</option>
-          </select></div>`;
+          </select>
+          <span class="ds-acts">
+            <button type="button" class="ds-ico" title="Edit skill" onclick="editSkill('${esc(s.id)}')">✎</button>
+            <button type="button" class="ds-ico danger" title="Delete skill" onclick="deleteSkill('${esc(s.id)}')">✕</button>
+          </span></div>`;
       }).join('')
-        :'<div class="hint">No skills yet — create one above</div>';
+        :'<p class="ds-empty">No skills yet.</p>';
     }
+    renderHooks();
   }catch(e){}
 }
+async function settingsClearRules(){
+  if(!confirm('Clear the saved rules file?'))return;
+  try{
+    const r=await api('/api/invoke/rules',{method:'POST',body:JSON.stringify({text:'',prefer:'airgpt'})}).then(x=>x.json());
+    if(r&&r.ok){toast('Rules cleared');if($('scRulesBody'))$('scRulesBody').value='';refreshSettingsInvokePanel()}
+    else toast((r&&r.error)||'Clear failed');
+  }catch(e){toast('Clear failed')}
+}
+async function editSkill(id){
+  try{
+    const d=await api('/api/cortex/invoke').then(r=>r.json());
+    const s=(d.skills||[]).find(x=>x.id===id);
+    if($('scSkillId'))$('scSkillId').value=id;
+    if($('scSkillTitle'))$('scSkillTitle').value=(s&&(s.title||s.description))||'';
+    if($('scSkillBody'))$('scSkillBody').value=(s&&s.body)||'';
+    dsToggleEditor('scSkillEditor',true);
+  }catch(e){dsToggleEditor('scSkillEditor',true)}
+}
+async function deleteSkill(id){
+  if(!confirm('Delete skill “'+id+'”?'))return;
+  try{
+    const r=await api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'delete',id})}).then(x=>x.json());
+    if(r&&r.ok){toast('Skill “'+id+'” deleted');refreshSettingsInvokePanel()}
+    else toast((r&&r.error)||'Delete failed');
+  }catch(e){toast('Delete failed')}
+}
+window.settingsClearRules=settingsClearRules;window.editSkill=editSkill;window.deleteSkill=deleteSkill;
 async function settingsSetSkillScope(id,scope){
   try{
     const r=await api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'enable',id,scope})}).then(x=>x.json());
@@ -13162,6 +13293,82 @@ async function settingsCreateAgent(){
   showCortexAgentChat();
   toast('Agents are suggested on Cortex — pick a chip to build one');
 }
+function dsToggleEditor(id,open){
+  const el=$(id);if(!el)return;
+  el.classList.toggle('open',open!==false);
+  if(open!==false){const f=el.querySelector('input,textarea');if(f)setTimeout(()=>f.focus(),30);}
+}
+window.dsToggleEditor=dsToggleEditor;
+
+async function settingsUploadSkill(input){
+  // A skill is a markdown playbook, so importing one should be a file pick, not a
+  // textarea the user pastes into. Id defaults to the filename so the common case
+  // needs no typing at all.
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  input.value='';
+  if(f.size>512*1024)return toast('That file is larger than 512 KB');
+  try{
+    const body=await f.text();
+    if(!body.trim())return toast('That file is empty');
+    const id=f.name.replace(/\.(md|markdown|txt)$/i,'').toLowerCase()
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48)||'skill';
+    // First markdown heading makes a better title than the slug when present.
+    const h=body.match(/^\s*#\s+(.{1,80})/m);
+    const r=await api('/api/invoke/skills',{method:'POST',
+      body:JSON.stringify({id,title:(h?h[1].trim():id),body})}).then(x=>x.json());
+    if(r&&r.ok){toast('Skill “'+r.id+'” imported — use /skill '+r.id);refreshSettingsInvokePanel();}
+    else toast((r&&r.error)||'Import failed');
+  }catch(e){toast('Import failed')}
+}
+window.settingsUploadSkill=settingsUploadSkill;
+
+// Hooks had no add control at all - the panel listed three built-ins and stopped.
+// Stored locally; the deterministic gate stays in policy code, these record intent.
+function dsHooks(){try{return JSON.parse(localStorage.getItem('airgpt_hooks')||'[]')}catch(e){return[]}}
+function dsSaveHooks(list){try{localStorage.setItem('airgpt_hooks',JSON.stringify(list))}catch(e){}}
+function renderHooks(){
+  const host=$('scHooksList');if(!host)return;
+  const list=dsHooks();
+  host.innerHTML=list.length?list.map((h,i)=>`<div class="ds-row">
+      <span class="ds-name" title="${esc(h.body||'')}">${esc(h.name||'hook')}</span>
+      <span class="ds-sub">${esc(h.event||'pre_tool')}</span>
+      <span class="ds-acts">
+        <button type="button" class="ds-ico" title="Edit" onclick="editHook(${i})">✎</button>
+        <button type="button" class="ds-ico danger" title="Delete" onclick="deleteHook(${i})">✕</button>
+      </span></div>`).join('')
+    :'<p class="ds-empty">No hooks yet.</p>';
+}
+function settingsSaveHook(){
+  const name=($('scHookName')?.value||'').trim();
+  const body=($('scHookBody')?.value||'').trim();
+  const event=$('scHookEvent')?.value||'pre_tool';
+  if(!name||!body)return toast('Need a name and what it should do');
+  const list=dsHooks();
+  const at=list.findIndex(h=>h.name===name);
+  if(at>=0)list[at]={name,event,body};else list.push({name,event,body});
+  dsSaveHooks(list);
+  if($('scHookName'))$('scHookName').value='';
+  if($('scHookBody'))$('scHookBody').value='';
+  dsToggleEditor('scHookEditor',false);
+  renderHooks();
+  toast('Hook “'+name+'” saved');
+}
+function editHook(i){
+  const h=dsHooks()[i];if(!h)return;
+  if($('scHookName'))$('scHookName').value=h.name||'';
+  if($('scHookEvent'))$('scHookEvent').value=h.event||'pre_tool';
+  if($('scHookBody'))$('scHookBody').value=h.body||'';
+  dsToggleEditor('scHookEditor',true);
+}
+function deleteHook(i){
+  const list=dsHooks();const h=list[i];if(!h)return;
+  if(!confirm('Delete hook “'+h.name+'”?'))return;
+  list.splice(i,1);dsSaveHooks(list);renderHooks();
+}
+window.settingsSaveHook=settingsSaveHook;window.editHook=editHook;window.deleteHook=deleteHook;
+window.renderHooks=renderHooks;
+
 async function settingsSaveRules(prefer){
   const text=($('scRulesBody')?.value||'').trim();
   if(!text)return toast('Write some rules first');
