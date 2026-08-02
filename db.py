@@ -1354,7 +1354,28 @@ def ditch_context(
             break
         kept.discard(i)
 
-    return [messages[i] for i in sorted(kept)]
+    must_keep_idx = {i for i in range(n) if messages[i].get("role") == "system"}
+    if last_user_idx >= 0:
+        must_keep_idx.add(last_user_idx)
+
+    kept_list = sorted(kept)
+    for i in drop_order:
+        if sum(_ditch_chars(messages[j]) for j in kept_list) <= budget_chars:
+            break
+        if i in must_keep_idx:
+            continue
+        if i in kept_list:
+            kept_list.remove(i)
+
+    # Sliding window can still exceed budget — peel scored drops until under cap.
+    while sum(_ditch_chars(messages[j]) for j in kept_list) > budget_chars:
+        removable = [i for i in kept_list if i not in must_keep_idx]
+        if not removable:
+            break
+        victim = removable[0]
+        kept_list.remove(victim)
+
+    return [messages[i] for i in kept_list]
 
 
 def _topic_shift(messages: list[dict], latest_user: str) -> bool:
