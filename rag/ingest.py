@@ -77,7 +77,11 @@ def _pdf_text(path: Path) -> str:
 
 
 def _xlsx_text(path: Path) -> str:
-    """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes."""
+    """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes.
+
+    Small sheets (Summary/KPI) are emitted first so parent-child chunking keeps
+    them intact near the top instead of burying them under detail-row dumps.
+    """
     try:
         import openpyxl
     except Exception:
@@ -86,21 +90,32 @@ def _xlsx_text(path: Path) -> str:
         wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
     except Exception:
         return ""
-    out: list[str] = []
+    sheets: list[tuple[int, str, list[str]]] = []
     try:
         for ws in wb.worksheets:
+            title = (ws.title or "").strip()
+            if title.casefold() in {"questions", "readme"}:
+                continue
             rows: list[str] = []
             for row in ws.iter_rows(values_only=True):
                 cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
                 if cells:
                     rows.append(" | ".join(cells))
             if rows:
-                out.append(f"## Sheet: {ws.title}\n" + "\n".join(rows))
+                sheets.append((len(rows), title, rows))
     finally:
         try:
             wb.close()
         except Exception:
             pass
+    if not sheets:
+        return ""
+    # Smallest sheets first (KPIs), then large fact tables
+    sheets.sort(key=lambda t: (t[0], t[1].casefold()))
+    index_lines = [f"- {title} ({n} rows)" for n, title, _ in sheets]
+    out: list[str] = ["## Spreadsheet index\n" + "\n".join(index_lines)]
+    for _n, title, rows in sheets:
+        out.append(f"## Sheet: {title}\n" + "\n".join(rows))
     return "\n\n".join(out).strip()
 
 

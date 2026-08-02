@@ -867,6 +867,58 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
     }
 
 
+def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
+    """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
+    import sys
+
+    bench = Path(__file__).resolve().parents[1] / "tests" / "RAG"
+    if bench.is_dir() and str(bench) not in sys.path:
+        sys.path.insert(0, str(bench))
+    try:
+        from frtr_sql_baseline import answer_sqlish, load_sheets
+    except Exception:
+        return None
+
+    cites: list[dict] = []
+    # Prefer matching workbook when query mentions sheet-ish keywords; else merge all.
+    frames: dict = {}
+    for src in store.list_sources(int(space_id)):
+        path = str(src.get("path") or "")
+        if not path.lower().endswith((".xlsx", ".xlsm", ".xls")):
+            continue
+        p = Path(path)
+        if not p.is_file():
+            continue
+        try:
+            sheets = load_sheets(p)
+        except Exception:
+            continue
+        pred = answer_sqlish(sheets, query)
+        if pred and not str(pred).startswith("ABSTAIN:"):
+            return {
+                "answer": str(pred),
+                "citations": [{"path": path, "title": src.get("title") or p.name}],
+            }
+        if pred and str(pred).startswith("ABSTAIN:"):
+            return {
+                "answer": str(pred),
+                "citations": [{"path": path, "title": src.get("title") or p.name}],
+            }
+        for k, df in sheets.items():
+            frames[f"{p.name}:{k}"] = df
+        cites.append({"path": path, "title": src.get("title") or p.name})
+    if not frames:
+        return None
+    # Flatten to bare sheet names for answer_sqlish (last workbook wins on clash)
+    flat = {}
+    for key, df in frames.items():
+        flat[key.split(":", 1)[-1]] = df
+    pred = answer_sqlish(flat, query)
+    if not pred:
+        return None
+    return {"answer": str(pred), "citations": cites[:5]}
+
+
 def answer_events(
     space_id: int,
     query: str,
@@ -886,6 +938,41 @@ def answer_events(
     """
     refuse = destructive_injection_reply(query)
     raw_q = (query or "").strip()
+
+    # Hybrid SQL lane (demo variant hybrid_max): act once, never confirm-loop.
+    try:
+        from rag import demo_variants as _dv
+
+        _preset = _dv.resolve_for_space(space_id)
+        if _preset.get("hybrid_sql_lane") and raw_q:
+            sql_hit = _try_hybrid_sql_lane(space_id, raw_q)
+            if sql_hit:
+                yield {"type": "thinking", "text": "Hybrid SQL lane (no confirm loop)…"}
+                yield {
+                    "type": "meta",
+                    "depth": depth,
+                    "variant": _preset.get("name"),
+                    "honesty": _preset.get("honesty"),
+                    "lane": "sql",
+                    "hits": [],
+                    "context": "",
+                }
+                yield {"type": "citations", "citations": sql_hit.get("citations") or []}
+                yield {"type": "delta", "text": sql_hit["answer"]}
+                yield {
+                    "type": "done",
+                    "answer": sql_hit["answer"],
+                    "citations": sql_hit.get("citations") or [],
+                    "hits": [],
+                    "model": "pandas-sql",
+                    "lane": "sql",
+                    "honesty": _preset.get("honesty"),
+                    "variant": _preset.get("name"),
+                }
+                return
+    except Exception:
+        pass
+
     # Strip /edit · "web search about" chrome so retrieval + web ingest get a real topic
     if refuse or wants_web(raw_q) or raw_q.lower().startswith("/edit"):
         knowledge_q = web_query_from_ask(raw_q)
@@ -1502,4 +1589,7 @@ def answer(
         "rounds": done.get("rounds"),
         "coverage": done.get("coverage"),
         "model": done.get("model"),
+        "lane": done.get("lane"),
+        "variant": done.get("variant"),
+        "honesty": done.get("honesty"),
     }

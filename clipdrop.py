@@ -3199,6 +3199,23 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        if path == "/api/rag/demo-variants":
+            try:
+                from rag import demo_variants
+
+                return self._json(200, demo_variants.list_variants())
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/demo-variant"):
+            try:
+                from rag import demo_variants
+
+                sid = int(path.split("/")[4])
+                return self._json(200, {"ok": True, **demo_variants.resolve_for_space(sid)})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/export"):
             try:
                 from rag import export_import as rag_pack
@@ -4885,6 +4902,60 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/rag/demo-variants":
+            try:
+                from rag import demo_variants
+
+                return self._json(200, demo_variants.list_variants())
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/insights-export":
+            try:
+                import sys
+                from pathlib import Path as _P
+
+                rag_tests = _P(__file__).resolve().parent / "tests" / "RAG"
+                if str(rag_tests) not in sys.path:
+                    sys.path.insert(0, str(rag_tests))
+                import insights_export as _ix
+
+                data = json.loads(self._body().decode() or "{}")
+                excl = data.get("exclude") or []
+                if isinstance(excl, str):
+                    excl = [s.strip() for s in excl.split(",") if s.strip()]
+                out = _ix.run_pipeline(
+                    ask=str(data.get("ask") or "Top 5 selling SKUs by revenue"),
+                    n=int(data.get("n") or 5),
+                    file_type=str(data.get("file_type") or "xlsx"),
+                    graph_type=str(data.get("graph_type") or "bar"),
+                    exclude=excl or None,
+                )
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(
+                    400,
+                    {
+                        "ok": False,
+                        "error": str(e)[:300],
+                        "honesty": "Cortex-direct, not OpenVault-gated",
+                    },
+                )
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/demo-variant"):
+            try:
+                from rag import demo_variants
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                name = str(data.get("variant") or data.get("name") or "").strip()
+                if not name:
+                    return self._json(200, {"ok": True, **demo_variants.resolve_for_space(sid)})
+                out = demo_variants.select_variant(sid, name)
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/archive"):
             try:
                 from rag import store as rag_store
@@ -5001,16 +5072,32 @@ class Handler(BaseHTTPRequestHandler):
                 q = str(data.get("query") or data.get("q") or "").strip()
                 if not sid or not q:
                     return self._json(400, {"error": "space_id and query required"})
+                depth = str(data.get("depth") or "").strip()
+                if not depth:
+                    try:
+                        from rag import demo_variants
+
+                        depth = str(demo_variants.resolve_for_space(sid).get("depth") or "high")
+                    except Exception:
+                        depth = "high"
                 out = rag_answer.answer(
                     sid,
                     q,
-                    depth=str(data.get("depth") or "high"),
+                    depth=depth,
                     chat_id=int(data.get("chat_id") or 0),
                     use_llm=True if "use_llm" not in data else bool(data.get("use_llm")),
                     use_web=bool(data["use_web"]) if "use_web" in data else None,
                     source_ids=[int(x) for x in data.get("source_ids") or [] if str(x).strip()]
                     or None,
                 )
+                if isinstance(out, dict):
+                    try:
+                        from rag import demo_variants
+
+                        out.setdefault("honesty", demo_variants.HONESTY)
+                        out.setdefault("variant", demo_variants.resolve_for_space(sid).get("name"))
+                    except Exception:
+                        pass
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})

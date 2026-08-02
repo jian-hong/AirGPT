@@ -1,0 +1,175 @@
+[
+  {
+    "workbook": "wh_01_sales_core.xlsx",
+    "qid": 1,
+    "question": "Top 5 selling SKUs by revenue",
+    "difficulty": "Hard",
+    "reasoning_type": "TopN",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84"
+    ],
+    "notes": "no confirm loop"
+  },
+  {
+    "workbook": "wh_01_sales_core.xlsx",
+    "qid": 2,
+    "question": "what about top 6",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNFollowup",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": "follow-up N=6"
+  },
+  {
+    "workbook": "wh_01_sales_core.xlsx",
+    "qid": 3,
+    "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNExclude",
+    "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": "explicit SKU exclude \u2014 never ask confirm"
+  },
+  {
+    "workbook": "wh_01_sales_core.xlsx",
+    "qid": 4,
+    "question": "No \u2014 show top 5 sales without excluding",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNNoExclude",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84"
+    ],
+    "notes": "button-echo / cancel exclude \u2014 treat as plain top 5, never loop"
+  },
+  {
+    "workbook": "wh_01_sales_core.xlsx",
+    "qid": 5,
+    "question": "removing the first one, show me top 5",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNExcludeFirst",
+    "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": "first=current #1 SKU-00397; act once, no auto-send confirm"
+  },
+  {
+    "workbook": "wh_02_inventory.xlsx",
+    "qid": 6,
+    "question": "How many SKUs do we have in inventory?",
+    "difficulty": "Easy",
+    "reasoning_type": "Count",
+    "gold": "25",
+    "gold_values": [
+      "25"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "wh_02_inventory.xlsx",
+    "qid": 7,
+    "question": "What is total stock value by category?",
+    "difficulty": "Medium",
+    "reasoning_type": "GroupBy",
+    "gold": "Electronics: 50000 | Grocery: 42000 | Apparel: 38000 | Home: 36000 | Sports: 34000 | Misc: 1500",
+    "gold_values": [
+      "50000",
+      "42000",
+      "38000",
+      "36000",
+      "34000",
+      "1500"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "wh_06_margin_mix.xlsx",
+    "qid": 8,
+    "question": "Which SKU has the highest margin dollars?",
+    "difficulty": "Medium",
+    "reasoning_type": "ArgMax",
+    "gold": "SKU-00397",
+    "gold_values": [
+      "SKU-00397",
+      "326771.26"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "wh_05_purchase_orders.xlsx",
+    "qid": 9,
+    "question": "How many open purchase orders?",
+    "difficulty": "Easy",
+    "reasoning_type": "CountFilter",
+    "gold": "5",
+    "gold_values": [
+      "5"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "wh_03_returns.xlsx",
+    "qid": 10,
+    "question": "What is total refund value?",
+    "difficulty": "Easy",
+    "reasoning_type": "Sum",
+    "gold": "67140.86",
+    "gold_values": [
+      "67140.86"
+    ],
+    "notes": ""
+  }
+]
