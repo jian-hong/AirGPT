@@ -942,8 +942,21 @@ def answer_events(
     # Hybrid SQL lane (demo variant hybrid_max): act once, never confirm-loop.
     try:
         from rag import demo_variants as _dv
+        from rag import ontology as _onto
 
         _preset = _dv.resolve_for_space(space_id)
+        _ont = _onto.ontology_for_space(space_id, force=False)
+        _logic = _onto.logic_for_query(_ont if _ont.get("ok") else {}, raw_q)
+        if _logic:
+            yield {
+                "type": "ontology",
+                "summary": (_ont.get("summary") if isinstance(_ont, dict) else None),
+                "logic": _logic,
+            }
+            yield {
+                "type": "thinking",
+                "text": "Ontology → " + " → ".join(s.get("op") or "" for s in _logic),
+            }
         if _preset.get("hybrid_sql_lane") and raw_q:
             sql_hit = _try_hybrid_sql_lane(space_id, raw_q)
             if sql_hit:
@@ -954,6 +967,8 @@ def answer_events(
                     "variant": _preset.get("name"),
                     "honesty": _preset.get("honesty"),
                     "lane": "sql",
+                    "logic": _logic,
+                    "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
                     "hits": [],
                     "context": "",
                 }
@@ -968,6 +983,8 @@ def answer_events(
                     "lane": "sql",
                     "honesty": _preset.get("honesty"),
                     "variant": _preset.get("name"),
+                    "logic": _logic,
+                    "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
                 }
                 return
     except Exception:
@@ -1592,4 +1609,6 @@ def answer(
         "lane": done.get("lane"),
         "variant": done.get("variant"),
         "honesty": done.get("honesty"),
+        "logic": done.get("logic"),
+        "ontology_summary": done.get("ontology_summary"),
     }

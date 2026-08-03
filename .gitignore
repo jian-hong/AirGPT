@@ -49,3 +49,7 @@ Vertex/
 
 # Personal / non-product material - not part of the AirGPT product tree
 Interview Resources/
+
+# Sample-messy fixtures (few hundred MB; generate locally)
+tests/RAG/messy/
+

@@ -3207,6 +3207,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ontology"):
+            try:
+                from rag import ontology as rag_ontology
+
+                sid = int(path.split("/")[4])
+                q = self._qs() if hasattr(self, "_qs") else {}
+                # parse query from path
+                from urllib.parse import parse_qs, urlparse
+
+                force = parse_qs(urlparse(self.path).query).get("force", ["0"])[0] in ("1", "true", "yes")
+                return self._json(200, rag_ontology.ontology_for_space(sid, force=force))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/demo-variant"):
             try:
                 from rag import demo_variants
@@ -4953,6 +4967,78 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200, {"ok": True, **demo_variants.resolve_for_space(sid)})
                 out = demo_variants.select_variant(sid, name)
                 return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ontology"):
+            try:
+                from rag import ontology as rag_ontology
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                out = rag_ontology.ontology_for_space(sid, force=bool(data.get("force")))
+                if out.get("ok"):
+                    out["artifact"] = str(rag_ontology.save_ontology_artifact(sid))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/identify":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.identify_employee(
+                    str(data.get("path") or ""),
+                    str(data.get("ask") or data.get("query") or ""),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/confirm-identity":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.confirm_identity(
+                    str(data.get("token") or ""),
+                    bool(data.get("yes")),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/propose-amend":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.propose_amend(
+                    str(data.get("token") or ""),
+                    new_salary=float(data["new_salary"]) if data.get("new_salary") is not None else None,
+                    increment_pct=float(data["increment_pct"]) if data.get("increment_pct") is not None else None,
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/confirm-amend":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.confirm_amend(str(data.get("token") or ""), bool(data.get("yes")))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/reveal-path":
+            try:
+                from rag import reveal as rag_reveal
+
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, rag_reveal.reveal_path(str(data.get("path") or "")))
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 

@@ -1,0 +1,1360 @@
+{
+  "ok": true,
+  "cached": false,
+  "formed_at": "2026-08-03T09:14:13",
+  "space_id": 8,
+  "workbooks": [
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_06_margin_mix.xlsx",
+      "workbook": "wh_06_margin_mix.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "MarginBySku",
+          "columns": [
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 0
+            },
+            {
+              "name": "sales_value_myr",
+              "key": "sales_value_myr",
+              "entity": "Money",
+              "index": 1
+            },
+            {
+              "name": "cogs_myr",
+              "key": "cogs_myr",
+              "entity": "Unknown",
+              "index": 2
+            },
+            {
+              "name": "margin_myr",
+              "key": "margin_myr",
+              "entity": "Money",
+              "index": 3
+            },
+            {
+              "name": "margin_pct",
+              "key": "margin_pct",
+              "entity": "Money",
+              "index": 4
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "SKU-00397",
+              726158.36,
+              399387.1,
+              326771.26,
+              45
+            ],
+            [
+              "SKU-00183",
+              581836.43,
+              320010.04,
+              261826.39,
+              45
+            ],
+            [
+              "SKU-00171",
+              538139.25,
+              295976.59,
+              242162.66,
+              45
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "metric",
+              "key": "metric",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "value",
+              "key": "value",
+              "entity": "Unknown",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "best_margin_sku",
+              "SKU-00397"
+            ],
+            [
+              "best_margin_myr",
+              326771.26
+            ],
+            [
+              "avg_margin_pct",
+              45
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku"
+          ],
+          "sheets": [
+            "MarginBySku"
+          ]
+        },
+        {
+          "id": "Money",
+          "kind": "Entity",
+          "columns": [
+            "sales_value_myr",
+            "margin_myr",
+            "margin_pct"
+          ],
+          "sheets": [
+            "MarginBySku"
+          ]
+        },
+        {
+          "id": "Unknown",
+          "kind": "Entity",
+          "columns": [
+            "cogs_myr",
+            "metric",
+            "value"
+          ],
+          "sheets": [
+            "MarginBySku",
+            "Summary"
+          ]
+        }
+      ],
+      "relations": [],
+      "summary": {
+        "n_sheets": 2,
+        "n_entities": 3,
+        "n_relations": 0,
+        "entity_ids": [
+          "Money",
+          "SKU",
+          "Unknown"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_05_purchase_orders.xlsx",
+      "workbook": "wh_05_purchase_orders.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "PurchaseOrders",
+          "columns": [
+            {
+              "name": "po_id",
+              "key": "po_id",
+              "entity": "PurchaseOrder",
+              "index": 0
+            },
+            {
+              "name": "vendor",
+              "key": "vendor",
+              "entity": "Vendor",
+              "index": 1
+            },
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 2
+            },
+            {
+              "name": "qty",
+              "key": "qty",
+              "entity": "Quantity",
+              "index": 3
+            },
+            {
+              "name": "unit_cost",
+              "key": "unit_cost",
+              "entity": "Money",
+              "index": 4
+            },
+            {
+              "name": "status",
+              "key": "status",
+              "entity": "Unknown",
+              "index": 5
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "PO-1000",
+              "Acme Supply",
+              "SKU-00397",
+              10,
+              14523.17,
+              "closed"
+            ],
+            [
+              "PO-1001",
+              "Globex",
+              "SKU-00183",
+              11,
+              11636.73,
+              "open"
+            ],
+            [
+              "PO-1002",
+              "Initech",
+              "SKU-00171",
+              12,
+              10762.78,
+              "open"
+            ]
+          ]
+        },
+        {
+          "name": "Vendors",
+          "columns": [
+            {
+              "name": "vendor",
+              "key": "vendor",
+              "entity": "Vendor",
+              "index": 0
+            },
+            {
+              "name": "lead_days",
+              "key": "lead_days",
+              "entity": "Unknown",
+              "index": 1
+            },
+            {
+              "name": "rating",
+              "key": "rating",
+              "entity": "Unknown",
+              "index": 2
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "Acme Supply",
+              7,
+              4
+            ],
+            [
+              "Globex",
+              8,
+              3.8
+            ],
+            [
+              "Initech",
+              9,
+              3.6
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "metric",
+              "key": "metric",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "value",
+              "key": "value",
+              "entity": "Unknown",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 2,
+          "sample": [
+            [
+              "open_po_count",
+              5
+            ],
+            [
+              "po_count",
+              8
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "PurchaseOrder",
+          "kind": "Entity",
+          "columns": [
+            "po_id"
+          ],
+          "sheets": [
+            "PurchaseOrders"
+          ]
+        },
+        {
+          "id": "Vendor",
+          "kind": "Entity",
+          "columns": [
+            "vendor"
+          ],
+          "sheets": [
+            "PurchaseOrders",
+            "Vendors"
+          ]
+        },
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku"
+          ],
+          "sheets": [
+            "PurchaseOrders"
+          ]
+        },
+        {
+          "id": "Quantity",
+          "kind": "Entity",
+          "columns": [
+            "qty"
+          ],
+          "sheets": [
+            "PurchaseOrders"
+          ]
+        },
+        {
+          "id": "Money",
+          "kind": "Entity",
+          "columns": [
+            "unit_cost"
+          ],
+          "sheets": [
+            "PurchaseOrders"
+          ]
+        },
+        {
+          "id": "Unknown",
+          "kind": "Entity",
+          "columns": [
+            "status",
+            "lead_days",
+            "rating",
+            "metric",
+            "value"
+          ],
+          "sheets": [
+            "PurchaseOrders",
+            "Vendors",
+            "Summary"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "PurchaseOrders.vendor->Vendors.vendor",
+          "from_sheet": "PurchaseOrders",
+          "to_sheet": "Vendors",
+          "key": "vendor",
+          "type": "join_candidate"
+        }
+      ],
+      "summary": {
+        "n_sheets": 3,
+        "n_entities": 6,
+        "n_relations": 1,
+        "entity_ids": [
+          "Money",
+          "PurchaseOrder",
+          "Quantity",
+          "SKU",
+          "Unknown",
+          "Vendor"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_04_regions.xlsx",
+      "workbook": "wh_04_regions.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "RegionalSales",
+          "columns": [
+            {
+              "name": "region",
+              "key": "region",
+              "entity": "Region",
+              "index": 0
+            },
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 1
+            },
+            {
+              "name": "sales_value_myr",
+              "key": "sales_value_myr",
+              "entity": "Money",
+              "index": 2
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "West",
+              "SKU-00397",
+              108923.75
+            ],
+            [
+              "East",
+              "SKU-00397",
+              145231.67
+            ],
+            [
+              "Central",
+              "SKU-00397",
+              181539.59
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "region",
+              "key": "region",
+              "entity": "Region",
+              "index": 0
+            },
+            {
+              "name": "total_sales_myr",
+              "key": "total_sales_myr",
+              "entity": "Money",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "Central",
+              1135536.44
+            ],
+            [
+              "East",
+              1083792.66
+            ],
+            [
+              "North",
+              1099066.3
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "Region",
+          "kind": "Entity",
+          "columns": [
+            "region"
+          ],
+          "sheets": [
+            "RegionalSales",
+            "Summary"
+          ]
+        },
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku"
+          ],
+          "sheets": [
+            "RegionalSales"
+          ]
+        },
+        {
+          "id": "Money",
+          "kind": "Entity",
+          "columns": [
+            "sales_value_myr",
+            "total_sales_myr"
+          ],
+          "sheets": [
+            "RegionalSales",
+            "Summary"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "RegionalSales.region->Summary.region",
+          "from_sheet": "RegionalSales",
+          "to_sheet": "Summary",
+          "key": "region",
+          "type": "join_candidate"
+        }
+      ],
+      "summary": {
+        "n_sheets": 2,
+        "n_entities": 3,
+        "n_relations": 1,
+        "entity_ids": [
+          "Money",
+          "Region",
+          "SKU"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_03_returns.xlsx",
+      "workbook": "wh_03_returns.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "Returns",
+          "columns": [
+            {
+              "name": "return_id",
+              "key": "return_id",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 1
+            },
+            {
+              "name": "reason",
+              "key": "reason",
+              "entity": "Unknown",
+              "index": 2
+            },
+            {
+              "name": "refund_myr",
+              "key": "refund_myr",
+              "entity": "Unknown",
+              "index": 3
+            },
+            {
+              "name": "date",
+              "key": "date",
+              "entity": "Temporal",
+              "index": 4
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "R-0001",
+              "SKU-00397",
+              "damaged",
+              14523.17,
+              "2024-01-20"
+            ],
+            [
+              "R-0002",
+              "SKU-00183",
+              "wrong_item",
+              11636.73,
+              "2024-02-20"
+            ],
+            [
+              "R-0003",
+              "SKU-00171",
+              "late",
+              10762.78,
+              "2024-03-20"
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "metric",
+              "key": "metric",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "value",
+              "key": "value",
+              "entity": "Unknown",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 2,
+          "sample": [
+            [
+              "return_count",
+              6
+            ],
+            [
+              "total_refund_myr",
+              67140.86
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "Unknown",
+          "kind": "Entity",
+          "columns": [
+            "return_id",
+            "reason",
+            "refund_myr",
+            "metric",
+            "value"
+          ],
+          "sheets": [
+            "Returns",
+            "Summary"
+          ]
+        },
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku"
+          ],
+          "sheets": [
+            "Returns"
+          ]
+        },
+        {
+          "id": "Temporal",
+          "kind": "Entity",
+          "columns": [
+            "date"
+          ],
+          "sheets": [
+            "Returns"
+          ]
+        }
+      ],
+      "relations": [],
+      "summary": {
+        "n_sheets": 2,
+        "n_entities": 3,
+        "n_relations": 0,
+        "entity_ids": [
+          "SKU",
+          "Temporal",
+          "Unknown"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_02_inventory.xlsx",
+      "workbook": "wh_02_inventory.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "Inventory",
+          "columns": [
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 0
+            },
+            {
+              "name": "bin",
+              "key": "bin",
+              "entity": "Unknown",
+              "index": 1
+            },
+            {
+              "name": "qty",
+              "key": "qty",
+              "entity": "Quantity",
+              "index": 2
+            },
+            {
+              "name": "unit_cost",
+              "key": "unit_cost",
+              "entity": "Money",
+              "index": 3
+            },
+            {
+              "name": "stock_value",
+              "key": "stock_value",
+              "entity": "Unknown",
+              "index": 4
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "SKU-00397",
+              "A1",
+              100,
+              12.5,
+              1250
+            ],
+            [
+              "SKU-00183",
+              "B2",
+              117,
+              13.5,
+              1579.5
+            ],
+            [
+              "SKU-00171",
+              "C3",
+              134,
+              14.5,
+              1943
+            ]
+          ]
+        },
+        {
+          "name": "ByCategory",
+          "columns": [
+            {
+              "name": "category",
+              "key": "category",
+              "entity": "Category",
+              "index": 0
+            },
+            {
+              "name": "sku_count",
+              "key": "sku_count",
+              "entity": "SKU",
+              "index": 1
+            },
+            {
+              "name": "stock_value",
+              "key": "stock_value",
+              "entity": "Unknown",
+              "index": 2
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "Electronics",
+              2,
+              50000
+            ],
+            [
+              "Grocery",
+              2,
+              42000
+            ],
+            [
+              "Apparel",
+              2,
+              38000
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "metric",
+              "key": "metric",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "value",
+              "key": "value",
+              "entity": "Unknown",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 2,
+          "sample": [
+            [
+              "total_stock_value",
+              33432.5
+            ],
+            [
+              "sku_count",
+              25
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku",
+            "sku_count"
+          ],
+          "sheets": [
+            "Inventory",
+            "ByCategory"
+          ]
+        },
+        {
+          "id": "Unknown",
+          "kind": "Entity",
+          "columns": [
+            "bin",
+            "stock_value",
+            "metric",
+            "value"
+          ],
+          "sheets": [
+            "Inventory",
+            "ByCategory",
+            "Summary"
+          ]
+        },
+        {
+          "id": "Quantity",
+          "kind": "Entity",
+          "columns": [
+            "qty"
+          ],
+          "sheets": [
+            "Inventory"
+          ]
+        },
+        {
+          "id": "Money",
+          "kind": "Entity",
+          "columns": [
+            "unit_cost"
+          ],
+          "sheets": [
+            "Inventory"
+          ]
+        },
+        {
+          "id": "Category",
+          "kind": "Entity",
+          "columns": [
+            "category"
+          ],
+          "sheets": [
+            "ByCategory"
+          ]
+        }
+      ],
+      "relations": [],
+      "summary": {
+        "n_sheets": 3,
+        "n_entities": 5,
+        "n_relations": 0,
+        "entity_ids": [
+          "Category",
+          "Money",
+          "Quantity",
+          "SKU",
+          "Unknown"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "source": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx",
+      "workbook": "wh_01_sales_core.xlsx",
+      "formed_at": "2026-08-03T09:14:13",
+      "sheets": [
+        {
+          "name": "SKU_Master",
+          "columns": [
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 0
+            },
+            {
+              "name": "name",
+              "key": "name",
+              "entity": "Unknown",
+              "index": 1
+            },
+            {
+              "name": "category",
+              "key": "category",
+              "entity": "Category",
+              "index": 2
+            },
+            {
+              "name": "currency",
+              "key": "currency",
+              "entity": "Unknown",
+              "index": 3
+            },
+            {
+              "name": "unit_cost",
+              "key": "unit_cost",
+              "entity": "Money",
+              "index": 4
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "SKU-00397",
+              "Item 397",
+              "Grocery",
+              "MYR",
+              7261.58
+            ],
+            [
+              "SKU-00183",
+              "Item 183",
+              "Apparel",
+              "MYR",
+              5818.36
+            ],
+            [
+              "SKU-00171",
+              "Item 171",
+              "Home",
+              "MYR",
+              5381.39
+            ]
+          ]
+        },
+        {
+          "name": "Sales",
+          "columns": [
+            {
+              "name": "date",
+              "key": "date",
+              "entity": "Temporal",
+              "index": 0
+            },
+            {
+              "name": "sku",
+              "key": "sku",
+              "entity": "SKU",
+              "index": 1
+            },
+            {
+              "name": "category",
+              "key": "category",
+              "entity": "Category",
+              "index": 2
+            },
+            {
+              "name": "region",
+              "key": "region",
+              "entity": "Region",
+              "index": 3
+            },
+            {
+              "name": "sales_value_myr",
+              "key": "sales_value_myr",
+              "entity": "Money",
+              "index": 4
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "2024-02-15",
+              "SKU-00397",
+              "Grocery",
+              "West",
+              363079.18
+            ],
+            [
+              "2024-03-15",
+              "SKU-00397",
+              "Grocery",
+              "East",
+              217847.51
+            ],
+            [
+              "2024-04-15",
+              "SKU-00397",
+              "Grocery",
+              "West",
+              145231.67
+            ]
+          ]
+        },
+        {
+          "name": "Summary",
+          "columns": [
+            {
+              "name": "metric",
+              "key": "metric",
+              "entity": "Unknown",
+              "index": 0
+            },
+            {
+              "name": "value",
+              "key": "value",
+              "entity": "Unknown",
+              "index": 1
+            }
+          ],
+          "n_sample_rows": 3,
+          "sample": [
+            [
+              "sku_count_master",
+              30
+            ],
+            [
+              "sales_line_count",
+              50
+            ],
+            [
+              "total_sales_myr",
+              4886876.8
+            ]
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "id": "SKU",
+          "kind": "Entity",
+          "columns": [
+            "sku"
+          ],
+          "sheets": [
+            "SKU_Master",
+            "Sales"
+          ]
+        },
+        {
+          "id": "Unknown",
+          "kind": "Entity",
+          "columns": [
+            "name",
+            "currency",
+            "metric",
+            "value"
+          ],
+          "sheets": [
+            "SKU_Master",
+            "Summary"
+          ]
+        },
+        {
+          "id": "Category",
+          "kind": "Entity",
+          "columns": [
+            "category"
+          ],
+          "sheets": [
+            "SKU_Master",
+            "Sales"
+          ]
+        },
+        {
+          "id": "Money",
+          "kind": "Entity",
+          "columns": [
+            "unit_cost",
+            "sales_value_myr"
+          ],
+          "sheets": [
+            "SKU_Master",
+            "Sales"
+          ]
+        },
+        {
+          "id": "Temporal",
+          "kind": "Entity",
+          "columns": [
+            "date"
+          ],
+          "sheets": [
+            "Sales"
+          ]
+        },
+        {
+          "id": "Region",
+          "kind": "Entity",
+          "columns": [
+            "region"
+          ],
+          "sheets": [
+            "Sales"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "SKU_Master.category->Sales.category",
+          "from_sheet": "SKU_Master",
+          "to_sheet": "Sales",
+          "key": "category",
+          "type": "join_candidate"
+        },
+        {
+          "id": "SKU_Master.sku->Sales.sku",
+          "from_sheet": "SKU_Master",
+          "to_sheet": "Sales",
+          "key": "sku",
+          "type": "join_candidate"
+        }
+      ],
+      "summary": {
+        "n_sheets": 3,
+        "n_entities": 6,
+        "n_relations": 2,
+        "entity_ids": [
+          "Category",
+          "Money",
+          "Region",
+          "SKU",
+          "Temporal",
+          "Unknown"
+        ]
+      }
+    }
+  ],
+  "entities": [
+    {
+      "id": "SKU",
+      "kind": "Entity",
+      "columns": [
+        "sku",
+        "sku_count"
+      ],
+      "sheets": [
+        "MarginBySku",
+        "PurchaseOrders",
+        "RegionalSales",
+        "Returns",
+        "Inventory",
+        "ByCategory",
+        "SKU_Master",
+        "Sales"
+      ],
+      "workbooks": [
+        "wh_06_margin_mix.xlsx",
+        "wh_05_purchase_orders.xlsx",
+        "wh_04_regions.xlsx",
+        "wh_03_returns.xlsx",
+        "wh_02_inventory.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    },
+    {
+      "id": "Money",
+      "kind": "Entity",
+      "columns": [
+        "sales_value_myr",
+        "margin_myr",
+        "margin_pct",
+        "unit_cost",
+        "total_sales_myr"
+      ],
+      "sheets": [
+        "MarginBySku",
+        "PurchaseOrders",
+        "RegionalSales",
+        "Summary",
+        "Inventory",
+        "SKU_Master",
+        "Sales"
+      ],
+      "workbooks": [
+        "wh_06_margin_mix.xlsx",
+        "wh_05_purchase_orders.xlsx",
+        "wh_04_regions.xlsx",
+        "wh_02_inventory.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    },
+    {
+      "id": "Unknown",
+      "kind": "Entity",
+      "columns": [
+        "cogs_myr",
+        "metric",
+        "value",
+        "status",
+        "lead_days",
+        "rating",
+        "return_id",
+        "reason",
+        "refund_myr",
+        "bin",
+        "stock_value",
+        "name",
+        "currency"
+      ],
+      "sheets": [
+        "MarginBySku",
+        "Summary",
+        "PurchaseOrders",
+        "Vendors",
+        "Returns",
+        "Inventory",
+        "ByCategory",
+        "SKU_Master"
+      ],
+      "workbooks": [
+        "wh_06_margin_mix.xlsx",
+        "wh_05_purchase_orders.xlsx",
+        "wh_03_returns.xlsx",
+        "wh_02_inventory.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    },
+    {
+      "id": "PurchaseOrder",
+      "kind": "Entity",
+      "columns": [
+        "po_id"
+      ],
+      "sheets": [
+        "PurchaseOrders"
+      ],
+      "workbooks": [
+        "wh_05_purchase_orders.xlsx"
+      ]
+    },
+    {
+      "id": "Vendor",
+      "kind": "Entity",
+      "columns": [
+        "vendor"
+      ],
+      "sheets": [
+        "PurchaseOrders",
+        "Vendors"
+      ],
+      "workbooks": [
+        "wh_05_purchase_orders.xlsx"
+      ]
+    },
+    {
+      "id": "Quantity",
+      "kind": "Entity",
+      "columns": [
+        "qty"
+      ],
+      "sheets": [
+        "PurchaseOrders",
+        "Inventory"
+      ],
+      "workbooks": [
+        "wh_05_purchase_orders.xlsx",
+        "wh_02_inventory.xlsx"
+      ]
+    },
+    {
+      "id": "Region",
+      "kind": "Entity",
+      "columns": [
+        "region"
+      ],
+      "sheets": [
+        "RegionalSales",
+        "Summary",
+        "Sales"
+      ],
+      "workbooks": [
+        "wh_04_regions.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    },
+    {
+      "id": "Temporal",
+      "kind": "Entity",
+      "columns": [
+        "date"
+      ],
+      "sheets": [
+        "Returns",
+        "Sales"
+      ],
+      "workbooks": [
+        "wh_03_returns.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    },
+    {
+      "id": "Category",
+      "kind": "Entity",
+      "columns": [
+        "category"
+      ],
+      "sheets": [
+        "ByCategory",
+        "SKU_Master",
+        "Sales"
+      ],
+      "workbooks": [
+        "wh_02_inventory.xlsx",
+        "wh_01_sales_core.xlsx"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "PurchaseOrders.vendor->Vendors.vendor",
+      "from_sheet": "PurchaseOrders",
+      "to_sheet": "Vendors",
+      "key": "vendor",
+      "type": "join_candidate"
+    },
+    {
+      "id": "RegionalSales.region->Summary.region",
+      "from_sheet": "RegionalSales",
+      "to_sheet": "Summary",
+      "key": "region",
+      "type": "join_candidate"
+    },
+    {
+      "id": "SKU_Master.category->Sales.category",
+      "from_sheet": "SKU_Master",
+      "to_sheet": "Sales",
+      "key": "category",
+      "type": "join_candidate"
+    },
+    {
+      "id": "SKU_Master.sku->Sales.sku",
+      "from_sheet": "SKU_Master",
+      "to_sheet": "Sales",
+      "key": "sku",
+      "type": "join_candidate"
+    }
+  ],
+  "summary": {
+    "n_workbooks": 6,
+    "n_entities": 9,
+    "n_relations": 4,
+    "entity_ids": [
+      "Category",
+      "Money",
+      "PurchaseOrder",
+      "Quantity",
+      "Region",
+      "SKU",
+      "Temporal",
+      "Unknown",
+      "Vendor"
+    ]
+  }
+}

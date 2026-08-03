@@ -4,30 +4,27 @@
 
 ## Now
 
-1. **EPIC-D01 demo-ready** — branch `demo/rag-cross-compare`. Runbook:
-   `tests/RAG/DEMO_RAG.md`.
-2. **Scores (retained xlsx/json under `tests/RAG/results/`):**
-   - Warehouse hybrid_max **10/10**
-   - FRTR 0001 cross **hybrid_max 6/6** (baseline/sira/adaptive 5/6)
-   - FRTR SQL batch 8 books **10/44 (0.227)** — patterns expanding; 0001=6/6
-   - Edge/injection **target 9/9**; Cortex `:8010` pack=dms **live**
-3. Honesty: Cortex-direct, not OpenVault-gated. No exclusion confirm loops.
+1. **F2–F4 YES building** — D01 #13–#15 + D02 ops + OpenVault nvidia (#12).
+2. **Ontology-first live** — space 8 entities SKU/Money/…; logic steps on answers;
+   artifact `tests/RAG/results/ontology_space_8.json`.
+3. **Reveal folder** — `POST /api/rag/reveal-path` opens Explorer on real files.
+4. **Messy fixtures** — `tests/RAG/messy/` ~317MB (gitignored); meta in results.
+5. **Ops amend-confirm** — identify → yes/no → propose → confirm write (E-0012 tested).
+6. **OpenVault nvidia** catalog + `docs/NVIDIA_RAG_EVAL.md` (restart OV to pick up).
 
 ## Next
 
-1. Open/merge PR for `demo/rag-cross-compare`.
-2. Expand SQL patterns for FRTR 0002–0007 (or LLM ingest with `AIRGPT_RAG_EMBED=hash`).
-3. Thin #9/#10 effort×thinking if capacity.
+1. Commit/push AirGPT `demo/rag-cross-compare`; commit OpenVault nvidia separately.
+2. Ingest messy CSV into a dedicated space + score smoke.
+3. Thin UI button for Reveal next to citations if capacity.
 
 ## Later
 
-- P1 50GB / P2 Meta SIRA / P3 Excel AI charts / P4 vault-first / P5 Outerbase·Grafana·IDE
-- Auto CI-on-every-PR “all benches green” — needs DR; not silent scope widen.
+- P1 50GB / P2 Meta SIRA / P3 charts / P4 vault-first / P5 Outerbase·Grafana / P6 2GB
+- AirGPT default to NVIDIA only after OV probe passes (P7)
 
-## Tomorrow open these
+## Demo open
 
+- `tests/RAG/DEMO_RAG.md` (full path)
+- `tests/RAG/results/ontology_space_8.json`
 - `tests/RAG/results/warehouse_hybrid_latest.xlsx`
-- `tests/RAG/results/frtr_cross_latest.xlsx`
-- `tests/RAG/results/frtr_batch_latest.xlsx`
-- `tests/RAG/results/edge_probe_latest.json`
-- `tests/RAG/DEMO_RAG.md`

@@ -9,5 +9,7 @@ Deferred work. Every entry needs an unlock condition. IDs never reused.
 | P3 | AI-governed Excel chart-intent pipeline (auto pie for "top 5 sales", re-prompt loop, range pick, violin-by-field graphs) | Founder 2026-08-03: later; tomorrow = strong RAG ingest+retrieve+score first | Cortex PRD epic owns governed chart/export action; AirGPT only surfaces it - after EPIC-D01 demo lands |
 | P5 | dbgate / Outerbase / Grafana plug-in sheet+CSV full view + multichart | Demo needs scores+Excel xlsx first; external BI hosts are separate products | Founder picks one thin viewer (embed or deep-link) after EPIC-D01 click-through lands; no AirGPT reimplementation of Grafana |
 | P4 | Full vault-first slice of PRD-001 (OpenVault keys + Cortex handoff for all chat/RAG) | Press release TBD; F1 demo uses Cortex-direct exception and must not steal EPIC-001 | Founder completes PRD press release/FAQ and authorizes Mode A slice |
+| P6 | ~2GB messy multi-sheet uncleaned raw workbook demos (ingest + insights) | F2 YES covered **sample-messy few-hundred-MB** only (RAG-BENCH-06 #13); 2GB raw remains ops/scale | Paying partner needs 2GB+ corpus on customer hardware; never AirGPT plane-1 |
+| P7 | NVIDIA / multi-provider model bake-off inside AirGPT | Custody is OpenVault (plane 2); AirGPT must not invent vault or catalog | OpenVault#12 nvidia catalog+probe lands **and** founder authorizes AirGPT to consume OpenVault-gated routes (ends Cortex-direct demo exception) |
 
-cite: PRD-001 F1 (2026-08-03); founder YES amendments same day; warehouse hard-edge ask 2026-08-03
+cite: PRD-001 F1-F6 YES 2026-08-03; sample-messy under #13; OV#12; D02 on demo/rag-ops-confirm

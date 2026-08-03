@@ -43,17 +43,57 @@ python clipdrop.py
 # GET  http://127.0.0.1:8765/api/rag/demo-variants
 # POST http://127.0.0.1:8765/api/rag/spaces/8/demo-variant  {"variant":"hybrid_max"}
 # POST http://127.0.0.1:8765/api/rag/answers  {"space_id":8,"query":"Top 5 selling SKUs by revenue"}
+
+# 6) Ontology first (then logic, then answer)
+# POST http://127.0.0.1:8765/api/rag/spaces/8/ontology  {"force":true}
+# artifact: tests/RAG/results/ontology_space_8.json
+
+# 7) Reveal original file in Explorer
+# POST http://127.0.0.1:8765/api/rag/reveal-path  {"path":"D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx"}
+
+# 8) Sample messy (~300MB local, gitignored)
+python tests\RAG\gen_messy_fixtures.py --target-mb 200
+# then concatenate/grow if needed; see tests/RAG/results/messy_fixtures_meta.json
+
+# 9) Ops amend-confirm (EPIC-D02) — salary increment
+# POST /api/rag/ops/identify  {"path":"...\\messy_payroll_ops.xlsx","ask":"salary raise for E-0012"}
+# POST /api/rag/ops/confirm-identity  {"token":"...","yes":false}  # reject = no write
+# POST /api/rag/ops/confirm-identity  {"token":"...","yes":true}
+# POST /api/rag/ops/propose-amend  {"token":"...","increment_pct":8}
+# POST /api/rag/ops/confirm-amend  {"token":"...","yes":true}
 ```
 
 Open Excel: `tests\RAG\results\warehouse_hybrid_latest.xlsx` and `frtr_cross_latest.xlsx`.
+
+## Ontology -> logic -> answer (space 8 warehouse)
+
+Entities formed: Category, Money, PurchaseOrder, Quantity, Region, SKU, Temporal, Vendor  
+Example logic for `Top 5 selling SKUs by revenue`:
+
+1. load_ontology  
+2. bind_entities: SKU, Money  
+3. use_relations: SKU_Master.sku->Sales.sku  
+4. select_logic: hybrid_sql aggregate  
+5. answer  
+
+Artifact: `tests/RAG/results/ontology_space_8.json`
+
+## Ops confirm (write path — different from read Top-N)
+
+Read Top-N never asks confirm. **Writes** always ask: "Is it that one?" then "Amend salary X -> Y?". Reject = file unchanged.
+
+## NVIDIA (OpenVault)
+
+Catalog entry + eval note in OpenVault repo (`docs/NVIDIA_RAG_EVAL.md`). Restart OpenVault, paste `nvapi-` key — should not say "not in the catalog yet".
 
 ## Selling points (say this)
 
 1. **True ingest** — real xlsx multi-sheet warehouses + FRTR, not mock seed theater.
 2. **hybrid_max** — pandas SQL lane for structured Top-N / KPI; SiRA-style retrieve when SQL abstains.
-3. **No confirm loops** — "excluding SKU-00397" acts once; "No — show top 5 without excluding" is plain Top-5 (Cortex DMS loop bug avoided).
-4. **Cross-variant scores retained** — switch live variant without wiping JSON/xlsx.
-5. **Cortex-direct honesty** — labeled; not pretending vault-first on this demo.
+3. **No confirm loops on read** — exclude SKU acts once; write path uses explicit confirm.
+4. **Ontology-first** — entities/relations before answer.
+5. **Reveal in Explorer** — citation paths open the real folder.
+6. **Cortex-direct honesty** — labeled; not pretending vault-first on this demo.
 
 ## Edge prompts to try live
 
@@ -69,12 +109,12 @@ Open Excel: `tests\RAG\results\warehouse_hybrid_latest.xlsx` and `frtr_cross_lat
 
 | Question | Answer |
 |----------|--------|
-| How did you build this? | FRTR + warehouse generators -> `rag/ingest` + `rag/sira` enrich -> hybrid SQL (`frtr_sql_baseline`) + depth pipelines (`basic/high/max`) -> retained scorebooks. |
+| How did you build this? | FRTR + warehouse generators -> ontology from sheet semantics -> hybrid SQL + SiRA depths -> retained scorebooks. |
 | How do I use it? | Ingest xlsx into a RAG space, select `hybrid_max`, ask in chat or `/api/rag/answers`. |
-| Multiple databases / add a repo? | Space = one knowledge pack. More DBs = more spaces or connectors. **Outerbase / Grafana / IDE shell = parked (P5)** — Excel MCP + xlsx export for tomorrow. |
+| Multiple databases / add a repo? | Space = one knowledge pack. More DBs = more spaces or connectors. **Outerbase / Grafana / IDE shell = parked (P5)**. |
 | Why not full Meta SIRA? | Inspired path in `rag/sira.py`; full H100/Rust bm25x is P2 (plane 1). |
-| 50GB? | P1 parked; demo uses small deterministic warehouses + FRTR. |
+| 50GB / 2GB? | P1/P6 parked; sample messy ~300MB local under `tests/RAG/messy/`. |
 
 ## Not tomorrow (parked)
 
-- P1 50GB corpus | P2 full Meta SIRA | P3 AI Excel chart governance | P5 Outerbase/Grafana/dbgate IDE | P4 vault-first slice
+- P1 50GB corpus | P2 full Meta SIRA | P3 AI Excel chart governance | P5 Outerbase/Grafana/dbgate IDE | P4 vault-first slice | P6 true 2GB
