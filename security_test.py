@@ -20,6 +20,9 @@ def _get(path: str, headers: dict | None = None) -> tuple[int, dict]:
             return e.code, json.loads(body)
         except Exception:
             return e.code, {"error": body[:200]}
+    except Exception as e:
+        # Timeout / connection drop — report as 599 so allcheck does not traceback
+        return 599, {"error": f"{type(e).__name__}: {e}"}
 
 
 def main() -> int:

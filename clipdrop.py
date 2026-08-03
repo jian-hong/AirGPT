@@ -3212,11 +3212,7 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import ontology as rag_ontology
 
                 sid = int(path.split("/")[4])
-                q = self._qs() if hasattr(self, "_qs") else {}
-                # parse query from path
-                from urllib.parse import parse_qs, urlparse
-
-                force = parse_qs(urlparse(self.path).query).get("force", ["0"])[0] in ("1", "true", "yes")
+                force = (q.get("force", ["0"])[0] if isinstance(q, dict) else "0") in ("1", "true", "yes")
                 return self._json(200, rag_ontology.ontology_for_space(sid, force=force))
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
