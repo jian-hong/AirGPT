@@ -111,7 +111,7 @@ def start_mdns(port: int = PORT) -> str:
         )
         zc.register_service(info)
         _mdns = zc
-        print(f"[wifi] mDNS ready → {_mdns_url}")
+        print(f"[wifi] mDNS ready -> {_mdns_url}")
         return _mdns_url
     except Exception as e:
         print(f"[wifi] mDNS skipped: {e}")

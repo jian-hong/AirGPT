@@ -1480,6 +1480,17 @@ def refresh_firewall_status() -> str:
 _cortex_info_cache: dict = {"ts": 0.0, "quick": None, "full": None}
 
 
+def _with_deadline(fn, default, timeout: float = 2.0):
+    """Run fn in a worker; return default if it exceeds timeout (never block /api/info)."""
+    import concurrent.futures
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(fn).result(timeout=timeout)
+    except Exception:
+        return default
+
+
 def _cortex_info(*, quick: bool = False) -> dict:
     now = time.time()
     key = "quick" if quick else "full"
@@ -2603,7 +2614,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/info":
             ips = local_ips()
-            lan = lan_diagnostics()
+            lan_fallback = {
+                "ips": ips,
+                "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
+                "network_profile": "Unknown",
+                "firewall": _firewall_status,
+                "listening": f"0.0.0.0:{PORT}",
+                "lan_likely_blocked": False,
+                "hint": "LAN diagnostics timed out — retry or run enable-lan.bat",
+            }
+            lan = _with_deadline(lan_diagnostics, lan_fallback, timeout=1.8)
             lic = app_license.get_status() if app_license else {"can_use_tunnel": True, "can_use_ai": True}
             tunnel_allowed = lic.get("can_use_tunnel", True)
             tunnel_url = (_tunnel.get("url") or None) if tunnel_allowed else None
@@ -2631,6 +2651,12 @@ class Handler(BaseHTTPRequestHandler):
                         "access_level": scoped.get("access_level"),
                         "session_id": scoped.get("session_id"),
                     }
+            devices = _with_deadline(db.list_devices, [], timeout=1.0)
+            cortex = _with_deadline(
+                lambda: _cortex_info(quick=True),
+                {"ok": False, "status": "timeout", "audit_sample": [], "ledger_verify": {"ok": False}},
+                timeout=1.5,
+            )
             return self._json(200, {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
@@ -2648,7 +2674,7 @@ class Handler(BaseHTTPRequestHandler):
                 "tunnel_provider": _tunnel_provider_label(),
                 "tunnel_error": _tunnel.get("error"),
                 "tunnel_uptime_s": int(time.time() - _tunnel["started_at"]) if _tunnel.get("started_at") else 0,
-                "devices": db.list_devices(),
+                "devices": devices,
                 "firewall": _firewall_status,
                 "network_profile": lan["network_profile"],
                 "lan_hint": lan["hint"],
@@ -2679,7 +2705,7 @@ class Handler(BaseHTTPRequestHandler):
                 "business_features": bool(lic.get("business_features")),
                 "demo_mock": bool(DEMO_MOCK),
                 "data_dir": str(DATA_DIR),
-                "cortex": _cortex_info(quick=True),
+                "cortex": cortex,
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
                 "ai_lockdown": _ai_lockdown_payload(),
                 **share_meta,
