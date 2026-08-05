@@ -1,0 +1,223 @@
+{
+  "summary": {
+    "ok": true,
+    "space_id": 6,
+    "n": 6,
+    "correct": 4,
+    "accuracy": 0.667,
+    "depth": "max",
+    "use_llm": true,
+    "by_difficulty": {
+      "Easy": {
+        "n": 3,
+        "accuracy": 1.0
+      },
+      "Medium": {
+        "n": 2,
+        "accuracy": 0.5
+      },
+      "Hard": {
+        "n": 1,
+        "accuracy": 0.0
+      }
+    },
+    "by_reasoning": {
+      "Aggregation": {
+        "n": 2,
+        "accuracy": 1.0
+      },
+      "Comparison": {
+        "n": 1,
+        "accuracy": 1.0
+      },
+      "Computation": {
+        "n": 1,
+        "accuracy": 1.0
+      },
+      "TrendReasoning": {
+        "n": 1,
+        "accuracy": 0.0
+      },
+      "Lookup/Count": {
+        "n": 1,
+        "accuracy": 0.0
+      }
+    },
+    "misses": [
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 5,
+        "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+        "reasoning_type": "TrendReasoning",
+        "difficulty": "Medium",
+        "gold": "Yes",
+        "raw_answer": "Yes",
+        "pred": "The revenue trend does not increase from Q1 to Q4. The quarterly totals are Q1 2024: 1,966,567.30; Q2 2024: 2,176,251.17; Q3 2024: 2,127,801.07; Q4 2024: 1,361,664.92, showing a decline in Q4 relative to Q2 and Q3 [1].",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 5811.3,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      },
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 6,
+        "question": "Which region appears most frequently in revenue records?",
+        "reasoning_type": "Lookup/Count",
+        "difficulty": "Hard",
+        "gold": "West",
+        "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+        "pred": "The provided evidence does not include any statements about which region appears most frequently in revenue records. The available data shows revenue by region for specific months, but no aggregated counts or frequency analysis are present in the cited snippets [1\u20133]. Therefore, the question cannot be answered from the given evidence.",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 7455.2,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 1,
+      "question": "What is total revenue in Q2 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "2176251.169851399",
+      "raw_answer": "See Summary!B4",
+      "pred": "Total revenue in Q2 2024 is 2,176,251.17. [1]",
+      "correct": true,
+      "match_reason": "numeric_1pct",
+      "ms": 7890.3,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 2,
+      "question": "Which quarter has the highest gross margin dollars?",
+      "reasoning_type": "Comparison",
+      "difficulty": "Medium",
+      "gold": "Q2 2024",
+      "raw_answer": "Max of Summary!D3:D6",
+      "pred": "Q4 2024 has the highest gross margin dollars at 731,381.97 [1].",
+      "correct": true,
+      "match_reason": "numeric_1pct",
+      "ms": 7242.0,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 3,
+      "question": "What is the gross margin percentage in Q3 2024?",
+      "reasoning_type": "Computation",
+      "difficulty": "Easy",
+      "gold": "0.4429409225701213",
+      "raw_answer": "See Summary!E5",
+      "pred": "The gross margin percentage in Q3 2024 is 44.29% [1].",
+      "correct": true,
+      "match_reason": "pct_scale",
+      "ms": 14402.3,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 4,
+      "question": "What is total expenses in Q1 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "1016549.3740205832",
+      "raw_answer": "See Summary!C3",
+      "pred": "The total expenses in Q1 2024 were 1,016,549.37 USD [1].",
+      "correct": true,
+      "match_reason": "numeric_1pct",
+      "ms": 12668.1,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 5,
+      "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+      "reasoning_type": "TrendReasoning",
+      "difficulty": "Medium",
+      "gold": "Yes",
+      "raw_answer": "Yes",
+      "pred": "The revenue trend does not increase from Q1 to Q4. The quarterly totals are Q1 2024: 1,966,567.30; Q2 2024: 2,176,251.17; Q3 2024: 2,127,801.07; Q4 2024: 1,361,664.92, showing a decline in Q4 relative to Q2 and Q3 [1].",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 5811.3,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 6,
+      "question": "Which region appears most frequently in revenue records?",
+      "reasoning_type": "Lookup/Count",
+      "difficulty": "Hard",
+      "gold": "West",
+      "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+      "pred": "The provided evidence does not include any statements about which region appears most frequently in revenue records. The available data shows revenue by region for specific months, but no aggregated counts or frequency analysis are present in the cited snippets [1\u20133]. Therefore, the question cannot be answered from the given evidence.",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 7455.2,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    }
+  ]
+}

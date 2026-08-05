@@ -1,0 +1,611 @@
+{
+  "ok": true,
+  "bench": "primary50",
+  "space_id": 16,
+  "slug": "primary50-bench",
+  "honesty": "Cortex-direct / SiRA-inspired + hybrid \u2014 not OpenVault-gated. Not full Meta SIRA (P2).",
+  "pack": {
+    "dir": "D:\\AirGPT\\tests\\RAG\\primary50",
+    "files": [
+      {
+        "name": "p50_01_sales_messy.xlsx",
+        "mb": 12.58
+      },
+      {
+        "name": "p50_02_ops_messy.xlsx",
+        "mb": 12.58
+      },
+      {
+        "name": "p50_03_inventory_messy.xlsx",
+        "mb": 12.58
+      },
+      {
+        "name": "p50_04_mixed_messy.xlsx",
+        "mb": 12.58
+      }
+    ],
+    "total_mb": 50.33
+  },
+  "docs_reveal": {
+    "docs_retain": {
+      "passed": 4,
+      "n": 4,
+      "rows": [
+        {
+          "original": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_01_sales_messy.xlsx",
+          "docs_path": "D:\\AirGPT\\data\\rag\\16\\Docs\\4aee6d2f_p50_01_sales_messy.xlsx",
+          "ok": true
+        },
+        {
+          "original": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_02_ops_messy.xlsx",
+          "docs_path": "D:\\AirGPT\\data\\rag\\16\\Docs\\2756fa41_p50_02_ops_messy.xlsx",
+          "ok": true
+        },
+        {
+          "original": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_03_inventory_messy.xlsx",
+          "docs_path": "D:\\AirGPT\\data\\rag\\16\\Docs\\8b1842ed_p50_03_inventory_messy.xlsx",
+          "ok": true
+        },
+        {
+          "original": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_04_mixed_messy.xlsx",
+          "docs_path": "D:\\AirGPT\\data\\rag\\16\\Docs\\1688e148_p50_04_mixed_messy.xlsx",
+          "ok": true
+        }
+      ]
+    },
+    "reveal_hover": {
+      "status": "fail_closed",
+      "note": "#20 Docs retain / #14 hover reveal still open for adversary verify. Code paths exist (docs_path + POST /api/rag/reveal-path); do not treat as closed."
+    },
+    "ok": true
+  },
+  "best_variant": "hybrid_max",
+  "variants": [
+    {
+      "name": "sira_max",
+      "label": "SiRA-enrich max",
+      "summary": {
+        "n": 10,
+        "correct": 7,
+        "accuracy": 0.7,
+        "depth": "max",
+        "hybrid_sql": false,
+        "variant": "sira_max",
+        "label": "SiRA-enrich max"
+      },
+      "rows": [
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 1,
+          "question": "Top 5 selling SKUs by revenue",
+          "difficulty": "Hard",
+          "reasoning_type": "TopN",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "primary pack Sales sheet",
+          "pred": "I don\u2019t have any evidence about SKUs, sales, or revenue in the current knowledge space, so I can\u2019t list the top 5 selling SKUs by revenue. The indexed sources do not cover this topic [1\u20135]. To answer your question, I would need data from an inventory, sales, or ERP system that explicitly includes SKU identifiers and revenue figures. If you can point me to a relevant dataset or system (e.g., a BI report, warehouse table, or CSV), I can retrieve and rank the SKUs for you.",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 16844.2,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 2,
+          "question": "what about top 6",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNFollowup",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "The top SKU across the four workbooks is SKU-00397 [1][2][3][4]. No workbook lists a \u201ctop 6\u201d SKU, so there is no evidence for a top\u20116 ranking in the provided data.",
+          "correct": true,
+          "match_reason": "gold_value",
+          "lane": "rag",
+          "ms": 3966.5,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 3,
+          "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExclude",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "Top 5 SKUs by total revenue excluding SKU-00397:\n\n1) SKU-00183 \u2014 581,836.44\n2) SKU-00171 \u2014 538,139.24\n3) SKU-00381 \u2014 531,252.23\n4) SKU-00016 \u2014 492,673.84\n5) SKU-00351 \u2014 486,982.90\n\nTotals are the sum of sales_value_myr across all regions shown in the export dump [2].",
+          "correct": true,
+          "match_reason": "gold_value",
+          "lane": "rag",
+          "ms": 6933.3,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 4,
+          "question": "No \u2014 show top 5 sales without excluding",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNNoExclude",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "",
+          "pred": "Top 5 SKUs by sales_value_myr (no exclusions):\n\n1) SKU-00488 \u2013 85,532.22\n2) SKU-00436 \u2013 82,519.49\n3) SKU-00385 \u2013 84,452.35\n4) SKU-00289 \u2013 80,325.08\n5) SKU-00210 \u2013 81,980.35\n\n[3]",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 7993.9,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 5,
+          "question": "removing the first one, show me top 5",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExcludeFirst",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "I can\u2019t answer because the provided evidence does not mention \u201cremoving the first one\u201d or \u201ctop 5,\u201d and there are no relevant snippets to cite. If you can share what list or dataset you\u2019re referring to, I can search again or help you rebuild the knowledge space so the terms appear in the indexed chunks.",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 4728.6,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_03_inventory_messy.xlsx",
+          "qid": 6,
+          "question": "How many SKUs do we have in inventory?",
+          "difficulty": "Easy",
+          "reasoning_type": "Count",
+          "gold": "25",
+          "notes": "10 top + 15 filler",
+          "pred": "We have 25 SKUs in inventory. [2,4,6,8]",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 6389.3,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 7,
+          "question": "Which SKU is the top seller hint on Summary?",
+          "difficulty": "Easy",
+          "reasoning_type": "Lookup",
+          "gold": "SKU-00397",
+          "notes": "Summary top1_sku",
+          "pred": "The top seller SKU on the Summary sheet is **SKU-00397** [1].",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "rag",
+          "ms": 23178.1,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 8,
+          "question": "What columns exist for sku sales_value_myr vendor region?",
+          "difficulty": "Easy",
+          "reasoning_type": "Schema",
+          "gold": "sku sales_value_myr vendor region",
+          "notes": "retrieve schema",
+          "pred": "The columns that include sku, sales_value_myr, vendor, and region are shown in the Wide_Fill sheet as:\n\n- sku\n- region\n- sales_value_myr\n- vendor\n\n[2]",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 6157.6,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_04_mixed_messy.xlsx",
+          "qid": 9,
+          "question": "What is total refund value?",
+          "difficulty": "Easy",
+          "reasoning_type": "Sum",
+          "gold": "67140.86",
+          "notes": "Ops_KPI refund_total_myr",
+          "pred": "The total refund value is 67,140.86 MYR [1,2,4,5,6,7,9,11].",
+          "correct": true,
+          "match_reason": "numeric_1pct",
+          "lane": "rag",
+          "ms": 5507.8,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 10,
+          "question": "Which regions appear in the wide sales tables?",
+          "difficulty": "Easy",
+          "reasoning_type": "Distinct",
+          "gold": "West East Central North South",
+          "notes": "regions_hint + Sales",
+          "pred": "The regions that appear in the wide sales table are: South, East, Central, North, and West [1].",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 3700.7,
+          "error": null,
+          "model": "openvault"
+        }
+      ]
+    },
+    {
+      "name": "hybrid_max",
+      "label": "hybrid SQL+SiRA max",
+      "summary": {
+        "n": 10,
+        "correct": 10,
+        "accuracy": 1.0,
+        "depth": "max",
+        "hybrid_sql": true,
+        "variant": "hybrid_max",
+        "label": "hybrid SQL+SiRA max"
+      },
+      "rows": [
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 1,
+          "question": "Top 5 selling SKUs by revenue",
+          "difficulty": "Hard",
+          "reasoning_type": "TopN",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "primary pack Sales sheet",
+          "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "sql",
+          "ms": 165.0,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 2,
+          "question": "what about top 6",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNFollowup",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "sql",
+          "ms": 12.5,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 3,
+          "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExclude",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "sql",
+          "ms": 12.0,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 4,
+          "question": "No \u2014 show top 5 sales without excluding",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNNoExclude",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "",
+          "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "sql",
+          "ms": 8.7,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 5,
+          "question": "removing the first one, show me top 5",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExcludeFirst",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "sql",
+          "ms": 17.7,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_03_inventory_messy.xlsx",
+          "qid": 6,
+          "question": "How many SKUs do we have in inventory?",
+          "difficulty": "Easy",
+          "reasoning_type": "Count",
+          "gold": "25",
+          "notes": "10 top + 15 filler",
+          "pred": "25",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "sql",
+          "ms": 86.0,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 7,
+          "question": "Which SKU is the top seller hint on Summary?",
+          "difficulty": "Easy",
+          "reasoning_type": "Lookup",
+          "gold": "SKU-00397",
+          "notes": "Summary top1_sku",
+          "pred": "The top seller SKU indicated on the Summary sheet is **SKU-00397** [1].",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "rag",
+          "ms": 5342.9,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 8,
+          "question": "What columns exist for sku sales_value_myr vendor region?",
+          "difficulty": "Easy",
+          "reasoning_type": "Schema",
+          "gold": "sku sales_value_myr vendor region",
+          "notes": "retrieve schema",
+          "pred": "The columns that include sku, sales_value_myr, vendor, and region are: sku, sales_value_myr, vendor, and region [1,2].",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 5445.1,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_04_mixed_messy.xlsx",
+          "qid": 9,
+          "question": "What is total refund value?",
+          "difficulty": "Easy",
+          "reasoning_type": "Sum",
+          "gold": "67140.86",
+          "notes": "Ops_KPI refund_total_myr",
+          "pred": "67140.86",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "sql",
+          "ms": 101.4,
+          "error": null,
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 10,
+          "question": "Which regions appear in the wide sales tables?",
+          "difficulty": "Easy",
+          "reasoning_type": "Distinct",
+          "gold": "West East Central North South",
+          "notes": "regions_hint + Sales",
+          "pred": "West",
+          "correct": true,
+          "match_reason": "gold_value",
+          "lane": "sql",
+          "ms": 4.9,
+          "error": null,
+          "model": "pandas-sql"
+        }
+      ]
+    },
+    {
+      "name": "adaptive",
+      "label": "adaptive depth",
+      "summary": {
+        "n": 10,
+        "correct": 5,
+        "accuracy": 0.5,
+        "depth": "auto",
+        "hybrid_sql": false,
+        "variant": "adaptive",
+        "label": "adaptive depth"
+      },
+      "rows": [
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 1,
+          "question": "Top 5 selling SKUs by revenue",
+          "difficulty": "Hard",
+          "reasoning_type": "TopN",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "primary pack Sales sheet",
+          "pred": "I don\u2019t have any evidence that mentions \u201cselling,\u201d \u201cSKUs,\u201d or \u201crevenue,\u201d so I can\u2019t produce a ranked list from the current corpus. The knowledge base appears to lack sales or revenue data entirely. To answer your question, we need a source that tracks SKU-level sales or revenue (e.g., an ERP extract, BI dashboard, or sales report). Next step: run a targeted search for SKU-level sales or revenue data.",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 5066.5,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 2,
+          "question": "what about top 6",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNFollowup",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "The \u201ctop 6\u201d is not explicitly defined in the provided evidence. The only metric that varies across the four Ops_KPI sheets is open_po_count, which ranges from 6 to 9. Therefore, the top 6 open PO counts correspond to the sheets with open_po_count values of 6, 7, 8, and 9; no other \u201ctop 6\u201d ranking is supported by the data shown.",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 2265.2,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 3,
+          "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExclude",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "SKU-00183, SKU-00171, SKU-00381, SKU-00016, and SKU-00351 are the top five SKUs by total regional sales_value_myr when SKU-00397 is excluded. Their summed regional totals are approximately 781,836.44, 538,139.24, 531,252.23, 492,673.84, and 486,982.90 respectively, which places them above all other SKUs in the provided data. [2]",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "rag",
+          "ms": 5805.2,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 4,
+          "question": "No \u2014 show top 5 sales without excluding",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNNoExclude",
+          "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+          "notes": "",
+          "pred": "Top 5 SKUs by sales_value_myr (no exclusions):\n\n1) SKU-00488 \u2014 85,532.22\n2) SKU-00436 \u2014 82,519.49\n3) SKU-00298 \u2014 88,862.82\n4) SKU-00368 \u2014 88,405.69\n5) SKU-00070 \u2014 88,177.43\n\nSources: [4]",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 5644.6,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 5,
+          "question": "removing the first one, show me top 5",
+          "difficulty": "Hard",
+          "reasoning_type": "TopNExcludeFirst",
+          "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+          "notes": "",
+          "pred": "I don\u2019t have any evidence that mentions \u201cremoving the first one\u201d or \u201ctop 5\u201d in the current knowledge space, so I can\u2019t produce a grounded answer. If you can share what list or dataset you\u2019re referring to, I can search again or help you refine the query.",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 2009.0,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_03_inventory_messy.xlsx",
+          "qid": 6,
+          "question": "How many SKUs do we have in inventory?",
+          "difficulty": "Easy",
+          "reasoning_type": "Count",
+          "gold": "25",
+          "notes": "10 top + 15 filler",
+          "pred": "We have 47 distinct SKUs in the inventory files. This count comes from the union of all SKU values listed across the provided sheets and exports [1,2,3].",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 8901.6,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "qid": 7,
+          "question": "Which SKU is the top seller hint on Summary?",
+          "difficulty": "Easy",
+          "reasoning_type": "Lookup",
+          "gold": "SKU-00397",
+          "notes": "Summary top1_sku",
+          "pred": "The top seller SKU indicated on the Summary sheet is **SKU-00397** [1].",
+          "correct": true,
+          "match_reason": "sku_rank_order",
+          "lane": "rag",
+          "ms": 3996.1,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 8,
+          "question": "What columns exist for sku sales_value_myr vendor region?",
+          "difficulty": "Easy",
+          "reasoning_type": "Schema",
+          "gold": "sku sales_value_myr vendor region",
+          "notes": "retrieve schema",
+          "pred": "The columns that include sku, sales_value_myr, vendor, and region are:\n\n- sku\n- sales_value_myr\n- vendor\n- region\n\nThese four columns appear together in the Wide_Fill sheet of p50_02_ops_messy.xlsx [2].",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 2923.6,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_04_mixed_messy.xlsx",
+          "qid": 9,
+          "question": "What is total refund value?",
+          "difficulty": "Easy",
+          "reasoning_type": "Sum",
+          "gold": "67140.86",
+          "notes": "Ops_KPI refund_total_myr",
+          "pred": "The total refund value is 67,140.86 MYR [1,2,4,5,6,7,9,11].",
+          "correct": true,
+          "match_reason": "numeric_1pct",
+          "lane": "rag",
+          "ms": 3283.8,
+          "error": null,
+          "model": "openvault"
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "qid": 10,
+          "question": "Which regions appear in the wide sales tables?",
+          "difficulty": "Easy",
+          "reasoning_type": "Distinct",
+          "gold": "West East Central North South",
+          "notes": "regions_hint + Sales",
+          "pred": "The regions that appear in the wide sales table are: South, East, Central, North, and West [1].",
+          "correct": true,
+          "match_reason": "all_gold_values",
+          "lane": "rag",
+          "ms": 2458.5,
+          "error": null,
+          "model": "openvault"
+        }
+      ]
+    }
+  ],
+  "ranking": [
+    {
+      "name": "hybrid_max",
+      "accuracy": 1.0
+    },
+    {
+      "name": "sira_max",
+      "accuracy": 0.7
+    },
+    {
+      "name": "adaptive",
+      "accuracy": 0.5
+    }
+  ],
+  "baselines_note": "Prove separately: python tests/RAG/warehouse_eval.py --no-llm and frtr_cross_compare.py --workbook frtr_0001_quarterly-summary.xlsx --variants hybrid_max",
+  "suggested_prompts": [
+    "Top 5 selling SKUs by revenue",
+    "How many SKUs do we have in inventory?",
+    "Which regions appear in the wide sales tables?"
+  ],
+  "ts": "2026-08-03T12:04:58"
+}

@@ -1,0 +1,23 @@
+---
+description: Netie agent model routing — Grok 4.5 high for PRD/epic/ticket/verify; Composer 2.5 for research
+alwaysApply: true
+---
+
+# Agent model routing (founder 2026-08-03)
+
+## Always Grok 4.5 high (`cursor-grok-4.5-high`)
+
+| Agent / role | Why |
+|---|---|
+| `prd-agent` | Prompt, slice, and ledger quality |
+| `epic-agent` | Ticket cut and completeness |
+| `ticket-runner` | Implementation against acceptance |
+| Verifier / judge / independent re-check | Catch weak Composer answers |
+
+When a Composer (or any research) result looks thin, low-confidence, or contradicts repo law: **re-run the check with Grok 4.5 high** and prefer its verdict.
+
+## Composer 2.5 (`composer-2.5`) — research only
+
+Use for: explore, web search, source gathering, parallel file maps, "unsure where is X" scans, other non-decision heavy gather work.
+
+Do **not** use Composer for PRD/epic/ticket-runner or for final verify/close decisions.

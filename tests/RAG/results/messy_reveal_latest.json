@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "n_docs": 139,
+  "rows": [
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_sales_wide.xlsx",
+      "exists": true,
+      "reveal": {
+        "ok": true,
+        "path": "D:\\AirGPT\\tests\\RAG\\messy\\core\\core_sales_wide.xlsx",
+        "action": "shell_execute_select"
+      }
+    },
+    {
+      "path": "D:\\AirGPT\\data\\rag\\15\\Docs\\00d7f106_bulk_shard_011.csv",
+      "exists": true,
+      "reveal": {
+        "ok": true,
+        "path": "D:\\AirGPT\\data\\rag\\15\\Docs\\00d7f106_bulk_shard_011.csv",
+        "action": "shell_execute_select"
+      }
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "ok": true,
+  "workbook": "frtr_0001_quarterly-summary.xlsx",
+  "space_id": 6,
+  "honesty": "Cortex-direct / ai_engine RAG path \u2014 not OpenVault-gated for this demo branch.",
+  "spot_check": {
+    "ok": true,
+    "cited_gold_fragment": true,
+    "question": "What is total revenue in Q2 2024?",
+    "gold": "2176251.169851399",
+    "depth": "max",
+    "ms": 39921.2,
+    "n_hits": 8,
+    "top": [
+      {
+        "path": "D:\\AirGPT\\tests\\RAG\\frtr_sanitized\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.2653846153846154,
+        "sheet": null,
+        "text": "## Sheet: Revenue\nSummary note: Revenue detail by month/region/SKU\nDate | Region | SKU | Qty | UnitPrice | Revenue\nDate | Region | SKU | Qty | UnitPrice | Revenue\n2024-01-01 00:00:00 | West | SKU-001 | 195 | 49.55408037744047 | 9663.0456736"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_taglab-net-marketing-metrics-paid-search-conversion-rate.md",
+        "score": 0.2638888888888889,
+        "sheet": null,
+        "text": "# Paid Search Conversion Rate - TAGLAB\r\n\r\nSource: https://taglab.net/marketing-metrics/paid-search-conversion-rate/\r\n\r\nSkip to content\r\n\r\nPaid Search Conversion Rate\r\n\r\nPosted by:\r\n\r\n|\r\n\r\nOn:\r\n\r\nJuly 29, 2024\r\n\r\n|\r\n\r\nTable of Contents\r\n\r\nDe"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_blog-btxglobal-com-2026-what-is-otif-in-logistics-why-on-tim.md",
+        "score": 0.06639344262295083,
+        "sheet": null,
+        "text": "BTX supports shippers with flexible transportation and specialized logistics solutions across domestic air freight, global shipping, white glove delivery, and more.\r\n\r\n Domestic Air Freight\r\n White Glove Delivery\r\n Specialized Services\r\n\r\nW"
+      },
+      {
+        "path": "D:\\AirGPT\\tests\\RAG\\frtr_sanitized\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.06639344262295083,
+        "sheet": null,
+        "text": "14289588\n2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258\n2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021618\n2024-10-01 00:00:00 | Central | SKU-004 | 160 | 133.7128935"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_blog-btxglobal-com-2026-what-is-otif-in-logistics-why-on-tim.md",
+        "score": 0.06612903225806452,
+        "sheet": null,
+        "text": "If OTIF issues are causing delays, customer complaints, or rising exception costs, BTX Global Logistics can help you build a more dependable transportation strategy across domestic and global shipments.\r\n\r\nRequest a Quote\r\n\r\nHow to Calculat"
+      }
+    ],
+    "template": null
+  },
+  "best_variant": "hybrid_max",
+  "variants": [
+    {
+      "name": "hybrid_max",
+      "label": "hybrid SQL+SiRA max",
+      "summary": {
+        "ok": true,
+        "space_id": 6,
+        "n": 6,
+        "correct": 6,
+        "accuracy": 1.0,
+        "depth": "max",
+        "use_llm": true,
+        "hybrid_sql": true,
+        "by_difficulty": {
+          "Easy": {
+            "n": 3,
+            "accuracy": 1.0
+          },
+          "Medium": {
+            "n": 2,
+            "accuracy": 1.0
+          },
+          "Hard": {
+            "n": 1,
+            "accuracy": 1.0
+          }
+        },
+        "by_reasoning": {
+          "Aggregation": {
+            "n": 2,
+            "accuracy": 1.0
+          },
+          "Comparison": {
+            "n": 1,
+            "accuracy": 1.0
+          },
+          "Computation": {
+            "n": 1,
+            "accuracy": 1.0
+          },
+          "TrendReasoning": {
+            "n": 1,
+            "accuracy": 1.0
+          },
+          "Lookup/Count": {
+            "n": 1,
+            "accuracy": 1.0
+          }
+        },
+        "misses": [],
+        "variant": "hybrid_max",
+        "label": "hybrid SQL+SiRA max"
+      },
+      "rows": [
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 1,
+          "question": "What is total revenue in Q2 2024?",
+          "reasoning_type": "Aggregation",
+          "difficulty": "Easy",
+          "gold": "2176251.169851399",
+          "raw_answer": "See Summary!B4",
+          "pred": "2176251.169851399",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "sql",
+          "ms": 215.5,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 2,
+          "question": "Which quarter has the highest gross margin dollars?",
+          "reasoning_type": "Comparison",
+          "difficulty": "Medium",
+          "gold": "Q2 2024",
+          "raw_answer": "Max of Summary!D3:D6",
+          "pred": "Q2 2024",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "sql",
+          "ms": 4.2,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 3,
+          "question": "What is the gross margin percentage in Q3 2024?",
+          "reasoning_type": "Computation",
+          "difficulty": "Easy",
+          "gold": "0.4429409225701213",
+          "raw_answer": "See Summary!E5",
+          "pred": "0.4429409225701213",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "sql",
+          "ms": 1.6,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 4,
+          "question": "What is total expenses in Q1 2024?",
+          "reasoning_type": "Aggregation",
+          "difficulty": "Easy",
+          "gold": "1016549.3740205832",
+          "raw_answer": "See Summary!C3",
+          "pred": "1016549.374020583",
+          "correct": true,
+          "match_reason": "numeric_1pct",
+          "lane": "sql",
+          "ms": 1.0,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 5,
+          "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+          "reasoning_type": "TrendReasoning",
+          "difficulty": "Medium",
+          "gold": "No",
+          "raw_answer": "Yes",
+          "pred": "1966567.302699234",
+          "correct": true,
+          "match_reason": "gold_value",
+          "lane": "sql",
+          "ms": 0.6,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 6,
+          "question": "Which region appears most frequently in revenue records?",
+          "reasoning_type": "Lookup/Count",
+          "difficulty": "Hard",
+          "gold": "West",
+          "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+          "pred": "West",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "sql",
+          "ms": 4.6,
+          "error": null,
+          "citations": [],
+          "model": "pandas-sql"
+        }
+      ]
+    }
+  ],
+  "ranking": [
+    {
+      "name": "hybrid_max",
+      "accuracy": 1.0
+    }
+  ],
+  "common_misses": [],
+  "suggested_prompts": [
+    "Using the frtr_0001_quarterly-summary.xlsx knowledge space, what is total revenue in Q2 2024?",
+    "Compare Q1 vs Q4 revenue and say whether the full-year trend increases.",
+    "Which quarter had the highest revenue and by how much vs the lowest?",
+    "Export a scorecard: variant accuracy vs difficulty (Easy/Medium/Hard).",
+    "List misses only and propose one retrieval fix per miss."
+  ],
+  "ts": "2026-08-03T12:13:22"
+}

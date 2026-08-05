@@ -1,0 +1,123 @@
+{
+  "ok": true,
+  "honesty": "Cortex-direct, not OpenVault-gated (EPIC-D01).",
+  "ask": "Top 5 selling SKUs by revenue",
+  "insights_retrieved_from": {
+    "primary": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx",
+    "sheet": "Sales",
+    "lane": "sql",
+    "scoreboard": "D:\\AirGPT\\tests\\RAG\\results\\warehouse_hybrid_latest.json",
+    "score_sha16": "5a17a7ad677c99d6"
+  },
+  "top": {
+    "source_file": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx",
+    "source_sheet": "Sales",
+    "lane": "sql",
+    "n": 5,
+    "exclude": [],
+    "rows": [
+      {
+        "rank": 1,
+        "sku": "SKU-00397",
+        "sales_value_myr": 726158.36
+      },
+      {
+        "rank": 2,
+        "sku": "SKU-00183",
+        "sales_value_myr": 581836.44
+      },
+      {
+        "rank": 3,
+        "sku": "SKU-00171",
+        "sales_value_myr": 538139.24
+      },
+      {
+        "rank": 4,
+        "sku": "SKU-00381",
+        "sales_value_myr": 531252.23
+      },
+      {
+        "rank": 5,
+        "sku": "SKU-00016",
+        "sales_value_myr": 492673.84
+      }
+    ],
+    "text": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+    "sql": "-- certified query cq_sales_top5_value (AirGPT hybrid_max / free route)\nSELECT sku, ROUND(SUM(sales_value_myr), 2) AS sales_value_myr\nFROM Sales\nGROUP BY sku\nORDER BY sales_value_myr DESC\nLIMIT 5;"
+  },
+  "insights": [
+    {
+      "id": "concentration",
+      "insight": "SKU-00397 leads at MYR 726,158.36 (25.3% of Top-5 revenue).",
+      "basis": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx::Sales"
+    },
+    {
+      "id": "gap_1_2",
+      "insight": "Gap vs #2 (SKU-00183) is MYR 144,321.92 \u2014 wide lead.",
+      "basis": "Sales aggregate"
+    },
+    {
+      "id": "exclude_first",
+      "insight": "If SKU-00397 is excluded, next Top-5 starts with SKU-00183 at MYR 581,836.44.",
+      "basis": "sql exclude act-once"
+    },
+    {
+      "id": "bench_accuracy",
+      "insight": "Bench hybrid_max: 10/10 (acc=1.0) on space 8.",
+      "basis": "warehouse_hybrid_latest.json"
+    },
+    {
+      "id": "lane_mix",
+      "insight": "Lane mix: sql=10",
+      "basis": "score rows"
+    },
+    {
+      "id": "misses",
+      "insight": "No misses on latest warehouse hybrid_max run.",
+      "basis": "score misses"
+    },
+    {
+      "id": "honesty",
+      "insight": "Cortex-direct, not OpenVault-gated (EPIC-D01). Insights come from SQL-over-xlsx + retained scores, not OpenVault.",
+      "basis": "demo policy"
+    }
+  ],
+  "prompts": {
+    "file_type_prompts": [
+      "Export Top 5 SKU revenue as xlsx with columns rank,sku,sales_value_myr.",
+      "Save audit traceback beside the xlsx export for the same ask.",
+      "Open xlsx Insights sheet and list concentration + exclude-first notes."
+    ],
+    "graph_type_prompts": [
+      "In Excel, chart Top 5 sales_value_myr as a bar chart titled Top SKUs by revenue.",
+      "Use a bar chart for Top 6; label SKU on category axis.",
+      "After excluding SKU-00397, redraw the bar chart for the new Top 5."
+    ],
+    "insights_prompts": [
+      "Where do insights come from for Top 5 selling SKUs by revenue?",
+      "Derive concentration share of #1 within Top 5.",
+      "What changes if we exclude the first SKU once (no confirm loop)?",
+      "Summarize warehouse hybrid_max accuracy and lane mix.",
+      "Generate SQL for Top 5 sales and export CSV."
+    ],
+    "note": "Graph prompts are for human/Excel Copilot \u2014 AirGPT does not auto-govern charts (P3 parked)."
+  },
+  "exports": {
+    "csv": "D:\\AirGPT\\tests\\RAG\\results\\exports\\top5_sales_20260803_025014.csv",
+    "csv_latest": "D:\\AirGPT\\tests\\RAG\\results\\exports\\top_sales_latest.csv",
+    "sql": "D:\\AirGPT\\tests\\RAG\\results\\exports\\cq_sales_top5_20260803_025014.sql",
+    "xlsx": "D:\\AirGPT\\tests\\RAG\\results\\exports\\insights_export_20260803_025014.xlsx",
+    "xlsx_latest": "D:\\AirGPT\\tests\\RAG\\results\\exports\\insights_export_latest.xlsx",
+    "audit": "D:\\AirGPT\\tests\\RAG\\results\\exports\\audit_20260803_025014.json"
+  },
+  "excel_mcp": {
+    "ok": false,
+    "api_down_in_process": true,
+    "route": "free_openpyxl",
+    "reason": "excel MCP not importable in AirGPT process (expected)",
+    "ms": 11.9,
+    "file": "D:\\AirGPT\\tests\\RAG\\results\\exports\\insights_export_20260803_025014.xlsx",
+    "advice": "Free route wrote xlsx; Cursor user-excel can describe/read the same path."
+  },
+  "route": "free_openpyxl"
+}

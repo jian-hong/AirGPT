@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "api_down_in_process": true,
+  "host_mcp_ok": true,
+  "route": "cursor_user_excel + free_openpyxl",
+  "ms": 45,
+  "file": "D:\\AirGPT\\tests\\RAG\\results\\exports\\insights_export_latest.xlsx",
+  "sheets": [
+    "TopN",
+    "Insights",
+    "Audit",
+    "SQL",
+    "Prompts",
+    "Bench",
+    "Honesty"
+  ],
+  "ts": "2026-08-03T02:50:37"
+}

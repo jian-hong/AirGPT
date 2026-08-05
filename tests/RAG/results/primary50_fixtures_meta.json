@@ -1,0 +1,86 @@
+{
+  "ok": true,
+  "mode": "primary",
+  "target_mb_each": 12.0,
+  "n_files": 4,
+  "total_mb": 50.33,
+  "files": [
+    {
+      "path": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_01_sales_messy.xlsx",
+      "bytes": 12582921,
+      "mb": 12.58,
+      "kind": "primary_xlsx",
+      "sheets": [
+        "Sales",
+        "Inventory",
+        "Messy_RAW",
+        "Ops_KPI",
+        "Returns",
+        "KPI_Board",
+        "Summary",
+        "Wide_Fill"
+      ],
+      "seed": 101,
+      "book_i": 1
+    },
+    {
+      "path": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_02_ops_messy.xlsx",
+      "bytes": 12582922,
+      "mb": 12.58,
+      "kind": "primary_xlsx",
+      "sheets": [
+        "Sales",
+        "Inventory",
+        "Messy_RAW",
+        "Ops_KPI",
+        "Returns",
+        "KPI_Board",
+        "Summary",
+        "Wide_Fill"
+      ],
+      "seed": 202,
+      "book_i": 2
+    },
+    {
+      "path": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_03_inventory_messy.xlsx",
+      "bytes": 12582923,
+      "mb": 12.58,
+      "kind": "primary_xlsx",
+      "sheets": [
+        "Sales",
+        "Inventory",
+        "Messy_RAW",
+        "Ops_KPI",
+        "Returns",
+        "KPI_Board",
+        "Summary",
+        "Wide_Fill"
+      ],
+      "seed": 303,
+      "book_i": 3
+    },
+    {
+      "path": "D:\\AirGPT\\tests\\RAG\\primary50\\p50_04_mixed_messy.xlsx",
+      "bytes": 12582925,
+      "mb": 12.58,
+      "kind": "primary_xlsx",
+      "sheets": [
+        "Sales",
+        "Inventory",
+        "Messy_RAW",
+        "Ops_KPI",
+        "Returns",
+        "KPI_Board",
+        "Summary",
+        "Wide_Fill"
+      ],
+      "seed": 404,
+      "book_i": 4
+    }
+  ],
+  "gold_n": 10,
+  "gold_path": "D:\\AirGPT\\tests\\RAG\\results\\primary50_gold.json",
+  "out_dir": "D:\\AirGPT\\tests\\RAG\\primary50",
+  "note": "Primary F13 pack: four unclean multi-sheet workbooks ~12MB each (~50MB). Opaque zip pad for size; sheet text stays lean for ingest. Not 2GB (P6).",
+  "secs": 3.2
+}

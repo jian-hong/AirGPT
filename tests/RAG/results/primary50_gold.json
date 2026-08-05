@@ -1,0 +1,176 @@
+[
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 1,
+    "question": "Top 5 selling SKUs by revenue",
+    "difficulty": "Hard",
+    "reasoning_type": "TopN",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84"
+    ],
+    "notes": "primary pack Sales sheet"
+  },
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 2,
+    "question": "what about top 6",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNFollowup",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 3,
+    "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNExclude",
+    "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 4,
+    "question": "No \u2014 show top 5 sales without excluding",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNNoExclude",
+    "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+    "gold_values": [
+      "SKU-00397",
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "726158.36",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 5,
+    "question": "removing the first one, show me top 5",
+    "difficulty": "Hard",
+    "reasoning_type": "TopNExcludeFirst",
+    "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+    "gold_values": [
+      "SKU-00183",
+      "SKU-00171",
+      "SKU-00381",
+      "SKU-00016",
+      "SKU-00351",
+      "581836.43",
+      "538139.25",
+      "531252.23",
+      "492673.84",
+      "486982.89"
+    ],
+    "notes": ""
+  },
+  {
+    "workbook": "p50_03_inventory_messy.xlsx",
+    "qid": 6,
+    "question": "How many SKUs do we have in inventory?",
+    "difficulty": "Easy",
+    "reasoning_type": "Count",
+    "gold": "25",
+    "gold_values": [
+      "25"
+    ],
+    "notes": "10 top + 15 filler"
+  },
+  {
+    "workbook": "p50_01_sales_messy.xlsx",
+    "qid": 7,
+    "question": "Which SKU is the top seller hint on Summary?",
+    "difficulty": "Easy",
+    "reasoning_type": "Lookup",
+    "gold": "SKU-00397",
+    "gold_values": [
+      "SKU-00397"
+    ],
+    "notes": "Summary top1_sku"
+  },
+  {
+    "workbook": "p50_02_ops_messy.xlsx",
+    "qid": 8,
+    "question": "What columns exist for sku sales_value_myr vendor region?",
+    "difficulty": "Easy",
+    "reasoning_type": "Schema",
+    "gold": "sku sales_value_myr vendor region",
+    "gold_values": [
+      "sku",
+      "sales_value_myr",
+      "vendor",
+      "region"
+    ],
+    "notes": "retrieve schema"
+  },
+  {
+    "workbook": "p50_04_mixed_messy.xlsx",
+    "qid": 9,
+    "question": "What is total refund value?",
+    "difficulty": "Easy",
+    "reasoning_type": "Sum",
+    "gold": "67140.86",
+    "gold_values": [
+      "67140.86"
+    ],
+    "notes": "Ops_KPI refund_total_myr"
+  },
+  {
+    "workbook": "p50_02_ops_messy.xlsx",
+    "qid": 10,
+    "question": "Which regions appear in the wide sales tables?",
+    "difficulty": "Easy",
+    "reasoning_type": "Distinct",
+    "gold": "West East Central North South",
+    "gold_values": [
+      "West",
+      "East",
+      "Central",
+      "North",
+      "South"
+    ],
+    "notes": "regions_hint + Sales"
+  }
+]

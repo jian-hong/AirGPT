@@ -1,0 +1,223 @@
+{
+  "ok": true,
+  "honesty": "Cortex-direct / hybrid_max demo \u2014 not OpenVault-gated. No exclusion confirm loops.",
+  "variant": {
+    "name": "hybrid_max",
+    "depth": "max",
+    "hybrid_sql": true,
+    "label": "hybrid SQL+SiRA max (no confirm loops)"
+  },
+  "summary": {
+    "variant": "hybrid_max",
+    "label": "hybrid SQL+SiRA max (no confirm loops)",
+    "space_id": 8,
+    "n": 10,
+    "correct": 10,
+    "accuracy": 1.0,
+    "depth": "max",
+    "hybrid_sql": true
+  },
+  "rows": [
+    {
+      "workbook": "wh_01_sales_core.xlsx",
+      "qid": 1,
+      "question": "Top 5 selling SKUs by revenue",
+      "difficulty": "Hard",
+      "reasoning_type": "TopN",
+      "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+      "notes": "no confirm loop",
+      "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 67.8,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_01_sales_core.xlsx",
+      "qid": 2,
+      "question": "what about top 6",
+      "difficulty": "Hard",
+      "reasoning_type": "TopNFollowup",
+      "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+      "notes": "follow-up N=6",
+      "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 8.6,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_01_sales_core.xlsx",
+      "qid": 3,
+      "question": "Top 5 selling SKUs by revenue excluding SKU-00397",
+      "difficulty": "Hard",
+      "reasoning_type": "TopNExclude",
+      "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+      "notes": "explicit SKU exclude \u2014 never ask confirm",
+      "pred": "SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 12.9,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_01_sales_core.xlsx",
+      "qid": 4,
+      "question": "No \u2014 show top 5 sales without excluding",
+      "difficulty": "Hard",
+      "reasoning_type": "TopNNoExclude",
+      "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+      "notes": "button-echo / cancel exclude \u2014 treat as plain top 5, never loop",
+      "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 12.6,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_01_sales_core.xlsx",
+      "qid": 5,
+      "question": "removing the first one, show me top 5",
+      "difficulty": "Hard",
+      "reasoning_type": "TopNExcludeFirst",
+      "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
+      "notes": "first=current #1 SKU-00397; act once, no auto-send confirm",
+      "pred": "SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 12.1,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_02_inventory.xlsx",
+      "qid": 6,
+      "question": "How many SKUs do we have in inventory?",
+      "difficulty": "Easy",
+      "reasoning_type": "Count",
+      "gold": "25",
+      "notes": "",
+      "pred": "25",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 42.3,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_02_inventory.xlsx",
+      "qid": 7,
+      "question": "What is total stock value by category?",
+      "difficulty": "Medium",
+      "reasoning_type": "GroupBy",
+      "gold": "Electronics: 50000 | Grocery: 42000 | Apparel: 38000 | Home: 36000 | Sports: 34000 | Misc: 1500",
+      "notes": "",
+      "pred": "Electronics: 50000 | Grocery: 42000 | Apparel: 38000 | Home: 36000 | Sports: 34000 | Misc: 1500",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 1.0,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_06_margin_mix.xlsx",
+      "qid": 8,
+      "question": "Which SKU has the highest margin dollars?",
+      "difficulty": "Medium",
+      "reasoning_type": "ArgMax",
+      "gold": "SKU-00397",
+      "notes": "",
+      "pred": "SKU-00397",
+      "correct": true,
+      "match_reason": "sku_rank_order",
+      "lane": "sql",
+      "ms": 121.0,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_05_purchase_orders.xlsx",
+      "qid": 9,
+      "question": "How many open purchase orders?",
+      "difficulty": "Easy",
+      "reasoning_type": "CountFilter",
+      "gold": "5",
+      "notes": "",
+      "pred": "5",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 14.5,
+      "error": null,
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "wh_03_returns.xlsx",
+      "qid": 10,
+      "question": "What is total refund value?",
+      "difficulty": "Easy",
+      "reasoning_type": "Sum",
+      "gold": "67140.86",
+      "notes": "",
+      "pred": "67140.86",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 9.3,
+      "error": null,
+      "model": "pandas-sql"
+    }
+  ],
+  "sheet_index": {
+    "wh_01_sales_core.xlsx": [
+      "SKU_Master",
+      "Sales",
+      "Summary"
+    ],
+    "wh_02_inventory.xlsx": [
+      "Inventory",
+      "ByCategory",
+      "Summary"
+    ],
+    "wh_03_returns.xlsx": [
+      "Returns",
+      "Summary"
+    ],
+    "wh_04_regions.xlsx": [
+      "RegionalSales",
+      "Summary"
+    ],
+    "wh_05_purchase_orders.xlsx": [
+      "PurchaseOrders",
+      "Vendors",
+      "Summary"
+    ],
+    "wh_06_margin_mix.xlsx": [
+      "MarginBySku",
+      "Summary"
+    ]
+  },
+  "suggested_prompts": [
+    "Top 5 selling SKUs by revenue",
+    "Top 6 selling SKUs by revenue",
+    "Top 5 selling SKUs by revenue excluding SKU-00397",
+    "How many SKUs do we have in inventory?",
+    "What is total stock value by category?"
+  ],
+  "ts": "2026-08-03T02:41:36",
+  "score_artifacts_preserved": [
+    "tests/RAG/results/frtr_cross_latest.json",
+    "tests/RAG/results/frtr_cross_latest.xlsx"
+  ]
+}

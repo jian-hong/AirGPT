@@ -1,0 +1,17 @@
+{
+  "token": "ops_1785719733_13",
+  "path": "D:\\AirGPT\\tests\\RAG\\messy\\messy_payroll_ops.xlsx",
+  "sheet": "Payroll_RAW",
+  "row": 13,
+  "emp_id": "E-0012",
+  "name": "Person 12",
+  "base_salary": 5700.55,
+  "ask": "salary raise for E-0012",
+  "status": "amended",
+  "prompt": "Is it that one? Emp E-0012 / Person 12 / salary 5700.55 (row 13)",
+  "weak_match": false,
+  "created_at": "2026-08-03T09:15:33",
+  "proposed_salary": 6156.59,
+  "amend_prompt": "Amend E-0012 salary 5700.55 -> 6156.59? Confirm yes to write, no to abort.",
+  "amended_at": "2026-08-03T09:15:34"
+}

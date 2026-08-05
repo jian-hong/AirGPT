@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "honesty": "Cortex-direct, not OpenVault-gated (EPIC-D01).",
+  "ask": "Top 5 selling SKUs by revenue",
+  "ts": "2026-08-03T02:48:08",
+  "lane": "sql",
+  "source": {
+    "file": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx",
+    "sheet": "Sales"
+  },
+  "result_preview": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
+  "steps": [
+    {
+      "step": 1,
+      "op": "load_workbook",
+      "detail": "D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx"
+    },
+    {
+      "step": 2,
+      "op": "sql_codegen",
+      "detail": "-- certified query cq_sales_top5_value (AirGPT hybrid_max / free route)\nSELECT sku, ROUND(SUM(sales_value_myr), 2) AS sales_value_myr\nFROM Sales\nGROUP BY sku\nORDER BY sales_value_myr DESC\nLIMIT 5;"
+    },
+    {
+      "step": 3,
+      "op": "aggregate_rank",
+      "detail": "n=5 exclude=[]"
+    },
+    {
+      "step": 4,
+      "op": "derive_insights",
+      "detail": "7 insights"
+    },
+    {
+      "step": 5,
+      "op": "export_route",
+      "detail": "free_openpyxl"
+    },
+    {
+      "step": 6,
+      "op": "excel_mcp_probe",
+      "detail": {
+        "ok": false,
+        "route": "free_openpyxl",
+        "reason": "excel MCP python module not importable in this process",
+        "ms": 12.8,
+        "file": "D:\\AirGPT\\tests\\RAG\\results\\exports\\insights_export_20260803_024808.xlsx",
+        "advice": "Use openpyxl export; in Cursor call user-excel excel_describe_sheets on the same file."
+      }
+    }
+  ],
+  "error": null,
+  "traceback": null
+}

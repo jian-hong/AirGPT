@@ -1,0 +1,183 @@
+{
+  "summary": {
+    "ok": true,
+    "space_id": 6,
+    "n": 6,
+    "correct": 5,
+    "accuracy": 0.833,
+    "depth": "max",
+    "use_llm": true,
+    "hybrid_sql": true,
+    "by_difficulty": {
+      "Easy": {
+        "n": 3,
+        "accuracy": 1.0
+      },
+      "Medium": {
+        "n": 2,
+        "accuracy": 0.5
+      },
+      "Hard": {
+        "n": 1,
+        "accuracy": 1.0
+      }
+    },
+    "by_reasoning": {
+      "Aggregation": {
+        "n": 2,
+        "accuracy": 1.0
+      },
+      "Comparison": {
+        "n": 1,
+        "accuracy": 1.0
+      },
+      "Computation": {
+        "n": 1,
+        "accuracy": 1.0
+      },
+      "TrendReasoning": {
+        "n": 1,
+        "accuracy": 0.0
+      },
+      "Lookup/Count": {
+        "n": 1,
+        "accuracy": 1.0
+      }
+    },
+    "misses": [
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 5,
+        "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+        "reasoning_type": "TrendReasoning",
+        "difficulty": "Medium",
+        "gold": "Yes",
+        "raw_answer": "Yes",
+        "pred": "No \u2014 the revenue trend does not increase from Q1 to Q4. The quarterly totals are: Q1 2024 = 1,966,567.30; Q2 2024 = 2,176,251.17; Q3 2024 = 2,127,801.07; Q4 2024 = 1,361,664.92, showing a decline in Q4 relative to Q1\u2013Q3 [1].",
+        "correct": false,
+        "match_reason": "mismatch",
+        "lane": "rag",
+        "ms": 51754.9,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 1,
+      "question": "What is total revenue in Q2 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "2176251.169851399",
+      "raw_answer": "See Summary!B4",
+      "pred": "2176251.169851399",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 109.5,
+      "error": null,
+      "citations": [],
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 2,
+      "question": "Which quarter has the highest gross margin dollars?",
+      "reasoning_type": "Comparison",
+      "difficulty": "Medium",
+      "gold": "Q2 2024",
+      "raw_answer": "Max of Summary!D3:D6",
+      "pred": "Q2 2024",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 3.3,
+      "error": null,
+      "citations": [],
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 3,
+      "question": "What is the gross margin percentage in Q3 2024?",
+      "reasoning_type": "Computation",
+      "difficulty": "Easy",
+      "gold": "0.4429409225701213",
+      "raw_answer": "See Summary!E5",
+      "pred": "0.4429409225701213",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 0.8,
+      "error": null,
+      "citations": [],
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 4,
+      "question": "What is total expenses in Q1 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "1016549.3740205832",
+      "raw_answer": "See Summary!C3",
+      "pred": "1016549.374020583",
+      "correct": true,
+      "match_reason": "numeric_1pct",
+      "lane": "sql",
+      "ms": 0.4,
+      "error": null,
+      "citations": [],
+      "model": "pandas-sql"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 5,
+      "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+      "reasoning_type": "TrendReasoning",
+      "difficulty": "Medium",
+      "gold": "Yes",
+      "raw_answer": "Yes",
+      "pred": "No \u2014 the revenue trend does not increase from Q1 to Q4. The quarterly totals are: Q1 2024 = 1,966,567.30; Q2 2024 = 2,176,251.17; Q3 2024 = 2,127,801.07; Q4 2024 = 1,361,664.92, showing a decline in Q4 relative to Q1\u2013Q3 [1].",
+      "correct": false,
+      "match_reason": "mismatch",
+      "lane": "rag",
+      "ms": 51754.9,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 6,
+      "question": "Which region appears most frequently in revenue records?",
+      "reasoning_type": "Lookup/Count",
+      "difficulty": "Hard",
+      "gold": "West",
+      "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+      "pred": "West",
+      "correct": true,
+      "match_reason": "substring",
+      "lane": "sql",
+      "ms": 24.4,
+      "error": null,
+      "citations": [],
+      "model": "pandas-sql"
+    }
+  ]
+}

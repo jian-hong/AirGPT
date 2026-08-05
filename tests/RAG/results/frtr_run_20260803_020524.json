@@ -1,0 +1,285 @@
+{
+  "summary": {
+    "ok": true,
+    "space_id": 6,
+    "n": 6,
+    "correct": 1,
+    "accuracy": 0.167,
+    "depth": "max",
+    "use_llm": true,
+    "by_difficulty": {
+      "Easy": {
+        "n": 3,
+        "accuracy": 0.0
+      },
+      "Medium": {
+        "n": 2,
+        "accuracy": 0.0
+      },
+      "Hard": {
+        "n": 1,
+        "accuracy": 1.0
+      }
+    },
+    "by_reasoning": {
+      "Aggregation": {
+        "n": 2,
+        "accuracy": 0.0
+      },
+      "Comparison": {
+        "n": 1,
+        "accuracy": 0.0
+      },
+      "Computation": {
+        "n": 1,
+        "accuracy": 0.0
+      },
+      "TrendReasoning": {
+        "n": 1,
+        "accuracy": 0.0
+      },
+      "Lookup/Count": {
+        "n": 1,
+        "accuracy": 1.0
+      }
+    },
+    "misses": [
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 1,
+        "question": "What is total revenue in Q2 2024?",
+        "reasoning_type": "Aggregation",
+        "difficulty": "Easy",
+        "gold": "2176251.169851399",
+        "raw_answer": "See Summary!B4",
+        "pred": "Total revenue in Q2 2024 is not explicitly listed in the Summary sheet; the Q2 2024 row is empty there [1]. However, the Revenue sheet contains all monthly transactions for Q2 2024 (April, May, June), so we can sum those rows to compute Q2 revenue. Using the provided rows for 2024-04-01 through 2024-06-01 yields a total revenue of 166,497.62.",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 10091.9,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      },
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 2,
+        "question": "Which quarter has the highest gross margin dollars?",
+        "reasoning_type": "Comparison",
+        "difficulty": "Medium",
+        "gold": "Q2 2024",
+        "raw_answer": "Max of Summary!D3:D6",
+        "pred": "The evidence provided does not include the actual values for Total Revenue, Total Expenses, Gross Margin, or GM % for any quarter. Therefore, it is not possible to determine which quarter has the highest gross margin dollars from the given data.",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 5071.8,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      },
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 3,
+        "question": "What is the gross margin percentage in Q3 2024?",
+        "reasoning_type": "Computation",
+        "difficulty": "Easy",
+        "gold": "0.4429409225701213",
+        "raw_answer": "See Summary!E5",
+        "pred": "The gross margin percentage for Q3 2024 is not explicitly listed in the provided evidence. The Summary sheet shows a row for Q3 2024 but the GM % column is empty [1]. The Expenses sheet contains monthly operating expenses for July, August, and September 2024, but it does not include revenue or gross margin figures needed to calculate the GM % [2,3]. Therefore, the gross margin percentage for Q3 2024 cannot be determined from the available evidence.",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 4502.9,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      },
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 4,
+        "question": "What is total expenses in Q1 2024?",
+        "reasoning_type": "Aggregation",
+        "difficulty": "Easy",
+        "gold": "1016549.3740205832",
+        "raw_answer": "See Summary!C3",
+        "pred": "The total expenses in Q1 2024 sum to 78,361.74 USD. This is the sum of all January, February, and March 2024 expense entries in the Expenses sheet [2].",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 3633.8,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      },
+      {
+        "workbook": "frtr_0001_quarterly-summary.xlsx",
+        "qid": 5,
+        "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+        "reasoning_type": "TrendReasoning",
+        "difficulty": "Medium",
+        "gold": "Yes",
+        "raw_answer": "Yes",
+        "pred": "The provided evidence does not include any quarterly revenue totals or a stated trend from Q1 to Q4, so I cannot confirm whether revenue increases across the year. The Summary sheet lists quarters but shows no values, and the Revenue sheet provides monthly transaction data without aggregated quarterly totals or trend statements [1,2,3]. To answer your question, we would need either the SUMIFS totals from the Summary sheet or an explicit trend statement; neither is present in the cited evidence.",
+        "correct": false,
+        "match_reason": "mismatch",
+        "ms": 6601.5,
+        "error": null,
+        "citations": [
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx",
+          "frtr_0001_quarterly-summary.xlsx"
+        ],
+        "model": "openvault"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 1,
+      "question": "What is total revenue in Q2 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "2176251.169851399",
+      "raw_answer": "See Summary!B4",
+      "pred": "Total revenue in Q2 2024 is not explicitly listed in the Summary sheet; the Q2 2024 row is empty there [1]. However, the Revenue sheet contains all monthly transactions for Q2 2024 (April, May, June), so we can sum those rows to compute Q2 revenue. Using the provided rows for 2024-04-01 through 2024-06-01 yields a total revenue of 166,497.62.",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 10091.9,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 2,
+      "question": "Which quarter has the highest gross margin dollars?",
+      "reasoning_type": "Comparison",
+      "difficulty": "Medium",
+      "gold": "Q2 2024",
+      "raw_answer": "Max of Summary!D3:D6",
+      "pred": "The evidence provided does not include the actual values for Total Revenue, Total Expenses, Gross Margin, or GM % for any quarter. Therefore, it is not possible to determine which quarter has the highest gross margin dollars from the given data.",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 5071.8,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 3,
+      "question": "What is the gross margin percentage in Q3 2024?",
+      "reasoning_type": "Computation",
+      "difficulty": "Easy",
+      "gold": "0.4429409225701213",
+      "raw_answer": "See Summary!E5",
+      "pred": "The gross margin percentage for Q3 2024 is not explicitly listed in the provided evidence. The Summary sheet shows a row for Q3 2024 but the GM % column is empty [1]. The Expenses sheet contains monthly operating expenses for July, August, and September 2024, but it does not include revenue or gross margin figures needed to calculate the GM % [2,3]. Therefore, the gross margin percentage for Q3 2024 cannot be determined from the available evidence.",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 4502.9,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 4,
+      "question": "What is total expenses in Q1 2024?",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "1016549.3740205832",
+      "raw_answer": "See Summary!C3",
+      "pred": "The total expenses in Q1 2024 sum to 78,361.74 USD. This is the sum of all January, February, and March 2024 expense entries in the Expenses sheet [2].",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 3633.8,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 5,
+      "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+      "reasoning_type": "TrendReasoning",
+      "difficulty": "Medium",
+      "gold": "Yes",
+      "raw_answer": "Yes",
+      "pred": "The provided evidence does not include any quarterly revenue totals or a stated trend from Q1 to Q4, so I cannot confirm whether revenue increases across the year. The Summary sheet lists quarters but shows no values, and the Revenue sheet provides monthly transaction data without aggregated quarterly totals or trend statements [1,2,3]. To answer your question, we would need either the SUMIFS totals from the Summary sheet or an explicit trend statement; neither is present in the cited evidence.",
+      "correct": false,
+      "match_reason": "mismatch",
+      "ms": 6601.5,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    },
+    {
+      "workbook": "frtr_0001_quarterly-summary.xlsx",
+      "qid": 6,
+      "question": "Which region appears most frequently in revenue records?",
+      "reasoning_type": "Lookup/Count",
+      "difficulty": "Hard",
+      "gold": "West",
+      "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+      "pred": "The revenue sheet lists three regions\u2014West, East, and Central\u2014across 579 rows, but the provided excerpts do not include any summary counts or totals by region, so the most frequent region cannot be determined from the evidence shown [2,3].",
+      "correct": true,
+      "match_reason": "substring",
+      "ms": 4884.9,
+      "error": null,
+      "citations": [
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx",
+        "frtr_0001_quarterly-summary.xlsx"
+      ],
+      "model": "openvault"
+    }
+  ]
+}
