@@ -30,7 +30,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 77.8,
+      "ms": 31.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -62,7 +62,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 16.9,
+      "ms": 11.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -78,7 +78,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 11.2,
+      "ms": 11.8,
       "error": null,
       "model": "pandas-sql"
     },
@@ -94,7 +94,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 14.9,
+      "ms": 11.4,
       "error": null,
       "model": "pandas-sql"
     },
@@ -110,7 +110,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 12.5,
+      "ms": 13.2,
       "error": null,
       "model": "pandas-sql"
     },
@@ -126,7 +126,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 0.8,
+      "ms": 0.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -142,7 +142,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 10.9,
+      "ms": 9.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -158,7 +158,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 10.4,
+      "ms": 13.1,
       "error": null,
       "model": "pandas-sql"
     },
@@ -174,7 +174,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 9.9,
+      "ms": 5.7,
       "error": null,
       "model": "pandas-sql"
     }
@@ -215,7 +215,7 @@
     "How many SKUs do we have in inventory?",
     "What is total stock value by category?"
   ],
-  "ts": "2026-08-03T03:05:53",
+  "ts": "2026-08-03T12:12:35",
   "score_artifacts_preserved": [
     "tests/RAG/results/frtr_cross_latest.json",
     "tests/RAG/results/frtr_cross_latest.xlsx"

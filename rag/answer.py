@@ -880,15 +880,21 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
         return None
 
     cites: list[dict] = []
-    # Prefer matching workbook when query mentions sheet-ish keywords; else merge all.
+    # Prefer Docs/ originals (audit), then live path.
     frames: dict = {}
     for src in store.list_sources(int(space_id)):
-        path = str(src.get("path") or "")
+        meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+        docs = str(meta.get("docs_path") or "").strip()
+        path = docs or str(src.get("path") or "")
         if not path.lower().endswith((".xlsx", ".xlsm", ".xls")):
             continue
         p = Path(path)
         if not p.is_file():
-            continue
+            # Docs missing — fall back to ingest path
+            path = str(src.get("path") or "")
+            p = Path(path)
+            if not p.is_file():
+                continue
         try:
             sheets = load_sheets(p)
         except Exception:
@@ -897,7 +903,14 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
         if pred and not str(pred).startswith("ABSTAIN:"):
             return {
                 "answer": str(pred),
-                "citations": [{"path": path, "title": src.get("title") or p.name}],
+                "citations": [
+                    {
+                        "path": path,
+                        "path_full": path,
+                        "title": src.get("title") or p.name,
+                        "docs_path": docs or None,
+                    }
+                ],
             }
         if pred and str(pred).startswith("ABSTAIN:"):
             return {
@@ -947,16 +960,20 @@ def answer_events(
         _preset = _dv.resolve_for_space(space_id)
         _ont = _onto.ontology_for_space(space_id, force=False)
         _logic = _onto.logic_for_query(_ont if _ont.get("ok") else {}, raw_q)
+        _reason = _onto.reasoning_prose(_logic, query=raw_q)
         if _logic:
             yield {
                 "type": "ontology",
                 "summary": (_ont.get("summary") if isinstance(_ont, dict) else None),
                 "logic": _logic,
+                "reasoning": _reason,
             }
             yield {
                 "type": "thinking",
                 "text": "Ontology → " + " → ".join(s.get("op") or "" for s in _logic),
             }
+            if _reason:
+                yield {"type": "reasoning", "text": _reason, "logic": _logic}
         if _preset.get("hybrid_sql_lane") and raw_q:
             sql_hit = _try_hybrid_sql_lane(space_id, raw_q)
             if sql_hit:
@@ -968,6 +985,7 @@ def answer_events(
                     "honesty": _preset.get("honesty"),
                     "lane": "sql",
                     "logic": _logic,
+                    "reasoning": _reason,
                     "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
                     "hits": [],
                     "context": "",
@@ -984,6 +1002,7 @@ def answer_events(
                     "honesty": _preset.get("honesty"),
                     "variant": _preset.get("name"),
                     "logic": _logic,
+                    "reasoning": _reason,
                     "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
                 }
                 return
@@ -1238,11 +1257,29 @@ def answer_events(
         cid = int(h.get("chunk_id") or 0)
         meta_row = store.get_chunk(cid) or {}
         raw_path = h.get("path") or meta_row.get("path") or ""
+        docs_path = ""
+        try:
+            src_id = int(meta_row.get("source_id") or h.get("source_id") or 0)
+            if src_id:
+                src = store.get_source(src_id) or {}
+                sm = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+                docs_path = str(sm.get("docs_path") or "").strip()
+                # Prefer durable Docs / live source path over vanished temp uploads
+                live = str(src.get("path") or "").strip()
+                if docs_path:
+                    raw_path = docs_path
+                elif live and Path(live).is_file():
+                    raw_path = live
+                elif not raw_path:
+                    raw_path = str(sm.get("original_path") or live or "")
+        except Exception:
+            docs_path = ""
         citations.append(
             {
                 "chunk_id": cid,
                 "path": _display_path(raw_path),
                 "path_full": raw_path,
+                "docs_path": docs_path or None,
                 "title": Path(str(raw_path).replace("\\", "/")).name if raw_path else "",
                 "heading": h.get("heading") or meta_row.get("heading"),
                 "span_start": meta_row.get("span_start"),

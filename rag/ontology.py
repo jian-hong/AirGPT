@@ -190,11 +190,19 @@ def ontology_for_space(space_id: int, *, force: bool = False) -> dict[str, Any]:
 
 
 def logic_for_query(ontology: dict[str, Any], query: str) -> list[dict[str, str]]:
-    """Produce visible reasoning steps that cite ontology entities."""
+    """Produce visible reasoning steps that cite ontology entities (founder-readable)."""
     q = (query or "").lower()
     steps: list[dict[str, str]] = []
     ents = {e["id"]: e for e in (ontology.get("entities") or []) if isinstance(e, dict)}
-    steps.append({"step": "1", "op": "load_ontology", "detail": f"entities={sorted(ents.keys())}"})
+    ent_list = ", ".join(sorted(ents.keys())) or "(empty)"
+    steps.append(
+        {
+            "step": "1",
+            "op": "load_ontology",
+            "detail": f"entities={sorted(ents.keys())}",
+            "why": f"Loaded space ontology: {ent_list}.",
+        }
+    )
 
     mapped: list[str] = []
     for eid, ent in ents.items():
@@ -214,16 +222,27 @@ def logic_for_query(ontology: dict[str, Any], query: str) -> list[dict[str, str]
             "step": "2",
             "op": "bind_entities",
             "detail": ", ".join(mapped) or "(none — fall back to retrieve)",
+            "why": (
+                f"Question maps to entities: {', '.join(mapped)}."
+                if mapped
+                else "No strong entity bind — will retrieve then ground."
+            ),
         }
     )
 
     rels = ontology.get("relations") or []
     useful = [r for r in rels if str(r.get("key") or "") in q or ("sku" in q and r.get("key") == "sku")]
+    rel_ids = [r.get("id") or "" for r in useful[:5]]
     steps.append(
         {
             "step": "3",
             "op": "use_relations",
-            "detail": ("; ".join(r.get("id") or "" for r in useful[:5]) if useful else "none required"),
+            "detail": ("; ".join(rel_ids) if useful else "none required"),
+            "why": (
+                f"Join keys used: {'; '.join(rel_ids)}."
+                if useful
+                else "No join required for this ask."
+            ),
         }
     )
     if re.search(r"\btop\s+\d+|average|total|sum|increment|salary", q):
@@ -232,12 +251,41 @@ def logic_for_query(ontology: dict[str, Any], query: str) -> list[dict[str, str]
                 "step": "4",
                 "op": "select_logic",
                 "detail": "structured hybrid_sql / aggregate over bound Money|SKU sheets",
+                "why": "Ask looks structured (Top-N / KPI) - prefer hybrid SQL over free retrieve.",
             }
         )
     else:
-        steps.append({"step": "4", "op": "select_logic", "detail": "retrieve + grounded generate"})
-    steps.append({"step": "5", "op": "answer", "detail": "emit answer citing ontology + sources"})
+        steps.append(
+            {
+                "step": "4",
+                "op": "select_logic",
+                "detail": "retrieve + grounded generate",
+                "why": "Ask is open-ended — retrieve evidence then generate with citations.",
+            }
+        )
+    steps.append(
+        {
+            "step": "5",
+            "op": "answer",
+            "detail": "emit answer citing ontology + sources",
+            "why": "Answer must cite Docs/original paths so you can open Explorer and audit.",
+        }
+    )
     return steps
+
+
+def reasoning_prose(logic: list[dict[str, str]] | None, *, query: str = "") -> str:
+    """Founder-facing paragraph from logic steps (F12)."""
+    lines: list[str] = []
+    if query:
+        lines.append(f"Ask: {query.strip()[:200]}")
+    for s in logic or []:
+        why = (s.get("why") or s.get("detail") or "").strip()
+        if not why:
+            continue
+        op = (s.get("op") or "step").replace("_", " ")
+        lines.append(f"{s.get('step') or '?'}. {op}: {why}")
+    return "\n".join(lines) if lines else ""
 
 
 def save_ontology_artifact(space_id: int, dest: Path | None = None) -> Path:

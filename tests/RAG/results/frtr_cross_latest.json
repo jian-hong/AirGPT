@@ -1,17 +1,48 @@
 {
   "ok": true,
   "workbook": "frtr_0001_quarterly-summary.xlsx",
-  "space_id": 999,
+  "space_id": 6,
   "honesty": "Cortex-direct / ai_engine RAG path \u2014 not OpenVault-gated for this demo branch.",
   "spot_check": {
-    "ok": false,
-    "cited_gold_fragment": false,
+    "ok": true,
+    "cited_gold_fragment": true,
     "question": "What is total revenue in Q2 2024?",
     "gold": "2176251.169851399",
     "depth": "max",
-    "ms": 2578.7,
-    "n_hits": 0,
-    "top": [],
+    "ms": 39921.2,
+    "n_hits": 8,
+    "top": [
+      {
+        "path": "D:\\AirGPT\\tests\\RAG\\frtr_sanitized\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.2653846153846154,
+        "sheet": null,
+        "text": "## Sheet: Revenue\nSummary note: Revenue detail by month/region/SKU\nDate | Region | SKU | Qty | UnitPrice | Revenue\nDate | Region | SKU | Qty | UnitPrice | Revenue\n2024-01-01 00:00:00 | West | SKU-001 | 195 | 49.55408037744047 | 9663.0456736"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_taglab-net-marketing-metrics-paid-search-conversion-rate.md",
+        "score": 0.2638888888888889,
+        "sheet": null,
+        "text": "# Paid Search Conversion Rate - TAGLAB\r\n\r\nSource: https://taglab.net/marketing-metrics/paid-search-conversion-rate/\r\n\r\nSkip to content\r\n\r\nPaid Search Conversion Rate\r\n\r\nPosted by:\r\n\r\n|\r\n\r\nOn:\r\n\r\nJuly 29, 2024\r\n\r\n|\r\n\r\nTable of Contents\r\n\r\nDe"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_blog-btxglobal-com-2026-what-is-otif-in-logistics-why-on-tim.md",
+        "score": 0.06639344262295083,
+        "sheet": null,
+        "text": "BTX supports shippers with flexible transportation and specialized logistics solutions across domestic air freight, global shipping, white glove delivery, and more.\r\n\r\n Domestic Air Freight\r\n White Glove Delivery\r\n Specialized Services\r\n\r\nW"
+      },
+      {
+        "path": "D:\\AirGPT\\tests\\RAG\\frtr_sanitized\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.06639344262295083,
+        "sheet": null,
+        "text": "14289588\n2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258\n2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021618\n2024-10-01 00:00:00 | Central | SKU-004 | 160 | 133.7128935"
+      },
+      {
+        "path": "D:\\AirGPT\\data\\rag\\6\\sources\\url_blog-btxglobal-com-2026-what-is-otif-in-logistics-why-on-tim.md",
+        "score": 0.06612903225806452,
+        "sheet": null,
+        "text": "If OTIF issues are causing delays, customer complaints, or rising exception costs, BTX Global Logistics can help you build a more dependable transportation strategy across domestic and global shipments.\r\n\r\nRequest a Quote\r\n\r\nHow to Calculat"
+      }
+    ],
     "template": null
   },
   "best_variant": "hybrid_max",
@@ -21,7 +52,7 @@
       "label": "hybrid SQL+SiRA max",
       "summary": {
         "ok": true,
-        "space_id": 999,
+        "space_id": 6,
         "n": 6,
         "correct": 6,
         "accuracy": 1.0,
@@ -81,7 +112,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 248.2,
+          "ms": 215.5,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -98,7 +129,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 4.6,
+          "ms": 4.2,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -132,7 +163,7 @@
           "correct": true,
           "match_reason": "numeric_1pct",
           "lane": "sql",
-          "ms": 3.1,
+          "ms": 1.0,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -149,7 +180,7 @@
           "correct": true,
           "match_reason": "gold_value",
           "lane": "sql",
-          "ms": 1.0,
+          "ms": 0.6,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -166,7 +197,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 5.5,
+          "ms": 4.6,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -188,5 +219,5 @@
     "Export a scorecard: variant accuracy vs difficulty (Easy/Medium/Hard).",
     "List misses only and propose one retrieval fix per miss."
   ],
-  "ts": "2026-08-03T03:03:40"
+  "ts": "2026-08-03T12:13:22"
 }

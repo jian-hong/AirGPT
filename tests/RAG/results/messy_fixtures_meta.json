@@ -1,14 +1,815 @@
 {
   "ok": true,
-  "total_mb": 316.84,
+  "target_mb": 900.0,
+  "cols": 36,
+  "col_names": [
+    "sku",
+    "region",
+    "sales_value_myr",
+    "qty",
+    "vendor",
+    "category",
+    "warehouse",
+    "channel",
+    "currency",
+    "unit_cost",
+    "margin_pct",
+    "order_id",
+    "po_number",
+    "invoice_no",
+    "customer_id",
+    "sales_rep",
+    "ship_method",
+    "ship_status",
+    "payment_terms",
+    "tax_code",
+    "discount_pct",
+    "promo_code",
+    "batch_lot",
+    "expiry_date",
+    "created_at",
+    "updated_at",
+    "fiscal_quarter",
+    "cost_center",
+    "gl_account",
+    "priority",
+    "sla_hours",
+    "return_flag",
+    "notes",
+    "source_system",
+    "checksum",
+    "pad"
+  ],
+  "core_rows": 800,
+  "bulk_rows": 1000,
   "files": [
     {
-      "path": "tests\\RAG\\messy\\messy_payroll_ops.xlsx",
-      "mb": 0.13
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_001.csv",
+      "bytes": 8237267,
+      "mb": 8.24,
+      "kind": "bulk"
     },
     {
-      "path": "tests\\RAG\\messy\\messy_sales_raw.csv",
-      "mb": 316.71
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_002.csv",
+      "bytes": 8237062,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_003.csv",
+      "bytes": 8236304,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_004.csv",
+      "bytes": 8237167,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_005.csv",
+      "bytes": 8237260,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_006.csv",
+      "bytes": 8236543,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_007.csv",
+      "bytes": 8236647,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_008.csv",
+      "bytes": 8236789,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_009.csv",
+      "bytes": 8236464,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_010.csv",
+      "bytes": 8237455,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_011.csv",
+      "bytes": 8237177,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_012.csv",
+      "bytes": 8236959,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_013.csv",
+      "bytes": 8237259,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_014.csv",
+      "bytes": 8237420,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_015.csv",
+      "bytes": 8236822,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_016.csv",
+      "bytes": 8236983,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_017.csv",
+      "bytes": 8237253,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_018.csv",
+      "bytes": 8236712,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_019.csv",
+      "bytes": 8237075,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_020.csv",
+      "bytes": 8237397,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_021.csv",
+      "bytes": 8236446,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_022.csv",
+      "bytes": 8236611,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_023.csv",
+      "bytes": 8236662,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_024.csv",
+      "bytes": 8236341,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_025.csv",
+      "bytes": 8237365,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_026.csv",
+      "bytes": 8236778,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_027.csv",
+      "bytes": 8236801,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_028.csv",
+      "bytes": 8236910,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_029.csv",
+      "bytes": 8237321,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_030.csv",
+      "bytes": 8236954,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_031.csv",
+      "bytes": 8237123,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_032.csv",
+      "bytes": 8237433,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_033.csv",
+      "bytes": 8237085,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_034.csv",
+      "bytes": 8236976,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_035.csv",
+      "bytes": 8236671,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_036.csv",
+      "bytes": 8236714,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_037.csv",
+      "bytes": 8236890,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_038.csv",
+      "bytes": 8237182,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_039.csv",
+      "bytes": 8237285,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_040.csv",
+      "bytes": 8236930,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_041.csv",
+      "bytes": 8236226,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_042.csv",
+      "bytes": 8237082,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_043.csv",
+      "bytes": 8236821,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_044.csv",
+      "bytes": 8236546,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_045.csv",
+      "bytes": 8236564,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_046.csv",
+      "bytes": 8237077,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_047.csv",
+      "bytes": 8236445,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_048.csv",
+      "bytes": 8236601,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_049.csv",
+      "bytes": 8236804,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_050.csv",
+      "bytes": 8236734,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_051.csv",
+      "bytes": 8236147,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_052.csv",
+      "bytes": 8236893,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_053.csv",
+      "bytes": 8236963,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_054.csv",
+      "bytes": 8237013,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_055.csv",
+      "bytes": 8237331,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_056.csv",
+      "bytes": 8236748,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_057.csv",
+      "bytes": 8236587,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_058.csv",
+      "bytes": 8236700,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_059.csv",
+      "bytes": 8236847,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_060.csv",
+      "bytes": 8237202,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_061.csv",
+      "bytes": 8236759,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_062.csv",
+      "bytes": 8236742,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_063.csv",
+      "bytes": 8237014,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_064.csv",
+      "bytes": 8237098,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_065.csv",
+      "bytes": 8237407,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_066.csv",
+      "bytes": 8236652,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_067.csv",
+      "bytes": 8236713,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_068.csv",
+      "bytes": 8236532,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_069.csv",
+      "bytes": 8236926,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_070.csv",
+      "bytes": 8237059,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_071.csv",
+      "bytes": 8236727,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_072.csv",
+      "bytes": 8237535,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_073.csv",
+      "bytes": 8237193,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_074.csv",
+      "bytes": 8236901,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_075.csv",
+      "bytes": 8236504,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_076.csv",
+      "bytes": 8236409,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_077.csv",
+      "bytes": 8237639,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_078.csv",
+      "bytes": 8237091,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_079.csv",
+      "bytes": 8237142,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_080.csv",
+      "bytes": 8236801,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_081.csv",
+      "bytes": 8237040,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_082.csv",
+      "bytes": 8236901,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_083.csv",
+      "bytes": 8236848,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_084.csv",
+      "bytes": 8236321,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_085.csv",
+      "bytes": 8237151,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_086.csv",
+      "bytes": 8236871,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_087.csv",
+      "bytes": 8236757,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_088.csv",
+      "bytes": 8236891,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_089.csv",
+      "bytes": 8237137,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_090.csv",
+      "bytes": 8237091,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_091.csv",
+      "bytes": 8236704,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_092.csv",
+      "bytes": 8236932,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_093.csv",
+      "bytes": 8237318,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_094.csv",
+      "bytes": 8236690,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_095.csv",
+      "bytes": 8237125,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_096.csv",
+      "bytes": 8237078,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_097.csv",
+      "bytes": 8236636,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_098.csv",
+      "bytes": 8236948,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_099.csv",
+      "bytes": 8237079,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_100.csv",
+      "bytes": 8237211,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_101.csv",
+      "bytes": 8236784,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_102.csv",
+      "bytes": 8237022,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_103.csv",
+      "bytes": 8237316,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_104.csv",
+      "bytes": 8236678,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_105.csv",
+      "bytes": 8237276,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_106.csv",
+      "bytes": 8237264,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_107.csv",
+      "bytes": 8236755,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_108.csv",
+      "bytes": 8236988,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_109.csv",
+      "bytes": 8236481,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_110.csv",
+      "bytes": 8236516,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_111.csv",
+      "bytes": 8236799,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_112.csv",
+      "bytes": 8236707,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_113.csv",
+      "bytes": 8237292,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_114.csv",
+      "bytes": 8237056,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\bulk_shard_115.csv",
+      "bytes": 8236643,
+      "mb": 8.24,
+      "kind": "bulk"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\ingest_sample_01.csv",
+      "bytes": 236741,
+      "mb": 0.24,
+      "kind": "bulk_sample"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\bulk\\ingest_sample_02.csv",
+      "bytes": 237117,
+      "mb": 0.24,
+      "kind": "bulk_sample"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_inventory_wide.xlsx",
+      "bytes": 528311,
+      "mb": 0.53,
+      "kind": "core"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_ops_metrics.csv",
+      "bytes": 189626,
+      "mb": 0.19,
+      "kind": "core"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_sales_wide.xlsx",
+      "bytes": 333195,
+      "mb": 0.33,
+      "kind": "core"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_sales_wide_a.csv",
+      "bytes": 189829,
+      "mb": 0.19,
+      "kind": "core"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\core\\core_sales_wide_b.csv",
+      "bytes": 213232,
+      "mb": 0.21,
+      "kind": "core"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\edge\\edge_dup_cols.csv",
+      "bytes": 89641,
+      "mb": 0.09,
+      "kind": "edge"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\edge\\edge_emptyish.csv",
+      "bytes": 28697,
+      "mb": 0.03,
+      "kind": "edge"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\edge\\edge_inject_notes.csv",
+      "bytes": 71824,
+      "mb": 0.07,
+      "kind": "edge"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\edge\\edge_unicode_blanks.csv",
+      "bytes": 95858,
+      "mb": 0.1,
+      "kind": "edge"
+    },
+    {
+      "path": "d:\\AirGPT\\tests\\RAG\\messy\\ops\\messy_payroll_ops.xlsx",
+      "bytes": 134777,
+      "mb": 0.13,
+      "kind": "ops"
     }
-  ]
+  ],
+  "n_files": 127,
+  "total_mb": 949.59,
+  "core_mb": 1.45,
+  "bulk_mb": 947.24,
+  "note": "Generated locally; gitignored. Not 2GB (P6). Ingest core+edge by default; bulk optional.",
+  "secs": 52.1
 }

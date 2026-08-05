@@ -52,4 +52,6 @@ Interview Resources/
 
 # Sample-messy fixtures (few hundred MB; generate locally)
 tests/RAG/messy/
+# Primary ~50MB demo pack (4x~12MB xlsx; generate locally)
+tests/RAG/primary50/
 

@@ -871,7 +871,7 @@ _lan_diag_cache: dict = {"ts": 0.0, "value": None}
 def lan_diagnostics() -> dict:
     now = time.time()
     cached = _lan_diag_cache.get("value")
-    if cached and now - float(_lan_diag_cache["ts"]) < 30.0:
+    if cached and now - float(_lan_diag_cache["ts"]) < 90.0:
         return dict(cached)
     ips = local_ips()
     profile = network_profile()
@@ -1886,7 +1886,7 @@ class Handler(BaseHTTPRequestHandler):
         return join_url, qt
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -1941,7 +1941,50 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Establish, X-AirGPT-Security-Version",
+        )
+        self.send_header("Access-Control-Expose-Headers", "X-AirGPT-Security-Version, X-AirGPT-Host-Verified")
+
+    def _security_headers(self, *, host_verified: bool | None = None) -> None:
+        try:
+            import host_surface
+
+            for k, v in host_surface.security_headers().items():
+                self.send_header(k, v)
+            if host_verified is not None:
+                self.send_header("X-AirGPT-Host-Verified", "1" if host_verified else "0")
+        except Exception:
+            self.send_header("Connection", "keep-alive")
+
+    def _establish_ok(self, path: str) -> bool:
+        """F8a: remote clients must POST /api/establish before protected chat/API."""
+        try:
+            import host_surface
+        except Exception:
+            return True
+        if not host_surface.path_needs_establish(path):
+            return True
+        ip = self._client_ip()
+        local = _is_local_host(self.client_address[0]) and not _forwarded_client_ip(
+            self.headers, self.client_address[0]
+        )
+        nonce = self.headers.get("X-AirGPT-Establish") or ""
+        tok = self._request_token()
+        out = host_surface.verify(ip=ip, token=tok, nonce=nonce, local_bypass=local)
+        if out.get("ok"):
+            return True
+        self._json(
+            401,
+            {
+                "ok": False,
+                "error": out.get("error") or "establish_required",
+                "hint": out.get("hint") or "POST /api/establish",
+                "security_version": host_surface.SECURITY_VERSION,
+            },
+        )
+        return False
 
     def _send(self, code, body: bytes, ctype):
         try:
@@ -1950,6 +1993,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self._cors()
+            self._security_headers(
+                host_verified=_is_local_host(self.client_address[0]),
+            )
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
@@ -2398,8 +2444,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET,HEAD,POST,DELETE,PATCH,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Establish, X-AirGPT-Security-Version",
+        )
         self.end_headers()
 
     def do_HEAD(self):
@@ -2462,6 +2510,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_local_host(ip):
             return self._json(403, {"error": "host only"})
+        if not self._establish_ok(path):
+            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -3282,6 +3332,11 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import store as rag_store
 
                 sid = int(path.split("/")[4])
+                # Backfill Docs/ + absolute paths so reveal icons work on older spaces.
+                try:
+                    rag_store.repair_reveal_meta(sid)
+                except Exception:
+                    pass
                 return self._json(200, {"ok": True, "sources": rag_store.list_sources(sid)})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
@@ -3903,6 +3958,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_local_host(ip):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            try:
+                import host_surface
+
+                data = json.loads(self._body().decode() or "{}")
+                local = _is_local_host(self.client_address[0]) and not _forwarded_client_ip(
+                    self.headers, self.client_address[0]
+                )
+                out = host_surface.establish(
+                    ip=ip,
+                    token=self._request_token() or str(data.get("token") or ""),
+                    host_verified=local or str(data.get("mode") or "").lower() == "host",
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+        if not self._establish_ok(path):
+            return
 
         if path == "/api/presence/typing":
             try:
@@ -4822,13 +4895,16 @@ class Handler(BaseHTTPRequestHandler):
                 if "multipart" not in ctype:
                     return self._json(400, {"error": "multipart required"})
                 form = _parse_multipart(self._body(), ctype)
-                updir = rag_store.BLOB_DIR / str(sid) / "uploads"
+                updir = rag_store.BLOB_DIR / str(sid) / "Docs"
                 updir.mkdir(parents=True, exist_ok=True)
                 saved = []
                 for key, val in form.items():
                     if isinstance(val, dict) and val.get("data") is not None:
                         fname = Path(str(val.get("filename") or key or "upload.txt")).name
                         dest = updir / fname
+                        if dest.exists():
+                            stem, suf = dest.stem, dest.suffix
+                            dest = updir / f"{stem}_{int(time.time()) % 100000}{suf}"
                         dest.write_bytes(val["data"])
                         saved.append(dest)
                 if not saved:
@@ -5058,9 +5134,48 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/rag/reveal-path":
             try:
                 from rag import reveal as rag_reveal
+                from rag import store as rag_store
 
                 data = json.loads(self._body().decode() or "{}")
-                return self._json(200, rag_reveal.reveal_path(str(data.get("path") or "")))
+                candidates = [str(data.get("path") or "").strip()]
+                sid = data.get("source_id")
+                if sid:
+                    src = rag_store.get_source(int(sid)) or {}
+                    meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+                    candidates.extend(
+                        [
+                            str(meta.get("docs_path") or ""),
+                            str(src.get("path") or ""),
+                            str(meta.get("original_path") or ""),
+                        ]
+                    )
+                return self._json(200, rag_reveal.reveal_best(candidates))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/open-docs"):
+            try:
+                from rag import reveal as rag_reveal
+                from rag import store as rag_store
+
+                sid = int(path.split("/")[4])
+                docs = rag_store.BLOB_DIR / str(sid) / "Docs"
+                docs.mkdir(parents=True, exist_ok=True)
+                data = {}
+                try:
+                    data = json.loads(self._body().decode() or "{}")
+                except Exception:
+                    data = {}
+                fname = Path(str(data.get("filename") or data.get("name") or "")).name
+                if fname:
+                    direct = docs / fname
+                    # Also match hash_prefix_filename backups
+                    matches = [direct] if direct.is_file() else []
+                    if not matches:
+                        matches = sorted(docs.glob(f"*_{fname}")) + sorted(docs.glob(fname))
+                    cands = [str(m) for m in matches if Path(m).exists()] + [str(docs)]
+                    return self._json(200, rag_reveal.reveal_best(cands))
+                return self._json(200, rag_reveal.reveal_path(str(docs)))
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 

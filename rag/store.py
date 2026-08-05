@@ -136,12 +136,36 @@ def init(*, force: bool = False) -> None:
         fp = _db_fingerprint()
         if fp is not None:
             _inited.add(fp)
+        _maybe_repair_reveal_meta()
+
+
+_reveal_repair_done = False
+
+
+def _maybe_repair_reveal_meta() -> None:
+    """One-shot: restore Docs/original paths clobbered by older ready-meta writes."""
+    global _reveal_repair_done
+    if _reveal_repair_done:
+        return
+    marker = BLOB_DIR / ".reveal_meta_v1"
+    try:
+        if marker.exists():
+            _reveal_repair_done = True
+            return
+        BLOB_DIR.mkdir(parents=True, exist_ok=True)
+        repair_reveal_meta()
+        marker.write_text("ok\n", encoding="utf-8")
+        _reveal_repair_done = True
+    except Exception:
+        pass
 
 
 def reset_init_cache() -> None:
     """Forget which databases have been initialised (tests / profile switches)."""
     with _init_lock:
         _inited.clear()
+    global _reveal_repair_done
+    _reveal_repair_done = False
 
 
 def _init_schema() -> None:
@@ -395,6 +419,7 @@ def create_space(
         blob = BLOB_DIR / str(cur.lastrowid)
         blob.mkdir(parents=True, exist_ok=True)
         (blob / "sources").mkdir(exist_ok=True)
+        (blob / "Docs").mkdir(exist_ok=True)
         (blob / "artifacts").mkdir(exist_ok=True)
         row = conn.execute("SELECT * FROM knowledge_spaces WHERE id=?", (cur.lastrowid,)).fetchone()
         return _row(row)  # type: ignore[return-value]
@@ -707,7 +732,11 @@ def scrub_authority(space_id: int | None = None, *, dry_run: bool = False) -> di
                         n = int(cur_ex.rowcount or 0)
                 meta["authority"] = want
                 if not meta.get("original_path"):
-                    meta["original_path"] = Path(str(src.get("path") or src.get("title") or "")).name
+                    # Keep absolute ingest path when present — basename breaks Explorer reveal.
+                    cand = str(src.get("path") or "").strip()
+                    meta["original_path"] = (
+                        cand if cand else Path(str(src.get("title") or "")).name
+                    )
                 update_source_status(int(src["id"]), str(src.get("status") or "ready"), meta=meta)
             else:
                 with _conn() as conn:
@@ -750,6 +779,54 @@ def list_sources(space_id: int) -> list[dict]:
             (int(space_id),),
         ).fetchall()
         return [_row(r) for r in rows]  # type: ignore[misc]
+
+
+def get_source(source_id: int) -> dict | None:
+    init()
+    with _conn() as conn:
+        return _row(conn.execute("SELECT * FROM sources WHERE id=?", (int(source_id),)).fetchone())
+
+
+def repair_reveal_meta(space_id: int | None = None) -> dict:
+    """Backfill absolute original_path + Docs retain when ready-meta clobbered them."""
+    init()
+    fixed = 0
+    skipped = 0
+    spaces = [space_id] if space_id is not None else [int(s["id"]) for s in list_spaces()]
+    for sid in spaces:
+        for src in list_sources(int(sid)):
+            meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+            live = str(src.get("path") or "").strip()
+            orig = str(meta.get("original_path") or "").strip()
+            docs = str(meta.get("docs_path") or "").strip()
+            changed = False
+            # Promote live absolute path over basename-only original_path
+            live_abs = bool(live) and (":" in live[:3] or live.startswith("/") or live.startswith("\\\\"))
+            orig_abs = bool(orig) and (":" in orig[:3] or orig.startswith("/") or orig.startswith("\\\\"))
+            if live_abs and not orig_abs:
+                meta["original_path"] = live
+                meta.setdefault("original_name", Path(live).name)
+                changed = True
+            retain_from = live if live_abs and Path(live).is_file() else (
+                orig if orig_abs and Path(orig).is_file() else ""
+            )
+            if retain_from and (not docs or not Path(docs).is_file()):
+                digest = str(src.get("content_hash") or "x")
+                try:
+                    from rag.ingest import _retain_docs_original
+
+                    new_docs = _retain_docs_original(int(sid), Path(retain_from), digest)
+                except Exception:
+                    new_docs = ""
+                if new_docs:
+                    meta["docs_path"] = new_docs
+                    changed = True
+            if changed:
+                update_source_status(int(src["id"]), str(src.get("status") or "ready"), meta=meta)
+                fixed += 1
+            else:
+                skipped += 1
+    return {"ok": True, "fixed": fixed, "skipped": skipped}
 
 
 def update_source_status(source_id: int, status: str, *, meta: dict | None = None) -> None:
