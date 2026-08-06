@@ -882,8 +882,20 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     cites: list[dict] = []
     # Prefer matching workbook when query mentions sheet-ish keywords; else merge all.
     frames: dict = {}
+    # (workbook, sheet) -> frame, kept unflattened so the schema-aware lane can name
+    # the sheet it actually read instead of guessing after a name clash.
+    by_sheet: dict[tuple[str, str], object] = {}
+    sheet_owner: dict[str, dict] = {}
+    from rag import reveal as _reveal
+
     for src in store.list_sources(int(space_id)):
-        path = str(src.get("path") or "")
+        # Resolve the same way reveal does. Trusting src["path"] alone means a
+        # workbook that moved on disk since ingest makes this lane skip the source
+        # silently - the ask then falls through to retrieve and looks like "the SQL
+        # lane has no answer" when really it never located the file. The Docs copy
+        # is byte-identical, so reading it gives the same numbers.
+        resolved, _origin = _reveal.resolve_source_path(src)
+        path = resolved or str(src.get("path") or "")
         if not path.lower().endswith((".xlsx", ".xlsm", ".xls")):
             continue
         p = Path(path)
@@ -893,6 +905,12 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
             sheets = load_sheets(p)
         except Exception:
             continue
+        # Display name is the source's own title - the Docs copy is content-hashed,
+        # and "32f5d4ec_frtr_00027..." is not what the founder called the file.
+        wb_name = str(src.get("title") or p.name)
+        for _k, _df in sheets.items():
+            by_sheet[(wb_name, _k)] = _df
+        sheet_owner[wb_name] = {"path": path, "title": wb_name}
         pred = answer_sqlish(sheets, query)
         if pred and not str(pred).startswith("ABSTAIN:"):
             return {
@@ -907,6 +925,33 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
         for k, df in sheets.items():
             frames[f"{p.name}:{k}"] = df
         cites.append({"path": path, "title": src.get("title") or p.name})
+    # The KPI catalogue in answer_sqlish is a fixed set of shapes. When the ask is a
+    # filter-then-aggregate it does not cover, resolve it against the schema instead
+    # of stopping at whatever Summary chunk retrieval liked.
+    if by_sheet:
+        try:
+            from rag import sheet_sql
+
+            hit = sheet_sql.answer_filter_aggregate(query, by_sheet)
+        except Exception:
+            hit = None
+        if hit:
+            owner = sheet_owner.get(str(hit.get("workbook") or ""), {})
+            return {
+                "answer": hit["answer"],
+                "citations": [
+                    {
+                        "path": owner.get("path") or hit.get("workbook"),
+                        "title": owner.get("title") or hit.get("workbook"),
+                        "sheet": hit.get("sheet"),
+                        "sql": hit.get("sql"),
+                    }
+                ],
+                "sql": hit.get("sql"),
+                "sheet": hit.get("sheet"),
+                "workbook_bound": True,
+            }
+
     if not frames:
         return None
     # Flatten to bare sheet names for answer_sqlish (last workbook wins on clash)

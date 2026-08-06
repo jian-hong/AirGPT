@@ -69,6 +69,27 @@ python tests\RAG\gen_messy_fixtures.py --target-mb 200
 
 Open Excel: `tests\RAG\results\warehouse_hybrid_latest.xlsx` and `frtr_cross_latest.xlsx`.
 
+## Continuous SELECT-only SQL after workbook locate (F14 / #21)
+
+Golden Q on ingested `frtr_00027_supply-chain-regional.xlsx` (space 6, `hybrid_max`):
+
+```text
+Q: Find the average OnTimeSLA for all base rate above 1
+A: 0.9441 - the average of OnTimeSLA where BaseRate > 1, over 3,726 of 5,000 rows
+   on the Carriers sheet of frtr_00027_supply-chain-regional.xlsx.
+   SQL: SELECT AVG(OnTimeSLA) FROM Carriers WHERE BaseRate > 1
+```
+
+`lane=sql`, `model=pandas-sql`, **0 web citations**. The number is the answer the
+founder sees, with the sheet and the SQL beside it - not a Summary-chunk refuse.
+
+Independently checked: pandas over the same workbook gives `0.944074` on 3726 rows.
+
+The resolver is schema-aware (`rag/sheet_sql.py`), not a per-question regex, so
+sibling asks work too: `average OnTimeSLA for base rate at least 2`,
+`total WeightLb for CostUSD over 500`, `how many carriers have BaseRate above 3`.
+When a filter matches no rows it says so instead of reporting 0 as a measurement.
+
 ## Ontology -> logic -> answer (space 8 warehouse)
 
 Entities formed: Category, Money, PurchaseOrder, Quantity, Region, SKU, Temporal, Vendor  

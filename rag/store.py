@@ -854,15 +854,24 @@ def clear_chunks(space_id: int) -> None:
     init()
     with _conn() as conn:
         ids = [int(r["id"]) for r in conn.execute("SELECT id FROM chunks WHERE space_id=?", (int(space_id),))]
-        if ids:
-            q = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM chunks_fts WHERE chunk_id IN ({q})", ids)
+        _delete_fts_by_ids(conn, "chunks_fts", "chunk_id", ids)
         conn.execute("DELETE FROM chunks WHERE space_id=?", (int(space_id),))
         fids = [int(r["id"]) for r in conn.execute("SELECT id FROM file_index WHERE space_id=?", (int(space_id),))]
-        if fids:
-            q = ",".join("?" * len(fids))
-            conn.execute(f"DELETE FROM file_index_fts WHERE file_id IN ({q})", fids)
+        _delete_fts_by_ids(conn, "file_index_fts", "file_id", fids)
         conn.execute("DELETE FROM file_index WHERE space_id=?", (int(space_id),))
+
+
+# SQLite caps host parameters per statement (999 on older builds). A space with
+# more chunks than that made rebuild die with "too many SQL variables" instead of
+# rebuilding, so the delete is chunked rather than one giant IN (...).
+_SQL_VARS_PER_BATCH = 800
+
+
+def _delete_fts_by_ids(conn: sqlite3.Connection, table: str, column: str, ids: list[int]) -> None:
+    for start in range(0, len(ids), _SQL_VARS_PER_BATCH):
+        batch = ids[start : start + _SQL_VARS_PER_BATCH]
+        marks = ",".join("?" * len(batch))
+        conn.execute(f"DELETE FROM {table} WHERE {column} IN ({marks})", batch)
 
 
 def insert_chunk(
