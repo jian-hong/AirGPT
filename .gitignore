@@ -70,3 +70,7 @@ vendor/vendor/
 tests/RAG/FRTR-bench/
 tests/RAG/primary50/
 tests/RAG/t2-ragbench/
+
+# Regenerated bench intermediates and runtime ops tokens - not artifacts
+tests/RAG/frtr_sanitized/
+tests/RAG/results/ops/
