@@ -2026,8 +2026,12 @@ def chat_text_stream(
         )
         text, model, reasoning = _reasoning_llm(verify_prompt, MODES[mode])
         if reasoning and show_thinking:
+            # kind="reasoning" marks a FRAGMENT of one continuous trace, not a step.
+            # A plain thinking event ("Preparing...") is one whole step. Without the
+            # mark the UI renders every 48-char slice as its own step, which shreds a
+            # sentence across a dozen rows.
             for i in range(0, len(reasoning), 48):
-                yield {"type": "thinking", "text": reasoning[i : i + 48]}
+                yield {"type": "thinking", "kind": "reasoning", "text": reasoning[i : i + 48]}
         for chunk in _chunk_text(text):
             yield {"type": "token", "text": chunk}
         text = _finalize_answer(text)
@@ -2079,7 +2083,8 @@ def chat_text_stream(
         for delta in stream:
             if delta.startswith("\x1eT:"):
                 if show_thinking:
-                    yield {"type": "thinking", "text": delta[3:]}
+                    # Provider reasoning deltas: fragments of one trace, see above.
+                    yield {"type": "thinking", "kind": "reasoning", "text": delta[3:]}
                 continue
             parts.append(delta)
             yield {"type": "token", "text": delta}

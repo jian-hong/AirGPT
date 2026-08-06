@@ -1628,16 +1628,23 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .cot-title{flex:1;min-width:0;font-weight:500}
 .cot-timer{flex-shrink:0;font-size:11px;color:var(--muted);font-weight:400}
 .cot-chev{flex-shrink:0;font-size:10px;opacity:.6;margin-top:2px}
-.cot-body{display:none;padding:0 0 6px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;line-height:1.4;max-height:140px;overflow:hidden}
+/* Open = the whole trace, scrolled. A clipped body plus a "Show more" button only
+   asked for a click to undo a limit the panel imposed on itself. */
+.cot-body{display:none;padding:0 0 6px;font-size:12.5px;color:var(--muted);line-height:1.4;max-height:280px;overflow-y:auto;overscroll-behavior:contain}
+/* One node per step. `white-space:pre-wrap` on the whole blob used to turn stray
+   newlines between steps into blank lines, which is what made an empty trace look
+   like a tall gap. */
+.cot-step{padding:2px 0;white-space:pre-wrap}
+.cot-step+.cot-step{border-top:1px solid transparent}
+/* A single step has no body at all, so the panel is exactly one line high. */
+.cot-panel.cot-solo{padding-bottom:0}
+.cot-panel.cot-solo::before{display:none}
+.cot-panel.cot-solo .cot-hdr{cursor:default;padding-bottom:2px}
 .cot-panel.open .cot-body{display:block}
-.cot-panel.open.expanded .cot-body{max-height:none;overflow:visible}
-.cot-more{display:none;font-size:11px;color:var(--muted);cursor:pointer;padding:0 0 6px;background:none;border:0;font:inherit}
-.cot-panel.open .cot-more{display:inline-block}
-.cot-panel.open.expanded .cot-more{display:none}
-.cot-done{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin:4px 0 10px;padding-left:14px}
-.cot-done .cot-done-icon{width:14px;height:14px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:9px;color:var(--text)}
 .msg.ai-msg .body{background:transparent;border:0;box-shadow:none;padding:2px 0;font-size:15px;line-height:1.5}
 .msg.ai-msg .ai-block{margin-top:0;padding:0;border:0;background:transparent;font-size:15px;line-height:1.45;color:var(--text)}
+/* Nothing streamed yet: take no vertical space at all rather than reserving a block. */
+.ai-block.stream-ans.is-empty{display:none}
 .side-nav{padding:22px 12px 12px;border-bottom:1px solid var(--line);flex-shrink:0}
 .workspace-switch{position:relative;display:flex;gap:4px;padding:5px;margin:0 0 14px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
 .workspace-switch .ws-thumb{position:absolute;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:999px;background:rgba(255,255,255,.92);transform:translateX(0);transition:transform .28s cubic-bezier(.22,.9,.28,1);pointer-events:none;z-index:0;box-shadow:0 1px 8px rgba(0,0,0,.25)}
@@ -3969,6 +3976,9 @@ let groupByMode=localStorage.getItem('airgpt_group_by')||'date';
 let sideView='chats';
 let _homeChatSnapshot=null; // preserve Home chat DOM while browsing Video/Usage/etc
 let _cotStreamStart=0;
+// True only once a `thinking` event marked kind:"reasoning" has arrived — status
+// chatter alone must not leave a thought panel behind next to the answer.
+let _cotHadReasoning=false;
 let modeIdx=(function(){
   const s=localStorage.getItem('ai_domain');
   if(s===null)return Math.max(0,MODES.indexOf('general'));
@@ -12064,7 +12074,7 @@ function renderAiBlock(m){
     const parts=typeof splitCot==='function'?splitCot(m.text||''):{thinking:'',answer:m.text||''};
     const showCot=parts.thinking&&(localStorage.getItem('airgpt_model_tier')||'high')!=='basic';
     const cot=showCot?renderCotPanel(parts.thinking,{open:false,done:true}):'';
-    return `${cot}${showCot?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':''}<div class="ai-block">${renderMd(parts.answer||m.text||'')}</div>`;
+    return `${cot}<div class="ai-block">${renderMd(parts.answer||m.text||'')}</div>`;
   }
   if(m.kind!=='image')return '';
   const cat=m.ai_category||'';
@@ -12081,7 +12091,7 @@ function renderAiBlock(m){
   const eqMenu=eqCount?`<div class="eq-menu" id="eqmenu-${m.id}">
     <button onclick="toggleEqMenu(${m.id})">Copy equation ▾</button>
     <div class="eq-menu-list">${Array.from({length:eqCount},(_,i)=>`<button onclick="copyEqImage(${m.id},${i})">EQ${i+1} as image</button>`).join('')}</div></div>`:'';
-  return `<div class="ai-block">${catBadge(cat)}${cot}${parts.thinking?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':''}${renderMd(bodyMd)}
+  return `<div class="ai-block">${catBadge(cat)}${cot}${renderMd(bodyMd)}
     <div class="ai-actions">${eqMenu}<button onclick="attachContext(${m.id})">Attach context</button>
     <button onclick="reanalyze(${m.id},'deep')">Think deeper</button>
     <button onclick="reanalyze(${m.id},'normal')">Re-analyze</button></div></div>`;
@@ -12580,34 +12590,72 @@ function splitCot(text){
     }
     (inThink?think:answer).push(line);
   }
-  if(!think.length&&/\bCHAIN\b|Router|Ponytail|first-principles|Dual-brain/i.test(raw.slice(0,400))){
-    return {thinking:raw.slice(0,Math.min(600,raw.length/3)),answer:raw};
-  }
+  // No marker => no chain of thought. Never slice the answer into a fake
+  // "thinking" panel: that printed the same text twice (header, panel, answer).
   return {thinking:think.join('\n').trim(),answer:(answer.join('\n').trim()||raw)};
 }
-function cotTitleFrom(thinking){
-  const line=(thinking||'').split('\n').map(s=>s.trim()).find(Boolean)||'Thinking';
-  return line.replace(/^(CHAIN:|SESSION_TITLE:|\*\*Chain\*?\*?)\s*/i,'').slice(0,96);
+// Status steps first, then the model's own reasoning as ONE node. The reasoning
+// arrives in fragments and can span paragraphs; its newlines are folded so the
+// panel keeps it as a single block instead of one row per line.
+function composeThinking(steps,reasoning){
+  const out=(steps||[]).slice();
+  const r=String(reasoning||'').replace(/\s+/g,' ').trim();
+  if(r)out.push(r);
+  return out.join('\n');
+}
+// Each `thinking` SSE event is one step. They used to be concatenated into a single
+// string, so "Connected - generating..." and "Preparing..." arrived as
+// "Connected - generating...Preparing..." - one unreadable line that then got
+// printed twice, once as the header (first line of the blob) and once as the body
+// (the same blob). Steps are kept discrete so the panel can grow a node at a time.
+function cotSteps(thinking){
+  if(Array.isArray(thinking))var raw=thinking;
+  else raw=String(thinking||'').split('\n');
+  const out=[];
+  for(let s of raw){
+    s=String(s==null?'':s).trim();
+    if(!s)continue;
+    // A provider that re-sends its status must not stutter the trace.
+    if(out.length&&out[out.length-1]===s)continue;
+    out.push(s);
+  }
+  return out;
 }
 function renderCotPanel(thinking,opts={}){
-  if(!thinking)return '';
-  const open=!!opts.open;
+  const steps=cotSteps(thinking);
+  if(!steps.length)return '';
   const done=!!opts.done;
   const timer=opts.timer||'';
-  const title=esc(cotTitleFrom(thinking));
-  const long=thinking.length>420;
+  // With one step the body would only repeat the header, which is what produced a
+  // tall empty-looking block saying the same thing twice. A trace worth opening
+  // needs at least two distinct steps.
+  const hasTrace=steps.length>1;
+  const open=!!opts.open&&hasTrace;
+  const head=done&&hasTrace
+    ? `Thought through ${steps.length} steps`
+    : steps[steps.length-1];
   const icon=done?'✓':'⏱';
   const openCls=open?' open':'';
-  return `<div class="cot-panel${openCls}" id="${opts.id||''}">
-    <div class="cot-hdr" onclick="toggleCotPanel(this)">
-      <span class="cot-icon" aria-hidden="true">${icon}</span>
-      <span class="cot-title">${title}</span>
-      ${timer?`<span class="cot-timer">${esc(timer)}</span>`:''}
-      <span class="cot-chev">${open?'▾':'▸'}</span>
-    </div>
-    <div class="cot-body">${esc(thinking)}</div>
-    ${long?`<button type="button" class="cot-more" onclick="expandCotPanel(this)">Show more</button>`:''}
-  </div>`;
+  const soloCls=hasTrace?'':' cot-solo';
+  // No "Show more": the open body scrolls. The button only ever revealed text the
+  // panel was already clipping, which is what a scrollbar does without a click.
+  //
+  // Joined with no whitespace between elements, deliberately. The indented template
+  // this replaces put a newline between each block child, and every one of those
+  // whitespace text nodes generated its own line box: a one-line panel measured
+  // 131.5px instead of 19px. That is the empty gap that appeared under a status line
+  // before anything had streamed.
+  const parts=[];
+  parts.push(`<div class="cot-panel${openCls}${soloCls}" id="${opts.id||''}">`);
+  parts.push(`<div class="cot-hdr"${hasTrace?' onclick="toggleCotPanel(this)"':''}>`);
+  parts.push(`<span class="cot-icon" aria-hidden="true">${icon}</span>`);
+  parts.push(`<span class="cot-title">${esc(head)}</span>`);
+  if(timer)parts.push(`<span class="cot-timer">${esc(timer)}</span>`);
+  if(hasTrace)parts.push(`<span class="cot-chev">${open?'▾':'▸'}</span>`);
+  parts.push('</div>');
+  if(hasTrace)parts.push(`<div class="cot-body">${steps.map(s=>`<div class="cot-step">${esc(s)}</div>`).join('')}</div>`);
+  parts.push('</div>');
+  return parts.join('');
 }
 window.toggleCotPanel=el=>{
   const panel=el?.closest?.('.cot-panel');if(!panel)return;
@@ -12615,28 +12663,33 @@ window.toggleCotPanel=el=>{
   const chev=panel.querySelector('.cot-chev');
   if(chev)chev.textContent=panel.classList.contains('open')?'▾':'▸';
 };
-window.expandCotPanel=btn=>{
-  const panel=btn?.closest?.('.cot-panel');if(!panel)return;
-  panel.classList.add('open','expanded');
-};
 function formatCotElapsed(ms){
   if(ms<1000)return Math.max(1,Math.round(ms/100))+'00ms';
   return (ms/1000).toFixed(1).replace(/\.0$/,'')+'s';
 }
 function renderStreamBubble(thinking,answer,opts={}){
   const streaming=!opts.done;
-  const showCot=!!thinking&&(opts.forceCot||isThinkingOn());
+  // Status chatter ("Preparing...", "Generating response...") is worth a live line
+  // while the answer is still coming and worth nothing once it is here. The panel
+  // survives the answer only when the model actually reasoned.
+  const showCot=!!thinking&&(opts.forceCot||isThinkingOn())&&(streaming||_cotHadReasoning);
   let timer='';
   if(_cotStreamStart){
     timer=streaming?formatCotElapsed(Date.now()-_cotStreamStart):('Thought for '+formatCotElapsed(Date.now()-_cotStreamStart));
   }
+  // No "Done" chip under the panel: the header already carries the check and the
+  // timer, so the chip was a third line saying what two lines already said.
   const cot=showCot?renderCotPanel(thinking,{open:streaming,done:!streaming,timer,id:'streamCot'}):'';
-  const doneChip=(!streaming&&showCot)?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':'';
   const waiting=!answer&&streaming;
   let bodyHtml='';
   if(answer) bodyHtml=renderMarkdownLite(answer);
-  else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
-  return cot+doneChip+`<div class="ai-block stream-ans">${bodyHtml}</div>`;
+  // The cot panel already shows the live step. Printing "Netie Cortex is thinking..."
+  // underneath it said the same thing a third time and reserved a block of empty
+  // height while nothing had streamed. Dots only, and only when there is no step yet.
+  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
+  else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div>`;
+  const emptyCls=(!answer&&!bodyHtml)?' is-empty':'';
+  return cot+`<div class="ai-block stream-ans${emptyCls}">${bodyHtml}</div>`;
 }
 function renderMarkdownLite(t){
   try{return (typeof renderMd==='function')?renderMd(t):esc(t).replace(/\n/g,'<br>')}
@@ -12900,6 +12953,7 @@ function _flushStreamPaint(){
 function beginStreamUi(userText){
   hideThinking();
   _cotStreamStart=Date.now();
+  _cotHadReasoning=false;
   // Leave project focus rail — chat owns the pane; Memory stays on mem-fab overlay
   setProjectMode(false);
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page')){
@@ -12936,6 +12990,7 @@ async function sendStream(text,extra={}){
   beginStreamUi(text);
   aiPending=true;
   let thinking='',tokens='',donePayload=null,hadError=false,errMsg='';
+  const thinkSteps=[];let reasonBuf='';
   // Once the stream HTTP response opens, the server has already persisted the
   // user row — never let send() fall through to POST /api/messages after that.
   let streamOpened=false;
@@ -12985,11 +13040,26 @@ async function sendStream(text,extra={}){
         if(!data)continue;
         let j={};try{j=JSON.parse(data)}catch(e){continue}
         if(j.session_id)adoptSessionId(j.session_id);
-        if(ev==='thinking'||j.type==='thinking'){thinking+=(j.text||'');updateStreamUi(thinking,tokens)}
+        // One plain event = one step. Concatenating them produced
+        // "Connected - generating...Preparing..." as a single unreadable line.
+        // kind:"reasoning" events are fragments of ONE trace (the model's own
+        // reasoning, sliced by the provider) — they append into a single node.
+        if(ev==='thinking'||j.type==='thinking'){
+          if(j.kind==='reasoning'){
+            reasonBuf+=String(j.text||'');
+            _cotHadReasoning=true;
+          }else{
+            const step=String(j.text||'').trim();
+            if(step&&thinkSteps[thinkSteps.length-1]!==step)thinkSteps.push(step);
+          }
+          thinking=composeThinking(thinkSteps,reasonBuf);
+          updateStreamUi(thinking,tokens);
+        }
         else if(ev==='token'||j.type==='token'){tokens+=(j.text||'');updateStreamUi(thinking,tokens)}
         else if(ev==='done'||j.type==='done'){
           donePayload=j;tokens=j.analysis||tokens;
-          if(j.reasoning&&!thinking)thinking=j.reasoning;
+          if(j.reasoning&&!reasonBuf){reasonBuf=String(j.reasoning);_cotHadReasoning=true}
+          thinking=composeThinking(thinkSteps,reasonBuf)||thinking;
           if(j.session_id)adoptSessionId(j.session_id);
           updateStreamUi(thinking,tokens,{done:true});
         }
