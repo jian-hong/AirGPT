@@ -14845,8 +14845,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       });
     }).catch(function(){});
   }
-  setInterval(upd, 4000);
+  // No interval here. The background-tasks panel already polls the same endpoint
+  // every 5s and its syncBadges() writes these exact elements
+  // (bgTasksTopBtn/Dot, bgTasksTitleBtn/Dot), so a second 4s timer doubled the load
+  // on /api/workflows/tasks to keep a badge that was already being kept. One paint
+  // on load is still needed, for the case where nothing has polled yet.
   setTimeout(upd, 800);
+  window.bgTasksBadgeRefresh = upd;
 })();
 
 /* ── Compact chrome on short viewports ────────────────────────────────────

@@ -1480,15 +1480,60 @@ def refresh_firewall_status() -> str:
 _cortex_info_cache: dict = {"ts": 0.0, "quick": None, "full": None}
 
 
+_asset_cache: dict[str, tuple[float, int, bytes, str]] = {}
+_asset_gzip: dict[str, bytes] = {}
+
+
+def _cached_asset(p: Path) -> tuple[bytes, str]:
+    """File bytes + a content ETag, re-read only when mtime or size changes."""
+    key = str(p)
+    st = p.stat()
+    hit = _asset_cache.get(key)
+    if hit and hit[0] == st.st_mtime and hit[1] == st.st_size:
+        return hit[2], hit[3]
+    body = p.read_bytes()
+    etag = '"%s"' % hashlib.sha256(body).hexdigest()[:20]
+    _asset_cache[key] = (st.st_mtime, st.st_size, body, etag)
+    _asset_gzip.pop(etag, None)
+    return body, etag
+
+
+def _maybe_gzip(body: bytes, accept: str) -> tuple[bytes, str]:
+    """Gzip when the client accepts it and it is worth the CPU."""
+    if "gzip" not in (accept or "").lower() or len(body) < 1024:
+        return body, ""
+    etag = '"%s"' % hashlib.sha256(body).hexdigest()[:20]
+    cached = _asset_gzip.get(etag)
+    if cached is None:
+        import gzip as _gzip
+
+        cached = _gzip.compress(body, 6)
+        # Only worth serving if it actually got smaller.
+        if len(cached) >= len(body):
+            cached = b""
+        _asset_gzip[etag] = cached
+    return (cached, "gzip") if cached else (body, "")
+
+
 def _with_deadline(fn, default, timeout: float = 2.0):
-    """Run fn in a worker; return default if it exceeds timeout (never block /api/info)."""
+    """Run fn in a worker; return default if it exceeds timeout (never block /api/info).
+
+    The `with ThreadPoolExecutor(...)` form did not honour the timeout at all: leaving
+    the block calls shutdown(wait=True), which waits for the very task the timeout
+    just gave up on. `/api/info` blocked for the full duration of whatever it wrapped
+    no matter what deadline was passed - the docstring above was describing behaviour
+    the code did not have.
+    """
     import concurrent.futures
 
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(fn).result(timeout=timeout)
+        return pool.submit(fn).result(timeout=timeout)
     except Exception:
         return default
+    finally:
+        # wait=False is the whole point: abandon the straggler, do not join it.
+        pool.shutdown(wait=False)
 
 
 def _cortex_info(*, quick: bool = False) -> dict:
@@ -2472,16 +2517,32 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "service": "airgpt", "version": APP_VERSION})
 
         if path in ("/", "/index.html"):
-            body = (ROOT / "index.html").read_bytes()
+            # 838KB re-read from disk and re-sent uncompressed on every single request.
+            # `no-store` also forbade revalidation, which made the ETag below dead code -
+            # the browser could never answer with a conditional request, so every open
+            # and every refresh pulled the whole file again.
+            body, etag = _cached_asset(ROOT / "index.html")
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self._cors()
+                self.end_headers()
+                return
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", ""))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("ETag", f'"v{APP_VERSION}-{int(time.time())//3600}"')
+            self.send_header("Content-Length", str(len(payload)))
+            # no-cache, not no-store: revalidate every time (so an edit still shows up
+            # immediately) but allow a 304 when nothing changed.
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", etag)
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Vary", "Accept-Encoding")
             self._cors()
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(payload)
             return
 
         if path in ("/admin", "/admin.html"):
