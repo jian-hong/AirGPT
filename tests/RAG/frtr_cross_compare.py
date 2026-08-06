@@ -92,6 +92,108 @@ def _spot_check(space_id: int, question: str, gold: str, *, depth: str = "max") 
     }
 
 
+def derive_insights(matrix: dict) -> list[tuple[str, str]]:
+    """Short insights read off the actual scored rows.
+
+    The Insights sheet used to be five fixed suggested prompts, which say the same
+    thing whatever the bench did. These are statements about *this* run - which
+    variant won, what every variant got wrong, where the accuracy actually drops -
+    so the founder can open one file after the bench and see what happened.
+
+    Text only. No charts, no chart intent (P3 stays parked).
+    """
+    out: list[tuple[str, str]] = []
+    variants = matrix.get("variants") or []
+    if not variants:
+        return [("no data", "No variants were scored in this run.")]
+
+    ranked = sorted(
+        variants,
+        key=lambda v: (v.get("summary") or {}).get("accuracy") or 0.0,
+        reverse=True,
+    )
+    best = ranked[0]
+    bs = best.get("summary") or {}
+    out.append(
+        (
+            "best variant",
+            f"{best.get('name')} scored {bs.get('correct')}/{bs.get('n')} "
+            f"({round((bs.get('accuracy') or 0) * 100, 1)}%).",
+        )
+    )
+    if len(ranked) > 1:
+        worst = ranked[-1]
+        ws_ = worst.get("summary") or {}
+        gap = (bs.get("accuracy") or 0) - (ws_.get("accuracy") or 0)
+        if gap > 0:
+            out.append(
+                (
+                    "spread",
+                    f"{worst.get('name')} was lowest at {ws_.get('correct')}/{ws_.get('n')} - "
+                    f"a {round(gap * 100, 1)} point gap to {best.get('name')}.",
+                )
+            )
+        else:
+            out.append(("spread", "Every variant scored the same; this workbook does not separate them."))
+
+    # Questions no variant got right - the only misses worth a retrieval fix.
+    per_q: dict[int, dict] = {}
+    for v in variants:
+        for r in v.get("rows") or []:
+            qid = int(r.get("qid") or 0)
+            slot = per_q.setdefault(qid, {"question": r.get("question"), "wrong": 0, "total": 0, "sample": r})
+            slot["total"] += 1
+            if not r.get("correct"):
+                slot["wrong"] += 1
+                slot["sample"] = r
+    for qid, slot in sorted(per_q.items()):
+        if slot["total"] and slot["wrong"] == slot["total"]:
+            r = slot["sample"]
+            out.append(
+                (
+                    f"missed by all (q{qid})",
+                    f"{slot['question']} - expected {str(r.get('gold'))[:40]!r}, "
+                    f"got {str(r.get('pred'))[:40]!r}. Fix: the evidence for this lives on a "
+                    f"sheet retrieval is not reaching; bind the named columns instead of "
+                    f"ranking Summary chunks.",
+                )
+            )
+
+    # Where accuracy actually drops, by difficulty and by reasoning type.
+    for axis in ("by_difficulty", "by_reasoning"):
+        buckets = bs.get(axis) or {}
+        weak = [(k, b) for k, b in buckets.items() if (b or {}).get("accuracy", 1.0) < 1.0]
+        if weak:
+            worst_k, worst_b = min(weak, key=lambda kv: kv[1].get("accuracy", 1.0))
+            out.append(
+                (
+                    axis.replace("by_", "weakest "),
+                    f"{worst_k} at {round(worst_b.get('accuracy', 0) * 100, 1)}% "
+                    f"over {worst_b.get('n')} question(s) for {best.get('name')}.",
+                )
+            )
+        elif buckets:
+            out.append((axis.replace("by_", "by "), f"{best.get('name')} was clean across all {axis.replace('by_', '')} buckets."))
+
+    # Which lane actually answered, and what it cost.
+    lanes: dict[str, list[float]] = {}
+    for r in best.get("rows") or []:
+        lanes.setdefault(str(r.get("lane") or "retrieve"), []).append(float(r.get("ms") or 0))
+    for lane, times in sorted(lanes.items()):
+        out.append(
+            (
+                f"lane {lane}",
+                f"answered {len(times)} of {len(best.get('rows') or [])} questions for "
+                f"{best.get('name')}, averaging {round(sum(times) / max(1, len(times)), 1)}ms.",
+            )
+        )
+
+    errors = [r for v in variants for r in (v.get("rows") or []) if r.get("error")]
+    if errors:
+        out.append(("errors", f"{len(errors)} question run(s) raised an error - these are not scored misses, they are failures."))
+    return out
+
+
 def _write_xlsx(path: Path, matrix: dict) -> None:
     import openpyxl
     from openpyxl.styles import Font
@@ -170,11 +272,19 @@ def _write_xlsx(path: Path, matrix: dict) -> None:
         ws2.append([i, t.get("path"), t.get("sheet"), t.get("score"), t.get("text")])
 
     wi = wb.create_sheet("Insights")
-    wi.append(["suggested_prompt"])
+    wi.append(["insight", "detail"])
+    for cell in wi[1]:
+        cell.font = Font(bold=True)
+    for kind, text in derive_insights(matrix):
+        wi.append([kind, text])
+    wi.append([])
+    wi.append(["suggested_prompt", ""])
     for p in matrix.get("suggested_prompts") or []:
-        wi.append([p])
+        wi.append(["", p])
     wi.append([])
     wi.append(["note", matrix.get("honesty")])
+    wi.column_dimensions["A"].width = 24
+    wi.column_dimensions["B"].width = 110
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
