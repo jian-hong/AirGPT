@@ -41,6 +41,13 @@ def load_sheets(path: Path) -> dict[str, pd.DataFrame]:
             width = len(header)
             norm = [list(r[:width]) + [None] * max(0, width - len(r)) for r in data]
             df = pd.DataFrame(norm, columns=header)
+            # Remember where this sheet sits in the actual spreadsheet. A banner row
+            # above the header is common in these workbooks, so df row 0 is often
+            # Excel row 3, not row 2 - anything answering "sum rows 330 to 660" has
+            # to map between the two or it silently answers about different rows.
+            df.attrs["header_excel_row"] = data_start  # 1-based row of the header
+            df.attrs["first_data_excel_row"] = data_start + 1
+            df.attrs["sheet_name"] = name
             out[name] = df
     finally:
         wb.close()
