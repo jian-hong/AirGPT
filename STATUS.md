@@ -4,10 +4,10 @@
 
 ## Now
 
-1. **Oracle bench** — `tests/RAG/oracle_bench.py`. Grader shares no code with the lane
-   (openpyxl by spreadsheet row); questions generated per seed. Scores **value accuracy
-   and schema-link recall** separately — a right value off the wrong column is a
-   coincidence, not a pass. Found 6 real linking bugs on its first two runs.
+1. **Oracle bench 400/400** — `tests/RAG/oracle_bench.py`, 5 seeds x 80 generated Qs.
+   Value accuracy **and** schema-link recall both 1.0, 0 lucky passes; error bounded
+   at **0.75%** (rule of three, first run at n>=300). Grader shares no code with the
+   lane. Found 6 real linking bugs — all linking, none arithmetic.
 2. **Row ranges** — "select row 330 to 660, sum" answers, and states the Excel-row to
    data-row mapping (banner rows make 330 -> 327). No column named -> every numeric one.
 3. **SQL lane answers filter+aggregate** (#21) — `rag/sheet_sql.py` resolves against the

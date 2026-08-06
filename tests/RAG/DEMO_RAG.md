@@ -130,8 +130,26 @@ A right value off the wrong column is flagged as coincidence, not a pass. Famili
 `row_range_agg`, `row_range_nocol`, `filter_agg`, `filter_count`, `combined`,
 `paraphrase` (three phrasings must agree), `out_of_range` (must refuse, not answer 0).
 
-Per R-0010 the run prints the rule-of-three bound: 0 failures in 80 bounds the true
-error rate at 3.8%, not 0%.
+Per R-0010 the run prints the rule-of-three bound rather than claiming perfection.
+
+**Measured 2026-08-06** - seeds 1 / 7 / 13 / 99 / 2026, n=80 each:
+
+| seed | value | schema-link |
+|------|-------|-------------|
+| 1 | 80/80 | 80/80 |
+| 7 | 80/80 | 80/80 |
+| 13 | 80/80 | 80/80 |
+| 99 | 80/80 | 80/80 |
+| 2026 | 80/80 | 80/80 |
+| **total** | **400/400** | **400/400** |
+
+Zero right-value-wrong-binding. 0 failures in 400 bounds the true error rate at
+**0.75%** (95% rule of three) - the first run at n>=300, so this is the first time
+a sub-1% claim is allowed here at all.
+
+Caveat that belongs next to the number: this workbook has ~15 columns. Published
+schema-linking failure rates are measured at 1000+, and that is the failure class
+every bug found here belonged to. See `docs/research/terabyte-retrieval.md`.
 
 ## Ontology -> logic -> answer (space 8 warehouse)
 
