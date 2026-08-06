@@ -469,18 +469,39 @@ def score_answer(pred: str, gold: str, gold_values: list[str]) -> dict:
     return {"correct": False, "reason": "mismatch"}
 
 
-def build_space_and_ingest(paths: list[Path], *, name: str = "FRTR Bench", force: bool = True) -> int:
+def _slug_for(name: str) -> str:
+    """Same slug rule `store.create_space` applies, so lookup matches what it made."""
+    from rag import store
+
+    return store._slugify(name)
+
+
+def build_space_and_ingest(
+    paths: list[Path],
+    *,
+    name: str = "FRTR Bench",
+    slug: str = "",
+    force: bool = True,
+) -> int:
+    """Ingest into the bench space for `name`, creating it if it does not exist.
+
+    The lookup used to be hardcoded to slug "frtr-bench" while `name` was still a
+    parameter, so every caller landed in the same space no matter what it asked for:
+    `name="FRTR Cross Compare"` re-ingested the FRTR Bench space with force=True,
+    wiping and rebuilding a corpus the caller never intended to touch. `name` is now
+    what actually selects the space, and `slug` can pin it explicitly.
+    """
     from rag import ingest, store
 
     store.init()
-    existing = store.get_space_by_slug("frtr-bench")
+    want = (slug or _slug_for(name)).strip()
+    existing = store.get_space_by_slug(want)
     if existing:
         space_id = int(existing["id"])
     else:
         space = store.create_space(name, depth_default="max", modalities=["text"], profile="local")
         space_id = int(space["id"])
-        # force slug if create used frtr-bench-N
-        store.update_space_settings(space_id, config={"bench": "FRTR"})
+        store.update_space_settings(space_id, config={"bench": name})
 
     res = ingest.ingest_paths(space_id, [str(p) for p in paths], force=force)
     if not res.get("ok"):
