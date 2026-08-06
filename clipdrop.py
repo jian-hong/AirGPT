@@ -6421,6 +6421,57 @@ def _startup_verify() -> None:
         print(f"[verify] skipped: {e}")
 
 
+def _port_holder(port: int) -> str:
+    """PID currently LISTENING on `port`, for an actionable error message."""
+    try:
+        if os.name != "nt":
+            return ""
+        r = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True, text=True, timeout=6,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        for line in (r.stdout or "").splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3].upper() == "LISTENING" and parts[1].endswith(f":{port}"):
+                return parts[4]
+    except Exception:
+        pass
+    return ""
+
+
+def _wait_for_port(host: str, port: int, *, seconds: float = 20.0) -> bool:
+    """Wait until `port` can actually be bound the way the real server binds it.
+
+    Two things used to make a restart leave the engine dead. The probe was a plain
+    socket while the server is a ThreadingHTTPServer with allow_reuse_address=1, so
+    a socket sitting in TIME_WAIT failed the probe even though the server itself
+    would have bound it fine - the check was stricter than the thing it guarded.
+    And it gave up on the first failure, when a restart is inherently a race with
+    the previous process letting go of the port.
+    """
+    deadline = time.time() + max(0.0, seconds)
+    delay = 0.25
+    while True:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            # Match the server's own option, or the probe rejects ports it could use.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((host, port))
+            return True
+        except OSError:
+            if time.time() >= deadline:
+                return False
+            print(f"[start] port {port} still busy - retrying...", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 1.6, 2.0)
+        finally:
+            try:
+                probe.close()
+            except Exception:
+                pass
+
+
 def main():
     global _firewall_status, AI_AUTO
     try:
@@ -6429,12 +6480,10 @@ def main():
     except Exception as e:
         print(f"[crashlog] disabled: {e}")
     AI_AUTO = _load_ai_auto()
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        probe.bind((HOST, PORT))
-        probe.close()
-    except OSError:
-        print(f"Port {PORT} in use. Run restart.bat first.")
+    if not _wait_for_port(HOST, PORT):
+        holder = _port_holder(PORT)
+        who = f" Held by PID {holder}." if holder else ""
+        print(f"Port {PORT} in use.{who} Run restart.bat, or stop that process first.")
         return
 
     _firewall_status = try_firewall()
