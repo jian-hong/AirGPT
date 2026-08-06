@@ -59,12 +59,8 @@ python clipdrop.py
 python tests\RAG\gen_messy_fixtures.py --target-mb 200
 # then concatenate/grow if needed; see tests/RAG/results/messy_fixtures_meta.json
 
-# 9) Ops amend-confirm (EPIC-D02) — salary increment
-# POST /api/rag/ops/identify  {"path":"...\\messy_payroll_ops.xlsx","ask":"salary raise for E-0012"}
-# POST /api/rag/ops/confirm-identity  {"token":"...","yes":false}  # reject = no write
-# POST /api/rag/ops/confirm-identity  {"token":"...","yes":true}
-# POST /api/rag/ops/propose-amend  {"token":"...","increment_pct":8}
-# POST /api/rag/ops/confirm-amend  {"token":"...","yes":true}
+# 9) Ops amend-confirm (EPIC-D02) - see the ops section below
+python tests\RAG\ops_demo_e2e.py
 ```
 
 Open Excel: `tests\RAG\results\warehouse_hybrid_latest.xlsx` and `frtr_cross_latest.xlsx`.
@@ -180,6 +176,50 @@ Catalog entry + eval note in OpenVault repo (`docs/NVIDIA_RAG_EVAL.md`). Restart
 4. **Ontology-first** — entities/relations before answer.
 5. **Reveal in Explorer** — citation paths open the real folder.
 6. **Cortex-direct honesty** — labeled; not pretending vault-first on this demo.
+
+## Ops amend-confirm (EPIC-D02) - the write path
+
+**Honesty:** Cortex-direct demo ops, not OpenVault-gated. Epic
+[#16](https://github.com/jian-hong/AirGPT/issues/16). Built on `demo/rag-cross-compare`
+alongside D01 rather than on `demo/rag-ops-confirm` - it writes only to its own
+scratch copy and `results/ops/`, so no D01 score artifact is touched.
+
+Two gates stand between an ask and a written cell: confirm the row, then confirm the
+value. A confirm buys one cell. After a write the token is spent, and continuing the
+loop re-enters at identify.
+
+```powershell
+python tests\RAG\ops_demo_e2e.py
+```
+
+32/32 checks, artifact `tests/RAG/results/ops_demo_e2e_latest.json`. Every check reads
+the salary cell back out of the workbook with openpyxl, so it is evidence about the
+file rather than about the return value:
+
+| What is asserted | Result |
+|---|---|
+| Unmatched ask proposes no row at all (no first-row guess) | no candidate, shortlist offered |
+| Founder rejects the row | file unchanged |
+| Propose before identity confirm / confirm with no proposal / unknown token | refused |
+| Founder aborts at the amend gate | file unchanged |
+| Founder confirms | +8% lands, audit stamp in Notes, neighbour row untouched |
+| Continue to the next row | new token is **not** pre-authorised - both gates again |
+| Audit chain | exactly 2 writes across 3 cycles |
+
+Live endpoints for the click-through:
+
+```text
+POST /api/rag/ops/identify         {"path":"...\\messy_payroll_ops.xlsx","ask":"salary raise for E-0012"}
+POST /api/rag/ops/confirm-identity {"token":"...","yes":false}   # reject = no write
+POST /api/rag/ops/confirm-identity {"token":"...","yes":true}
+POST /api/rag/ops/propose-amend    {"token":"...","increment_pct":8}
+POST /api/rag/ops/confirm-amend    {"token":"...","yes":true}
+POST /api/rag/ops/continue         {"token":"...","next_row":true}   # or {"ask":"... E-0500"}
+POST /api/rag/ops/chain            {"token":"..."}                   # audit view
+```
+
+An ask that matches no Emp ID and no name returns `status: no_match` with a shortlist -
+it does not dress the first payroll row up as a find.
 
 ## Edge prompts to try live
 

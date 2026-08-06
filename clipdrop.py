@@ -5151,6 +5151,30 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/rag/ops/continue":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.continue_loop(
+                    str(data.get("token") or ""),
+                    ask=str(data.get("ask") or ""),
+                    next_row=bool(data.get("next_row")),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/chain":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.chain(str(data.get("token") or ""))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/rag/reveal-path":
             try:
                 from rag import reveal as rag_reveal
