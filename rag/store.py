@@ -1045,13 +1045,37 @@ def create_chat(space_id: int, title: str = "New chat") -> dict:
 
 
 def list_chats(space_id: int) -> list[dict]:
+    """Chats for a space, plus a rough preview for the Chats tab cards.
+
+    ``preview`` = first user message; ``summary`` prefers last assistant reply
+    (falls back to the user ask) so the card is readable without opening the thread.
+    """
     init()
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM rag_chats WHERE space_id=? ORDER BY updated_at DESC",
+            """
+            SELECT c.*,
+              (SELECT m.content FROM rag_messages m
+               WHERE m.chat_id=c.id AND m.role='user'
+               ORDER BY m.id ASC LIMIT 1) AS preview,
+              (SELECT m.content FROM rag_messages m
+               WHERE m.chat_id=c.id AND m.role='assistant'
+               ORDER BY m.id DESC LIMIT 1) AS last_answer
+            FROM rag_chats c
+            WHERE c.space_id=?
+            ORDER BY c.updated_at DESC
+            """,
             (int(space_id),),
         ).fetchall()
-        return [_row(r) for r in rows]  # type: ignore[misc]
+        out: list[dict] = []
+        for r in rows:
+            d = _row(r)  # type: ignore[arg-type]
+            prev = str(d.get("preview") or "").strip()
+            ans = str(d.get("last_answer") or "").strip()
+            rough = (ans or prev).replace("\n", " ").strip()
+            d["summary"] = rough[:220] if rough else ""
+            out.append(d)
+        return out
 
 
 def add_message(
