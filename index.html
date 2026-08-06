@@ -7536,7 +7536,9 @@ async function ensureCortexAgent(name,text,caps,intent){
     tools:caps.tools,
     config:{
       description:text.slice(0,600),
-      schedule_hint:intent==='schedule'?text.slice(0,400):'',
+      // No `schedule_hint` here. It was written on every scheduled agent and read
+      // nowhere, so it looked like scheduling had been recorded when nothing had.
+      // The real link is `routine_id`, set below once Cortex accepts the routine.
       goal_driven:true,
       created_from:'cortex_chat',
       organs:caps.organs,
@@ -7549,6 +7551,28 @@ async function ensureCortexAgent(name,text,caps,intent){
     const created=await api('/api/agents',{method:'POST',body:JSON.stringify(payload)}).then(r=>r.json());
     if(!(created&&(created.ok||created.agent)))throw new Error((created&&created.error)||'Create failed');
     agent=created.agent||created;
+  }
+  // "Morning news brief, daily" used to record a `schedule_hint` and stop there.
+  // That field is written here and read nowhere in the estate, so a scheduled agent
+  // was created, pinned, and never ran - the UI promised a routine that did not
+  // exist. Cortex already owns a real scheduler (/api/cortex/routines, with
+  // next_run_at and a governor); this hands the goal to it, and when it cannot,
+  // says so rather than leaving a chip that quietly does nothing.
+  if(intent==='schedule'){
+    try{
+      const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal:text})}).then(x=>x.json());
+      const rid=r&&(r.routine_id||r.id||(r.routine&&r.routine.id));
+      if(r&&r.ok&&rid){
+        agent.config=Object.assign({},agent.config,{routine_id:rid});
+        try{await api('/api/agents/'+agent.id,{method:'POST',body:JSON.stringify({config:agent.config})})}catch(e){}
+        const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||'';
+        toast('Scheduled'+(when?(' — '+String(when).slice(0,40)):''));
+      }else{
+        toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
+      }
+    }catch(e){
+      toast('Agent saved, but NOT scheduled — Cortex engine unreachable');
+    }
   }
   setCortexActiveAgent(agent);
   return agent;
