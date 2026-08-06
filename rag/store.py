@@ -752,6 +752,15 @@ def list_sources(space_id: int) -> list[dict]:
         return [_row(r) for r in rows]  # type: ignore[misc]
 
 
+def get_source(source_id: int) -> dict | None:
+    init()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sources WHERE id=?", (int(source_id),)
+        ).fetchone()
+        return _row(row) if row else None  # type: ignore[misc]
+
+
 def update_source_status(source_id: int, status: str, *, meta: dict | None = None) -> None:
     init()
     with _conn() as conn:

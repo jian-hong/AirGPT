@@ -1394,6 +1394,19 @@ body.theme-light .rag-neon-card p.hint{color:var(--muted)!important;opacity:1}
 .rag-source-tile .st-meta{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rag-source-tile .st-x{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:8px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:12px}
 .rag-source-tile .st-x:hover{background:rgba(0,0,0,.12);color:var(--text)}
+/* Reveal sits bottom-right and only on hover, so the resting tile stays kind +
+   title + status and the icon cannot be mistaken for part of the card. */
+.rag-source-tile .st-reveal{
+  position:absolute;bottom:4px;right:4px;width:24px;height:24px;border:0;border-radius:8px;
+  background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:13px;line-height:1;
+  opacity:0;transition:opacity .15s,background .15s,color .15s;
+}
+.rag-source-tile:hover .st-reveal,
+.rag-source-tile:focus-within .st-reveal{opacity:1}
+.rag-source-tile .st-reveal:hover{background:rgba(0,0,0,.14);color:var(--text)}
+.rag-source-tile .st-reveal:focus-visible{opacity:1;outline:2px solid rgba(120,200,255,.6);outline-offset:1px}
+body.theme-dark .rag-source-tile .st-reveal{background:rgba(255,255,255,.08)}
+body.theme-dark .rag-source-tile .st-reveal:hover{background:rgba(255,255,255,.16)}
 .rag-build-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;max-width:820px}
 @media(max-width:960px){.rag-build-layout{grid-template-columns:1fr}}
 .rag-pipe-inspect{margin-top:12px;border:1px solid var(--line);border-radius:14px;padding:0 12px 10px;background:var(--surface2);max-width:820px}
@@ -9873,11 +9886,15 @@ async function ragRenderTab(){
       const isChat=/(^|[\\/])chat_\d+\.md$/.test(String(x.path||''))||String(x.title||'').startsWith('chat_');
       const kind=isChat?'Chat':(/url_/i.test(String(x.title||x.path||''))?'Link':'File');
       const title=esc(x.title||ragFileName(x.path)||'source');
+      // Links have no local file to open. The server resolves the real path from the
+      // source row (Docs original, else host path) — the tile may only know a basename.
+      const canReveal=kind!=='Link';
       return `<div class="rag-source-tile" title="${title}">
         <button type="button" class="st-x" title="Remove" onclick="ragDeleteSource(${x.id})">✕</button>
         <div class="st-kind">${kind}</div>
         <div class="st-title">${title}</div>
         <div class="st-meta">${esc(x.status||'ready')}</div>
+        ${canReveal?`<button type="button" class="st-reveal" title="Show in folder" aria-label="Show ${title} in folder" onclick="ragRevealSource(${x.id},event)">🗂</button>`:''}
       </div>`;}).join('')}</div>`:'<p class="hint">No sources yet — add files, chats, a folder, or a link.</p>';
     body.innerHTML=`
       <div class="rag-build-layout">
@@ -10217,6 +10234,16 @@ async function ragDeleteSource(id){
     const r=await api('/api/rag/sources/'+id+'/delete',{method:'POST',body:'{}'}).then(x=>x.json());
     if(r&&r.ok){toast('Source removed');ragRefreshSpace();}else toast('Remove failed');
   }catch(e){toast('Remove failed')}
+}
+// Show an ingested source in the OS file manager. Fails closed and says why —
+// a file moved or deleted since ingest must not look like a silent no-op.
+async function ragRevealSource(id,ev){
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  try{
+    const r=await api('/api/rag/sources/'+id+'/reveal',{method:'POST',body:'{}'}).then(x=>x.json());
+    if(r&&r.ok)toast('Opened in folder');
+    else toast((r&&r.error)||'Could not open this file');
+  }catch(e){toast('Could not open this file')}
 }
 async function ragLoadTrace(det){
   if(!det||!det.open)return;

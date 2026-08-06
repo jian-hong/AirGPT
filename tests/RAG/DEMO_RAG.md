@@ -50,6 +50,10 @@ python clipdrop.py
 
 # 7) Reveal original file in Explorer
 # POST http://127.0.0.1:8765/api/rag/reveal-path  {"path":"D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx"}
+# On Build, hover any ingested file card -> bottom-right folder icon reveals the
+# byte-faithful Docs original (falls back to the host ingest path):
+# POST http://127.0.0.1:8765/api/rag/sources/53/reveal  {}
+#   -> {"ok":true,"path":"...\\data\\rag\\8\\Docs\\83c97420_wh_06_margin_mix.xlsx","origin":"docs"}
 
 # 8) Sample messy (~300MB local, gitignored)
 python tests\RAG\gen_messy_fixtures.py --target-mb 200

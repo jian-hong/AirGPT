@@ -8,6 +8,12 @@
       "port": 8801
     },
     {
+      "name": "airgpt",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["clipdrop.py"],
+      "port": 8765
+    },
+    {
       "name": "airgpt-demo-mock",
       "runtimeExecutable": "python",
       "runtimeArgs": ["clipdrop.py"],

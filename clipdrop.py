@@ -5099,6 +5099,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path.startswith("/api/rag/sources/") and path.endswith("/reveal"):
+            try:
+                from rag import reveal as rag_reveal
+                from rag import store as rag_store
+
+                src_id = int(path.split("/")[4])
+                src = rag_store.get_source(src_id)
+                if not src:
+                    return self._json(404, {"ok": False, "error": "source not found"})
+                out = rag_reveal.reveal_source(src)
+                return self._json(200 if out.get("ok") else 404, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/sources/") and path.endswith("/delete"):
             try:
                 from rag import store as rag_store
