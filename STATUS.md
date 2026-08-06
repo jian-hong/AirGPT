@@ -4,19 +4,27 @@
 
 ## Now
 
-1. **F2–F4 YES building** — D01 #13–#15 + D02 ops + OpenVault nvidia (#12).
-2. **Ontology-first live** — space 8 entities SKU/Money/…; logic steps on answers;
-   artifact `tests/RAG/results/ontology_space_8.json`.
-3. **Reveal folder** — `POST /api/rag/reveal-path` opens Explorer on real files.
-4. **Messy fixtures** — `tests/RAG/messy/` ~317MB (gitignored); meta in results.
-5. **Ops amend-confirm** — identify → yes/no → propose → confirm write (E-0012 tested).
-6. **OpenVault nvidia** catalog + `docs/NVIDIA_RAG_EVAL.md` (restart OV to pick up).
+1. **SQL lane answers filter+aggregate** (#21) — `rag/sheet_sql.py` resolves against the
+   sheet schema; FRTR 00027 `AVG(OnTimeSLA) WHERE BaseRate > 1` = 0.9441, 0 web cites.
+2. **Reveal on file cards** (#14) — hover icon; server resolves Docs original → host
+   → blob and fails closed. `POST /api/rag/sources/<id>/reveal`.
+3. **Docs originals byte-faithful** (#20) — space 8 is 6/6 identical. Verified, was
+   already built.
+4. **Ops amend-confirm** (D02 #17–#19) — reject/refuse/off-rails all leave the file
+   unchanged; confirmed write applies +8% with an audit stamp. Verified end to end.
+5. **Recursive clone works** (#3) — orca/superset gitlinks removed, colibri kept.
+6. **Ontology-first live** — space 8; artifact `tests/RAG/results/ontology_space_8.json`.
 
 ## Next
 
-1. Commit/push AirGPT `demo/rag-cross-compare`; commit OpenVault nvidia separately.
-2. Ingest messy CSV into a dedicated space + score smoke.
-3. Thin UI button for Reveal next to citations if capacity.
+1. **#10** ground the Insights sheet in real miss/hit rows (today it is generic prompts).
+2. **#13** score the primary-50MB pack — fixtures are ingested (spaces 16 **and** 17,
+   duplicate) but no scores are retained.
+3. **#15** make the reasoning chain founder-readable; it can now consume #21's SQL
+   provenance instead of emitting op codes.
+4. **#25** Settings post-create depth/arch + Save + Rebuild (today depth is read-only).
+5. **#9** effort x thinking matrix — not started.
+6. Push `demo/rag-cross-compare`; commit OpenVault nvidia separately.
 
 ## Later
 
