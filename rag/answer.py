@@ -659,6 +659,16 @@ def wants_corpus_summary(query: str) -> bool:
     return False
 
 
+def _inventory_chain(**kw) -> dict:
+    """See _retrieval_chain: explaining an answer must not be able to cost it."""
+    try:
+        from rag import reasoning
+
+        return reasoning.chain_for_inventory("", **kw)
+    except Exception as e:
+        return {"lane": "inventory", "steps": [], "text": "", "error": str(e)[:160]}
+
+
 def _inventory_answer_events(space_id: int, *, use_llm: bool, depth: str, refuse: str | None):
     """Shared SSE path for corpus inventory (no topical retrieve)."""
     yield {"type": "thinking", "text": "Inventorying sources in this space…"}
@@ -724,6 +734,12 @@ def _inventory_answer_events(space_id: int, *, use_llm: bool, depth: str, refuse
         "context": "",
         "depth": depth,
         "source_count": inv.get("source_count") or len(cites),
+        "lane": "inventory",
+        "reasoning": _inventory_chain(
+            source_count=int(inv.get("source_count") or len(cites)),
+            mode=str(inv.get("mode") or "inventory"),
+            depth=depth,
+        ),
     }
 
 
@@ -916,11 +932,23 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
             return {
                 "answer": str(pred),
                 "citations": [{"path": path, "title": src.get("title") or p.name}],
+                # The KPI catalogue answers from a fixed shape, so there is no SQL or
+                # bound column to report. Carry what is true - the workbook - and let
+                # the chain omit the rest rather than invent it.
+                "provenance": {"workbook": wb_name},
             }
         if pred and str(pred).startswith("ABSTAIN:"):
             return {
                 "answer": str(pred),
                 "citations": [{"path": path, "title": src.get("title") or p.name}],
+                # Without this the chain falls through to its answer branch and tells
+                # the founder a number was computed from rows, on a run that refused
+                # to compute one.
+                "provenance": {
+                    "workbook": wb_name,
+                    "abstained": True,
+                    "abstain_reason": str(pred).split(":", 1)[-1].strip(),
+                },
             }
         for k, df in sheets.items():
             frames[f"{p.name}:{k}"] = df
@@ -950,6 +978,17 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
                 "sql": hit.get("sql"),
                 "sheet": hit.get("sheet"),
                 "workbook_bound": True,
+                # Carried whole so the reasoning chain (#15) reports the binding this
+                # run actually made, rather than re-deriving it from the answer text.
+                "provenance": {
+                    k: hit.get(k)
+                    for k in (
+                        "sql", "sheet", "workbook", "rows_matched", "rows_total",
+                        "abstained", "ambiguous", "linked", "value", "per_column",
+                        "row_note",
+                    )
+                    if hit.get(k) is not None
+                },
             }
 
     if not frames:
@@ -962,6 +1001,17 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     if not pred:
         return None
     return {"answer": str(pred), "citations": cites[:5]}
+
+
+def _retrieval_chain(query: str, **kw) -> dict:
+    """Reasoning chain for the retrieval lane. A chain is an explanation, so a failure
+    to build one must not cost the founder the answer it was explaining."""
+    try:
+        from rag import reasoning
+
+        return reasoning.chain_for_retrieval(query, **kw)
+    except Exception as e:  # visible, not swallowed (R-0011)
+        return {"lane": "retrieval", "steps": [], "text": "", "error": str(e)[:160]}
 
 
 def answer_events(
@@ -984,6 +1034,10 @@ def answer_events(
     refuse = destructive_injection_reply(query)
     raw_q = (query or "").strip()
 
+    # Hoisted: the retrieval lane below builds its reasoning chain from this too, and
+    # an ontology failure must cost the chain a step, not raise inside the generator.
+    _ontology_summary = ""
+
     # Hybrid SQL lane (demo variant hybrid_max): act once, never confirm-loop.
     try:
         from rag import demo_variants as _dv
@@ -991,6 +1045,8 @@ def answer_events(
 
         _preset = _dv.resolve_for_space(space_id)
         _ont = _onto.ontology_for_space(space_id, force=False)
+        if isinstance(_ont, dict):
+            _ontology_summary = _ont.get("summary") or ""
         _logic = _onto.logic_for_query(_ont if _ont.get("ok") else {}, raw_q)
         if _logic:
             yield {
@@ -1006,6 +1062,15 @@ def answer_events(
             sql_hit = _try_hybrid_sql_lane(space_id, raw_q)
             if sql_hit:
                 yield {"type": "thinking", "text": "Hybrid SQL lane (no confirm loop)…"}
+                _onto_sum = _ont.get("summary") if isinstance(_ont, dict) else None
+                from rag import reasoning as _reasoning
+
+                _chain = _reasoning.chain_for_sql(
+                    raw_q,
+                    sql_hit.get("provenance"),
+                    ontology_summary=_onto_sum or "",
+                )
+                yield {"type": "reasoning", "reasoning": _chain}
                 yield {
                     "type": "meta",
                     "depth": depth,
@@ -1013,7 +1078,8 @@ def answer_events(
                     "honesty": _preset.get("honesty"),
                     "lane": "sql",
                     "logic": _logic,
-                    "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
+                    "reasoning": _chain,
+                    "ontology_summary": _onto_sum,
                     "hits": [],
                     "context": "",
                 }
@@ -1029,7 +1095,8 @@ def answer_events(
                     "honesty": _preset.get("honesty"),
                     "variant": _preset.get("name"),
                     "logic": _logic,
-                    "ontology_summary": _ont.get("summary") if isinstance(_ont, dict) else None,
+                    "reasoning": _chain,
+                    "ontology_summary": _onto_sum,
                 }
                 return
     except Exception:
@@ -1252,6 +1319,13 @@ def answer_events(
             "context": "",
             "template_id": (result or {}).get("template_id"),
             "depth": depth,
+            "reasoning": _retrieval_chain(
+                query, depth=depth, stop_reason="policy_refuse", model="policy",
+                # Retrieval already ran above; passing the real hits keeps the chain
+                # from reporting "nothing matched" on a refusal that had passages.
+                hits=hits,
+                ontology_summary=_ontology_summary,
+            ),
         }
         return
 
@@ -1500,6 +1574,19 @@ def answer_events(
             "context": context,
             "template_id": result.get("template_id"),
             "depth": result.get("depth") or depth,
+            "reasoning": _retrieval_chain(
+                query,
+                depth=result.get("depth") or depth,
+                hits=hits,
+                citations=citations,
+                goal=assessment.as_dict(),
+                coverage=coverage,
+                stop_reason=stop_reason,
+                model="extractive",
+                faithfulness=1.0,
+                web_used=bool(web_snippet_rows),
+                ontology_summary=_ontology_summary,
+            ),
         }
         return
 
@@ -1582,6 +1669,19 @@ def answer_events(
         "context": context,
         "template_id": result.get("template_id"),
         "depth": result.get("depth") or depth,
+        "reasoning": _retrieval_chain(
+            query,
+            depth=result.get("depth") or depth,
+            hits=hits,
+            citations=citations,
+            goal=assessment.as_dict(),
+            coverage=coverage,
+            stop_reason=stop_reason,
+            model=model,
+            faithfulness=faith["score"],
+            web_used=bool(web_snippet_rows),
+            ontology_summary=_ontology_summary,
+        ),
     }
 
 
@@ -1655,5 +1755,6 @@ def answer(
         "variant": done.get("variant"),
         "honesty": done.get("honesty"),
         "logic": done.get("logic"),
+        "reasoning": done.get("reasoning") or {},
         "ontology_summary": done.get("ontology_summary"),
     }

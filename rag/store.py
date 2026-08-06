@@ -473,7 +473,12 @@ def update_space_settings(
             return None
         new_name = (str(name)[:120]) if name else row["name"]
         depth = str(depth_default or row["depth_default"] or "high").lower()
-        if depth not in ("basic", "high", "max", "manual"):
+        # "adaptive" is the label the UI shows; "auto" is the value retrieve resolves
+        # per question (rag/adaptive.resolve_depth). Accepting only one of the two
+        # made Settings silently keep the old depth when adaptive was chosen.
+        if depth == "adaptive":
+            depth = "auto"
+        if depth not in ("basic", "high", "max", "manual", "auto"):
             depth = row["depth_default"] or "high"
         new_profile = str(profile).strip().lower() if profile is not None else (row["profile"] or "local")
         if new_profile in ("local+", "local_plus", "local-qdrant"):

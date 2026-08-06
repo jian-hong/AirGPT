@@ -9181,6 +9181,7 @@ const RAG_DEPTHS=[
   ['basic','Basic','Fast lookup — one-pass hybrid'],
   ['high','High','Default — thorough, cited'],
   ['max','Max','Research-grade multi-hop (slower)'],
+  ['auto','Adaptive','Picks depth per question from corpus size'],
   ['manual','Manual','Pick the pipeline yourself'],
 ];
 function ragAgo(ts){if(!ts)return'';const s=Math.max(0,Date.now()/1000-ts);if(s<90)return'just now';if(s<3600)return Math.round(s/60)+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';}
@@ -10009,7 +10010,17 @@ async function ragRenderTab(){
       <div class="cortex-card rag-settings-card">
         <label class="hint" style="display:block;margin-bottom:4px">Name</label>
         <input id="ragSetName" value="${esc(s.name||'')}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:inherit;margin-bottom:12px;box-sizing:border-box"/>
-        <div class="btn-row"><button type="button" class="btn primary" onclick="ragSaveSettings()">Save</button></div>
+        <label class="hint" style="display:block;margin-bottom:4px">Index depth</label>
+        <select id="ragSetDepth" onchange="ragSettingsDepthChanged()" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;margin-bottom:4px;box-sizing:border-box">${depthOpts}</select>
+        <p class="hint" id="ragSetDepthHint" style="margin:0 0 12px;font-size:11px">${esc((RAG_DEPTHS.find(d=>d[0]===(s.depth_default||'high'))||[])[2]||'')}</p>
+        <label class="hint" style="display:block;margin-bottom:4px">Architecture</label>
+        <select id="ragSetArch" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;margin-bottom:4px;box-sizing:border-box"${(s.depth_default||'high')==='manual'?'':' disabled'}>${archOpts}</select>
+        <p class="hint" id="ragSetArchHint" style="margin:0 0 12px;font-size:11px">${(s.depth_default||'high')==='manual'?'Yours to pick.':'Chosen for you by the '+esc(s.depth_default||'high')+' preset — switch to Manual to override.'}</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" onclick="ragSaveSettings()">Save</button>
+          <button type="button" class="btn" id="ragSetRebuildBtn" onclick="ragSaveAndRebuild()">Save + Rebuild</button>
+        </div>
+        <p class="hint" style="margin:8px 0 0;font-size:11px">Save stores these as the space defaults. Rebuild re-runs extract → chunk → enrich → embed → index over every source under the saved config; existing chunks are replaced.</p>
       </div>
       <div class="rag-neon-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Share this RAG</div>
@@ -10291,19 +10302,56 @@ async function ragLoadTrace(det){
     else el.innerHTML='<p class="hint">Trace not found.</p>';
   }catch(e){el.innerHTML='<p class="hint">Trace load failed.</p>'}
 }
-async function ragSaveSettings(){
+function ragSettingsDepthChanged(){
+  const d=($('ragSetDepth')||{}).value||'high';
+  const hint=$('ragSetDepthHint');
+  if(hint)hint.textContent=(RAG_DEPTHS.find(x=>x[0]===d)||[])[2]||'';
+  const arch=$('ragSetArch'),ah=$('ragSetArchHint');
+  if(arch)arch.disabled=(d!=='manual');
+  if(ah)ah.textContent=(d==='manual')?'Yours to pick.':('Chosen for you by the '+d+' preset — switch to Manual to override.');
+}
+async function ragSaveSettings(opts){
   const name=($('ragSetName')?$('ragSetName').value.trim():'');
   const depth=$('ragSetDepth')?$('ragSetDepth').value:(((ragState.space||{}).depth_default)||'high');
   const prev=Object.assign({},((ragState.space&&ragState.space.config)||{}));
   const cfg=Object.assign({},prev);
   cfg.share_keys=Array.isArray(prev.share_keys)?prev.share_keys:[];
-  if(depth==='manual')cfg.architecture=($('ragSetArch')?$('ragSetArch').value:'hybrid_rrf');
+  // Persist the architecture whatever the depth. Storing it only under Manual meant
+  // a founder who picked an architecture, switched to Max to compare, then switched
+  // back to Manual silently got hybrid_rrf instead of the pipeline they chose.
+  if($('ragSetArch'))cfg.architecture=$('ragSetArch').value||cfg.architecture||'hybrid_rrf';
   if($('ragChatsEvidence'))cfg.chats_as_evidence=!!$('ragChatsEvidence').checked;
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/settings',{method:'POST',body:JSON.stringify({name,depth_default:depth,config:cfg})}).then(x=>x.json());
-    if(r&&r.ok){toast('Saved');ragState.space=r.space;ragState.depth=r.space.depth_default||'high';ragRenderSpace();}
-    else toast('Save failed');
-  }catch(e){toast('Save failed')}
+    if(r&&r.ok){
+      ragState.space=r.space;ragState.depth=r.space.depth_default||'high';
+      // Report what the server stored, not what was clicked - the two differ when a
+      // value is rejected, and "Saved" over a rejected value is a lie (R-0011).
+      const got=r.space.depth_default||'high';
+      if(got!==depth)toast('Saved, but depth stayed '+got);
+      else if(!(opts&&opts.quiet))toast('Saved');
+      if(!(opts&&opts.quiet))ragRenderSpace();
+      return r.space;
+    }
+    toast((r&&r.error)||'Save failed');return null;
+  }catch(e){toast('Save failed');return null}
+}
+async function ragSaveAndRebuild(){
+  const btn=$('ragSetRebuildBtn');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const space=await ragSaveSettings({quiet:true});
+  if(!space){if(btn){btn.disabled=false;btn.textContent='Save + Rebuild';}return;}
+  if(btn)btn.textContent='Rebuilding…';
+  try{
+    // Rebuild under what the server actually saved, not under the form values.
+    const depth=space.depth_default||'high';
+    const r=await api('/api/rag/spaces/'+ragState.spaceId+'/build',{method:'POST',body:JSON.stringify({depth})}).then(x=>x.json());
+    if(r&&r.ok){
+      toast('Rebuilt '+(r.chunks||0)+' chunk(s) from '+(r.sources||r.files||0)+' source(s) at '+depth+' depth');
+      ragState.summary='';await ragRefreshSpace();
+    }else toast((r&&r.error)||'Rebuild failed');
+  }catch(e){toast('Rebuild failed')}
+  if(btn){btn.disabled=false;btn.textContent='Save + Rebuild';}
 }
 async function ragPurgeChatSources(){
   if(!ragState.spaceId)return;
