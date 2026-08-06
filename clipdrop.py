@@ -1931,7 +1931,10 @@ class Handler(BaseHTTPRequestHandler):
         return join_url, qt
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        # /pomodoro is a self-contained timer page: no data, no API calls, nothing to
+        # authorise. It opens in its own small window, so requiring a token would just
+        # 401 a page that reads nothing.
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -2469,7 +2472,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(length))
-            self.send_header("Cache-Control", "no-store")
+            # Match what GET actually sends for the page, or a HEAD-then-GET client
+            # is told the response is uncacheable and then handed an ETag.
+            if path in ("/", "/index.html"):
+                self.send_header("Cache-Control", "no-cache")
+                try:
+                    self.send_header("ETag", _cached_asset(ROOT / "index.html")[1])
+                except OSError:
+                    pass
+            else:
+                self.send_header("Cache-Control", "no-store")
             self._cors()
             self.end_headers()
             return
@@ -2535,6 +2547,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             # no-cache, not no-store: revalidate every time (so an edit still shows up
             # immediately) but allow a 304 when nothing changed.
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", etag)
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Vary", "Accept-Encoding")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
+        if path in ("/pomodoro", "/pomodoro.html", "/tomato"):
+            body, etag = _cached_asset(ROOT / "pomodoro.html")
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self._cors()
+                self.end_headers()
+                return
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", ""))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-cache")
             self.send_header("ETag", etag)
             if encoding:
