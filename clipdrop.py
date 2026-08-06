@@ -162,17 +162,40 @@ def _kill_orphan_cloudflared() -> None:
         print(f"[tunnel] orphan cleanup skip: {e}")
 
 
+def _kill_proc_tree(p: subprocess.Popen) -> None:
+    """Kill the process AND its children.
+
+    tunnel_localtunnel spawns `npx localtunnel` with shell=True, so the handle we
+    hold is the cmd/npx wrapper - terminate() kills the wrapper and leaves the real
+    `lt.js` node process alive, still holding a loca.lt URL nobody is tracking. Two
+    orphan pairs were observed on one machine. Orphans accumulate every sweep and
+    the provider starts refusing new tunnels, which is what "localtunnel totally
+    down" actually looks like. Kill the tree, not the handle.
+    """
+    pid = getattr(p, "pid", None)
+    if os.name == "nt" and pid:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, text=True, timeout=8,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+            )
+        except Exception as e:
+            print(f"[tunnel] tree kill {pid} skip: {e}")
+    try:
+        p.terminate()
+        p.wait(timeout=2)
+    except Exception:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
 def _kill_tunnel_procs() -> None:
     with _tunnel_lock:
         for p in _tunnel_procs:
-            try:
-                p.terminate()
-                p.wait(timeout=2)
-            except Exception:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
+            _kill_proc_tree(p)
         _tunnel_procs.clear()
     _kill_orphan_cloudflared()
 
@@ -1667,6 +1690,25 @@ def tunnel_health_loop():
         time.sleep(15)
 
 
+# Subdomains a provider prints in its startup banner that are not the forwarding
+# URL. localhost.run announces its admin console (https://admin.localhost.run)
+# several lines before the real *.lhr.life tunnel, and _read_tunnel_url used to
+# return the first line matching any pattern - so the console link won every
+# time, got probed, failed, and killed the ssh session before the actual URL was
+# ever printed. localhost.run could therefore never succeed on any network.
+# Reject the class (banner/console hostnames) rather than the one host, so the
+# same shape of bug cannot land again on serveo or localtunnel.
+_BANNER_LABELS = frozenset({
+    "admin", "dashboard", "console", "www", "docs", "status",
+    "auth", "login", "billing", "support",
+})
+
+
+def _is_banner_url(url: str) -> bool:
+    host = re.sub(r"^https?://", "", url or "").split("/")[0].split(":")[0].lower()
+    return host.split(".")[0] in _BANNER_LABELS
+
+
 def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines: int = 120) -> str | None:
     _register_tunnel_proc(proc)
     lines: queue.Queue[str] = queue.Queue()
@@ -1690,8 +1732,15 @@ def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines:
             continue
         for pat in patterns:
             m = re.search(pat, line)
-            if m:
-                return m.group(1)
+            if not m:
+                continue
+            cand = m.group(1)
+            if _is_banner_url(cand):
+                # Banner text, not a tunnel. Keep reading - the real URL is still
+                # to come on a later line. Never return it and never give up here.
+                print(f"[tunnel] ignoring banner URL {cand}")
+                continue
+            return cand
     return None
 
 
