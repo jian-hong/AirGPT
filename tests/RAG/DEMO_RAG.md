@@ -90,6 +90,49 @@ sibling asks work too: `average OnTimeSLA for base rate at least 2`,
 `total WeightLb for CostUSD over 500`, `how many carriers have BaseRate above 3`.
 When a filter matches no rows it says so instead of reporting 0 as a measurement.
 
+## Row ranges - "select row 330 to 660, sum"
+
+```text
+Q: On the Carriers sheet, sum BaseRate for rows 330 to 660
+A: 498.4 - the total of BaseRate across spreadsheet rows 330-660
+   (data rows 328-658 of 5000), over 331 of 5,000 rows.
+   SQL: SELECT SUM(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 330 AND 660
+```
+
+The row mapping is stated because it is the part you cannot check by eye: these
+sheets carry a banner above the header, so spreadsheet row 330 is dataframe row
+327. Independently checked with openpyxl: 498.400000 over 331 numeric cells.
+
+Name no column and every numeric column is reported, rather than one being picked:
+
+```text
+Q: select rows 330 to 660 on Carriers, sum
+A: BaseRate: 498.4 | OnTimeSLA: 312.5
+```
+
+## Oracle bench - the grader shares no code with the lane
+
+```powershell
+python tests\RAG\oracle_bench.py --n 80 --seed 1
+```
+
+Ground truth is read straight from the workbook with openpyxl by spreadsheet row
+number - no `load_sheets`, no `sheet_sql`, no planner. Questions are **generated**,
+so a different `--seed` asks different things about different sheets, columns and
+spans; a curated list stops being evidence the moment the code is tuned to it.
+
+Reports two numbers, because they fail independently:
+
+- **value accuracy** - is the arithmetic right
+- **schema-link recall** - were the right sheet and columns bound
+
+A right value off the wrong column is flagged as coincidence, not a pass. Families:
+`row_range_agg`, `row_range_nocol`, `filter_agg`, `filter_count`, `combined`,
+`paraphrase` (three phrasings must agree), `out_of_range` (must refuse, not answer 0).
+
+Per R-0010 the run prints the rule-of-three bound: 0 failures in 80 bounds the true
+error rate at 3.8%, not 0%.
+
 ## Ontology -> logic -> answer (space 8 warehouse)
 
 Entities formed: Category, Money, PurchaseOrder, Quantity, Region, SKU, Temporal, Vendor  

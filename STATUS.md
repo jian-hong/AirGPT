@@ -4,7 +4,13 @@
 
 ## Now
 
-1. **SQL lane answers filter+aggregate** (#21) — `rag/sheet_sql.py` resolves against the
+1. **Oracle bench** — `tests/RAG/oracle_bench.py`. Grader shares no code with the lane
+   (openpyxl by spreadsheet row); questions generated per seed. Scores **value accuracy
+   and schema-link recall** separately — a right value off the wrong column is a
+   coincidence, not a pass. Found 6 real linking bugs on its first two runs.
+2. **Row ranges** — "select row 330 to 660, sum" answers, and states the Excel-row to
+   data-row mapping (banner rows make 330 -> 327). No column named -> every numeric one.
+3. **SQL lane answers filter+aggregate** (#21) — `rag/sheet_sql.py` resolves against the
    sheet schema; FRTR 00027 `AVG(OnTimeSLA) WHERE BaseRate > 1` = 0.9441, 0 web cites.
 2. **Reveal on file cards** (#14) — hover icon; server resolves Docs original → host
    → blob and fails closed. `POST /api/rag/sources/<id>/reveal`.
@@ -17,6 +23,10 @@
 
 ## Next
 
+0. **Schema linking at scale** — `docs/research/terabyte-retrieval.md`. Our schema is
+   ~15 columns; published failure rates are measured at 1000+. Next honest measurement
+   is the oracle bench against a wide-schema workbook. Then: persist a catalog, make
+   linking retrieval rather than substring, move the data layer to Parquet.
 1. **#10** ground the Insights sheet in real miss/hit rows (today it is generic prompts).
 2. **#13** score the primary-50MB pack — fixtures are ingested (spaces 16 **and** 17,
    duplicate) but no scores are retained.
