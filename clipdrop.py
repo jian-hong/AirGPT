@@ -182,6 +182,16 @@ def _kill_proc_tree(p: subprocess.Popen) -> None:
             )
         except Exception as e:
             print(f"[tunnel] tree kill {pid} skip: {e}")
+    elif pid:
+        # No tree kill off Windows. The tunnel children are not spawned with
+        # start_new_session, so they sit in our own process group and os.killpg
+        # would take AirGPT down with them. terminate() below reaps the wrapper
+        # only - which is exactly the orphan this function exists to prevent - so
+        # say so out loud rather than degrade in silence.
+        print(
+            f"[tunnel] no tree kill on os.name={os.name}: terminating wrapper {pid} "
+            f"only, its children may orphan"
+        )
     try:
         p.terminate()
         p.wait(timeout=2)

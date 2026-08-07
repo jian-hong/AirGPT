@@ -89,5 +89,68 @@ class BannerUrlTest(unittest.TestCase):
         self.assertEqual(got, "https://silent-owl-19.serveo.net")
 
 
+class _FakeKillProc:
+    """Popen stand-in that records how it was asked to die."""
+
+    def __init__(self, pid=4242):
+        self.pid = pid
+        self.terminated = False
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        pass
+
+
+class KillTreeHonestyTest(unittest.TestCase):
+    """R-0011: a silent fallback is a lie.
+
+    Off Windows there is no taskkill, and the tunnel children are not spawned with
+    start_new_session - they share our process group, so os.killpg would take
+    AirGPT down with them. _kill_proc_tree therefore degrades to terminating the
+    wrapper alone, which is the exact orphan it exists to prevent. That degradation
+    has to be visible in the output, not just implied by the platform.
+    """
+
+    def _run_on(self, os_name):
+        import io
+        from contextlib import redirect_stdout
+
+        real_name = clipdrop.os.name
+        real_run = clipdrop.subprocess.run
+        calls = []
+        proc = _FakeKillProc()
+        buf = io.StringIO()
+        try:
+            clipdrop.os.name = os_name
+            # Never let the test fire a real `taskkill /F /T` - pid 4242 belongs to
+            # some process on the developer's machine, and this suite would kill it.
+            clipdrop.subprocess.run = lambda *a, **k: calls.append(a) or None
+            with redirect_stdout(buf):
+                clipdrop._kill_proc_tree(proc)
+        finally:
+            clipdrop.os.name = real_name
+            clipdrop.subprocess.run = real_run
+        return proc, buf.getvalue(), calls
+
+    def test_posix_announces_that_children_may_orphan(self):
+        proc, out, calls = self._run_on("posix")
+        self.assertTrue(proc.terminated, "wrapper must still be terminated")
+        self.assertEqual(calls, [], "no taskkill off Windows")
+        self.assertIn("no tree kill", out)
+        self.assertIn("orphan", out)
+        self.assertIn("4242", out, "the abandoned pid must be named")
+
+    def test_windows_path_stays_quiet_about_orphans(self):
+        # R-0005: the honesty print must not fire where the tree kill actually works.
+        _proc, out, calls = self._run_on("nt")
+        self.assertNotIn("no tree kill", out)
+        self.assertEqual(len(calls), 1, "Windows must still attempt the tree kill")
+
+
 if __name__ == "__main__":
     unittest.main()
