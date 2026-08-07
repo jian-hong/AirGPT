@@ -36,6 +36,19 @@ def _num(value: Any) -> str:
         return str(value)
 
 
+def _source_label(hit: dict) -> str:
+    """What to call a source in the chain. Titles win; when a hit carries only a
+    path, show the file name - a founder reading "what I read" wants
+    wh_01_sales_core.xlsx, not D:\\AirGPT\\tests\\RAG\\warehouse\\wh_01_sales_core.xlsx."""
+    title = str(hit.get("title") or "").strip()
+    if title:
+        return title
+    path = str(hit.get("path") or "").strip()
+    if not path:
+        return ""
+    return path.replace("\\", "/").rstrip("/").split("/")[-1] or path
+
+
 def _summary_text(summary: Any) -> str:
     """The ontology summary is a counts dict, not prose. Say it in words rather than
     printing the repr at a founder."""
@@ -231,7 +244,7 @@ def chain_for_retrieval(
         steps.append(_step(n, "What this space holds", _onto))
 
     n += 1
-    sources = {str(h.get("title") or h.get("path") or "") for h in hits if isinstance(h, dict)}
+    sources = {_source_label(h) for h in hits if isinstance(h, dict)}
     sources.discard("")
     if hits:
         detail = (
