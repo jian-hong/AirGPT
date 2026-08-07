@@ -848,6 +848,26 @@ def _is_tunnel_host(host: str) -> bool:
     ))
 
 
+# Stands in for a tunnel peer we cannot name. Deliberately not IP-shaped: it must
+# never satisfy _is_local_host(), and it should be obvious in an audit row that the
+# peer was unidentified rather than at some address we invented.
+TUNNEL_PEER = "tunnel-peer"
+
+
+def _is_host_request(headers, direct_ip: str) -> bool:
+    """True only for the host machine itself, never for anything off a tunnel.
+
+    The host-only gate used to be `not _is_local_host(ip)` over an ip that could be
+    supplied by the caller. Two independent things had to hold for that to be safe,
+    and neither is checked here, so this asks the question directly instead: a
+    request carrying a tunnel Host header came from outside this machine, whatever
+    any header claims.
+    """
+    if _is_tunnel_host(headers.get("Host", "")):
+        return False
+    return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
+
+
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     """Real remote client when cloudflared (or similar) proxies on loopback."""
     if direct_ip not in ("127.0.0.1", "::1"):
@@ -855,12 +875,23 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     if not _is_tunnel_host(headers.get("Host", "")):
         return None
     cf = (headers.get("CF-Connecting-IP") or "").strip()
-    if cf:
-        return cf
     xff = (headers.get("X-Forwarded-For") or "").strip()
-    if xff:
-        return xff.split(",")[0].strip()
-    return None
+    cand = cf or (xff.split(",")[0].strip() if xff else "")
+    # These headers are client-supplied. Only a provider that overwrites them makes
+    # them trustworthy, and we cannot tell from here which provider is in front of
+    # us: cloudflared sets CF-Connecting-IP, localtunnel sets X-Forwarded-For and
+    # touches nothing Cloudflare-shaped, and serveo/localhost.run are raw ssh
+    # forwards that set neither. So a caller could send CF-Connecting-IP: 127.0.0.1
+    # and _is_local_host() would hand a remote peer all 17 _HOST_ONLY_PREFIXES,
+    # /api/terminal/ and /api/fs/ included. Verified against a live loca.lt tunnel:
+    # GET /api/audit returned 403 bare and 200 with that one header.
+    # A request that arrived over a tunnel is remote by definition, so a forwarded
+    # value claiming to be this machine is always a lie. Refuse it, and fall back to
+    # a marker that is deliberately not an address so nothing downstream can mistake
+    # it for one.
+    if cand and not _is_local_host(cand):
+        return cand
+    return TUNNEL_PEER
 
 
 _net_profile_cache: dict = {"ts": 0.0, "value": "Unknown"}
@@ -2576,7 +2607,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_local_host(ip):
+        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
@@ -4056,7 +4087,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._auth_ok(path) and not path.startswith("/api/auth/"):
             return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_local_host(ip):
+        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
 
         if path == "/api/presence/typing":
