@@ -42,6 +42,14 @@ for _p in (str(REPO), str(ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# Before the first print: a U+2014 in a fixture header came back as "?" from this
+# bench, which reads as corrupted data and is not - it is the Windows console
+# encoding. On a non-English corpus every answer would look broken (R-0012).
+from scripts.stdio_utf8 import ensure_utf8_stdio  # noqa: E402
+
+if not ensure_utf8_stdio():
+    print("[warn] stdout is not UTF-8; non-ASCII in questions and answers may be lossy")
+
 TOL = 1e-6
 
 
