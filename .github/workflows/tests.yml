@@ -9,8 +9,8 @@
 # collects ZERO tests from those and still exits 0 - a suite that proves nothing
 # while reporting success (R-0007). pytest collects both styles.
 #
-# Verified locally on 2026-08-07 with exactly the env and exclusions below:
-# 396 passed, 0 failed, 4m26s.
+# A 396-pass local count on 2026-08-07 included gitignored data/skills packs.
+# Skill catalog tests now pin to tests/fixtures/skills so a clean clone matches CI.
 name: tests
 
 on:

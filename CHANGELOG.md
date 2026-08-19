@@ -81,6 +81,16 @@ Append-only. Never edited, only added to. Newest first.
   weakened.
 - Corrects the date on the entry below, which was filed as 2026-08-07 in error.
 
+## 2026-08-19 — Skill catalog tests no longer depend on gitignored laptop packs
+
+- `data/` is gitignored, so `data/skills/*.md` exists only on the machine that
+  created them. The catalog tests read those packs and went green locally
+  (396/0) while GitHub Actions saw an empty catalog (5 failed). That is R-0007:
+  green on the author laptop, red on a stranger clone.
+- Committed fixture packs live under `tests/fixtures/skills/`. The invoke and
+  `/api/skills` tests pin `SKILLS_DIR` there. The product may still ship with
+  no user packs; an empty `data/skills` stays an empty catalog.
+
 ## 2026-08-19 — EPIC-D01 + EPIC-D02: reasoning chains and the ops write path
 
 - **D02 ops amend-confirm** (#17–#19): `rag/ops_amend.py` rewritten to resolve columns

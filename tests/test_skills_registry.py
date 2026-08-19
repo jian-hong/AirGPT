@@ -1,7 +1,8 @@
 """GET /api/skills and the snippet-card `Use` contract.
 
 Two things must stay true or the cards go back to being decoration:
-  * the registry serves real packs from data/skills with usable titles, and
+  * the registry serves real packs with usable titles (committed fixtures when
+    gitignored data/skills is empty), and
   * arming a skill changes what the *model* sees without polluting the transcript
     the user reads back later.
 """
@@ -14,6 +15,8 @@ import threading
 import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("AIRGPT_NO_BROWSER", "1")
@@ -21,6 +24,8 @@ os.environ.setdefault("AIRGPT_NO_BROWSER", "1")
 import clipdrop  # noqa: E402
 import db  # noqa: E402
 import invoke_registry  # noqa: E402
+
+_FIXTURE_SKILLS = Path(__file__).resolve().parent / "fixtures" / "skills"
 
 
 def _serve():
@@ -32,12 +37,15 @@ def _serve():
 class SkillsEndpointTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._skills_dir = mock.patch.object(invoke_registry, "SKILLS_DIR", _FIXTURE_SKILLS)
+        cls._skills_dir.start()
         cls.srv, cls.base = _serve()
 
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
         cls.srv.server_close()
+        cls._skills_dir.stop()
 
     def _get(self, path):
         with urllib.request.urlopen(self.base + path, timeout=15) as r:
@@ -46,7 +54,7 @@ class SkillsEndpointTest(unittest.TestCase):
     def test_returns_real_packs(self):
         data = self._get("/api/skills")
         self.assertTrue(data.get("ok"))
-        self.assertGreater(len(data["skills"]), 0, "data/skills has packs but none served")
+        self.assertGreater(len(data["skills"]), 0, "fixture packs exist but none served")
 
     def test_every_entry_has_the_card_contract(self):
         for s in self._get("/api/skills")["skills"]:
@@ -99,6 +107,9 @@ class SkillArmingTest(unittest.TestCase):
         clipdrop._check_ai_rate = lambda: None
         clipdrop._is_online = lambda: True
         clipdrop._ai_allowed = lambda: True
+        self._skills_dir = mock.patch.object(invoke_registry, "SKILLS_DIR", _FIXTURE_SKILLS)
+        self._skills_dir.start()
+        self.addCleanup(self._skills_dir.stop)
         self.srv, self.base = _serve()
         self.sid = int(db.create_session("Skill test", capture_type="ai")["id"])
 
