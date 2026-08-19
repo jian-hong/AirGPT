@@ -2,7 +2,34 @@
 
 Append-only. Never edited, only added to. Newest first.
 
-## 2026-08-07 — EPIC-D01 + EPIC-D02: reasoning chains and the ops write path
+## 2026-08-20 — EPIC-D01: the chain reaches the browser, and #20 stops being a claim
+
+- **#15 was invisible in the product.** The chain was built, yielded, and dropped at the
+  transport: the SSE handler in `clipdrop.py` enumerated `thinking|meta|citations|delta|
+  error|done` with no `reasoning` branch, and rebuilt its `done` payload from a fixed key
+  list that omitted it. `index.html` sends `Accept: text/event-stream` on every answer, so
+  that handler is the only path a founder takes. Added the branch, the key, and a renderer
+  (`.ragreason`, open by default on a refusal or abstention, escaped, collapsed otherwise).
+- **The gate had asserted the wrong layer.** `tests/RAG/reasoning_chain_live.py` drove the
+  plain JSON handler, which passes the whole dict through — so unit tests, the JSON path,
+  and the feature-being-invisible were all simultaneously true. It now drives SSE and parses
+  the event stream (R-0001).
+- **#25 had the same shape one layer down.** `clipdrop.py` whitelisted depth as
+  `basic|high|max|manual`, so a space saved as Adaptive — persisted as `auto`, and sent on
+  every ask — was silently coerced to `high`. Saving appeared to work and never took effect.
+  Also corrected the Rebuild copy, which omitted the enrich stage.
+- **#20 was closed on a false claim.** "Space 8 is 6/6 identical" came from a bench script in
+  `stash@{0}`, not the product; production ingest wrote post-extraction text and set no
+  `docs_path`, so every `rag/reveal.py` docs lookup fell through. Recovered
+  `_retain_docs_original` into `rag/ingest.py` and added `tests/RAG/docs_original_gate.py`,
+  which drives real ingest from outside the blob store and asserts sha256 identity plus the
+  PK container magic — 7/7. New ingests only; older spaces need a backfill.
+- Known red, pre-existing and unrelated: `tests/test_rag_foundation.py
+  test_corrective_loop_caps` (2 != 1), identical at `b09e6033`. Left failing rather than
+  weakened.
+- Corrects the date on the entry below, which was filed as 2026-08-07 in error.
+
+## 2026-08-19 — EPIC-D01 + EPIC-D02: reasoning chains and the ops write path
 
 - **D02 ops amend-confirm** (#17–#19): `rag/ops_amend.py` rewritten to resolve columns
   from the sheet header instead of positionally, match rows honestly rather than
