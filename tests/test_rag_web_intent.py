@@ -114,3 +114,36 @@ def test_destructive_injection_is_refused():
     assert msg
     assert "Build" in msg
     assert destructive_injection_reply("what is JEPA") is None
+
+
+def test_a_topic_named_search_is_not_a_request_to_search():
+    """"search" as a noun is a subject, not an instruction.
+
+    wants_web matched the bare word anywhere, so asking the local corpus about
+    "hybrid search RRF" fetched the public web and spent a retrieval round on it.
+    On a product that promises compute stays local, guessing wrong in this
+    direction is the expensive one: the question leaves the machine.
+    """
+    for q in (
+        "hybrid search RRF",
+        "vector search benchmark",
+        "full-text search in sqlite",
+        "explain semantic search",
+        "how does similarity search work",
+        "what is the search algorithm used here",
+    ):
+        assert not wants_web(q), f"topic sent to the web: {q!r}"
+
+
+def test_directed_search_still_reaches_the_web():
+    """R-0005: the narrower rule must not refuse a real web ask."""
+    for q in (
+        "search JEPA",
+        "serach for jepa papers",
+        "can you search the archive",
+        "please search for JEPA reasoning",
+        "look up edge AI on cortex",
+        "search about netie",
+        "google scholar lecun",
+    ):
+        assert wants_web(q), f"real web ask refused: {q!r}"

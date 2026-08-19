@@ -182,8 +182,24 @@ def wants_web(query: str) -> bool:
         return True
     if any(c in q for c in _WEB_CUES):
         return True
-    # Typo-tolerant "search" / "find who" / paper lookups
-    if re.search(r"\b(sear+ch|serach|searhc|lookup|look\s*up|google)\b", q):
+    # Typo-tolerant "search" / "find who" / paper lookups.
+    #
+    # This used to match the bare word "search" ANYWHERE in the query, which read
+    # a topic as a request: "hybrid search RRF", "vector search", "full-text
+    # search" all sent the question to the public internet, on a product whose
+    # promise is that compute stays local, and spent a retrieval round doing it.
+    # Caught by test_corrective_loop_caps, which saw High take two rounds on a
+    # query whose coverage was already 1.0.
+    #
+    # The fix is the distinction the old pattern collapsed: "search" is intent
+    # when the user directs it as a verb, and a topic when it is a noun. Match
+    # the verbal framings, not the word.
+    _SEARCH = r"(?:sear+ch|serach|searhc|lookup|look\s*up|google)"
+    if re.match(rf"^(?:please|pls|plz)?\s*{_SEARCH}\b", q):
+        return True
+    if re.search(rf"\b{_SEARCH}\s+(?:for|up|online|about|the\s+web|the\s+internet)\b", q):
+        return True
+    if re.search(rf"\b(?:can|could|would|will|please|pls|plz|help\s+me)\s+(?:you\s+)?{_SEARCH}\b", q):
         return True
     if re.search(r"\b(help\s+me\s+find|find\s+who|check\s+who|who\s+is)\b", q):
         return True
