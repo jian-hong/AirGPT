@@ -370,7 +370,13 @@ def create_space(
     base = _slugify(name)
     slug = base
     depth = (depth_default or "high").lower()
-    if depth not in ("basic", "high", "max", "manual"):
+    # The create-space UI offers an "Adaptive" button (RAG_DEPTHS in index.html).
+    # Leaving "auto" out here meant choosing it stored "high" instead, so the
+    # control looked like it worked and never had. update_space_settings already
+    # accepted both; a space could be switched to Adaptive but never born one.
+    if depth == "adaptive":
+        depth = "auto"
+    if depth not in ("basic", "high", "max", "manual", "auto"):
         depth = "high"
     with _conn() as conn:
         n = 1
@@ -852,6 +858,17 @@ def publish_revision(revision_id: int, *, chunk_count: int, source_count: int, m
                 ("ready", now, int(row["space_id"])),
             )
         return _row(row)
+
+
+def count_chunks(space_id: int) -> int:
+    """Indexed chunk count for a space. Used by adaptive depth, which promises the
+    founder it "picks depth per question from corpus size" and had no size to read."""
+    init()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM chunks WHERE space_id=?", (int(space_id),)
+        ).fetchone()
+    return int(row["n"] if row else 0)
 
 
 def clear_chunks(space_id: int) -> None:
