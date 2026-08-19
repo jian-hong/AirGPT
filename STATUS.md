@@ -20,8 +20,10 @@
    rendered, so Save read absent elements. Rendered; store accepts adaptive/auto.
 6. **Reveal on file cards** (#14) — hover icon; server resolves Docs original → host
    → blob and fails closed. `POST /api/rag/sources/<id>/reveal`.
-7. **Docs originals byte-faithful** (#20) — space 8 is 6/6 identical. Verified, was
-   already built.
+7. ~~**Docs originals byte-faithful** (#20)~~ — **this claim was false.** The 6/6
+   identical result came from a bench script in `stash@{0}`, not the product.
+   Production ingest writes post-extraction *text* (`rag/ingest.py:370`), and space
+   8's own source rows carry no `docs_path`. Moved to Next.
 8. **Ops amend-confirm** (D02 #17–#19) — reject/refuse/off-rails all leave the file
    unchanged; confirmed write applies +8% with an audit stamp. Verified end to end.
 9. **Recursive clone works** (#3) — orca/superset gitlinks removed, colibri kept.
@@ -36,10 +38,14 @@
 1. **#10** ground the Insights sheet in real miss/hit rows (today it is generic prompts).
 2. **#13** score the primary-50MB pack — fixtures are ingested (spaces 16 **and** 17,
    duplicate) but no scores are retained.
-3. **#9** effort x thinking matrix — not started.
-4. Commit OpenVault nvidia separately.
-5. **D01/D02 completeness** — re-derive both epics from code via `epic-agent` before
-   either is declared done; the checkboxes were ahead of the code once already.
+3. **#20** write the byte-faithful Docs copy in `rag/ingest.py` and set `meta.docs_path`.
+   Blocks #14's `docs` origin. The writer exists only in `stash@{0}` — recover it.
+4. **#13** scoreboard is in `stash@{0}` too, and reads 0.80/1.0/0.80 at n=10. R-0010
+   forbids a 99% claim below n=300.
+5. **#9** effort x thinking matrix — not started. **#10** Insights sheet — not started.
+6. **D02 has no UI** — five endpoints, zero callers in `index.html`. Needs a ticket
+   routed through `prd-agent` before anyone builds it.
+7. Commit OpenVault nvidia separately.
 
 ## Later
 

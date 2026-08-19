@@ -37,21 +37,44 @@ except Exception:
 FAILS: list[str] = []
 
 
-def ask(base: str, space: int, query: str) -> dict:
+def _post(base: str, space: int, query: str, sse: bool) -> tuple[dict, list[dict]]:
+    """Returns (done_payload, all_events). sse=False takes the plain JSON handler."""
+    headers = {"Content-Type": "application/json"}
+    if sse:
+        headers["Accept"] = "text/event-stream"
     req = urllib.request.Request(
         base.rstrip("/") + "/api/rag/answers",
         data=json.dumps({
-            "space_id": space, "query": query, "depth": "low",
+            "space_id": space, "query": query, "depth": "basic",
             "use_llm": False, "use_web": False,
         }).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
-        return json.loads(urllib.request.urlopen(req, timeout=180).read())
+        raw = urllib.request.urlopen(req, timeout=240).read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
-        return {"_error": f"HTTP {e.code}: {e.read()[:300].decode('utf-8', 'replace')}"}
+        return {"_error": f"HTTP {e.code}: {e.read()[:300].decode('utf-8', 'replace')}"}, []
     except Exception as e:
-        return {"_error": f"{type(e).__name__}: {e}"}
+        return {"_error": f"{type(e).__name__}: {e}"}, []
+
+    if not sse:
+        return json.loads(raw), []
+
+    events: list[dict] = []
+    for block in raw.split("\n\n"):
+        for line in block.splitlines():
+            if line.startswith("data:"):
+                try:
+                    events.append(json.loads(line[5:].strip()))
+                except Exception:
+                    pass
+    done = next((e for e in reversed(events) if e.get("type") == "done"), {})
+    return done, events
+
+
+def ask(base: str, space: int, query: str, sse: bool = True) -> dict:
+    done, _events = _post(base, space, query, sse)
+    return done
 
 
 def check(cond: bool, msg: str) -> None:
@@ -72,6 +95,29 @@ def main() -> int:
     ap.add_argument("--space", type=int, default=8)
     a = ap.parse_args()
 
+    print("=" * 68)
+    print("0) SSE TRANSPORT - the layer the browser actually uses")
+    print("=" * 68)
+    # index.html sends Accept: text/event-stream on every answer, so the SSE
+    # handler is the only path a founder ever takes. The chain used to be built,
+    # yielded, and dropped here: the handler had no `reasoning` branch and rebuilt
+    # `done` from a fixed key list that omitted it. Unit tests and the JSON handler
+    # both passed throughout. R-0001 - assert where the customer receives it.
+    done, events = _post(a.base, a.space, "What does this knowledge space contain?", sse=True)
+    if done.get("_error"):
+        check(False, f"SSE request failed: {done['_error']}")
+    else:
+        streamed = [e for e in events if e.get("type") == "reasoning"]
+        print(f"  events={len(events)} reasoning_events={len(streamed)}")
+        check(bool(streamed) or bool(done.get("reasoning", {}).get("steps")),
+              "chain reaches the browser over SSE (event or done payload)")
+        check(bool((done.get("reasoning") or {}).get("steps")),
+              "SSE done payload carries the chain")
+        if streamed:
+            check(bool(streamed[0].get("reasoning", {}).get("steps")),
+                  "streamed reasoning event carries steps")
+
+    print()
     print("=" * 68)
     print("1) INVENTORY LANE")
     print("=" * 68)

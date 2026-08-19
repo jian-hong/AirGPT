@@ -10054,7 +10054,7 @@ async function ragRenderTab(){
       </div>
       <div class="cortex-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Rebuild index</div>
-        <p class="hint" style="margin:0 0 10px;line-height:1.45">Re-extract and re-embed every source through the full pipeline (extract → chunk → embed → index). Run this after an ingestion upgrade or if answers look wrong. Sources are re-read from their local copy under <code>data/rag/${esc(String(s.id||''))}/</code>.</p>
+        <p class="hint" style="margin:0 0 10px;line-height:1.45">Re-extract and re-embed every source through the full pipeline (extract → chunk → enrich → index → publish). Run this after an ingestion upgrade or if answers look wrong. Sources are re-read from their local copy under <code>data/rag/${esc(String(s.id||''))}/</code>.</p>
         <button type="button" class="btn primary" onclick="ragRebuildSpace(${s.id||0})">Rebuild whole pipeline</button>
       </div>
       <div class="cortex-card rag-settings-card">
@@ -10731,9 +10731,9 @@ async function ragSend(){
     const useWebFlag=forceWeb?true:(/\bwebsearch\b/i.test(query)?true:null);
   ragState.streaming=true;const sendBtn=$('ragAskSend')||$('ragSendBtn');if(sendBtn)sendBtn.disabled=true;
   const aiId='ragai-'+Date.now();
-  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
+  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div><div class="ragreason"></div></div>`);
   ragScrollMsgs();
-  let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};
+  let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};let reasoning=null;
   const q1=s=>document.querySelector('#'+aiId+' '+s);
   const hideThink=()=>{const t=q1('.ragthink');if(t)t.style.display='none';};
   const sleuthWords=forceWeb
@@ -10791,7 +10791,8 @@ async function ragSend(){
             thoughts.push(line);if(!acc)setThink(line,g.verdict==='unsupported');
           }
         }
-        else if(j.type==='done'){if(j.answer)acc=j.answer;doneMeta=Object.assign(doneMeta,j||{});if(j.goal)ragState.lastGoal=j.goal;ragState.lastTraceId=j.trace_id||ragState.lastTraceId;}
+        else if(j.type==='reasoning'){reasoning=j.reasoning||reasoning;}
+        else if(j.type==='done'){if(j.answer)acc=j.answer;doneMeta=Object.assign(doneMeta,j||{});if(j.reasoning&&(j.reasoning.steps||[]).length)reasoning=j.reasoning;if(j.goal)ragState.lastGoal=j.goal;ragState.lastTraceId=j.trace_id||ragState.lastTraceId;}
         else if(j.type==='error'){hideThink();const b=q1('.ragbody');if(b)b.innerHTML='<span style="opacity:.85">'+esc(j.error||'error')+'</span>';}
       }
     }
@@ -10995,6 +10996,18 @@ function handleSlashCommand(text){
           return;
         }
         const a=agents.find(x=>x.pinned)||agents[0];
+    // EPIC-D01 #15. The chain is built per lane in rag/reasoning.py and streamed as
+    // its own SSE event; this is the only place a founder actually reads it. Open by
+    // default when the run refused or abstained - that is exactly when someone needs
+    // to see why, and a collapsed summary would hide the reason for the non-answer.
+    const rc=q1('.ragreason');
+    if(rc&&reasoning&&(reasoning.steps||[]).length){
+      const steps=reasoning.steps||[];
+      const refused=steps.some(s=>/^(Why I refused|Why I did not give a number)$/.test(s.title||''));
+      rc.innerHTML=`<details class="rag-think-log"${refused?' open':''}><summary>🔍 How I got this · ${steps.length} step${steps.length>1?'s':''}${reasoning.lane?' · '+esc(reasoning.lane)+' lane':''}</summary><div>`
+        +steps.map(s=>`<div class="step"><strong>${esc(s.title||'')}</strong>: ${esc(s.detail||'')}</div>`).join('')
+        +`</div></details>`;
+    } else if(rc){rc.innerHTML='';}
         if(!a){toast('No agent for subagent');return}
         const body={agent_id:a.id,prompt,session_id:currentSession||0,is_subagent:true};
         if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}

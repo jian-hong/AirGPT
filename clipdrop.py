@@ -2375,7 +2375,13 @@ class Handler(BaseHTTPRequestHandler):
         if not sid or not q:
             return self._json(400, {"error": "space_id and query required"})
         depth = str(data.get("depth") or "high").lower()
-        if depth not in ("basic", "high", "max", "manual"):
+        # "adaptive" is the label the Settings UI shows; "auto" is what the store
+        # persists (rag/store.py). Accept both, or a space saved as Adaptive has its
+        # depth silently coerced to high on every single answer - the setting appears
+        # to save, and never takes effect. R-0011: a silent fallback is a lie.
+        if depth == "adaptive":
+            depth = "auto"
+        if depth not in ("basic", "high", "max", "manual", "auto"):
             depth = "high"
         chat_id = int(data.get("chat_id") or 0)
         use_llm = True if "use_llm" not in data else bool(data.get("use_llm"))
@@ -2433,6 +2439,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._sse_end()
                 elif t == "done":
                     done = ev
+                elif t == "reasoning":
+                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
+                    # and dropped here - every browser answer goes over SSE, so the
+                    # founder never saw a step of it while unit and JSON-path checks
+                    # both passed.
+                    reasoning = ev.get("reasoning") or {}
+                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
+                        break
                     text = str(ev.get("answer") or text)
                     citations = ev.get("citations") or citations
         except Exception as e:
@@ -2467,6 +2481,9 @@ class Handler(BaseHTTPRequestHandler):
             "chat_id": chat_id,
         })
         self._sse_end()
+            # Rebuilt from a fixed key list, so anything not named here is dropped
+            # no matter what answer_events produced. #15's chain was missing.
+            "reasoning": done.get("reasoning") or {},
 
     def _handle_rag_build_stream(self, sid: int) -> None:
         """SSE ingest/build driving a real 'ready for retrieval' progress bar."""
