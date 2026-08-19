@@ -2,6 +2,29 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-20 — #13 rescored at n=320, and two defects that explain the number
+
+- **#13 rescored honestly.** `oracle_bench.py` over the 4 primary50 workbooks, seeds 1-4,
+  80 each: value accuracy **172/320 = 0.5375**, schema-link recall **181/320 = 0.5656**.
+  This REPLACES the 0.80/1.0/0.80 figure, which was n=10 and bounded nothing (R-0010).
+  "Approaching 99%" was never supportable and should not be quoted again.
+- Per family: `out_of_range` 44/44 = 1.00 (refusal behaviour is genuinely sound),
+  `row_range_nocol` 0.77, `paraphrase` 0.61, `row_range_agg` 0.58, `filter_count` 0.52,
+  `combined` 0.16, `filter_agg` 0.12. The largest single failure reason is "no answer
+  from the lane" (54 of 148 failures) - abstention, not wrong answers.
+- **Header detection picks banner rows.** `tests/RAG/frtr_sql_baseline.py:29` takes the
+  first row in the first five with >=2 non-empty cells. On `Messy_RAW` that is the banner
+  `['RAW','sheet','—','skip']`, so the real header (row 2) becomes data and the schema
+  gains columns literally named `skip` and an em dash. 89 of 320 generated asks (28%) are
+  malformed by this; on the 231 well-formed ones accuracy is **0.6017**. Row 2 also
+  carries duplicate column names. The bench's own header-drift check reports zero,
+  because it compares the loader against the oracle and both pick the banner (R-0007).
+- **The product imports its xlsx engine from the tests directory.** `rag/answer.py:900`
+  puts `tests/RAG` on `sys.path` at runtime and imports `frtr_sql_baseline`. A deploy
+  without `tests/` loses the whole xlsx/KPI lane silently - it returns `None`, with no
+  error and no degraded flag (R-0011). Routed to `prd-agent`; likely a decision record.
+- Both defects routed, neither implemented - the routing rule in CLAUDE.md is absolute.
+
 ## 2026-08-20 — EPIC-D01: the chain reaches the browser, and #20 stops being a claim
 
 - **#15 was invisible in the product.** The chain was built, yielded, and dropped at the
