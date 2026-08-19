@@ -9,8 +9,14 @@
 # collects ZERO tests from those and still exits 0 - a suite that proves nothing
 # while reporting success (R-0007). pytest collects both styles.
 #
-# A 396-pass local count on 2026-08-07 included gitignored data/skills packs.
-# Skill catalog tests now pin to tests/fixtures/skills so a clean clone matches CI.
+# A 396-pass local count on 2026-08-07 was a laptop number (R-0007): gitignored
+# data/skills packs, optional sqlite-vec, sentence-transformers + cached BGE
+# weights, and modules this job deliberately ignores (playwright, ltx2).
+# A clean Actions checkout of this suite collects 386 tests. 15 of those skip
+# unless extra packages are present. openpyxl is a product xlsx dep and belongs
+# here, which earns 6 of those 15. The other 9 cannot run on a stranger clone:
+# 8 sqlite-vec ANN tests (opt-in, not in requirements.txt) and 1 BGE embedder
+# test (HF_HUB_OFFLINE, no cached weights). Floor is the earned pass count.
 name: tests
 
 on:
@@ -33,9 +39,11 @@ jobs:
       # that day. Confirmed the suite is green with an empty HF cache.
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
-      # Guard for R-0007. The local run collects 396. If an exclusion is widened or a
-      # collection error silently drops a module, this goes red instead of green.
-      MIN_TESTS: "380"
+      # Guard for R-0007. Clean Actions checkout: 377 passed after openpyxl
+      # (371 + 6 xlsx tests). 380 was the 396 laptop count with a 16-test cushion
+      # and was not collectable here. If an exclusion is widened or a collection
+      # error silently drops a module, this goes red instead of green.
+      MIN_TESTS: "377"
 
     steps:
       - uses: actions/checkout@v4

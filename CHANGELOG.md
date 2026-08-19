@@ -90,6 +90,11 @@ Append-only. Never edited, only added to. Newest first.
 - Committed fixture packs live under `tests/fixtures/skills/`. The invoke and
   `/api/skills` tests pin `SKILLS_DIR` there. The product may still ship with
   no user packs; an empty `data/skills` stays an empty catalog.
+- `MIN_TESTS=380` was the same laptop lie: pytest on Actions passed 371/0/15,
+  then the floor failed. The 15 skips are 6 openpyxl xlsx tests (now earned:
+  `openpyxl` is in `requirements.txt`), 8 sqlite-vec ANN tests (opt-in, stay
+  skipped on a stranger clone), and 1 BGE embedder test (HF offline). Floor is
+  377, the count a clean Actions checkout actually earns.
 
 ## 2026-08-19 — EPIC-D01 + EPIC-D02: reasoning chains and the ops write path
 
