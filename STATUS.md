@@ -20,10 +20,11 @@
    rendered, so Save read absent elements. Rendered; store accepts adaptive/auto.
 6. **Reveal on file cards** (#14) — hover icon; server resolves Docs original → host
    → blob and fails closed. `POST /api/rag/sources/<id>/reveal`.
-7. ~~**Docs originals byte-faithful** (#20)~~ — **this claim was false.** The 6/6
-   identical result came from a bench script in `stash@{0}`, not the product.
-   Production ingest writes post-extraction *text* (`rag/ingest.py:370`), and space
-   8's own source rows carry no `docs_path`. Moved to Next.
+7. **Docs originals byte-faithful** (#20) — the earlier "6/6 identical" claim was
+   false: it came from a bench script in `stash@{0}`, not the product, and space 8's
+   rows carry no `docs_path`. The writer is now recovered into production ingest
+   (`_retain_docs_original`). Gate `tests/RAG/docs_original_gate.py` drives real
+   ingest and asserts sha256 identity: **7/7**. Unblocks #14's `docs` origin.
 8. **Ops amend-confirm** (D02 #17–#19) — reject/refuse/off-rails all leave the file
    unchanged; confirmed write applies +8% with an audit stamp. Verified end to end.
 9. **Recursive clone works** (#3) — orca/superset gitlinks removed, colibri kept.
@@ -38,9 +39,9 @@
 1. **#10** ground the Insights sheet in real miss/hit rows (today it is generic prompts).
 2. **#13** score the primary-50MB pack — fixtures are ingested (spaces 16 **and** 17,
    duplicate) but no scores are retained.
-3. **#20** write the byte-faithful Docs copy in `rag/ingest.py` and set `meta.docs_path`.
-   Blocks #14's `docs` origin. The writer exists only in `stash@{0}` — recover it.
-4. **#13** scoreboard is in `stash@{0}` too, and reads 0.80/1.0/0.80 at n=10. R-0010
+3. **Backfill `docs_path`** — #20 covers new ingests only. Spaces ingested before it
+   (space 8) still have no original; they need a re-ingest or a backfill pass.
+4. **#13** scoreboard is in `stash@{0}`, and reads 0.80/1.0/0.80 at n=10. R-0010
    forbids a 99% claim below n=300.
 5. **#9** effort x thinking matrix — not started. **#10** Insights sheet — not started.
 6. **D02 has no UI** — five endpoints, zero callers in `index.html`. Needs a ticket
