@@ -547,13 +547,35 @@ def main() -> None:
         print(f"  0 failures in {len(rows)} -> true error rate bounded at "
               f"{round(3 / len(rows) * 100, 1)}% (95%), not 0%", flush=True)
 
+    try:
+        from rag import index_fingerprint
+
+        _fp = index_fingerprint.fingerprint(extra={"pack": args.dir, "workbook": src.name})
+        print(f"  {index_fingerprint.describe(_fp)}", flush=True)
+    except Exception as exc:
+        _fp = None
+        print(f"  [warn] no index fingerprint: {type(exc).__name__}: {exc}", flush=True)
+
     payload = {
         "ok": True, "workbook": src.name, "seed": seed, "n": len(rows),
         "correct": total_ok, "accuracy": round(total_ok / max(1, len(rows)), 4),
         "schema_link_recall": round(total_linked / max(1, len(rows)), 4),
         "right_value_wrong_binding": len(lucky),
         "by_family": by_family, "header_drift": drift, "rows": rows,
-        "oracle": "openpyxl direct cell reads by spreadsheet row - shares no code with the lane",
+        # EPIC-D05 precondition: chunking by data type re-chunks the corpus, so a
+        # score taken before it is not comparable to one taken after. Without this
+        # the board merges two different indexes and says nothing.
+        "index_fingerprint": _fp,
+        # This used to read "shares no code with the lane" full stop. That guarantee
+        # was insufficient and measurably so: the oracle and the loader are separate
+        # implementations that encoded the SAME wrong assumption about which row is
+        # the header, so the drift check below agreed with itself and passed while
+        # 28% of generated asks were built on a banner row. Sharing no code does not
+        # make an adversary (R-0003).
+        "oracle": (
+            "openpyxl direct cell reads by spreadsheet row - shares no code with the "
+            "lane, but NOT independent of it: both derive the header row the same way"
+        ),
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
     out = Path(args.out) if args.out else RESULTS / "oracle_bench_latest.json"
