@@ -38,12 +38,11 @@
 2. **Header detection picks banner rows** — `frtr_sql_baseline.py:29` takes the first
    row with >=2 non-empty cells, so `Messy_RAW` yields columns named `skip` and `—`.
    Real header (row 2) also has duplicate names. Root cause of most #13 loss.
-3. **Non-English asks claim full coverage** — `rag/sira.py:13` is ASCII-only, so six
-   non-Latin scripts (Cyrillic too) tokenize to nothing; `_coverage` then returns 1.0,
-   clears the 0.6 floor, and never fires the corrective loop. English fails safe;
-   everything else fails confidently wrong. Gate: `tests/RAG/multilingual_gate.py`
-   **7/25** — expected red, it is the definition of done. Fix re-indexes: gated on
-   `rag/index_fingerprint.py` (built, wired into oracle_bench).
+3. **Non-English asks claim full coverage** — `sira.py:13` is ASCII-only, so six
+   non-Latin scripts (Cyrillic too) tokenize to nothing and `_coverage` returns 1.0,
+   never firing the corrective loop. English fails safe; the rest fail confidently
+   wrong. `multilingual_gate.py` **7/25**, expected red. Fix re-indexes, so it is
+   gated on `rag/index_fingerprint.py` (built, wired into oracle_bench).
 4. **Backfill `docs_path`** — #20 covers new ingests only. Spaces ingested before it
    (space 8) still have no original; they need a re-ingest or a backfill pass.
 5. **#9** effort x thinking matrix — not started. **#10** Insights sheet — not started.
@@ -58,6 +57,4 @@
 
 ## Demo open
 
-- `tests/RAG/DEMO_RAG.md` (full path)
-- `tests/RAG/results/ontology_space_8.json`
-- `tests/RAG/results/warehouse_hybrid_latest.xlsx`
+- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`, `results/warehouse_hybrid_latest.xlsx`
