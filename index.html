@@ -10231,7 +10231,7 @@ async function ragScoreRetrieval(){
       const recs=Object.entries(r.recommend||{}).map(([t,d])=>`${esc(t)}→<b>${esc(d)}</b>`).join(' · ');
       const hl=r.headline||{};
       out.innerHTML=`<div class="rag-neon-card" style="padding:10px">
-        <div style="font-size:13px;margin-bottom:6px">Retrieval quality over <b>${r.golden_size||0}</b> auto-generated test cases (Recall@${r.k||5}). Best: <b>${esc(hl.best_mode||'-')}</b> at <b>${Math.round((hl.best_recall_at_k||0)*100)}%</b>.</div>
+        <div style="font-size:13px;margin-bottom:6px">Retrieval quality over <b>${r.golden_size||0}</b> auto-generated test cases (Success@${r.k||5} &mdash; the share of asks where the expected file appeared in the top ${r.k||5}; not recall, since each ask has one right answer). Best: <b>${esc(hl.best_mode||'-')}</b> at <b>${Math.round((hl.best_recall_at_k||0)*100)}%</b>.</div>
         <table style="font-size:12px;border-collapse:collapse"><tr class="hint"><td style="padding:0 10px 4px 0">Mode</td><td style="padding:0 10px 4px">Recall@${r.k||5}</td><td style="padding:0 10px 4px">MRR</td><td style="padding:0 10px 4px">Rounds</td><td style="padding:0 10px 4px">Latency</td></tr>${rows}</table>
         ${recs?`<div class="hint" style="margin-top:6px">Best per task: ${recs}</div>`:''}
       </div>`;

@@ -29,6 +29,8 @@ def _score_query(space_id: int, query: str, expect_path: str, depth: str, k: int
                 break
     return {
         "hit": 1 if rank else 0,
+        "rank": rank,
+        "k": k,
         "rr": (1.0 / rank) if rank else 0.0,
         "rounds": int(res.get("rounds") or 1),
         "coverage": float(res.get("coverage") or 0.0),
@@ -38,14 +40,42 @@ def _score_query(space_id: int, query: str, expect_path: str, depth: str, k: int
 
 def _aggregate(rows: list[dict]) -> dict:
     n = max(1, len(rows))
-    return {
+    out = {
         "n": len(rows),
+        # Kept under its old name so existing callers and the saved benchmark JSON
+        # keep working, but it is success@k: the share of queries where the ONE
+        # expected path appeared in the top k. With a single relevant document the
+        # two are arithmetically identical, so the number was never wrong - only
+        # the name, which stopped being harmless once precision-recall was asked
+        # for by name. `success_at_k` below is the same value, correctly labelled.
         "recall_at_k": round(sum(r["hit"] for r in rows) / n, 3),
         "mrr": round(sum(r["rr"] for r in rows) / n, 3),
         "avg_rounds": round(sum(r["rounds"] for r in rows) / n, 2),
         "avg_coverage": round(sum(r["coverage"] for r in rows) / n, 3),
         "avg_ms": round(sum(r["ms"] for r in rows) / n, 1),
     }
+    try:
+        from rag import metrics as _metrics
+
+        # Each query has exactly one relevant path and we know the rank it landed
+        # at, which is enough to reconstruct the ranking these metrics need.
+        scored = []
+        for r in rows:
+            k = int(r.get("k") or 5)
+            rank = int(r.get("rank") or 0)
+            ranked = [f"d{i}" for i in range(1, k + 1)]
+            relevant = {f"d{rank}"} if rank else {"d_missed"}
+            scored.append(_metrics.score_query(ranked, relevant, ks=(1, min(3, k), k)))
+        agg = _metrics.aggregate(scored, ks=(1, min(3, k), k))
+        out["retrieval"] = agg
+        # Same rounding as its siblings above: success_at_k IS recall_at_k, and
+        # printing 0.6667 beside 0.667 invites a reader to hunt for a difference
+        # that is not there.
+        out["success_at_k"] = round(float(agg.get(f"success@{k}", out["recall_at_k"])), 3)
+        out["map"] = round(float(agg.get("map") or 0.0), 3)
+    except Exception as exc:  # never let a reporting extra break a benchmark
+        out["retrieval_error"] = f"{type(exc).__name__}: {exc}"[:160]
+    return out
 
 
 def benchmark_modes(
