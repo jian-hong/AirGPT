@@ -2,6 +2,35 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
+
+- Founder's explicit, informed call. **Neither epic completed.** Both closed as
+  `not planned`, each with a closing comment splitting what shipped from what did not.
+  Do not quote either as done without reading those comments.
+- Completeness was re-derived from the code, not the task lists. Verified by running:
+  #20 Docs originals 7/7 sha256; #15 reasoning chain over SSE, all checks; #21 the exact
+  F14 question live -> 0.9441 with `SELECT AVG(OnTimeSLA) FROM Carriers WHERE BaseRate > 1`;
+  #14 reveal -> `origin: "docs"`; #25 Settings 3 of 4 sub-clauses; oracle 400/400 on the
+  clean workbook, 0.75% bound.
+- **Three briefed claims were wrong.** #10 is not "not started" - `insights_export.py`
+  implements the sheet and `clipdrop.py:5166` exposes it, it simply has no UI caller and
+  has never been run. `test_corrective_loop_caps` is green, not red. #14's `docs` origin
+  does resolve, but only for spaces ingested after #20 - space 8 is 0/6.
+- **D02's 32/32 never crossed HTTP.** `ops_demo_e2e.py:25` imports `rag.ops_amend` and
+  calls it directly, so the six endpoints at `clipdrop.py:5225-5297` have no coverage
+  (R-0001). The endpoints do work - I probed identify live - which is why this is a
+  missing gate rather than a broken lane, and why it was easy to keep postponing.
+- **D02's appetite clause was violated unnoticed.** The epic ring-fenced itself onto
+  `demo/rag-ops-confirm`; that branch has never existed and every commit landed on
+  `demo/rag-cross-compare`, the branch it was told not to pollute.
+- **Retained "multi-variant" scores hold one variant.** `frtr_cross_latest.json` has a
+  `variants` list of length 1. F13's `sira_max` vs `hybrid_max` was never retained.
+- Remainder carried forward before the close: #31 header binder + single-variant
+  artifact, #32 D02 HTTP gate, #33 Rebuild ignores saved config, #34 `docs_path`
+  backfill, #35 production imports from `tests/`; PARKING_LOT P11 (#9/#10), P12 (D02 UI
+  surface), P13 (multilingual). P9 and P10 were cited as parked since 2026-08-03 with no
+  row and would have vanished with this close - both now have unlock conditions.
+
 ## 2026-08-20 — #13 rescored at n=320, and two defects that explain the number
 
 - **#13 rescored honestly.** `oracle_bench.py` over the 4 primary50 workbooks, seeds 1-4,
