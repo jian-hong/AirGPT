@@ -901,13 +901,8 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
 
 def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
-    import sys
-
-    bench = Path(__file__).resolve().parents[1] / "tests" / "RAG"
-    if bench.is_dir() and str(bench) not in sys.path:
-        sys.path.insert(0, str(bench))
     try:
-        from frtr_sql_baseline import answer_sqlish, load_sheets
+        from rag.xlsx_sql import answer_sqlish, load_sheets
     except Exception:
         return None
 

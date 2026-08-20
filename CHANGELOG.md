@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 — xlsx/KPI lane leaves tests/; banners are not headers
+
+- **Shipping.** `rag/answer.py` no longer puts `tests/RAG` on `sys.path` or imports
+  `frtr_sql_baseline`. Loader + SQL-ish KPI answers live in `rag/xlsx_sql.py`
+  (the #31 banner/width rule, not a second detector). A checkout with `tests/`
+  deleted still loads sheets and answers Top-N / KPI asks instead of `None` (R-0011).
+- Bench scripts under `tests/RAG/` re-export the production module. `sira.py`
+  `_TOKEN_RE` untouched. `MIN_TESTS` stays 380.
+
 ## 2026-08-22 — MIN_TESTS stays 380
 
 - Gating rejected lowering the floor to 377. That count was the suite after

@@ -1,6 +1,6 @@
 """Schema-aware SELECT-only filter -> aggregate over ingested workbook sheets.
 
-`tests/RAG/frtr_sql_baseline.answer_sqlish` answers a fixed catalogue of KPI shapes
+`rag.xlsx_sql.answer_sqlish` answers a fixed catalogue of KPI shapes
 by regex ("total refund", "open POs", warehouse Top-N). That catalogue cannot answer
 "the average OnTimeSLA for all base rate above 1", and adding one more regex for
 OnTimeSLA would leave the next filter+aggregate KPI just as broken.
