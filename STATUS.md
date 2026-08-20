@@ -38,12 +38,18 @@
 2. **Header detection picks banner rows** — `frtr_sql_baseline.py:29` takes the first
    row with >=2 non-empty cells, so `Messy_RAW` yields columns named `skip` and `—`.
    Real header (row 2) also has duplicate names. Root cause of most #13 loss.
-3. **Backfill `docs_path`** — #20 covers new ingests only. Spaces ingested before it
+3. **Non-English asks claim full coverage** — `rag/sira.py:13` is ASCII-only, so six
+   non-Latin scripts (Cyrillic too) tokenize to nothing; `_coverage` then returns 1.0,
+   clears the 0.6 floor, and never fires the corrective loop. English fails safe;
+   everything else fails confidently wrong. Gate: `tests/RAG/multilingual_gate.py`
+   **7/25** — expected red, it is the definition of done. Fix re-indexes: gated on
+   `rag/index_fingerprint.py` (built, wired into oracle_bench).
+4. **Backfill `docs_path`** — #20 covers new ingests only. Spaces ingested before it
    (space 8) still have no original; they need a re-ingest or a backfill pass.
-4. **#9** effort x thinking matrix — not started. **#10** Insights sheet — not started.
-5. **D02 has no UI** — five endpoints, zero callers in `index.html`. Needs a ticket
+5. **#9** effort x thinking matrix — not started. **#10** Insights sheet — not started.
+6. **D02 has no UI** — five endpoints, zero callers in `index.html`. Needs a ticket
    routed through `prd-agent` before anyone builds it.
-6. Commit OpenVault nvidia separately.
+7. Commit OpenVault nvidia separately.
 
 ## Later
 
