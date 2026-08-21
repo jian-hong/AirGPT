@@ -4,33 +4,33 @@
 
 ## Now
 
-0. **EPIC-D01 #6 and EPIC-D02 #16 closed 2026-08-20 over unfinished work** - founder's
-   explicit call, informed. Neither completed. Remainder carried into #31-#35 and
-   PARKING_LOT P11-P13 before the close; the closing comments hold the full split of
-   shipped vs not. Tickets #9 #10 #13 #14 #15 #17 #18 #19 #20 #21 #25 stay **open**.
+0. **All 16 orphans re-parented 2026-08-21** - no ticket may lack a live parent (founder;
+   `DOCUMENT_SYSTEM.md` Tier 6). Closing D01 #6 / D02 #16 orphaned **seventeen**, not the
+   five that were noticed. D07 #36: #13 #21 #31. D06 #37: #17 #18 #19 #32 #35. D08 #38:
+   #14 #15 #20 #25 #33 #34. #9/#10 parked (P11); #3 exempt repo hygiene.
 1. **#13 messy pack: 0.6937 at n=320**, up from 0.5375. Malformed asks **28% -> 0%**
    (#31 header binder). Journey: 0.5375 -> 0.6219 (banner header + duplicate columns)
    -> 0.6937 (sheet name no longer binds a column). vs F13b's 0.90 per-family floor:
    `out_of_range` 44/44 and `row_range_nocol` 48/48 **meet** it; `filter_agg` 0.23 and
    `combined` 0.39 are the gaps. 50 of 98 failures are abstentions. F13 is now split:
    **F13a** clean corpus (earned, frozen), **F13b** messy pack (open).
-2. **Oracle bench 400/400** on the clean FRTR 00027 across 5 seeds - error bounded at
-   **0.75%** (R-0010). The contrast with item 1 is clean workbook vs messy pack.
-3. **Verified live this pass, not taken on trust:** #21 numeric KPI over SSE (0.9441,
-   `SELECT AVG(OnTimeSLA) FROM Carriers WHERE BaseRate > 1`, Carriers sheet); #15
-   reasoning chain over SSE, all checks; #20 Docs originals 7/7 sha256; #14 reveal
-   returns `origin: "docs"` on primary50; #25 Settings depth+arch+Save (3 of 4).
+2. **F13a clean floor is NOT re-verified post-#31.** The 400/400 / 0.75% figure is the
+   **pre-fix** run. `oracle_clean_post31.json` is **one seed at n=80** -> 3/n bounds error
+   at **3.75%**, not 0.75% (R-0010). Re-run five seeds before quoting 400/400 again.
+3. **Verified live, not taken on trust:** #21 numeric KPI over SSE (0.9441, Carriers);
+   #15 reasoning chain over SSE; #20 Docs originals 7/7 sha256; #14 reveal `origin:
+   "docs"`; #25 Settings depth+arch+Save (3 of 4). All await a **different-run** close.
 4. **D02 works in Python and nowhere else** - `ops_demo_e2e.py` is 32/32 but imports
    `rag.ops_amend` directly (line 25). The six HTTP endpoints have zero coverage and
    `index.html` has zero callers. Gate: #32. Surface: P12.
 
 ## Next
 
-0. **#31 header binder** - `frtr_sql_baseline.py:29` takes the first row with >=2
-   non-empty cells, so `Messy_RAW` yields columns named `skip` and `-`. Root cause of
-   most #13 loss. Fix at the binder (R-0004); clean workbook must stay 400/400 (R-0005).
-   Same ticket retains the `sira_max` vs `hybrid_max` comparison that never existed -
-   `frtr_cross_latest.json` holds **one** variant.
+0. **#31 landed (`091bc109`, `64ad0b33`) but MUST NOT close** - acceptance needs
+   `malformed_ask_rate` in the artifact. Absent under any name. `header_drift` is `[]`
+   post-fix **and was `[]` pre-fix when 89/320 were malformed** - identical in the broken
+   and the fixed state, so 0/320 is as unreproducible as 89/320 (R-0007). F13b gates on it.
+   Also open: retained `sira_max` vs `hybrid_max` (`frtr_cross_latest.json` holds **one**).
 1. **#32 D02 HTTP gate** - assert the loop where a client calls it (R-0001).
 2. **#33 Rebuild ignores saved config** - `depth_default` only stamps a revision label
    at `ingest.py:340`; `architecture` is never read at ingest. Needs a DR.
@@ -38,17 +38,18 @@
    is 0/6 and degrades to the `host` or `blob` origin.
 4. **#35 production imports from `tests/`** - `rag/answer.py:900` and
    `clipdrop.py:5171`. A deploy without `tests/` loses the xlsx lane silently. Needs a DR.
-5. **P13 multilingual** - `sira.py:13` is ASCII-only, so six non-Latin scripts tokenize
-   to nothing and `_coverage` returns 1.0, never firing the corrective loop.
-   `multilingual_gate.py` is **7/25 and deliberately red**. Do not quiet it (R-0002).
-6. **Unrouted, needs `prd-agent`:** `clipdrop.py:5390-5391` lets a caller override
-   `paths` on `/build` with arbitrary client-supplied filesystem paths for ingestion.
+5. **P13 multilingual** - `sira.py:13` ASCII-only, so non-Latin scripts tokenize to
+   nothing and `_coverage` returns 1.0. `multilingual_gate.py` is **7/25 and deliberately
+   red** - do not quiet it (R-0002).
+6. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
+   Fenced today (`/api/rag` host-only, `:834`); **DR-0003's grants would unfence it**.
 7. Commit OpenVault nvidia separately.
 
 ## WIP
 
-WIP counts **in-flight**, not open (founder ruling 2026-08-20). In flight: D07, D03.
-Queued parents: D04 #22, D05, D06, D08. No-orphan never overrides the amendment gate.
+WIP counts **in-flight**, not open (founder 2026-08-21). In flight: D07 #36, D03 #26.
+Queued parents: D06 #37, D08 #38, D04 #22, D05. Never close an epic to free a slot - move
+it to queued. No-orphan never overrides the amendment gate.
 
 ## Later
 
@@ -56,5 +57,4 @@ Queued parents: D04 #22, D05, D06, D08. No-orphan never overrides the amendment 
 
 ## Demo open
 
-- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`. Suite: 399 pass, 3 fail
-  (Playwright, empty base URL, unrelated).
+- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`. Suite 399 pass / 3 fail (Playwright, empty base URL, unrelated).

@@ -1,4 +1,9 @@
-"""Retrieval metrics that mean what their names say (RAG-BENCH-15).
+"""Retrieval metrics that mean what their names say (F25a3; PRD-001 ledger).
+
+ID note (R-0013, resolved 2026-08-21): this module previously cited RAG-BENCH-15,
+which is also the ID of issue #35 (production imports its xlsx engine from tests/).
+IDs are never reused. #35 keeps RAG-BENCH-15; this work is referenced by its PRD
+ledger row F25a3 instead.
 
 The repo reports `recall_at_k` (rag/evaluate.py:43) computed as the fraction of
 queries where the expected path appeared in the top k. That is **success@k**, not
