@@ -57,5 +57,5 @@ EPIC-D04 #22. **D05 is not clear to start**; one of those must close first.
 
 ## Demo open
 
-- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`, `results/warehouse_hybrid_latest.xlsx`
-- Suite: 399 passed, 3 failed (Playwright, empty base URL, unrelated to D01/D02)
+- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`. Suite: 399 pass, 3 fail
+  (Playwright, empty base URL, unrelated).
