@@ -337,11 +337,13 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
     # Shipments sheet, and reading it as the sheet sends the query somewhere the
     # column does not even exist. Longest column match wins, then longest sheet.
     named_sheet = ""
+    named_sheet_spans: list[tuple[int, int]] = []
     for (_wb, sheet_name), _df in frames.items():
         for start, end in _mentions(q, sheet_name, bounded=True):
             covered = any(cs <= start and end <= ce for cs, ce, _c in global_kept)
             if not covered and len(sheet_name) > len(named_sheet):
                 named_sheet = sheet_name
+                named_sheet_spans = _mentions(q, sheet_name, bounded=True)
 
     best: Plan | None = None
     for (wb_name, sheet_name), df in frames.items():
@@ -386,6 +388,22 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
             # aggregated: "average sla where base rate above 1" must not quietly
             # become AVG(BaseRate) just because "base" matched something.
             cands = {w: cols for w, cols in cands.items() if cols}
+            # The words that SELECTED the sheet are not also naming a column.
+            # "select rows 285 to 328 on Sales, average" names no column, but
+            # "Sales" reverse-matched sales_value_myr, so the ask silently became
+            # AVG(sales_value_myr) instead of reporting every numeric column. Drop a
+            # word only when its every mention sits inside the sheet-name match, so
+            # "average sales on Sales" still binds the column on its other mention
+            # (R-0005 - this must not refuse an ask that really does name it).
+            if named_sheet_spans:
+                cands = {
+                    w: cols
+                    for w, cols in cands.items()
+                    if not all(
+                        any(ss <= s and e <= se for ss, se in named_sheet_spans)
+                        for s, e in (_mentions(q, w) or [(-1, -1)])
+                    )
+                }
             for word, cols in sorted(cands.items()):
                 if len(cols) > 1:
                     # Same word fits several columns. Naming one would be a guess.
