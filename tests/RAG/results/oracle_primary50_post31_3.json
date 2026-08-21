@@ -1,0 +1,1506 @@
+{
+  "ok": true,
+  "workbook": "p50_03_inventory_messy.xlsx",
+  "seed": 3,
+  "n": 80,
+  "correct": 50,
+  "accuracy": 0.625,
+  "schema_link_recall": 0.675,
+  "right_value_wrong_binding": 1,
+  "by_family": {
+    "row_range_agg": {
+      "n": 12,
+      "ok": 9,
+      "linked": 9
+    },
+    "row_range_nocol": {
+      "n": 12,
+      "ok": 7,
+      "linked": 12
+    },
+    "filter_agg": {
+      "n": 12,
+      "ok": 5,
+      "linked": 5
+    },
+    "filter_count": {
+      "n": 11,
+      "ok": 8,
+      "linked": 8
+    },
+    "combined": {
+      "n": 11,
+      "ok": 2,
+      "linked": 1
+    },
+    "paraphrase": {
+      "n": 11,
+      "ok": 8,
+      "linked": 8
+    },
+    "out_of_range": {
+      "n": 11,
+      "ok": 11,
+      "linked": 11
+    }
+  },
+  "header_drift": [],
+  "rows": [
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, highest sales_value_myr for rows 151 to 331",
+      "ok": true,
+      "why": "8969.77",
+      "ms": 21.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 151 AND 331",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 122 to 283 on Sales, lowest",
+      "ok": false,
+      "why": "expected per-column output, got a single value",
+      "ms": 4.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 122 AND 283",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Sales, what is the lowest qty where sales_value_myr at least 5132.08",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 4.2,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Wide_Fill, how many rows have sales_value_myr greater than 49235.75",
+      "ok": true,
+      "why": "149.0",
+      "ms": 9.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Wide_Fill WHERE sales_value_myr > 49235.75",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, lowest qty for rows 204 to 406 where sales_value_myr at most 5132.08",
+      "ok": false,
+      "why": "got None want 0.0",
+      "ms": 9.6,
+      "linked_ok": false,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE sales_value_myr <= 5132.08 AND _excel_row BETWEEN 204 AND 406; SELECT MIN(qty) FROM Sales WHERE sales_value_myr <= 5132.08 AND _excel_row BETWEEN 204 AND 406",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Sales sheet, sum qty for rows 256 to 310",
+      "ok": false,
+      "why": "got 237335.66999999998 want 2058.0",
+      "ms": 15.8,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 256 AND 310",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Sales sheet, lowest qty for rows 33034 to 33134",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 5.8,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 33034 AND 33134",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Wide_Fill sheet, highest margin_pct for rows 88 to 167",
+      "ok": true,
+      "why": "45.0",
+      "ms": 1.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 88 AND 167",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "margin_pct",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 140 to 243 on Wide_Fill, maximum",
+      "ok": true,
+      "why": "4 columns match",
+      "ms": 20.5,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 140 AND 243; SELECT MAX(qty) FROM Wide_Fill WHERE _excel_row BETWEEN 140 AND 243; SELECT MAX(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 140 AND 243; SELECT MAX(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 140 AND 243",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the mean sales_value_myr where unit_cost above 101.88",
+      "ok": true,
+      "why": "45845.345503355704",
+      "ms": 3.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(sales_value_myr) FROM Wide_Fill WHERE unit_cost > 101.88",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [
+          "unit_cost"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have sales_value_myr at most 5132.08",
+      "ok": true,
+      "why": "221.0",
+      "ms": 8.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE sales_value_myr <= 5132.08",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, total sales_value_myr for rows 153 to 356 where qty below 36.0",
+      "ok": false,
+      "why": "got 943558.24 want 435236.31",
+      "ms": 2.1,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 153 AND 356",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Sales sheet, sum qty for rows 310 to 357",
+      "ok": false,
+      "why": "got 235065.21 want 2208.0",
+      "ms": 23.7,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 310 AND 357",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Wide_Fill sheet, mean sales_value_myr for rows 24412 to 24512",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.2,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 24412 AND 24512",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Wide_Fill sheet, average unit_cost for rows 82 to 188",
+      "ok": true,
+      "why": "106.29691588785047",
+      "ms": 2.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 82 AND 188",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 114 to 192 on Messy_RAW, lowest",
+      "ok": true,
+      "why": "1 columns match",
+      "ms": 9.6,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 114 AND 192",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the total margin_pct where qty at least 198.0",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 9.6,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have sales_value_myr at least 5132.08",
+      "ok": true,
+      "why": "211.0",
+      "ms": 9.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE sales_value_myr >= 5132.08",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Wide_Fill sheet, lowest unit_cost for rows 157 to 267 where margin_pct less than 27.65",
+      "ok": true,
+      "why": "3.0",
+      "ms": 4.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(unit_cost) FROM Wide_Fill WHERE margin_pct < 27.65 AND _excel_row BETWEEN 157 AND 267",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [
+          "margin_pct"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Sales sheet, total sales_value_myr for rows 324 to 408",
+      "ok": true,
+      "why": "371531.85000000003 (3 phrasings agree)",
+      "ms": 6.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 324 AND 408",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Messy_RAW sheet, maximum sales_value_myr for rows 29056 to 29156",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 2.1,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MAX(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 29056 AND 29156",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, highest qty for rows 196 to 292",
+      "ok": false,
+      "why": "got 8923.85 want 80.0",
+      "ms": 9.3,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT MAX(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 196 AND 292",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 116 to 264 on Sales, mean",
+      "ok": false,
+      "why": "expected per-column output, got a single value",
+      "ms": 9.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 116 AND 264",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the mean unit_cost where sales_value_myr at most 49235.75",
+      "ok": true,
+      "why": "103.16476821192053",
+      "ms": 4.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(unit_cost) FROM Wide_Fill WHERE sales_value_myr <= 49235.75",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have sales_value_myr at least 5132.08",
+      "ok": true,
+      "why": "211.0",
+      "ms": 9.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE sales_value_myr >= 5132.08",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, maximum sales_value_myr for rows 177 to 268 where qty below 36.0",
+      "ok": true,
+      "why": "8841.76",
+      "ms": 2.4,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT MAX(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 177 AND 268",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Messy_RAW sheet, highest sales_value_myr for rows 109 to 173",
+      "ok": true,
+      "why": "89892.6 (3 phrasings agree)",
+      "ms": 6.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 109 AND 173",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Messy_RAW sheet, minimum sales_value_myr for rows 32287 to 32387",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.6,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 32287 AND 32387",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, total sales_value_myr for rows 255 to 434",
+      "ok": true,
+      "why": "780618.34",
+      "ms": 2.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 255 AND 434",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 134 to 270 on Wide_Fill, average",
+      "ok": true,
+      "why": "4 columns match",
+      "ms": 22.5,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 134 AND 270; SELECT AVG(qty) FROM Wide_Fill WHERE _excel_row BETWEEN 134 AND 270; SELECT AVG(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 134 AND 270; SELECT AVG(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 134 AND 270",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the sum unit_cost where sales_value_myr over 49235.75",
+      "ok": true,
+      "why": "15124.789999999999",
+      "ms": 4.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(unit_cost) FROM Wide_Fill WHERE sales_value_myr > 49235.75",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_count",
+      "question": "On Wide_Fill, how many rows have sales_value_myr at most 49235.75",
+      "ok": true,
+      "why": "151.0",
+      "ms": 13.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Wide_Fill WHERE sales_value_myr <= 49235.75",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, average qty for rows 277 to 431 where sales_value_myr over 5132.08",
+      "ok": false,
+      "why": "got None want 42.983870967741936",
+      "ms": 29.2,
+      "linked_ok": false,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE sales_value_myr > 5132.08 AND _excel_row BETWEEN 277 AND 431; SELECT AVG(qty) FROM Sales WHERE sales_value_myr > 5132.08 AND _excel_row BETWEEN 277 AND 431",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Sales sheet, mean qty for rows 247 to 405",
+      "ok": false,
+      "why": "got 4343.234842767295 want 41.094339622641506",
+      "ms": 29.5,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 247 AND 405",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Sales sheet, average qty for rows 13443 to 13543",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 6.2,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 13443 AND 13543",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Wide_Fill sheet, average sales_value_myr for rows 208 to 298",
+      "ok": true,
+      "why": "44289.83901098901",
+      "ms": 2.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 208 AND 298",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 390 to 422 on Sales, lowest",
+      "ok": false,
+      "why": "expected per-column output, got a single value",
+      "ms": 9.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 390 AND 422",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Sales, what is the maximum qty where sales_value_myr at least 5132.08",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 13.4,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have qty over 36.0",
+      "ok": false,
+      "why": "got 431.0 want 215.0",
+      "ms": 40.7,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT COUNT(sales_value_myr) FROM Sales",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Wide_Fill sheet, maximum margin_pct for rows 20 to 120 where qty at most 198.0",
+      "ok": false,
+      "why": "got 44.81 want 44.78",
+      "ms": 9.1,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT MAX(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 20 AND 120",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "margin_pct",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Wide_Fill sheet, highest unit_cost for rows 86 to 154",
+      "ok": true,
+      "why": "198.75 (3 phrasings agree)",
+      "ms": 14.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 86 AND 154",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Messy_RAW sheet, average sales_value_myr for rows 30123 to 30223",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.8,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 30123 AND 30223",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, total sales_value_myr for rows 280 to 417",
+      "ok": true,
+      "why": "593640.4199999999",
+      "ms": 2.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 280 AND 417",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 130 to 197 on Messy_RAW, minimum",
+      "ok": true,
+      "why": "1 columns match",
+      "ms": 14.4,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 130 AND 197",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the lowest unit_cost where qty above 198.0",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 13.6,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have sales_value_myr at most 5132.08",
+      "ok": true,
+      "why": "221.0",
+      "ms": 11.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE sales_value_myr <= 5132.08",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, highest qty for rows 240 to 291 where sales_value_myr at most 5132.08",
+      "ok": false,
+      "why": "got None want 77.0",
+      "ms": 14.3,
+      "linked_ok": false,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(sales_value_myr) FROM Sales WHERE sales_value_myr <= 5132.08 AND _excel_row BETWEEN 240 AND 291; SELECT MAX(qty) FROM Sales WHERE sales_value_myr <= 5132.08 AND _excel_row BETWEEN 240 AND 291",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Wide_Fill sheet, sum unit_cost for rows 38 to 179",
+      "ok": true,
+      "why": "14990.73 (3 phrasings agree)",
+      "ms": 6.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 38 AND 179",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Sales sheet, sum qty for rows 42417 to 42517",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 7.2,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 42417 AND 42517",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, average qty for rows 65 to 172",
+      "ok": false,
+      "why": "got 4794.188703703702 want 37.851851851851855",
+      "ms": 8.9,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 65 AND 172",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 156 to 324 on Sales, lowest",
+      "ok": false,
+      "why": "expected per-column output, got a single value",
+      "ms": 7.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 156 AND 324",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Sales, what is the average sales_value_myr where qty over 36.0",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 7.4,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have qty less than 36.0",
+      "ok": false,
+      "why": "got 431.0 want 213.0",
+      "ms": 15.1,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT COUNT(sales_value_myr) FROM Sales",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, total sales_value_myr for rows 126 to 337 where qty at least 36.0",
+      "ok": false,
+      "why": "got 971986.79 want 503958.06",
+      "ms": 3.3,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 126 AND 337",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Messy_RAW sheet, mean sales_value_myr for rows 140 to 189",
+      "ok": true,
+      "why": "50817.468199999996 (3 phrasings agree)",
+      "ms": 6.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 140 AND 189",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Messy_RAW sheet, maximum sales_value_myr for rows 25338 to 25438",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 2.0,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MAX(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 25338 AND 25438",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, lowest qty for rows 91 to 162",
+      "ok": false,
+      "why": "got 180.28 want 1.0",
+      "ms": 9.1,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT MIN(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 91 AND 162",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 38 to 181 on Wide_Fill, mean",
+      "ok": true,
+      "why": "4 columns match",
+      "ms": 15.5,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 38 AND 181; SELECT AVG(qty) FROM Wide_Fill WHERE _excel_row BETWEEN 38 AND 181; SELECT AVG(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 38 AND 181; SELECT AVG(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 38 AND 181",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the minimum sales_value_myr where unit_cost greater than 101.88",
+      "ok": true,
+      "why": "195.65",
+      "ms": 3.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Wide_Fill WHERE unit_cost > 101.88",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [
+          "unit_cost"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have qty at least 36.0",
+      "ok": false,
+      "why": "got 431.0 want 218.0",
+      "ms": 11.6,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT COUNT(sales_value_myr) FROM Sales",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, mean qty for rows 376 to 419 where sales_value_myr above 5132.08",
+      "ok": false,
+      "why": "got None want 42.5",
+      "ms": 13.1,
+      "linked_ok": false,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE sales_value_myr > 5132.08 AND _excel_row BETWEEN 376 AND 419; SELECT AVG(qty) FROM Sales WHERE sales_value_myr > 5132.08 AND _excel_row BETWEEN 376 AND 419",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Messy_RAW sheet, total sales_value_myr for rows 77 to 154",
+      "ok": true,
+      "why": "3496976.6799999997 (3 phrasings agree)",
+      "ms": 6.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 77 AND 154",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Wide_Fill sheet, sum unit_cost for rows 27242 to 27342",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.3,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT SUM(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 27242 AND 27342",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Messy_RAW sheet, lowest sales_value_myr for rows 56 to 85",
+      "ok": true,
+      "why": "1094.74",
+      "ms": 3.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 56 AND 85",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 32 to 133 on Wide_Fill, minimum",
+      "ok": true,
+      "why": "4 columns match",
+      "ms": 22.5,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 32 AND 133; SELECT MIN(qty) FROM Wide_Fill WHERE _excel_row BETWEEN 32 AND 133; SELECT MIN(unit_cost) FROM Wide_Fill WHERE _excel_row BETWEEN 32 AND 133; SELECT MIN(margin_pct) FROM Wide_Fill WHERE _excel_row BETWEEN 32 AND 133",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the lowest unit_cost where margin_pct below 27.65",
+      "ok": true,
+      "why": "1.89",
+      "ms": 3.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(unit_cost) FROM Wide_Fill WHERE margin_pct < 27.65",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "unit_cost",
+        "filters": [
+          "margin_pct"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have sales_value_myr less than 5132.08",
+      "ok": true,
+      "why": "220.0",
+      "ms": 8.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE sales_value_myr < 5132.08",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Sales sheet, mean sales_value_myr for rows 187 to 372 where qty below 36.0",
+      "ok": false,
+      "why": "got 4456.015107526882 want 4516.81469879518",
+      "ms": 2.8,
+      "linked_ok": false,
+      "link_why": "unlinked columns ['qty']",
+      "sql": "SELECT AVG(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 187 AND 372",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Messy_RAW sheet, maximum sales_value_myr for rows 30 to 58",
+      "ok": true,
+      "why": "87439.75 (3 phrasings agree)",
+      "ms": 8.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 30 AND 58",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Wide_Fill sheet, lowest qty for rows 11845 to 11945",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 6.6,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN() FROM Wide_Fill WHERE _excel_row BETWEEN 11845 AND 11945",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Messy_RAW sheet, minimum sales_value_myr for rows 13 to 50",
+      "ok": true,
+      "why": "485.84",
+      "ms": 2.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 13 AND 50",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 106 to 168 on Messy_RAW, mean",
+      "ok": true,
+      "why": "1 columns match",
+      "ms": 5.4,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 106 AND 168",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Sales, what is the maximum sales_value_myr where qty above 36.0",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 4.2,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    },
+    {
+      "family": "filter_count",
+      "question": "On Wide_Fill, how many rows have margin_pct at least 27.65",
+      "ok": true,
+      "why": "150.0",
+      "ms": 8.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Wide_Fill WHERE margin_pct >= 27.65",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "margin_pct"
+        ],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "combined",
+      "question": "On the Wide_Fill sheet, sum qty for rows 127 to 206 where sales_value_myr at most 49235.75",
+      "ok": false,
+      "why": "got None want 8060.0",
+      "ms": 19.3,
+      "linked_ok": false,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT SUM(sales_value_myr) FROM Wide_Fill WHERE sales_value_myr <= 49235.75 AND _excel_row BETWEEN 127 AND 206; SELECT SUM(qty) FROM Wide_Fill WHERE sales_value_myr <= 49235.75 AND _excel_row BETWEEN 127 AND 206; SELECT SUM(unit_cost) FROM Wide_Fill WHERE sales_value_myr <= 49235.75 AND _excel_row BETWEEN 127 AND 206; SELECT SUM(margin_pct) FROM Wide_Fill WHERE sales_value_myr <= 49235.75 AND _excel_row BETWEEN 127 AND 206",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "sales_value_myr"
+        ],
+        "all_numeric": true
+      }
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Sales sheet, total sales_value_myr for rows 292 to 340",
+      "ok": true,
+      "why": "230437.06000000003 (3 phrasings agree)",
+      "ms": 5.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 292 AND 340",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Messy_RAW sheet, mean sales_value_myr for rows 11019 to 11119",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.9,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(sales_value_myr) FROM Messy_RAW WHERE _excel_row BETWEEN 11019 AND 11119",
+      "sheet": "Messy_RAW",
+      "linked": {
+        "sheet": "Messy_RAW",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Wide_Fill sheet, total sales_value_myr for rows 131 to 210",
+      "ok": true,
+      "why": "3655891.88",
+      "ms": 1.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Wide_Fill WHERE _excel_row BETWEEN 131 AND 210",
+      "sheet": "Wide_Fill",
+      "linked": {
+        "sheet": "Wide_Fill",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 171 to 273 on Sales, total",
+      "ok": false,
+      "why": "expected per-column output, got a single value",
+      "ms": 8.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(sales_value_myr) FROM Sales WHERE _excel_row BETWEEN 171 AND 273",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_03_inventory_messy.xlsx",
+        "metric": "sales_value_myr",
+        "filters": [],
+        "all_numeric": false
+      }
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Wide_Fill, what is the maximum sales_value_myr where qty at least 198.0",
+      "ok": false,
+      "why": "no answer from the lane",
+      "ms": 6.9,
+      "linked_ok": false,
+      "link_why": "nothing returned",
+      "sql": null,
+      "sheet": null,
+      "linked": null
+    }
+  ],
+  "index_fingerprint": {
+    "schema_version": 1,
+    "chunker": {
+      "name": "parent_child",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40
+    },
+    "embed": {
+      "backend": "model",
+      "model": "BAAI/bge-small-en-v1.5",
+      "dim": 384
+    },
+    "extra": {
+      "pack": "primary50",
+      "workbook": "p50_03_inventory_messy.xlsx"
+    },
+    "id": "eeb81ac9414bd5df"
+  },
+  "oracle": "openpyxl direct cell reads by spreadsheet row - shares no code with the lane, but NOT independent of it: both derive the header row the same way"
+}

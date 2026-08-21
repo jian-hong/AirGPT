@@ -67,14 +67,45 @@ def read_schema(path: Path) -> dict[str, dict]:
     try:
         for name in wb.sheetnames:
             ws = wb[name]
+            # Ticket #31. This block used to claim it re-derived the header
+            # independently while running logic byte-identical to the loader's, so
+            # the drift check below compared an opinion with itself and always
+            # agreed - including when both picked a banner row. Two implementations
+            # of the same wrong assumption are not independent (R-0003).
+            #
+            # Different SIGNAL, deliberately: the loader decides structurally, by
+            # column width. This decides by type transition - the header is the last
+            # text row above the first row that reads as data. The two can now
+            # actually disagree, which is the only way the drift check means anything.
+            probe = list(ws.iter_rows(min_row=1, max_row=12, values_only=True))
             header_row = None
             columns: list[str] = []
-            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=5, values_only=True), start=1):
-                cells = [c for c in row if c is not None and str(c).strip()]
-                if len(cells) >= 2:
-                    header_row = i
-                    columns = [str(c).strip() if c is not None else "" for c in row]
+            first_data = None
+            for i, row in enumerate(probe, start=1):
+                vals = [c for c in row if c is not None and str(c).strip()]
+                if len(vals) < 2:
+                    continue
+                numeric = sum(1 for c in vals if isinstance(c, (int, float)) and not isinstance(c, bool))
+                # Any numeric at all, not a majority. A real table row is usually
+                # mixed - Messy_RAW's first data row is sku, sku, 21169.18, 21169.18,
+                # region, so only 2 of 5 are numeric and a majority test never fires.
+                # A header row is all text, which is the actual distinguishing signal.
+                if numeric >= 1:
+                    first_data = i
                     break
+            if first_data and first_data > 1:
+                for i in range(first_data - 1, 0, -1):
+                    if len([c for c in probe[i - 1] if c is not None and str(c).strip()]) >= 2:
+                        header_row = i
+                        columns = [str(c).strip() if c is not None else "" for c in probe[i - 1]]
+                        break
+            if header_row is None:
+                for i, row in enumerate(probe[:5], start=1):
+                    cells = [c for c in row if c is not None and str(c).strip()]
+                    if len(cells) >= 2:
+                        header_row = i
+                        columns = [str(c).strip() if c is not None else "" for c in row]
+                        break
             if header_row is None:
                 continue
             last = ws.max_row or header_row
