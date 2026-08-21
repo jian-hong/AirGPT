@@ -56,6 +56,33 @@ TOL = 1e-6
 # --------------------------------------------------------------------------
 # Oracle - independent of everything the lane uses.
 # --------------------------------------------------------------------------
+# A generated ask is malformed when it was built on a column name that is not a
+# column - the banner-row header bug produced schemas carrying "skip" and an em
+# dash, and 28% of asks referenced those. Judged on the column NAME rather than on
+# whether the lane answered, so a malformed ask that happens to pass still counts
+# as malformed; otherwise the rate would flatter itself.
+_JUNK_COLUMN_MARKERS = ("skip", "sheet", "raw", "unnamed", "do not trust", "export dump")
+
+
+def _is_junk_column(name: object) -> bool:
+    s = str(name or "").strip()
+    if not s:
+        return True
+    low = s.lower()
+    if low in _JUNK_COLUMN_MARKERS:
+        return True
+    # A name with no letter or digit at all is punctuation, not an identifier.
+    return not any(ch.isalnum() for ch in s)
+
+
+def _case_is_malformed(case: dict) -> bool:
+    names = [case.get("col"), case.get("fcol")]
+    numeric = case.get("numeric")
+    if isinstance(numeric, dict):
+        names.extend(numeric.keys())
+    return any(_is_junk_column(n) for n in names if n is not None)
+
+
 def read_schema(path: Path) -> dict[str, dict]:
     """Sheet -> {header_row, columns, first_data_row, last_data_row, numeric_cols}.
 
@@ -542,6 +569,13 @@ def main() -> None:
             "ok": ok, "why": why, "ms": ms, "linked_ok": linked_ok, "link_why": link_why,
             "sql": (got or {}).get("sql"), "sheet": (got or {}).get("sheet"),
             "linked": (got or {}).get("linked"),
+            # F13b gates on malformed_ask_rate, so it has to be IN the artifact.
+            # It was derived in-session before and then lost, and `header_drift`
+            # could not stand in for it: that field read [] both when 89/320 asks
+            # were malformed and when 0/320 were, because it compares the loader
+            # against the oracle and both used to pick the same banner row. A field
+            # identical in the broken and the fixed state measures nothing (R-0007).
+            "malformed": _case_is_malformed(case),
         })
         flag = "OK  " if ok else "FAIL"
         # A value that matches while the binding is wrong is a coincidence, not a
@@ -593,6 +627,10 @@ def main() -> None:
         "schema_link_recall": round(total_linked / max(1, len(rows)), 4),
         "right_value_wrong_binding": len(lucky),
         "by_family": by_family, "header_drift": drift, "rows": rows,
+        "malformed_asks": sum(1 for r in rows if r.get("malformed")),
+        "malformed_ask_rate": round(
+            sum(1 for r in rows if r.get("malformed")) / max(1, len(rows)), 4
+        ),
         # EPIC-D05 precondition: chunking by data type re-chunks the corpus, so a
         # score taken before it is not comparable to one taken after. Without this
         # the board merges two different indexes and says nothing.
