@@ -47,13 +47,12 @@
 
 ## WIP
 
-Two epics open against a limit of two - **at** the limit, not under. EPIC-D03 #26 and
-EPIC-D04 #22. **D05 is not clear to start**; one of those must close first.
+WIP counts **in-flight**, not open (founder ruling 2026-08-20). In flight: D07, D03.
+Queued parents: D04 #22, D05, D06, D08. No-orphan never overrides the amendment gate.
 
 ## Later
 
-- P1 50GB / P2 Meta SIRA / P3 charts / P4 vault-first / P5 Outerbase-Grafana / P6 2GB
-- AirGPT default to NVIDIA only after OV probe passes (P7)
+- P1 50GB / P2 Meta SIRA / P3 charts / P4 vault-first / P5 Outerbase-Grafana / P6 2GB / P7 NVIDIA default after OV probe
 
 ## Demo open
 
