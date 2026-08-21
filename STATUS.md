@@ -10,10 +10,10 @@
    shipped vs not. Tickets #9 #10 #13 #14 #15 #17 #18 #19 #20 #21 #25 stay **open**.
 1. **#13 messy pack: 0.6937 at n=320**, up from 0.5375. Malformed asks **28% -> 0%**
    (#31 header binder). Journey: 0.5375 -> 0.6219 (banner header + duplicate columns)
-   -> 0.6937 (sheet name no longer binds a column). Against F13b's 0.90 per-family
-   floor: `out_of_range` 44/44 and `row_range_nocol` 48/48 **meet** it; `filter_agg`
-   0.23 and `combined` 0.39 are the open gaps. 50 of 98 failures are abstentions.
-   F13 is now split - **F13a** clean corpus (earned, frozen), **F13b** messy (open).
+   -> 0.6937 (sheet name no longer binds a column). vs F13b's 0.90 per-family floor:
+   `out_of_range` 44/44 and `row_range_nocol` 48/48 **meet** it; `filter_agg` 0.23 and
+   `combined` 0.39 are the gaps. 50 of 98 failures are abstentions. F13 is now split:
+   **F13a** clean corpus (earned, frozen), **F13b** messy pack (open).
 2. **Oracle bench 400/400** on the clean FRTR 00027 across 5 seeds - error bounded at
    **0.75%** (R-0010). The contrast with item 1 is clean workbook vs messy pack.
 3. **Verified live this pass, not taken on trust:** #21 numeric KPI over SSE (0.9441,
