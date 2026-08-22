@@ -641,9 +641,20 @@ def main() -> None:
         # the header, so the drift check below agreed with itself and passed while
         # 28% of generated asks were built on a banner row. Sharing no code does not
         # make an adversary (R-0003).
+        # This string is the reader's only account of how much the oracle is worth,
+        # so it has to track the code. It previously said the oracle was NOT
+        # independent - true when written, false once #31 gave the two sides
+        # different signals, and it sat in every result file declaring a coupling
+        # that no longer existed. An artifact that misreports its own guarantee is
+        # the same R-0001 failure as a gate asserting at the wrong layer.
         "oracle": (
-            "openpyxl direct cell reads by spreadsheet row - shares no code with the "
-            "lane, but NOT independent of it: both derive the header row the same way"
+            "openpyxl direct cell reads by spreadsheet row. Shares no code with the "
+            "lane AND uses a different header signal: the lane picks by modal body "
+            "width, this picks by type transition (last text row above the first row "
+            "containing a number). They disagree in both directions on synthetic "
+            "sheets, which is what makes the drift check meaningful. Shared residual: "
+            "both fall back to the pre-#31 first-wide-row rule when their primary "
+            "signal is inconclusive."
         ),
     }
     RESULTS.mkdir(parents=True, exist_ok=True)

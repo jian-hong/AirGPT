@@ -181,6 +181,23 @@ def _mentions(question: str, column: str, *, bounded: bool = False) -> list[tupl
     return spans
 
 
+_SHEET_SELECTOR_BEFORE = re.compile(r"\b(?:on|in|from|of)\s+(?:the\s+)?$", re.I)
+_SHEET_SELECTOR_AFTER = re.compile(r"^\s*(?:sheet|tab|worksheet)\b", re.I)
+
+
+def _in_sheet_selector_position(question: str, start: int, end: int) -> bool:
+    """Is this mention being used to CHOOSE a sheet rather than name a column?
+
+    "on Sales", "in the Sales sheet", "Sales tab" select a sheet. A bare mention
+    inside a longer phrase - "sum total shipments" - does not, which is why this
+    asks about position instead of just matching the name.
+    """
+    return bool(
+        _SHEET_SELECTOR_BEFORE.search(question[:start])
+        or _SHEET_SELECTOR_AFTER.match(question[end:])
+    )
+
+
 def _resolve_mentions(question: str, columns: set[str]) -> list[tuple[int, int, str]]:
     """Non-overlapping column mentions, longest match winning at each position.
 
@@ -357,9 +374,23 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
     for (_wb, sheet_name), _df in frames.items():
         for start, end in _mentions(q, sheet_name, bounded=True):
             covered = any(cs <= start and end <= ce for cs, ce, _c in global_kept)
-            if not covered and len(sheet_name) > len(named_sheet):
+            # A mention in selector position ("on Sales", "the Sales sheet") is the
+            # sheet even when a column shares the name exactly. Without this the
+            # covered test hands the whole phrase to the column, `named_sheet` stays
+            # empty, the reverse-direction guard below never runs, and "on Sales,
+            # average" silently becomes AVG(sales) - the same narrowing that guard
+            # was added to stop, reappearing on a schema where sheet and column
+            # names collide (R-0004: fix the class, not the one shape).
+            if (not covered or _in_sheet_selector_position(q, start, end)) and len(
+                sheet_name
+            ) > len(named_sheet):
                 named_sheet = sheet_name
-                named_sheet_spans = _mentions(q, sheet_name, bounded=True)
+                named_sheet_spans = [
+                    (s, e)
+                    for s, e in _mentions(q, sheet_name, bounded=True)
+                    if not any(cs <= s and e <= ce for cs, ce, _c in global_kept)
+                    or _in_sheet_selector_position(q, s, e)
+                ]
 
     best: Plan | None = None
     for (wb_name, sheet_name), df in frames.items():
@@ -369,6 +400,15 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
             continue
         own = {str(c) for c in df.columns}
         kept = [m for m in global_kept if m[2] in own]
+        # Drop column mentions that ARE the sheet selector. "on Sales, average" on a
+        # sheet that also has a `sales` column must report every numeric column, not
+        # silently narrow to the one whose name happens to match the sheet.
+        if named_sheet_spans:
+            kept = [
+                m
+                for m in kept
+                if not any(ss <= m[0] and m[1] <= se for ss, se in named_sheet_spans)
+            ]
         # An ask can legitimately name no column directly - "rows 330 to 660, sum"
         # gives a span instead, and "the average cost" names a column only in the
         # reverse direction. Bail out only when there is no route at all.
