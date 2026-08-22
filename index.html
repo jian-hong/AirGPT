@@ -504,7 +504,7 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
   .presence-typing span{animation:none;opacity:.6}
   .presence-av{transition:none}
 }
-/* ---- One access control (peer node · project share · shipped app) ------------ */
+/* ---- Access level picker (saved only -- not enforced yet) -------------------- */
 .access-pop{
   position:fixed;z-index:9999;min-width:260px;max-width:300px;padding:6px;
   border-radius:14px;border:1px solid var(--line);background:var(--surface);
@@ -513,6 +513,9 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
 .access-pop-title{
   font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
   padding:6px 8px 4px;
+}
+.access-pop-note{
+  font-size:11px;color:var(--muted);padding:0 8px 8px;margin:0;line-height:1.35;
 }
 .access-row{
   display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
@@ -2193,6 +2196,7 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 .msg-flash{outline:2px solid rgba(61,214,140,.7);outline-offset:2px;border-radius:12px;transition:outline-color .8s}
 .access-pop{position:fixed;z-index:240;min-width:240px;max-width:280px;background:rgba(18,18,18,.98);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:0 16px 40px rgba(0,0,0,.55)}
 .access-pop-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:4px 8px 8px}
+.access-pop-note{font-size:11px;color:var(--muted);padding:0 8px 8px;margin:0;line-height:1.35}
 .access-row{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font:inherit;cursor:pointer}
 .access-row:hover,.access-row.on{background:rgba(255,255,255,.06)}
 .access-radio{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);margin-top:2px;flex-shrink:0}
@@ -6624,19 +6628,20 @@ function hubIconSvg(kind){
 }
 function hubAccessLabel(level){
   const m={read_only:'Read Only',read_write:'Read and Write',use_host_ai:'Use Host AI',use_own_ai:'Use Own AI',limited:'Limited',host:'Host'};
-  return m[level]||level||'—';
+  const name=m[level]||level||'—';
+  if(!level||level==='host')return name;
+  return name+' (not enforced)';
 }
-/* ===== One access control, used in three places ==============================
-   Peer node, project share, shipped app. The backend enum (hub.ACL_LEVELS) is a
-   flat single-valued list, so this maps 1:1 onto it — no invented semantics, no
-   two-dimensional control pretending a one-dimensional field is two.
-   Read-only is first and is the default everywhere it is offered. */
+/* ===== Access level picker (persist only -- not enforced) ====================
+   Peer node, project share, shipped app. hub.ACL_LEVELS is persisted by
+   set_peer_acl. Request gates are IP-only and never read access_level.
+   Labels must say so until DR-0003 / F22a lands. Read-only is first. */
 const ACCESS_LEVELS=[
-  {v:'read_only', label:'Read only',   hint:'can watch, cannot type'},
-  {v:'read_write',label:'Can write',   hint:'can type — no AI'},
-  {v:'use_host_ai',label:'Use Host AI',hint:'spends your tokens'},
-  {v:'use_own_ai',label:'Use Own AI',  hint:'brings their own key'},
-  {v:'limited',   label:'Restricted',  hint:'paused — no AI, no writes'},
+  {v:'read_only', label:'Read only',   hint:'saved, not yet enforced'},
+  {v:'read_write',label:'Can write',   hint:'saved, not yet enforced'},
+  {v:'use_host_ai',label:'Use Host AI',hint:'saved, not yet enforced'},
+  {v:'use_own_ai',label:'Use Own AI',  hint:'saved, not yet enforced'},
+  {v:'limited',   label:'Restricted',  hint:'saved, not yet enforced'},
 ];
 function closeAccessPopover(){document.querySelectorAll('.access-pop').forEach(x=>x.remove())}
 /**
@@ -6652,6 +6657,7 @@ function openAccessPopover(ev,opts){
   pop.className='access-pop';
   pop.innerHTML=
     `<div class="access-pop-title">${esc(o.title||'Access')}</div>`+
+    `<p class="access-pop-note">Levels are saved, not yet enforced</p>`+
     ACCESS_LEVELS.map(l=>
       `<button type="button" class="access-row${l.v===cur?' on':''}" data-v="${l.v}">
          <span class="access-radio" aria-hidden="true"></span>
@@ -6692,7 +6698,7 @@ function openAccessPopover(ev,opts){
 /** Peer node → same popover, plus the peer-only actions. */
 function openPeerAccess(ev,ip,level){
   openAccessPopover(ev,{
-    title:'Access',
+    title:'Access (not enforced)',
     level:level||'read_only',
     onPick:async v=>{
       try{
@@ -6749,9 +6755,9 @@ async function renderHubPage(){
   const events=(d.events||[]).slice(0,8).map(e=>`<div class="hint" style="padding:2px 0">${esc(e.event_type||'')} · ${esc(e.ip||'')} · ${esc((e.detail||'').slice(0,60))}</div>`).join('')||'';
   $('chat').innerHTML=`<div class="hub-page chat-page-enter">
     <h2 class="hub-title">Coherent Access Hub</h2>
-    <p class="cortex-tag">Host manages who joins, what they can do, and how they use AI. ✓ = logged in · dull = disconnected.</p>
+    <p class="cortex-tag">Host manages who joins. Access levels are saved, not yet enforced. Host-only paths stay host-only. ✓ = logged in · dull = disconnected.</p>
     <div class="hub-share-row">
-      <label class="hint">Share access:</label>
+      <label class="hint">Share level (not enforced):</label>
       <button type="button" class="btn" id="hubShareLevelBtn" data-level="read_only" onclick="hubPickShareLevel(event)">${hubAccessLabel('read_only')} ▾</button>
       <button type="button" class="btn primary" onclick="hubCreateJoinCode()">Team code</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'view')">QR View</button>
@@ -6772,7 +6778,7 @@ function hubPickShareLevel(ev){
 
   const btn=$('hubShareLevelBtn');
   openAccessPopover(ev,{
-    title:'Share access',
+    title:'Share level (not enforced)',
     level:btn?.dataset.level||'read_only',
     onPick:v=>{if(btn){btn.dataset.level=v;btn.textContent=hubAccessLabel(v)+' ▾'}},
   });

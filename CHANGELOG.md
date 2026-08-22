@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 — HOST-DEMO-04: Hub access bar stops claiming a grant
+
+- The Hub picker still persists `access_level` via `set_peer_acl`. Request
+  gates stay IP-only and unread that field. `read_write` and `read_only` still
+  get the same 403 on `/api/rag`.
+- The operator surface now says the levels are saved, not yet enforced, so a
+  persist-then-403 cannot contradict the bar (R-0001). DR-0003 / F22a is
+  untouched. `MIN_TESTS` stays 380.
+
 ## 2026-08-22 — pandas is a product xlsx dep, not a test-only import
 
 - `rag/xlsx_sql.py` imports pandas at module load (`DataFrame`, `to_numeric`).
