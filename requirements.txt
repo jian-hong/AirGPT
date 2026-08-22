@@ -9,3 +9,6 @@ zeroconf>=0.131.0
 # cursor-sdk>=0.1.0
 # Optional RAG dense embedder (enable with AIRGPT_RAG_EMBED=st in env.local):
 # sentence-transformers>=3.0.0
+# .xlsx/.xlsm are advertised in TEXT_SUFFIXES, so this extractor is NOT optional -
+# without it the spreadsheet lane has no text to index. See docs/decisions/DR-0001.
+openpyxl>=3.1.0
