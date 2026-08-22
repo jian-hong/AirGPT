@@ -2051,7 +2051,7 @@ class Handler(BaseHTTPRequestHandler):
         # /pomodoro is a self-contained timer page: no data, no API calls, nothing to
         # authorise. It opens in its own small window, so requiring a token would just
         # 401 a page that reads nothing.
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -2062,7 +2062,10 @@ class Handler(BaseHTTPRequestHandler):
         if not app_auth:
             return True
         st = app_auth.status()
-        if not st.get("needs_auth"):
+        # needs_auth is also True when no passcode exists so _join_url mints a
+        # QR token (#27 / #40). That is not an HTTP session gate: establish
+        # *creates* the session, and a missing passcode is not passcode_required.
+        if not st.get("passcode_required"):
             return True
         # Rate-limit brute force from LAN/WiFi attackers
         now = time.time()

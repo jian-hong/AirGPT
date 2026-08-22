@@ -14000,7 +14000,12 @@ function applyTunnelUi(d){
   }
   if(d.lan_url){
     if(lanUrl)lanUrl.textContent=d.lan_url;
-    if(qrLan){qrLan.style.display='';setQR(qrLan,d.lan_url)}
+    // HOST-DEMO-05: never encode a bare LAN URL once a join token exists.
+    let lanQr=d.lan_url;
+    if(d.qr_token){
+      lanQr=d.lan_url.replace(/\/+$/,'')+'/?qr='+encodeURIComponent(d.qr_token);
+    }
+    if(qrLan){qrLan.style.display='';setQR(qrLan,lanQr)}
   }
   const mu=$('mdnsUrl');
   if(mu&&d.mdns_url&&d.firewall==='ok'){

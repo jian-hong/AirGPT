@@ -84,12 +84,15 @@ def set_passcode_required(required: bool) -> dict:
 def status() -> dict:
     ws = _load()
     required = passcode_required()
+    no_passcode = not bool(ws.get("pass_hash"))
     return {
         "initialized": bool(ws.get("pass_hash")),
         "host_email": ws.get("email", ""),
         # Disarming the gate opens LAN access on purpose — the UI shows a standing
-        # warning while this is false.
-        "needs_auth": required,
+        # warning while this is false. An *unset* passcode is not that opt-in:
+        # needs_auth True is what makes clipdrop._join_url mint a QR token
+        # instead of returning a bare URL (HOST-DEMO-05 / #27).
+        "needs_auth": True if no_passcode else required,
         "passcode_required": required,
         "passcode_set": bool(ws.get("pass_hash")),
     }
@@ -156,11 +159,17 @@ def verify_token(token: str | None) -> bool:
 
 
 def issue_qr_token(host_token: str | None = None, host_verified: bool = False) -> str | None:
-    """Host must be authenticated or pass passcode check to mint QR join tokens."""
+    """Mint a one-time QR join token. Host machine or authenticated host only.
+
+    A missing passcode is not an open invitation: we still mint a token so the
+    share QR carries a credential instead of a bare URL (HOST-DEMO-05 / #27).
+    Only the host machine may mint in that state — a remote token is not enough,
+    because verify_token treats any token as valid when no pass_hash exists.
+    """
     ws = _load()
-    if not ws.get("pass_hash"):
-        return None
     if not host_verified:
+        if not ws.get("pass_hash"):
+            return None
         if not host_token or not verify_token(host_token):
             return None
     tok = secrets.token_urlsafe(20)
