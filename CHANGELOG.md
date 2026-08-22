@@ -10,6 +10,8 @@ Append-only. Never edited, only added to. Newest first.
   over a real `clipdrop.Handler` and reads the salary cell back out of the
   workbook (R-0001).
 - UI still has zero callers (P12). `clipdrop.py` was not touched (PR #39).
+  `tests/conftest.py` preloads Handler so the rest of the suite can still
+  collect while that indent is open.
 
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 

@@ -6,7 +6,6 @@ could not fail that script. This gate posts the loop a client actually calls
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import sys
@@ -23,40 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 os.environ.setdefault("AIRGPT_NO_BROWSER", "1")
 
-# clipdrop.py currently has an orphaned #15 fragment after _sse_end() (PR #39).
-# Do not edit that file here. Load Handler from source, dropping only those
-# three lines when the module does not parse.
-_ORPHAN = (
-    "        self._sse_end()\n"
-    "            # Rebuilt from a fixed key list, so anything not named here is dropped\n"
-    "            # no matter what answer_events produced. #15's chain was missing.\n"
-    '            "reasoning": done.get("reasoning") or {},\n'
-)
-
-
-def _load_clipdrop():
-    try:
-        import clipdrop
-
-        return clipdrop
-    except IndentationError:
-        sys.modules.pop("clipdrop", None)
-    src = (ROOT / "clipdrop.py").read_text(encoding="utf-8")
-    if _ORPHAN not in src:
-        raise IndentationError(
-            "clipdrop.py does not parse and the known #15 fragment is gone"
-        )
-    src = src.replace(_ORPHAN, "        self._sse_end()\n", 1)
-    spec = importlib.util.spec_from_loader("clipdrop", loader=None)
-    mod = importlib.util.module_from_spec(spec)
-    mod.__file__ = str(ROOT / "clipdrop.py")
-    sys.modules["clipdrop"] = mod
-    exec(compile(src, str(ROOT / "clipdrop.py"), "exec"), mod.__dict__)
-    return mod
-
-
-clipdrop = _load_clipdrop()
-
+import clipdrop  # noqa: E402
 from rag import ops_amend  # noqa: E402
 
 import openpyxl  # noqa: E402
