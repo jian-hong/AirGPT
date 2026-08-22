@@ -9,8 +9,8 @@
   "honesty": "Cortex-direct demo ops - not OpenVault-gated",
   "fixture": "D:\\AirGPT\\tests\\RAG\\messy\\ops\\messy_payroll_ops.xlsx",
   "scratch": "D:\\AirGPT\\tests\\RAG\\results\\ops\\e2e_payroll_copy.xlsx",
-  "started": "2026-08-06T21:31:57",
-  "finished": "2026-08-06T21:32:09",
+  "started": "2026-08-20T17:23:16",
+  "finished": "2026-08-20T17:23:25",
   "passed": 32,
   "total": 32,
   "steps": [
@@ -112,7 +112,7 @@
     {
       "step": "audit stamp written",
       "ok": true,
-      "detail": "amended 2026-08-06T21:32:02 (confirmed, token ops_1786023121978_13)"
+      "detail": "amended 2026-08-20T17:23:19 (confirmed, token ops_1787217798954_13)"
     },
     {
       "step": "neighbour row untouched",

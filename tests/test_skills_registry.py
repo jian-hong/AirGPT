@@ -146,5 +146,45 @@ class SkillArmingTest(unittest.TestCase):
             self.assertEqual(self._send(skill=evil), self.USER_TEXT, evil)
 
 
+class MultipleArmedSkillsTest(SkillArmingTest):
+    """More than one pack may ride a single send.
+
+    The composer used to hold exactly one armed skill because the wire field was a
+    single string, so arming a second silently replaced the first.
+    """
+
+    PACKS = ("visual-diagrams", "web-research")
+
+    def test_every_armed_pack_reaches_the_model(self):
+        q = self._send(skills=list(self.PACKS))
+        for sid in self.PACKS:
+            self.assertIn(f"[Skill: {sid}]", q, sid)
+        self.assertTrue(q.strip().endswith(self.USER_TEXT), "user text must come last")
+
+    def test_packs_keep_the_order_they_were_armed_in(self):
+        q = self._send(skills=list(reversed(self.PACKS)))
+        seen = [q.index(f"[Skill: {sid}]") for sid in reversed(self.PACKS)]
+        self.assertEqual(seen, sorted(seen))
+
+    def test_legacy_single_field_merges_without_duplicating(self):
+        q = self._send(skill=self.PACKS[0], skills=[self.PACKS[0], self.PACKS[1]])
+        self.assertEqual(q.count(f"[Skill: {self.PACKS[0]}]"), 1)
+        self.assertIn(f"[Skill: {self.PACKS[1]}]", q)
+
+    def test_list_is_capped_so_preamble_cannot_run_away(self):
+        every = [s["id"] for s in invoke_registry.list_skills()]
+        self.assertGreater(len(every), clipdrop.MAX_ARMED_SKILLS, "need more packs than the cap to test it")
+        q = self._send(skills=every)
+        self.assertLessEqual(q.count("[Skill: "), clipdrop.MAX_ARMED_SKILLS)
+
+    def test_one_unknown_id_does_not_drop_the_valid_ones(self):
+        q = self._send(skills=["does-not-exist", self.PACKS[0]])
+        self.assertIn(f"[Skill: {self.PACKS[0]}]", q)
+        self.assertNotIn("does-not-exist", q)
+
+    def test_empty_list_means_no_preamble(self):
+        self.assertEqual(self._send(skills=[]), self.USER_TEXT)
+
+
 if __name__ == "__main__":
     unittest.main()

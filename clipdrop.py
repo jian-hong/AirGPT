@@ -117,6 +117,9 @@ _client_ai_enabled = True
 _ai_rate_lock = threading.Lock()
 _ai_last_ts = 0.0
 AI_RATE_LIMIT_SEC = 60
+# Ceiling on skills armed for one send. Each pack costs up to 2000 chars of preamble,
+# so an unbounded list is a quiet way to blow the context budget on instructions.
+MAX_ARMED_SKILLS = 3
 _online_cache: dict = {"ok": True, "ts": 0.0}
 _auth_fails: dict[str, list[float]] = {}
 _qr_session_token = ""
@@ -2246,21 +2249,32 @@ class Handler(BaseHTTPRequestHandler):
         exclude_id = int(user_msg["id"]) if user_msg else 0
         history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
 
-        # A skill snippet modifies THIS send only. The raw user text is what gets stored
-        # above — the pack is prepended to the model's copy so the transcript stays
+        # Armed skills modify THIS send only. The raw user text is what gets stored
+        # above — packs are prepended to the model's copy so the transcript stays
         # readable and the chat history never accumulates skill preambles.
+        #
+        # `skills` is the list form; `skill` is the original single field and still
+        # works, because an older client is still allowed to talk to this server.
         question = text
-        skill_id = str(data.get("skill") or "").strip().lower()
-        if skill_id:
-            pack = ""
-            try:
-                import invoke_registry
+        wanted: list[str] = []
+        raw = data.get("skills")
+        for candidate in [data.get("skill")] + (raw if isinstance(raw, list) else []):
+            sid = str(candidate or "").strip().lower()
+            if sid and sid not in wanted:
+                wanted.append(sid)
+        if wanted:
+            packs: list[str] = []
+            for sid in wanted[:MAX_ARMED_SKILLS]:
+                try:
+                    import invoke_registry
 
-                pack = invoke_registry.load_skill(skill_id, max_chars=2000).strip()
-            except Exception:
-                pack = ""
-            if pack:
-                question = f"[Skill: {skill_id}]\n{pack}\n\n---\n\n{text}"
+                    body = invoke_registry.load_skill(sid, max_chars=2000).strip()
+                except Exception:
+                    body = ""
+                if body:
+                    packs.append(f"[Skill: {sid}]\n{body}")
+            if packs:
+                question = "\n\n".join(packs) + f"\n\n---\n\n{text}"
 
         # Reserved for explicit cancellation. Deliberately NOT tripped by the client
         # disconnecting any more — a dropped socket used to abandon generation and
@@ -2425,6 +2439,14 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     if not self._sse_send(payload):
                         break
+                elif t == "reasoning":
+                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
+                    # and dropped here - every browser answer goes over SSE, so the
+                    # founder never saw a step of it while unit and JSON-path checks
+                    # both passed.
+                    reasoning = ev.get("reasoning") or {}
+                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
+                        break
                 elif t == "citations":
                     citations = ev.get("citations") or []
                     if not self._sse_send({"type": "citations", "citations": citations}):
@@ -2439,14 +2461,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self._sse_end()
                 elif t == "done":
                     done = ev
-                elif t == "reasoning":
-                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
-                    # and dropped here - every browser answer goes over SSE, so the
-                    # founder never saw a step of it while unit and JSON-path checks
-                    # both passed.
-                    reasoning = ev.get("reasoning") or {}
-                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
-                        break
                     text = str(ev.get("answer") or text)
                     citations = ev.get("citations") or citations
         except Exception as e:
@@ -2467,6 +2481,9 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_send({
             "type": "done",
             "answer": text,
+            # Rebuilt from a fixed key list, so anything not named here is dropped
+            # no matter what answer_events produced. #15's chain was missing.
+            "reasoning": done.get("reasoning") or {},
             "trace_id": done.get("trace_id"),
             "confidence": done.get("confidence"),
             "stop_reason": done.get("stop_reason"),
@@ -2481,9 +2498,6 @@ class Handler(BaseHTTPRequestHandler):
             "chat_id": chat_id,
         })
         self._sse_end()
-            # Rebuilt from a fixed key list, so anything not named here is dropped
-            # no matter what answer_events produced. #15's chain was missing.
-            "reasoning": done.get("reasoning") or {},
 
     def _handle_rag_build_stream(self, sid: int) -> None:
         """SSE ingest/build driving a real 'ready for retrieval' progress bar."""
