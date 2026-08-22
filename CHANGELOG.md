@@ -9,9 +9,11 @@ Append-only. Never edited, only added to. Newest first.
   identify / confirm-identity / propose-amend / confirm-amend / continue / chain
   over a real `clipdrop.Handler` and reads the salary cell back out of the
   workbook (R-0001).
-- UI still has zero callers (P12). `clipdrop.py` was not touched (PR #39).
-  `tests/conftest.py` preloads Handler so the rest of the suite can still
-  collect while that indent is open.
+- UI still has zero callers (P12). `clipdrop.py` got only the `cf3e780` hunk
+  (reasoning key inside the SSE done dict). Catalog tests still read
+  `SKILLS_DIR`; on a clean clone `tests/conftest.py` pins it to
+  `tests/fixtures/skills` so those asserts stay honest (R-0007). CI installs
+  openpyxl and sqlite-vec. `MIN_TESTS` stays 380.
 
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 

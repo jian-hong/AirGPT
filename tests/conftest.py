@@ -52,3 +52,23 @@ def _ensure_clipdrop():
 
 
 _ensure_clipdrop()
+
+
+def _pin_skills_when_product_dir_is_empty() -> None:
+    """data/ is gitignored. A clean clone has no packs, so catalog tests
+    that read invoke_registry.SKILLS_DIR were laptop-green and CI-red.
+    Pin to committed fixtures only when the product dir has none. Do not
+    rewrite the catalog tests (R-0007)."""
+    import invoke_registry
+
+    root = invoke_registry.SKILLS_DIR
+    if root.is_dir() and any(
+        p.suffix == ".md" and not p.name.startswith("_") for p in root.glob("*.md")
+    ):
+        return
+    fixtures = Path(__file__).resolve().parent / "fixtures" / "skills"
+    if fixtures.is_dir():
+        invoke_registry.SKILLS_DIR = fixtures
+
+
+_pin_skills_when_product_dir_is_empty()
