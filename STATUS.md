@@ -24,15 +24,15 @@
    sheet/column collision). All fixed; 720/720 re-measured after. Suite 211 OK.
 4. **Verified live:** #15 chain over SSE; #20 Docs 7/7 sha256; #14 reveal
    `origin:"docs"`; #25 Settings 3 of 4. All await a **different-run** close.
-5. **D02 works in Python and nowhere else** - `ops_demo_e2e.py` 32/32 but imports
-   `rag.ops_amend` direct; six HTTP endpoints uncovered, 0 UI callers. #32 / P12.
+5. **#32 D02 HTTP gate** - six `/api/rag/ops/*` routes crossed in
+   `test_ops_http_gate.py`. File-level 32/32 remains. UI still 0 callers (P12).
 
 ## Next
 
 0. **#31 ready to close** - `malformed_ask_rate` now in the artifact and proven to
    move (`malformed_field_gate.py`: 0.4375 pre-rule vs 0.0000 shipped). Still open in
    D07: retained `sira_max` vs `hybrid_max` (`frtr_cross_latest.json` holds **one**).
-1. **#32 D02 HTTP gate** - assert the loop where a client calls it (R-0001).
+1. **#32 awaiting different-run close** - HTTP gate is `test_ops_http_gate.py`.
 2. **#33 Rebuild ignores saved config** - `depth_default` only stamps a revision
    label (`ingest.py:340`); `architecture` never read at ingest. Needs DR-0006.
 3. **#34 backfill `docs_path`** - #20 covers new ingests only; space 8 is 0/6.

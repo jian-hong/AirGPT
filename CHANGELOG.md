@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 - #32 D02 HTTP gate
+
+- The D02 loop is now asserted where a client calls it. `ops_demo_e2e.py` still
+  imports `rag.ops_amend` (32/32, file-level). `tests/test_ops_http_gate.py` posts
+  identify / confirm-identity / propose-amend / confirm-amend / continue / chain
+  over a real `clipdrop.Handler` and reads the salary cell back out of the
+  workbook (R-0001).
+- UI still has zero callers (P12). `clipdrop.py` was not touched (PR #39).
+
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 
 - Founder's explicit, informed call. **Neither epic completed.** Both closed as
