@@ -8,15 +8,15 @@
    `DOCUMENT_SYSTEM.md` Tier 6). Closing D01 #6 / D02 #16 orphaned **seventeen**, not the
    five that were noticed. D07 #36: #13 #21 #31. D06 #37: #17 #18 #19 #32 #35. D08 #38:
    #14 #15 #20 #25 #33 #34. #9/#10 parked (P11); #3 exempt repo hygiene.
-1. **#13 messy pack: 0.6937 at n=320**, up from 0.5375. Malformed asks **28% -> 0%**
-   (#31 header binder). Journey: 0.5375 -> 0.6219 (banner header + duplicate columns)
-   -> 0.6937 (sheet name no longer binds a column). vs F13b's 0.90 per-family floor:
-   `out_of_range` 44/44 and `row_range_nocol` 48/48 **meet** it; `filter_agg` 0.23 and
-   `combined` 0.39 are the gaps. 50 of 98 failures are abstentions. F13 is now split:
-   **F13a** clean corpus (earned, frozen), **F13b** messy pack (open).
-2. **F13a clean floor is NOT re-verified post-#31.** The 400/400 / 0.75% figure is the
-   **pre-fix** run. `oracle_clean_post31.json` is **one seed at n=80** -> 3/n bounds error
-   at **3.75%**, not 0.75% (R-0010). Re-run five seeds before quoting 400/400 again.
+1. **F13a and F13b BOTH MET: 720/720.** Clean 400/400 (5 seeds, error <=0.75%);
+   messy pack **320/320 at n=320** (<=0.94%), up from 0.5375. Schema-link 720/720,
+   zero lucky passes, `malformed_ask_rate` 0.0. Every F13b clause passes: pooled
+   1.0>=0.99, no workbook <0.95, no family <0.90. Four root-cause fixes, all one
+   class (match without excluding the non-target case): banner-row header, duplicate
+   columns, sheet name binding a column, and short column names being invisible.
+2. **#31 independently verified** - all six claims CONFIRMED by a different run,
+   which found 3 further defects (stale artifact string, banner substring match,
+   forward-path sheet/column collision). All three fixed; 720/720 re-measured after.
 3. **Verified live, not taken on trust:** #21 numeric KPI over SSE (0.9441, Carriers);
    #15 reasoning chain over SSE; #20 Docs originals 7/7 sha256; #14 reveal `origin:
    "docs"`; #25 Settings depth+arch+Save (3 of 4). All await a **different-run** close.
