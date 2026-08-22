@@ -2479,11 +2479,11 @@ class Handler(BaseHTTPRequestHandler):
             # be indistinguishable from a first-choice reply.
             "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
-        })
-        self._sse_end()
             # Rebuilt from a fixed key list, so anything not named here is dropped
             # no matter what answer_events produced. #15's chain was missing.
             "reasoning": done.get("reasoning") or {},
+        })
+        self._sse_end()
 
     def _handle_rag_build_stream(self, sid: int) -> None:
         """SSE ingest/build driving a real 'ready for retrieval' progress bar."""
