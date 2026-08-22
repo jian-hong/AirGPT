@@ -98,6 +98,16 @@ def resolve_for_space(space_id: int) -> dict[str, Any]:
         "name": "custom",
         "label": "space depth_default",
         "depth": depth,
-        "hybrid_sql_lane": bool((cfg or {}).get("hybrid_sql_lane")),
+        # Default ON for a real space. Only the hybrid_max PRESET set this True, so
+        # every space a founder actually creates fell through to retrieval and never
+        # reached the SQL lane at all - the 0.9441 numeric answer, and the whole
+        # engine measured at 720/720, were unreachable in the product. The bench
+        # calls sheet_sql directly, so nothing caught it (R-0001).
+        #
+        # Safe to default on: _try_hybrid_sql_lane returns None when it cannot plan
+        # the ask, and the caller falls straight through to retrieval. An explicit
+        # False is still honoured, which is what keeps the demo variants comparable -
+        # sira_max vs hybrid_max exists precisely to A/B this lane.
+        "hybrid_sql_lane": bool((cfg or {}).get("hybrid_sql_lane", True)),
         "honesty": HONESTY,
     }

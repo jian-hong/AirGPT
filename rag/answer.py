@@ -1108,6 +1108,13 @@ def answer_events(
                     "hits": [],
                     "model": "pandas-sql",
                     "lane": "sql",
+                    # The statement that produced the number, on the payload rather
+                    # than only inside a citation. This lane's whole claim is that
+                    # the answer was computed and not retrieved, and the SQL is the
+                    # evidence for that claim - a caller should not have to dig
+                    # through citations to check it.
+                    "sql": sql_hit.get("sql") or (sql_hit.get("provenance") or {}).get("sql") or "",
+                    "provenance": sql_hit.get("provenance") or {},
                     "honesty": _preset.get("honesty"),
                     "variant": _preset.get("name"),
                     "logic": _logic,
@@ -1773,4 +1780,11 @@ def answer(
         "logic": done.get("logic"),
         "reasoning": done.get("reasoning") or {},
         "ontology_summary": done.get("ontology_summary"),
+        # Third place in this codebase that rebuilds a payload from a fixed key
+        # list, after the SSE handler and the streaming done event. Anything not
+        # named here is dropped no matter what the lane produced - which is how
+        # #15's reasoning chain went missing. Empty for the retrieval lane, which
+        # ran no SQL and should not imply that it did.
+        "sql": done.get("sql") or "",
+        "provenance": done.get("provenance") or {},
     }
