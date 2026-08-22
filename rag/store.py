@@ -35,7 +35,10 @@ def _open() -> sqlite3.Connection:
     # instead left the real target's directory missing ("unable to open
     # database file").
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=60)
+    # Same-thread only: session() is a per-thread burst, not a pool. Sharing a
+    # handle across threads used to look like "one connection" under id() and
+    # SQLite would allow it (check_same_thread=False). Fail closed instead.
+    c = sqlite3.connect(str(DB_PATH), check_same_thread=True, timeout=60)
     c.row_factory = sqlite3.Row
     try:
         c.execute("PRAGMA journal_mode=WAL")
@@ -48,9 +51,15 @@ def _open() -> sqlite3.Connection:
 def _live_session() -> dict | None:
     """Active session for this thread, but only if it points at the current DB."""
     live = getattr(_local, "session", None)
-    if live is not None and live.get("path") == str(DB_PATH):
-        return live
-    return None
+    if live is None:
+        return None
+    # Thread-local can be stale after ident reuse or a test that rebinds
+    # `_local`. Never hand another thread's connection out.
+    if live.get("thread") != threading.get_ident():
+        return None
+    if live.get("path") != str(DB_PATH):
+        return None
+    return live
 
 
 @contextmanager
@@ -58,7 +67,9 @@ def session() -> Iterator[sqlite3.Connection]:
     """Share one connection across a burst of reads. Nests safely; read-mostly.
 
     Connections are closed when the outermost session exits, so no handle outlives the
-    call — temp-directory teardown on Windows keeps working.
+    call — temp-directory teardown on Windows keeps working. The live handle is
+    bound to `threading.get_ident()` as well as `_local`, so a worker never
+    inherits or reuses another thread's session connection.
     """
     live = _live_session()
     if live is not None:
@@ -71,7 +82,12 @@ def session() -> Iterator[sqlite3.Connection]:
 
     c = _open()
     prev = getattr(_local, "session", None)
-    _local.session = {"conn": c, "depth": 1, "path": str(DB_PATH)}
+    _local.session = {
+        "conn": c,
+        "depth": 1,
+        "path": str(DB_PATH),
+        "thread": threading.get_ident(),
+    }
     try:
         yield c
         c.commit()
