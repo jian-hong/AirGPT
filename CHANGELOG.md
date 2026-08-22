@@ -2,6 +2,14 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 — MIN_TESTS stays 380
+
+- Gating rejected lowering the floor to 377. That count was the suite after
+  openpyxl and before the fixture directory itself was pinned by tests.
+- Three fixture-pin tests lock `tests/fixtures/skills/` (`general`, `research`,
+  `visual-diagrams`, scratch `hi`) so a clean clone still earns 380. sqlite-vec
+  stays opt-in. Do not merge a 377 floor.
+
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 
 - Founder's explicit, informed call. **Neither epic completed.** Both closed as
@@ -80,6 +88,21 @@ Append-only. Never edited, only added to. Newest first.
   test_corrective_loop_caps` (2 != 1), identical at `b09e6033`. Left failing rather than
   weakened.
 - Corrects the date on the entry below, which was filed as 2026-08-07 in error.
+
+## 2026-08-19 — Skill catalog tests no longer depend on gitignored laptop packs
+
+- `data/` is gitignored, so `data/skills/*.md` exists only on the machine that
+  created them. The catalog tests read those packs and went green locally
+  (396/0) while GitHub Actions saw an empty catalog (5 failed). That is R-0007:
+  green on the author laptop, red on a stranger clone.
+- Committed fixture packs live under `tests/fixtures/skills/`. The invoke and
+  `/api/skills` tests pin `SKILLS_DIR` there. The product may still ship with
+  no user packs; an empty `data/skills` stays an empty catalog.
+- `MIN_TESTS=380` was the same laptop lie: pytest on Actions passed 371/0/15,
+  then the floor failed. The 15 skips are 6 openpyxl xlsx tests (now earned:
+  `openpyxl` is in `requirements.txt`), 8 sqlite-vec ANN tests (opt-in, stay
+  skipped on a stranger clone), and 1 BGE embedder test (HF offline). Floor is
+  377, the count a clean Actions checkout actually earns.
 
 ## 2026-08-19 — EPIC-D01 + EPIC-D02: reasoning chains and the ops write path
 
