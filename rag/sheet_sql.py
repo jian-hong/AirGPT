@@ -38,8 +38,19 @@ _CMPS: list[tuple[str, str]] = [
 
 _NUM = r"(-?\d+(?:\.\d+)?)"
 
-# A column name shorter than this matches too much ("id" inside "identify").
+# Below this, a column name is only honoured as a STANDALONE WORD. The danger the
+# old blanket cutoff guarded against is real - "id" must not match inside
+# "identify" - but banning short names by length threw out every legitimate one
+# with them. `qty`, `sku` and `bin` were invisible to the lane, so "sum
+# sales_value_myr where qty at least 35" bound no filter, the plan bailed, and the
+# whole filter_agg family returned no answer at all (37 of 48 asks).
+#
+# Same root-cause class as the banner-row header (#31) and the sheet name binding a
+# column: match without excluding the non-target case. Exclude the case - an
+# embedded substring - rather than the whole population (R-0004).
 _MIN_COL_CHARS = 4
+# Under two characters a name is a single letter and carries no signal worth the risk.
+_MIN_COL_CHARS_ABS = 2
 
 
 # "rows 330 to 660", "row 330-660", "between rows 330 and 660", "rows 330 through 660"
@@ -152,14 +163,19 @@ def _mentions(question: str, column: str, *, bounded: bool = False) -> list[tupl
     which sends the whole query to the wrong 200k-row table.
     """
     cn = _norm(column)
-    if len(cn) < _MIN_COL_CHARS:
+    if len(cn) < _MIN_COL_CHARS_ABS:
         return []
+    # A short name is accepted only when it stands alone on BOTH sides, so "qty" in
+    # "where qty at least 35" is a mention and "id" in "identify" is not.
+    standalone_only = len(cn) < _MIN_COL_CHARS
     qn, idx = _norm_with_map(question)
     spans: list[tuple[int, int]] = []
     start = qn.find(cn)
     while start != -1:
         s, e = idx[start], idx[start + len(cn) - 1] + 1
-        if not bounded or s == 0 or not question[s - 1].isalnum():
+        left_free = s == 0 or not question[s - 1].isalnum()
+        right_free = e >= len(question) or not question[e].isalnum()
+        if (not bounded or left_free) and (not standalone_only or (left_free and right_free)):
             spans.append((s, e))
         start = qn.find(cn, start + 1)
     return spans
