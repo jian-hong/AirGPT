@@ -13,7 +13,7 @@
 # data/skills packs, optional sqlite-vec, sentence-transformers + cached BGE
 # weights, and modules this job deliberately ignores (playwright, ltx2).
 # Skill-catalog tests pin to tests/fixtures/skills so a clean clone serves the
-# same packs. openpyxl is a product xlsx dep and belongs here. sqlite-vec stays
+# same packs. openpyxl and pandas are product xlsx deps and belong here. sqlite-vec stays
 # opt-in (Windows extension load is not a stranger-clone guarantee). Floor is
 # 380, the earned pass count. Do not lower it.
 name: tests

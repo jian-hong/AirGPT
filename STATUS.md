@@ -26,6 +26,8 @@
    `origin:"docs"`; #25 Settings 3 of 4. All await a **different-run** close.
 5. **D02 works in Python and nowhere else** - `ops_demo_e2e.py` 32/32 but imports
    `rag.ops_amend` direct; six HTTP endpoints uncovered, 0 UI callers. #32 / P12.
+6. **#35 xlsx/KPI is production code** - `rag/xlsx_sql.py`. Product no longer
+   imports `frtr_sql_baseline` from `tests/`. Banner skip is the #31 rule.
 
 ## Next
 
@@ -36,14 +38,12 @@
 2. **#33 Rebuild ignores saved config** - `depth_default` only stamps a revision
    label (`ingest.py:340`); `architecture` never read at ingest. Needs DR-0006.
 3. **#34 backfill `docs_path`** - #20 covers new ingests only; space 8 is 0/6.
-4. **#35 production imports from `tests/`** - `rag/answer.py:900` and
-   `clipdrop.py:5171`. A deploy without `tests/` loses the xlsx lane silently. Needs a DR.
-5. **P13 multilingual** - `sira.py:13` ASCII-only, non-Latin scripts tokenize to
+4. **P13 multilingual** - `sira.py:13` ASCII-only, non-Latin scripts tokenize to
    nothing, `_coverage` returns 1.0. `multilingual_gate.py` **7/25, deliberately
    red** - do not quiet it (R-0002).
-6. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
+5. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
    Fenced today (`/api/rag` host-only, `:834`); **DR-0003's grants would unfence it**.
-7. Commit OpenVault nvidia separately.
+6. Commit OpenVault nvidia separately.
 
 ## WIP
 
