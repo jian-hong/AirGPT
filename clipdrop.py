@@ -8,6 +8,7 @@ import mimetypes
 import os
 import queue
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -842,6 +843,29 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
 
 def _is_host_only_path(path: str) -> bool:
     return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
+
+
+# HOST-DEMO-02 / F8a: non-local clients must complete POST /api/establish before
+# /api/ai/* and the chat POST paths the phone uses. Local host keeps today's path.
+# A leftover token (issued, never bound) is refused until it is bound here.
+AIRGPT_SECURITY_VERSION = "1"
+SESSION_NONCE_HEADER = "X-AirGPT-Session-Nonce"
+SECURITY_VERSION_HEADER = "X-AirGPT-Security-Version"
+_ESTABLISH_CHAT_POSTS = frozenset({
+    "/api/chat/stream",
+    "/api/chat/project-suggest",
+    "/api/messages",
+})
+_establish: dict[str, dict] = {}
+_establish_token: dict[str, str] = {}
+
+
+def _needs_establish(method: str, path: str) -> bool:
+    if path.startswith("/api/ai"):
+        return True
+    if method == "POST" and (path in _ESTABLISH_CHAT_POSTS or path.startswith("/api/chat/")):
+        return True
+    return False
 
 
 def _is_tunnel_host(host: str) -> bool:
@@ -2062,6 +2086,77 @@ class Handler(BaseHTTPRequestHandler):
                 )
         return ok
 
+    def _refuse_establish(self, path: str, code: str, error: str):
+        ip = self._client_ip()
+        if app_audit:
+            app_audit.log(code, ip=ip, detail=path, ok=False)
+        return self._json(403, {
+            "ok": False,
+            "error": error,
+            "code": code,
+            "establish": True,
+        })
+
+    def _establish_ok(self, path: str) -> bool:
+        """False if a refusal was already sent. Local host always passes."""
+        if path == "/api/establish":
+            return True
+        if _is_host_request(self.headers, self.client_address[0]):
+            return True
+        if not _needs_establish(self.command, path):
+            return True
+        tok = (self._request_token() or "").strip()
+        nonce = (self.headers.get(SESSION_NONCE_HEADER) or "").strip()
+        if tok and tok not in _establish_token:
+            self._refuse_establish(
+                path,
+                "establish_unbound",
+                "token is not bound to a handshake — POST /api/establish",
+            )
+            return False
+        if tok and nonce and _establish_token.get(tok) != nonce:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        rec = _establish.get(nonce) if nonce else None
+        if not rec:
+            self._refuse_establish(
+                path,
+                "establish_required",
+                "establish required — POST /api/establish",
+            )
+            return False
+        bound_tok = rec.get("token") or ""
+        if bound_tok and bound_tok != tok:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        return True
+
+    def _handle_establish(self):
+        ip = self._client_ip()
+        tok = (self._request_token() or "").strip()
+        nonce = secrets.token_urlsafe(24)
+        if tok:
+            old = _establish_token.get(tok)
+            if old:
+                _establish.pop(old, None)
+            _establish_token[tok] = nonce
+        _establish[nonce] = {"token": tok, "ip": ip, "ts": time.time()}
+        if app_audit:
+            app_audit.log("establish", ip=ip, detail="ok", ok=True)
+        return self._json(200, {
+            "ok": True,
+            "session_nonce": nonce,
+            "security_version": AIRGPT_SECURITY_VERSION,
+        })
+
     def _passcode_rate_limited(self, ip: str) -> bool:
         """Throttle passcode/join-code guessing. Local host is exempt.
 
@@ -2082,7 +2177,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
+        self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
     def _send(self, code, body: bytes, ctype):
         try:
@@ -2090,6 +2189,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
             self._cors()
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -2108,6 +2208,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.send_header("Transfer-Encoding", "chunked")
+        self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
         self._cors()
         self.end_headers()
 
@@ -2568,7 +2669,10 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET,HEAD,POST,DELETE,PATCH,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
         self.end_headers()
 
     def do_HEAD(self):
@@ -2640,6 +2744,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -4120,6 +4228,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
 
         if path == "/api/presence/typing":
             try:

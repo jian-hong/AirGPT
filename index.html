@@ -3497,7 +3497,13 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 const $=id=>document.getElementById(id);
 const API=()=>location.protocol==='file:'?'http://127.0.0.1:8765':location.origin;
 let authToken=localStorage.getItem('airgpt_token')||'';
+let sessionNonce='';
+try{sessionNonce=sessionStorage.getItem('airgpt_session_nonce')||''}catch(e){sessionNonce=''}
 let appReady=false;
+function isLocalHost(){
+  const h=location.hostname;
+  return h==='127.0.0.1'||h==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(h);
+}
 function getDeviceId(){
   let id=localStorage.getItem('airgpt_device_id')||'';
   if(!id){
@@ -3506,6 +3512,22 @@ function getDeviceId(){
   }
   return id;
 }
+function handshakeHeaders(){
+  const h={'X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId()};
+  if(sessionNonce)h['X-AirGPT-Session-Nonce']=sessionNonce;
+  return h;
+}
+async function ensureEstablish(){
+  if(isLocalHost())return true;
+  try{
+    const r=await fetch(API()+'/api/establish',{method:'POST',headers:handshakeHeaders()});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.session_nonce)return false;
+    sessionNonce=d.session_nonce;
+    try{sessionStorage.setItem('airgpt_session_nonce',sessionNonce)}catch(e){}
+    return true;
+  }catch(e){return false}
+}
 async function api(path,opts={}){
   const headers={
     ...(opts.headers||{}),
@@ -3513,9 +3535,18 @@ async function api(path,opts={}){
     'X-Device-Id':getDeviceId(),
     'X-Device-Name':(typeof myName!=='undefined'&&myName)?myName:(localStorage.getItem('clipdrop_name')||''),
   };
+  if(sessionNonce)headers['X-AirGPT-Session-Nonce']=sessionNonce;
   if(opts.body&&typeof opts.body==='string')headers['Content-Type']='application/json';
   const url=API()+path;
   const r=await fetch(url,{...opts,headers});
+  if(r.status===403&&path!=='/api/establish'){
+    let ej=null;
+    try{ej=await r.clone().json()}catch(e){}
+    if(ej&&ej.establish&&await ensureEstablish()){
+      headers['X-AirGPT-Session-Nonce']=sessionNonce;
+      return fetch(url,{...opts,headers});
+    }
+  }
   if(r.status===401){
     const host=location.hostname;
     const isLocal=host==='127.0.0.1'||host==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(host);
@@ -3525,10 +3556,6 @@ async function api(path,opts={}){
     showLogin();throw new Error('auth');
   }
   return r;
-}
-function isLocalHost(){
-  const h=location.hostname;
-  return h==='127.0.0.1'||h==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(h);
 }
 
 // ===== Report a problem — continuous session until End (regions + clipboard images + action audit) =====
@@ -3877,10 +3904,10 @@ async function checkAuth(){
   try{
     const st=await fetch(API()+'/api/auth/status').then(r=>r.json());
     if(!st.initialized){authToken='';localStorage.removeItem('airgpt_token')}
-    if(!st.needs_auth)return true;
+    if(!st.needs_auth){await ensureEstablish();return true}
     if(authToken){
       const t=await fetch(API()+'/api/info',{headers:{'X-AirGPT-Token':authToken}});
-      if(t.ok)return true;
+      if(t.ok){await ensureEstablish();return true}
       authToken='';localStorage.removeItem('airgpt_token');
     }
     $('loginJoinPane').style.display=st.initialized?'block':'none';
@@ -3903,6 +3930,7 @@ async function doHostLogin(){
     body:JSON.stringify({email,passcode:p})}).then(x=>x.json());
   if(!r.ok)return toast(r.error||'Failed — workspace may already exist. Use Join with your passcode.');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+  await ensureEstablish();
   $('setWsPass').value='';$('setWsPass2').value='';
   toast('Workspace created');closeSettings();bootApp(true);
 }
@@ -3914,6 +3942,7 @@ async function doJoinLogin(id){
     body:JSON.stringify({passcode:p})}).then(x=>x.json());
   if(!r.ok)return toast(r.error||'Wrong passcode');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+  await ensureEstablish();
   if(el)el.value='';
   toast('Joined');hideLogin();closeSettings();bootApp(true);
 }
@@ -13269,7 +13298,7 @@ async function sendStream(text,extra={}){
   try{
     const r=await fetch(API()+'/api/chat/stream',{
       method:'POST',
-      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'Accept':'text/event-stream'},
+      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'X-AirGPT-Session-Nonce':sessionNonce,'Accept':'text/event-stream'},
       body:JSON.stringify({
         text,device_name:myName,session_id:currentSession||0,mode:currentMode(),
         context_ids:contextIds.slice(0,3),
@@ -13809,7 +13838,7 @@ async function saveSettings(silent){
   const email=$('setEmail')?.value?.trim()||'';
   if(email)await fetch(API()+'/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
   const r=await fetch(API()+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken},body:JSON.stringify(body)}).then(x=>x.json());
-  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
+  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json',...handshakeHeaders()},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
   const rec=$('saveReceipt');
   if(r.saved_to){rec.textContent='✓  Saved to '+r.saved_to;rec.classList.add('show')}
   maskSavedKeys();loadAiConfig();
@@ -14659,6 +14688,7 @@ async function tryQrAutoLogin(){
       body:JSON.stringify({qr_token:qr})}).then(x=>x.json());
     if(r.ok){
       authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+      await ensureEstablish();
       const sid=r.session_id||(shareSess?parseInt(shareSess,10):0);
       if(sid){adoptSessionId(sid);localStorage.setItem('clipdrop_session',String(sid))}
       history.replaceState({},'',location.pathname);
