@@ -2,6 +2,14 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 — pandas is a product xlsx dep, not a test-only import
+
+- `rag/xlsx_sql.py` imports pandas at module load (`DataFrame`, `to_numeric`).
+  The hybrid SQL lane cannot run without it. `tests/test_rag_xlsx_sql.py`
+  collects that module, so a clone without pandas died at collection (exit 2)
+  before `MIN_TESTS` could be reached.
+- Added `pandas>=2.0.0` to `requirements.txt`. Floor stays 380.
+
 ## 2026-08-22 — xlsx/KPI lane leaves tests/; banners are not headers
 
 - **Shipping.** `rag/answer.py` no longer puts `tests/RAG` on `sys.path` or imports
