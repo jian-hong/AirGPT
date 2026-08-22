@@ -82,6 +82,26 @@ class InvokeRegistryTests(unittest.TestCase):
         self.assertIsInstance(cat["skills"], list)
         self.assertTrue(any(s["id"] == "general" for s in cat["skills"]))
 
+    def test_fixture_dir_is_committed(self):
+        """R-0007: these packs must be in the clone, not only on the author laptop."""
+        self.assertTrue(_FIXTURE_SKILLS.is_dir(), _FIXTURE_SKILLS)
+        stems = {p.stem for p in _FIXTURE_SKILLS.glob("*.md")}
+        for required in ("general", "research", "visual-diagrams", "hi"):
+            self.assertIn(required, stems, f"missing committed fixture {required}.md")
+
+    def test_visual_diagrams_loads(self):
+        body = invoke_registry.load_skill("visual-diagrams")
+        self.assertTrue(body.strip())
+        self.assertIn("Mermaid", body)
+        ids = {s["id"] for s in invoke_registry.list_skills()}
+        self.assertIn("visual-diagrams", ids)
+
+    def test_scratch_hi_is_below_card_threshold(self):
+        """ /api/skills hides packs whose first prose line is under 24 chars."""
+        by_id = {s["id"]: s for s in invoke_registry.list_skills()}
+        self.assertIn("hi", by_id)
+        self.assertLess(len((by_id["hi"].get("description") or "").strip()), 24)
+
     def test_empty_product_dir_is_an_empty_catalog(self):
         """No user packs is a valid product state. Fixtures are a test pin, not a default."""
         with tempfile.TemporaryDirectory() as td:

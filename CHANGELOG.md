@@ -2,6 +2,14 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 — MIN_TESTS stays 380
+
+- Gating rejected lowering the floor to 377. That count was the suite after
+  openpyxl and before the fixture directory itself was pinned by tests.
+- Three fixture-pin tests lock `tests/fixtures/skills/` (`general`, `research`,
+  `visual-diagrams`, scratch `hi`) so a clean clone still earns 380. sqlite-vec
+  stays opt-in. Do not merge a 377 floor.
+
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 
 - Founder's explicit, informed call. **Neither epic completed.** Both closed as
