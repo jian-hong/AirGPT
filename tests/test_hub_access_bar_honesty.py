@@ -43,16 +43,42 @@ OLD_LIES = (
 )
 
 
-class HubAccessBarHonestyTest(unittest.TestCase):
+class HubAccessBarHonestyStaticTest(unittest.TestCase):
+    """No HTTP server: Windows SQLite locks a temp DB on teardown."""
+
+    def test_host_only_gate_does_not_read_access_level(self):
+        """F22a / DR-0003 is still proposed. Do not make the level load-bearing."""
+        self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_only_path))
+        self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_request))
+        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST):
+            src = inspect.getsource(meth)
+            gate_lines = [
+                line
+                for line in src.splitlines()
+                if "_is_host_only_path(path)" in line and "_is_host_request" in line
+            ]
+            self.assertTrue(gate_lines, f"host-only gate missing on {meth.__name__}")
+            for line in gate_lines:
+                self.assertNotIn("access_level", line)
+
+    def test_host_only_prefixes_stay_closed(self):
+        self.assertIn("/api/rag", clipdrop._HOST_ONLY_PREFIXES)
+        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 17)
+
+    def test_min_tests_stays_380(self):
+        wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+        self.assertIn('MIN_TESTS: "380"', wf)
+
+
+class HubAccessBarHonestyHttpTest(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
+        # ignore_cleanup_errors: Windows keeps sqlite's clipdrop.db open after
+        # the handler returns (WinError 32). Auth files here are JSON only.
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         root = Path(self._tmp.name)
-        self._orig_db = db.DB_PATH
         self._orig_ws = auth.WORKSPACE_FILE
         self._orig_toks = auth.TOKENS_FILE
         self._orig_tokens = dict(auth._tokens)
-        db.DB_PATH = root / "clipdrop.db"
-        db.init_db()
         auth.WORKSPACE_FILE = root / "workspace.json"
         auth.TOKENS_FILE = root / "auth_tokens.json"
         auth._tokens.clear()
@@ -65,7 +91,6 @@ class HubAccessBarHonestyTest(unittest.TestCase):
     def tearDown(self):
         self.srv.shutdown()
         self.srv.server_close()
-        db.DB_PATH = self._orig_db
         auth.WORKSPACE_FILE = self._orig_ws
         auth.TOKENS_FILE = self._orig_toks
         auth._tokens.clear()
@@ -155,29 +180,6 @@ class HubAccessBarHonestyTest(unittest.TestCase):
         code, _, body = self._call("GET", "/api/rag/spaces")
         self.assertNotEqual(code, 403, body)
         self.assertNotEqual(body.get("error"), "host only", body)
-
-    def test_host_only_gate_does_not_read_access_level(self):
-        """F22a / DR-0003 is still proposed. Do not make the level load-bearing."""
-        self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_only_path))
-        self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_request))
-        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST):
-            src = inspect.getsource(meth)
-            gate_lines = [
-                line
-                for line in src.splitlines()
-                if "_is_host_only_path(path)" in line and "_is_host_request" in line
-            ]
-            self.assertTrue(gate_lines, f"host-only gate missing on {meth.__name__}")
-            for line in gate_lines:
-                self.assertNotIn("access_level", line)
-
-    def test_host_only_prefixes_stay_closed(self):
-        self.assertIn("/api/rag", clipdrop._HOST_ONLY_PREFIXES)
-        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 17)
-
-    def test_min_tests_stays_380(self):
-        wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
-        self.assertIn('MIN_TESTS: "380"', wf)
 
 
 if __name__ == "__main__":
