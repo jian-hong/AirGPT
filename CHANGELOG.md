@@ -2,6 +2,21 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-22 - #32 D02 HTTP gate
+
+- The D02 loop is now asserted where a client calls it. `ops_demo_e2e.py` still
+  imports `rag.ops_amend` (32/32, file-level). `tests/test_ops_http_gate.py` posts
+  identify / confirm-identity / propose-amend / confirm-amend / continue / chain
+  over a real `clipdrop.Handler` and reads the salary cell back out of the
+  workbook (R-0001).
+- UI still has zero callers (P12). `clipdrop.py`'s only change here was
+  dropping a leftover duplicate `reasoning` key from the SSE done dict; #29's
+  merge had already fixed the dict on master, so this just removes the
+  branch's stale second copy. Catalog fixtures now merge with #29's own
+  `tests/fixtures/skills/general.md` / `hi.md` / `research.md` /
+  `visual-diagrams.md` (byte-identical on both sides) plus `web-research.md`;
+  `MIN_TESTS` stays 380.
+
 ## 2026-08-22 — HOST-DEMO-04: Hub access bar stops claiming a grant
 
 - The Hub picker still persists `access_level` via `set_peer_acl`. Request

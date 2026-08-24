@@ -34,7 +34,7 @@
 0. **#31 ready to close** - `malformed_ask_rate` now in the artifact and proven to
    move (`malformed_field_gate.py`: 0.4375 pre-rule vs 0.0000 shipped). Still open in
    D07: retained `sira_max` vs `hybrid_max` (`frtr_cross_latest.json` holds **one**).
-1. **#32 D02 HTTP gate** - assert the loop where a client calls it (R-0001).
+1. **#32 awaiting different-run close** - HTTP gate is `test_ops_http_gate.py`.
 2. **#33 Rebuild ignores saved config** - `depth_default` only stamps a revision
    label (`ingest.py:340`); `architecture` never read at ingest. Needs DR-0006.
 3. **#34 backfill `docs_path`** - #20 covers new ingests only; space 8 is 0/6.
