@@ -33,6 +33,7 @@ start http://127.0.0.1:8765
 echo.
 echo  PC: http://127.0.0.1:8765
 echo  Confirm /api/info shows "demo_mock": true
+python scripts\verify_demo_smoke.py --require-demo-mock
 echo  To return to real data: close this server and run start.bat / restart.bat
 echo.
 pause

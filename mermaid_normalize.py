@@ -138,18 +138,28 @@ def _emit_flowchart(root: _Node) -> str:
                 walk_inside(kid, kid_id, depth + 1, indent)
 
     for i, branch in enumerate(root.children):
-        if branch.children:
+        branch_role = _role_for(branch.label, has_kids=bool(branch.children))
+        if branch.children and branch_role in ("goal", "decision"):
+            # A subgraph frame is always drawn as a plain rectangle, so framing a
+            # goal or a question would silently drop its triangle / diamond. Keep the
+            # shape and hang the children off the node instead of framing it.
+            bid = nid()
+            lines.append(f"  {_fmt_node(bid, branch.label, role=branch_role)}")
+            lines.append(f"  {root_id} --> {bid}")
+            walk_inside(branch, bid, 1, "  ")
+        elif branch.children:
             sg = f"g{i}"
             lines.append(f'  subgraph {sg}["{_esc(branch.label)}"]')
             lines.append("    direction TB")
-            # Anchor node inside the frame so the subgraph has a clear entry
-            anchor = nid()
-            lines.append(f"    {_fmt_node(anchor, branch.label, role='node')}")
+            # No anchor node here. The subgraph frame already renders `branch.label`
+            # as its title, so an extra node carrying the same text drew that label
+            # twice and added one redundant arrow per child - the stray arrowheads
+            # that made these diagrams look broken. The frame is the entry point;
+            # `root_id --> sg` below connects to it.
             for kid in branch.children:
                 kid_id = nid()
                 role = _role_for(kid.label, has_kids=bool(kid.children))
                 lines.append(f"    {_fmt_node(kid_id, kid.label, role=role)}")
-                lines.append(f"    {anchor} --> {kid_id}")
                 if kid.children:
                     walk_inside(kid, kid_id, 3, "    ")
             lines.append("  end")

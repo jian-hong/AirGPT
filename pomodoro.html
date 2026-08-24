@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tomato</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --skin:#e8443a; --skin-dark:#c2352c; --leaf:#4c9a52; --leaf-dark:#3d7d42;
+    --ink:#2a1512; --bg:#1a1214;
+  }
+  html,body{height:100%}
+  body{
+    margin:0;display:grid;place-items:center;background:var(--bg);
+    font:500 14px/1.4 ui-rounded,-apple-system,"Segoe UI",system-ui,sans-serif;
+    color:#f6e9e6;-webkit-user-select:none;user-select:none;overflow:hidden;
+  }
+  body.break{--skin:#4c9a52;--skin-dark:#3d7d42;--leaf:#e8443a;--leaf-dark:#c2352c}
+  .wrap{display:grid;place-items:center;gap:10px;padding:12px}
+  .tomato{position:relative;width:min(62vw,190px);aspect-ratio:1;cursor:pointer;
+    transition:transform .18s cubic-bezier(.2,1.4,.4,1)}
+  .tomato:active{transform:scale(.94)}
+  body.running .tomato{animation:breathe 4s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+  svg{width:100%;height:100%;overflow:visible}
+  /* The juice level is the progress: it drains as the session burns down. */
+  #juice{transition:transform .9s linear;transform-origin:50% 100%}
+  #time{
+    position:absolute;inset:0;display:grid;place-items:center;
+    font:700 clamp(26px,11vw,40px)/1 ui-rounded,system-ui,sans-serif;
+    color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45);letter-spacing:.02em;
+    pointer-events:none;font-variant-numeric:tabular-nums;
+  }
+  .label{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.62}
+  .row{display:flex;gap:6px;align-items:center}
+  button{
+    font:inherit;font-size:12px;color:#f6e9e6;background:rgba(255,255,255,.09);
+    border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:5px 11px;
+    cursor:pointer;transition:background .15s
+  }
+  button:hover{background:rgba(255,255,255,.16)}
+  .dots{display:flex;gap:5px;margin-top:1px}
+  .dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.2)}
+  .dot.on{background:var(--skin)}
+  .hint{font-size:11px;opacity:.4}
+</style>
+
+<div class="wrap">
+  <div class="tomato" id="tomato" title="Click to start or pause">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <clipPath id="bodyClip">
+          <path d="M50 22c19 0 31 13 31 30 0 20-14 32-31 32S19 72 19 52c0-17 12-30 31-30z"/>
+        </clipPath>
+        <radialGradient id="shine" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#fff" stop-opacity=".38"/>
+          <stop offset="60%" stop-color="#fff" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <ellipse cx="50" cy="88" rx="26" ry="4" fill="#000" opacity=".28"/>
+      <path d="M50 22c19 0 31 13 31 30 0 20-14 32-31 32S19 72 19 52c0-17 12-30 31-30z" fill="var(--skin-dark)"/>
+      <g clip-path="url(#bodyClip)">
+        <rect id="juice" x="0" y="0" width="100" height="100" fill="var(--skin)"/>
+      </g>
+      <path d="M50 22c19 0 31 13 31 30 0 20-14 32-31 32S19 72 19 52c0-17 12-30 31-30z" fill="url(#shine)"/>
+      <g fill="var(--leaf)">
+        <path d="M50 24c-3-5-9-8-15-8 2 5 6 9 11 10z"/>
+        <path d="M50 24c3-5 9-8 15-8-2 5-6 9-11 10z"/>
+        <path d="M50 24c-2-6-1-11 2-15 3 4 4 9 2 15z" fill="var(--leaf-dark)"/>
+        <path d="M44 20c-5-2-10-1-14 2 4 3 9 4 14 2z" opacity=".85"/>
+        <path d="M56 20c5-2 10-1 14 2-4 3-9 4-14 2z" opacity=".85"/>
+      </g>
+      <circle cx="50" cy="16" r="2.6" fill="var(--leaf-dark)"/>
+      <!-- face -->
+      <g fill="var(--ink)" opacity=".82">
+        <ellipse id="eyeL" cx="41" cy="50" rx="2.5" ry="3.2"/>
+        <ellipse id="eyeR" cx="59" cy="50" rx="2.5" ry="3.2"/>
+      </g>
+      <path id="mouth" d="M44 59q6 5 12 0" stroke="var(--ink)" stroke-width="2.2"
+            fill="none" stroke-linecap="round" opacity=".8"/>
+    </svg>
+    <div id="time">25:00</div>
+  </div>
+
+  <div class="label" id="label">Focus</div>
+  <div class="dots" id="dots"></div>
+  <div class="row">
+    <button id="reset">Reset</button>
+    <button id="skip">Skip</button>
+  </div>
+  <div class="hint" id="hint">click the tomato</div>
+</div>
+
+<script>
+(function(){
+  var FOCUS = 25*60, SHORT = 5*60, LONG = 15*60;
+  var left = FOCUS, mode = 'focus', running = false, done = 0, tick = null;
+
+  var $ = function(id){ return document.getElementById(id); };
+  var timeEl = $('time'), labelEl = $('label'), juice = $('juice'),
+      dots = $('dots'), hint = $('hint');
+
+  function total(){ return mode === 'focus' ? FOCUS : (mode === 'long' ? LONG : SHORT); }
+
+  function paint(){
+    var m = Math.floor(left/60), s = left % 60;
+    timeEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    document.title = timeEl.textContent + ' · ' + (mode === 'focus' ? 'Focus' : 'Break');
+    // Drain from full to empty over the session.
+    var gone = 1 - (left / total());
+    juice.setAttribute('transform', 'translate(0,' + (gone * 100).toFixed(2) + ')');
+    labelEl.textContent = mode === 'focus' ? 'Focus' : (mode === 'long' ? 'Long break' : 'Break');
+    document.body.classList.toggle('break', mode !== 'focus');
+    document.body.classList.toggle('running', running);
+    // Sleepy eyes on a break, wide awake on focus.
+    var ry = mode === 'focus' ? 3.2 : 1.1;
+    $('eyeL').setAttribute('ry', ry); $('eyeR').setAttribute('ry', ry);
+    $('mouth').setAttribute('d', mode === 'focus' ? 'M44 59q6 5 12 0' : 'M44 61q6 4 12 0');
+    hint.textContent = running ? 'running — click to pause' : 'click the tomato';
+    var html = '';
+    for (var i = 0; i < 4; i++) html += '<span class="dot' + (i < done % 4 ? ' on' : '') + '"></span>';
+    dots.innerHTML = html;
+  }
+
+  function chime(){
+    try {
+      var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      var ctx = new C(), t = ctx.currentTime;
+      [880, 1320].forEach(function(f, i){
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + i*0.18);
+        g.gain.exponentialRampToValueAtTime(0.22, t + i*0.18 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + i*0.18 + 0.42);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t + i*0.18); o.stop(t + i*0.18 + 0.45);
+      });
+    } catch(e){}
+  }
+
+  function notify(text){
+    try {
+      if (window.Notification && Notification.permission === 'granted') {
+        new Notification('🍅 ' + text);
+      }
+    } catch(e){}
+  }
+
+  function advance(){
+    chime();
+    if (mode === 'focus') {
+      done++;
+      mode = (done % 4 === 0) ? 'long' : 'short';
+      notify('Focus done — take a ' + (mode === 'long' ? 'long ' : '') + 'break');
+    } else {
+      mode = 'focus';
+      notify('Break over — back to it');
+    }
+    left = total();
+    running = false;   // wait for a deliberate click, do not auto-roll
+    stop();
+    paint();
+  }
+
+  function start(){
+    if (running) return;
+    running = true;
+    try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch(e){}
+    // Wall-clock deadline: a background tab throttles setInterval, and counting
+    // ticks would silently run long.
+    var end = Date.now() + left * 1000;
+    tick = setInterval(function(){
+      left = Math.max(0, Math.round((end - Date.now())/1000));
+      paint();
+      if (left <= 0) advance();
+    }, 250);
+    paint();
+  }
+  function stop(){ running = false; if (tick) { clearInterval(tick); tick = null; } paint(); }
+
+  $('tomato').onclick = function(){ running ? stop() : start(); };
+  $('reset').onclick = function(){ stop(); left = total(); paint(); };
+  $('skip').onclick  = function(){ stop(); advance(); };
+  document.addEventListener('keydown', function(e){
+    if (e.code === 'Space') { e.preventDefault(); running ? stop() : start(); }
+  });
+
+  paint();
+})();
+</script>

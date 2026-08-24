@@ -17,6 +17,7 @@ SKILL_CAP = 6000
 
 
 def skills_dir() -> Path:
+    """Product packs: data/skills (gitignored). Tests pin SKILLS_DIR to tests/fixtures/skills."""
     return SKILLS_DIR
 
 

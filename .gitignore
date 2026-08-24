@@ -46,3 +46,34 @@ data/openfree/
 # live env.local). Same for any Vertex mirror.
 CortexOS/
 Vertex/
+
+# Personal / non-product material - not part of the AirGPT product tree
+Interview Resources/
+
+# Sample-messy fixtures (few hundred MB; generate locally)
+tests/RAG/messy/
+
+
+# Research checkouts - gitlinks removed (REPO-01 #3). Nothing in the product
+# imports these; the findings are in OpenIDE/research/SCRAP_*.md. third_party/colibri
+# STAYS a submodule - hosting.py:64 resolves it on disk.
+OpenIDE/research/orca/
+OpenIDE/research/superset/
+
+# Vendor UI clones (~12GB, --depth 1, design study only). The verdicts worth keeping
+# are in docs/research/vendor-ui-references.md. Re-clone if ever needed again.
+vendor/dbgate/
+vendor/outerbase-studio/
+vendor/vendor/
+
+# Heavyweight RAG fixture packs - generate locally, do not commit binaries
+tests/RAG/FRTR-bench/
+tests/RAG/primary50/
+tests/RAG/t2-ragbench/
+
+# Regenerated bench intermediates and runtime ops tokens - not artifacts
+tests/RAG/frtr_sanitized/
+tests/RAG/results/ops/
+
+# Per-seed oracle bench runs - the harness regenerates them; keep only _latest
+tests/RAG/results/oracle_bench_seed*.json

@@ -43,17 +43,17 @@ PROVIDERS: tuple[dict[str, Any], ...] = (
         ],
     },
     {
-        "id": "omniroute", "label": "OpenFree", "group": "gateway",
+        "id": "omniroute", "label": "FreeRouter", "group": "gateway",
         "env_key": "OMNIROUTE_API_KEY", "alt_env_keys": [],
         "console": "https://github.com/diegosouzapw/OmniRoute",
         "signup": "https://github.com/diegosouzapw/OmniRoute",
         "prefix": "",
-        "brand": "OpenFree",
-        "free_note": "OpenFree is ours (OmniRoute-inspired free gateway). One tap enables automatic fallback — no paste required. Capacity via OpenVault routing; Cortex Engine covers local models.",
+        "brand": "FreeRouter",
+        "free_note": "FreeRouter (was OpenFree) — our free gateway. One tap enables automatic fallback — no paste required. Capacity via OpenVault routing; Cortex Engine covers local models. Free build ships with OpenShip.",
         "steps": [
-            "Tap Enable OpenFree · auto fallback",
+            "Tap Enable FreeRouter · auto fallback",
             "AirGPT turns on the free gateway path (no key paste)",
-            "Bundled OpenFree install + liquid-glass UI ships as an app feature",
+            "Bundled FreeRouter install + liquid-glass UI ships as an app feature",
             "Fallback runs before paid cloud when enabled; custody SoT is OpenVault",
         ],
         "base_url_env": "OMNIROUTE_BASE_URL",
@@ -222,7 +222,7 @@ PROVIDERS: tuple[dict[str, Any], ...] = (
         "brand": "OpenVault",
         "base_url_env": "OPENVAULT_URL",
         "default_base": "http://127.0.0.1:5000",
-        "free_note": "Local OpenVault mesh (keys + OpenFree routing + OpenIDE handshake). Repo: D:\\OpenVault. One tap Connect from OpenIDE Keys.",
+        "free_note": "Local OpenVault mesh (keys + FreeRouter routing + OpenIDE handshake). Repo: D:\\OpenVault. One tap Connect from OpenIDE Keys.",
         "steps": [
             "Keep OpenVault console on http://127.0.0.1:5000",
             "In OpenIDE tap Keys → Connect OpenVault (or POST /api/openvault/connect)",
@@ -270,6 +270,15 @@ def snapshot(include_status: bool = True) -> dict[str, Any]:
             # Keep AirGPT-only cards that OV may omit by merging local ids not present
             ov_ids = {p.get("id") for p in ov["providers"]}
             configured = _configured_map() if include_status else {}
+            # OpenVault owns keys, branding and status — but not AirGPT's UI policy.
+            # Cards we deliberately hide (Cursor, Ollama, vLLM: served through Cortex,
+            # not the Key Vault) arrive from OV without `ui_hidden`, and index.html
+            # filters on exactly that flag — so every one of them reappeared in the Key
+            # Vault UI whenever OpenVault happened to be running. Re-apply local intent.
+            _local_hidden = {p["id"] for p in PROVIDERS if p.get("ui_hidden")}
+            for p in ov["providers"]:
+                if p.get("id") in _local_hidden:
+                    p["ui_hidden"] = True
             for p in PROVIDERS:
                 if p["id"] in ov_ids or p.get("ui_hidden"):
                     continue
@@ -321,7 +330,7 @@ def snapshot(include_status: bool = True) -> dict[str, Any]:
         "providers": providers,
         "policy": "OpenVault Key Vault — one place for keys (OpenVault SoT). "
                   "Offline fallback reads local env.local cache only. "
-                  "Missing paid keys fall back to OpenFree → free-tier cloud.",
+                  "Missing paid keys fall back to FreeRouter → free-tier cloud.",
         "product_name": "OpenVault Key Vault",
         "save_endpoint": "/api/settings",
         "source": "local_cache",
@@ -360,7 +369,7 @@ def ready_for_backend(backend: str = "local") -> dict[str, Any]:
         "ok": ok,
         "backend": backend,
         "need": "any free-tier or local key",
-        "hint": "Open Key Vault — enable OpenFree, or paste Groq/OpenRouter/Gemini.",
+        "hint": "Open Key Vault — enable FreeRouter, or paste Groq/OpenRouter/Gemini.",
         "providers": snap["providers"],
         "free_fallback_order": snap["free_fallback_order"],
         "usable_count": len(usable),

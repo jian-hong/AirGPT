@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "total_mb": 316.84,
+  "files": [
+    {
+      "path": "tests\\RAG\\messy\\messy_payroll_ops.xlsx",
+      "mb": 0.13
+    },
+    {
+      "path": "tests\\RAG\\messy\\messy_sales_raw.csv",
+      "mb": 316.71
+    }
+  ]
+}

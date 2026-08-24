@@ -17,6 +17,17 @@ try:
 except ImportError:
     _security = None  # type: ignore
 
+
+def _lockdown_block() -> dict | None:
+    """Refuse new provider work when emergency AI cut-off is on."""
+    try:
+        import access_policy
+
+        return access_policy.lockdown_block()
+    except Exception:
+        return None
+
+
 MODES = {
     "general": """Domain: General knowledge and mixed topics.
 Focus: clear explanation, classification, practical notes. Derive from first principles when applicable.""",
@@ -397,7 +408,13 @@ def retrieve_vault_snippets(query: str, category: str = "", k: int = 5) -> str:
     try:
         import memory_index as mi
 
-        pack = mi.carry_pack(project=category or "", session_id=0, max_chars=CARRY_CHARS)
+        # Pass the question. carry_pack used to rank on recency alone, and this early
+        # return means it IS the injected memory - FTS and Chroma below are never
+        # reached while it is non-empty. So twelve disposable exchanges could bury a
+        # durable fact and nothing downstream could recover it.
+        pack = mi.carry_pack(
+            project=category or "", session_id=0, max_chars=CARRY_CHARS, query=query
+        )
         if pack:
             return pack[:CARRY_CHARS]
     except Exception:
@@ -567,6 +584,8 @@ def _msg_content(data: dict) -> tuple[str, str]:
 
 def _cheap_llm(prompt: str, system: str = "", *, max_tokens: int = ROUTER_MAX_TOKENS) -> tuple[str, str]:
     """T1 — Groq 8B → Gemini Flash → SEA-LION for router, classify, compress."""
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
     env = load_env()
@@ -635,12 +654,51 @@ def _provider_hot(label: str) -> bool:
     return time.monotonic() < float(_provider_cooldown.get(label, 0))
 
 
-def _provider_mark_fail(label: str, err: str = "", *, seconds: float = 90.0) -> None:
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Server-stated cooldown from a 429, or None if it did not say.
+
+    Groq (and most OpenAI-shaped APIs) answer 429 with `retry-after` in seconds and
+    `x-ratelimit-reset-tokens` like `7.66s`. Guessing a fixed penalty instead of
+    reading these turns a 2-second TPM blip into a multi-minute outage.
+    """
+    hdrs = getattr(exc, "headers", None)
+    if hdrs is None:
+        return None
+    raw = hdrs.get("retry-after") or hdrs.get("Retry-After")
+    if raw is None:
+        raw = hdrs.get("x-ratelimit-reset-tokens") or hdrs.get("x-ratelimit-reset-requests")
+    if raw is None:
+        return None
+    txt = str(raw).strip().lower()
+    try:  # plain seconds: "2"
+        return max(0.0, float(txt))
+    except ValueError:
+        pass
+    total, num = 0.0, ""
+    for ch in txt:  # duration form: "2m59.56s"
+        if ch.isdigit() or ch == ".":
+            num += ch
+            continue
+        if num:
+            total += float(num) * {"m": 60.0, "s": 1.0, "h": 3600.0}.get(ch, 0.0)
+            num = ""
+    return total or None
+
+
+def _provider_mark_fail(
+    label: str, err: str = "", *, seconds: float = 90.0, retry_after: float | None = None
+) -> None:
     import time
     e = (err or "").lower()
     # Billing / auth / quota — cool longer
     throttled = any(x in e for x in ("402", "403", "401", "429", "quota", "credit", "invalid api"))
-    if throttled:
+    if retry_after is not None:
+        # The server told us exactly when it will serve again. Honour that verbatim -
+        # never inflate it to the 180s throttle floor below, which is what made a
+        # short per-minute token cap look like the provider was down for good.
+        seconds = max(1.0, min(retry_after, 3600.0))
+        throttled = False
+    elif throttled:
         seconds = max(seconds, 180.0)
     _provider_cooldown[label] = time.monotonic() + seconds
     # Breadcrumb so "everything died after too many requests" is diagnosable later
@@ -654,15 +712,33 @@ def _provider_mark_fail(label: str, err: str = "", *, seconds: float = 90.0) -> 
 
 _LOCAL_LABELS = {"ollama", "vllm", "sglang", "colibri", "omniroute"}
 
+# Groq free-tier lineup, strongest first. Each entry has its OWN daily request and
+# token allowance, so walking the list multiplies the usable budget rather than
+# stopping at the first 429. TPD as published: gpt-oss-* and qwen 200K, llama-3.3 100K.
+# Verify against https://api.groq.com/openai/v1/models before editing - a retired ID
+# answers 404 and is indistinguishable from an outage (see the OpenRouter gemini case).
+_GROQ_MODELS: tuple[tuple[str, str], ...] = (
+    ("openai/gpt-oss-120b", "groq-oss-120b"),
+    ("qwen/qwen3.6-27b", "groq-qwen3.6-27b"),
+    ("openai/gpt-oss-20b", "groq-oss-20b"),
+    ("llama-3.3-70b-versatile", "groq-70b"),
+)
+
 # Cloud cascade default: primary BYOK first, then fast free-ish.
 # SEA-LION is last — strong for BM/中文/SEA, not the English default (was starving Gemini).
 # User-tunable via Hosting config (primary_provider / provider_order) or data/routing.json.
-_DEFAULT_CLOUD_ORDER = ("anthropic", "openai", "groq", "google", "openrouter", "deepseek", "sea-lion")
+# `openvault` leads every cascade: it is the custody plane, so it holds the freshest
+# keys and the verified per-provider model ids. The direct providers after it are the
+# fallback for a laptop running AirGPT alone. Multilingual still names sea-lion early
+# because that preference is about the model, not about who holds the key.
+_DEFAULT_CLOUD_ORDER = (
+    "openvault", "anthropic", "openai", "groq", "google", "openrouter", "deepseek", "sea-lion",
+)
 _TASK_CLOUD_ORDER = {
-    "chat": ("groq", "google", "openrouter", "anthropic", "openai", "deepseek", "sea-lion"),
-    "rag": ("google", "groq", "openrouter", "deepseek", "anthropic", "openai", "sea-lion"),
-    "agent": ("groq", "openrouter", "google", "deepseek", "anthropic", "openai", "sea-lion"),
-    "multilingual": ("sea-lion", "google", "openrouter", "groq", "anthropic", "openai", "deepseek"),
+    "chat": ("openvault", "groq", "google", "openrouter", "anthropic", "openai", "deepseek", "sea-lion"),
+    "rag": ("openvault", "google", "groq", "openrouter", "deepseek", "anthropic", "openai", "sea-lion"),
+    "agent": ("openvault", "groq", "openrouter", "google", "deepseek", "anthropic", "openai", "sea-lion"),
+    "multilingual": ("sea-lion", "openvault", "google", "openrouter", "groq", "anthropic", "openai", "deepseek"),
     "router": ("groq", "google", "sea-lion"),
 }
 _engine_cfg_cache: list = [0.0, {}]
@@ -710,12 +786,141 @@ def _engine_config() -> dict:
     return cfg
 
 
+_LAST_DEGRADATION: dict = {}
+
+
+def _set_last_degradation(*, task: str, chosen: str, preferred, skipped) -> None:
+    """Publish what the cascade had to skip to produce the answer just returned.
+
+    Local engines being down is the normal resting state on a laptop and is not a
+    degradation worth showing; a configured cloud provider refusing is.
+    """
+    real = [s for s in skipped if not s.startswith(tuple(_LOCAL_LABELS))]
+    _LAST_DEGRADATION.clear()
+    _LAST_DEGRADATION.update(
+        {
+            "task": task,
+            "chosen": chosen,
+            "wanted": (list(preferred) or [None])[0],
+            "skipped": real,
+            "degraded": bool(real),
+        }
+    )
+
+
+def degradation_note() -> str:
+    """One short line naming the fallback, or "" when the preferred provider answered.
+
+    Built for a UI badge, so it never contains a key, a URL or a stack trace - just
+    which provider was wanted, which answered, and why the first one did not.
+    """
+    d = _LAST_DEGRADATION
+    if not d or not d.get("degraded"):
+        return ""
+    wanted, chosen = d.get("wanted") or "?", d.get("chosen") or "?"
+    first = (d.get("skipped") or [""])[0]
+    reason = first.split("(", 1)[1].rstrip(")") if "(" in first else "unavailable"
+    return f"{wanted} {reason}; answered by {chosen}"
+
+
+def last_degradation() -> dict:
+    """What the most recent answer cost in fallbacks. Empty dict before any call.
+
+    `degraded=True` means the reply did NOT come from the preferred provider. Surface
+    it next to the model name - a silent fallback is a lie, and for weeks every answer
+    here quietly came from the last rung of the cascade.
+    """
+    return dict(_LAST_DEGRADATION)
+
+
+# Tool calling in ordinary chat. Tools existed only inside agent_runtime, behind a
+# prompt convention, so plain chat never advertised any and the model answered - truth-
+# fully - that it had none. Off by default so a single env flag can disable it without
+# a redeploy if a provider mishandles the `tools` field.
+MAX_TOOL_HOPS = 4
+
+
+def _chat_tools_enabled() -> bool:
+    import os
+
+    v = (load_env().get("AIRGPT_CHAT_TOOLS") or os.environ.get("AIRGPT_CHAT_TOOLS") or "1").strip()
+    return v.lower() not in ("0", "false", "off", "no")
+
+
+def _chat_tool_defs(task: str) -> list[dict]:
+    """Tool schemas for this task, or [] when tools should not be offered.
+
+    The `router` task picks a route and must answer in one hop; handing it tools
+    would let a routing decision fan out into real work.
+    """
+    if task == "router" or not _chat_tools_enabled():
+        return []
+    try:
+        import chat_tools
+
+        return chat_tools.openai_tools()
+    except Exception:
+        return []
+
+
+def _resolve_tool_calls(
+    data: dict, url: str, headers: dict, body: dict, msgs: list, *, timeout: int, label: str
+) -> dict:
+    """Run the model's tool calls and feed results back until it answers in prose.
+
+    Bounded by MAX_TOOL_HOPS: a model that keeps calling tools forever would hold a
+    chat turn open indefinitely. On the last hop tools are withdrawn, which forces a
+    text answer instead of truncating mid-loop and returning nothing.
+    """
+    import chat_tools
+
+    convo = list(msgs)
+    for hop in range(MAX_TOOL_HOPS):
+        choice = ((data.get("choices") or [{}])[0]) or {}
+        message = choice.get("message") or {}
+        calls = message.get("tool_calls") or []
+        if not calls:
+            return data
+
+        convo.append(message)
+        for call in calls:
+            fn = (call.get("function") or {}) if isinstance(call, dict) else {}
+            name = fn.get("name") or ""
+            result = chat_tools.run_chat_tool(name, fn.get("arguments") or "{}")
+            convo.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or name,
+                    "name": name,
+                    "content": json.dumps(result)[:6000],
+                }
+            )
+            try:
+                import audit
+
+                audit.log("chat_tool_call", tool=name, provider=label, ok=bool(result.get("ok", True)))
+            except Exception:
+                pass
+
+        follow = {**body, "messages": convo}
+        if hop == MAX_TOOL_HOPS - 1:
+            follow.pop("tools", None)  # last hop: answer in words, do not call again
+        data = _http_post(url, headers, follow, timeout=timeout)
+    return data
+
+
 def _looks_multilingual(text: str) -> bool:
     """Heuristic: CJK / common SEA scripts → prefer SEA-LION over English defaults."""
     s = text or ""
     if not s:
         return False
-    # CJK Unified Ideographs + Hiragana/Katakana + Hangul
+    # CJK Unified Ideographs + Hiragana/Katakana + Hangul.
+    # Deliberately NOT "any single CJK char": `prompt` here can carry conversation
+    # history, so one stray character - a quoted name, an emoji-adjacent glyph, one
+    # earlier Chinese turn - used to pin every later English turn in that chat to the
+    # multilingual cascade (SEA-LION first) for the rest of the session. Require the
+    # CJK to actually carry the message: several characters AND a real share of it.
+    cjk = 0
     for ch in s:
         o = ord(ch)
         if (
@@ -723,7 +928,10 @@ def _looks_multilingual(text: str) -> bool:
             or 0x3040 <= o <= 0x30FF
             or 0xAC00 <= o <= 0xD7AF
         ):
-            return True
+            cjk += 1
+    dense = len("".join(s.split()))
+    if cjk >= 4 and dense and (cjk / dense) >= 0.10:
+        return True
     low = s.casefold()
     # Light Malay / Indonesian cues (word-ish; avoid firing on English "the")
     for cue in (
@@ -789,6 +997,15 @@ def _cloud_provider_order(
     order = [str(p).lower().replace("_", "-") for p in base]
     # Normalise aliases
     order = [{"sea_lion": "sea-lion", "gemini": "google", "sealion": "sea-lion"}.get(p, p) for p in order]
+
+    # OpenVault is the custody plane, not a peer provider. A routing file written
+    # before it existed simply omits it, and because file order outranks the defaults
+    # above that would silently disable custody and send AirGPT back to its own
+    # env.local copies - exactly the drift that left a dead GROQ_API_KEY here beside a
+    # working one in the vault. Lead with it unless the config names it somewhere.
+    # An explicit primary_provider below still outranks this.
+    if "openvault" in known and "openvault" not in order:
+        order = ["openvault"] + order
 
     primary = str(cfg.get("primary_provider") or "").strip().lower()
     if primary and primary != "auto":
@@ -877,6 +1094,8 @@ def _standard_llm(
     task: str = "chat",
 ) -> tuple[str, str]:
     """T2 — vLLM/Colibri (optional local) → SEA-LION → OpenRouter → Google → Groq → DeepSeek."""
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
     env = load_env()
@@ -903,18 +1122,28 @@ def _standard_llm(
             headers = {"Authorization": f"Bearer {key}"}
             if extra_headers:
                 headers.update(extra_headers)
+            tool_defs = _chat_tool_defs(task)
+            if tool_defs:
+                body["tools"] = tool_defs
             data = _http_post(url, headers, body, timeout=timeout)
+            if tool_defs:
+                data = _resolve_tool_calls(
+                    data, url, headers, body, msgs, timeout=timeout, label=label
+                )
             text, _ = _msg_content(data)
             if text and text.strip():
                 return text, label
             last_err = "empty response"
-            tried.append(label)
+            # Record WHY, not just that it was tried. A bare label made a dead model
+            # slug (404) and an unpaid account (402) look identical in the log, and
+            # neither ever reached the user - see _set_last_degradation below.
+            tried.append(f"{label}(empty response)")
             _provider_mark_fail(label, last_err, seconds=45)
             return None
         except Exception as e:
-            tried.append(label)
             last_err = str(e)[:120]
-            _provider_mark_fail(label, last_err)
+            tried.append(f"{label}({last_err})")
+            _provider_mark_fail(label, last_err, retry_after=_retry_after_seconds(e))
             return None
 
     # Prefer local engines when UP — probe TCP first (≤0.6s). Dead locals never
@@ -999,13 +1228,21 @@ def _standard_llm(
         if not groq_key:
             tried.append("Groq(no key)")
             return None
-        return _try_openai(
-            "https://api.groq.com/openai/v1/chat/completions",
-            groq_key,
-            "llama-3.3-70b-versatile",
-            "groq-70b",
-            timeout=8,
-        )
+        # Walk the whole Groq lineup, not one model. Limits are per-model-per-day
+        # (1K RPD each), so a single pinned model turned one 429 into "Groq is dead"
+        # and dropped the request to the bottom of the cascade. Ordered strongest
+        # first; the last two carry the same 200K/100K TPD as a cushion.
+        for model, tag in _GROQ_MODELS:
+            hit = _try_openai(
+                "https://api.groq.com/openai/v1/chat/completions",
+                groq_key,
+                model,
+                tag,
+                timeout=10,
+            )
+            if hit:
+                return hit
+        return None
 
     def _p_openrouter() -> tuple[str, str] | None:
         if not or_key:
@@ -1013,7 +1250,11 @@ def _standard_llm(
             return None
         for model, tag in (
             ("meta-llama/llama-3.3-70b-instruct", "openrouter-llama"),
-            ("google/gemini-2.0-flash-001", "openrouter-gemini"),
+            # google/gemini-2.0-flash-001 was retired and OpenRouter answers 404 for
+            # it, which is what made this whole provider look dead and dropped every
+            # chat down to the last rung of the cascade. Verified against
+            # https://openrouter.ai/api/v1/models before pinning.
+            ("google/gemini-2.5-flash", "openrouter-gemini"),
         ):
             hit = _try_openai(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -1048,21 +1289,24 @@ def _standard_llm(
             tried.append("Google(cooldown)")
             return None
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={urllib.parse.quote(google_key)}"
+            # Key goes in a header, never `?key=`. Query strings land in proxy logs,
+            # crash reports and browser history; the header form is documented and
+            # equivalent.
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
             body = {"contents": [{"parts": [{"text": _cloud_prompt_text()}]}], "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens}}
             if system:
                 body["systemInstruction"] = {"parts": [{"text": system}]}
-            data = _http_post(url, {}, body, timeout=10)
+            data = _http_post(url, {"x-goog-api-key": google_key}, body, timeout=10)
             parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
             text = "".join(p.get("text", "") for p in parts).strip()
             if text:
                 return text, "gemini-2.0-flash"
-            tried.append("Google")
             last_err = "empty response"
+            tried.append(f"Google({last_err})")
             _provider_mark_fail("google", last_err)
         except Exception as e:
-            tried.append("Google")
             last_err = str(e)[:120]
+            tried.append(f"Google({last_err})")
             _provider_mark_fail("google", last_err)
         return None
 
@@ -1079,7 +1323,34 @@ def _standard_llm(
             timeout=12,
         )
 
+    def _p_openvault() -> tuple[str, str] | None:
+        """Custody-first hop: let OpenVault hold the keys and pick the model.
+
+        AirGPT keeping its own copies in env.local is how a dead GROQ_API_KEY here
+        sat next to a working one in the vault for weeks. OpenVault owns the secrets,
+        the per-provider model ids, the free-tier limits and the circuit breakers, so
+        asking it is strictly better than guessing locally.
+
+        It stays FIRST but never mandatory - when OpenVault is not running the cascade
+        falls through to the direct providers below, so a laptop without the stack up
+        still answers.
+        """
+        base = (env.get("OPENVAULT_URL") or "http://127.0.0.1:5000").rstrip("/")
+        if not _endpoint_reachable(f"{base}/v1"):
+            tried.append("OpenVault(not running)")
+            return None
+        # `auto` is deliberate: OpenVault resolves it per provider. Sending a concrete
+        # id from here would recreate the model-id drift this hop exists to remove.
+        return _try_openai(
+            f"{base}/v1/chat/completions",
+            env.get("OPENVAULT_TOKEN") or "openvault-loopback",
+            "auto",
+            "openvault",
+            timeout=30,
+        )
+
     _providers = {
+        "openvault": _p_openvault,
         "anthropic": _p_anthropic,
         "openai": _p_openai,
         "groq": _p_groq,
@@ -1088,9 +1359,16 @@ def _standard_llm(
         "google": _p_google,
         "deepseek": _p_deepseek,
     }
-    for _name in _cloud_provider_order(tuple(_providers), task=task, prompt=prompt):
+    _order = _cloud_provider_order(tuple(_providers), task=task, prompt=prompt)
+    for _name in _order:
         hit = _providers[_name]()
         if hit:
+            # Everything already in `tried` failed BEFORE this provider answered, so
+            # a non-empty list means the user is reading a fallback, not the model the
+            # cascade wanted. Publish that instead of swallowing it (R-0011).
+            _set_last_degradation(
+                task=task, chosen=hit[1], preferred=_order, skipped=list(tried)
+            )
             return hit
 
     detail = " -> ".join(tried)
@@ -1108,6 +1386,8 @@ def _standard_llm_stream(
 
     Avoids mid-stream hangs on broken cloud SSE by keeping cloud path buffered.
     """
+    if _lockdown_block():
+        return iter(()), ["ai_lockdown"]
     model_ref: list[str] = ["fallback"]
     if _security:
         system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
@@ -1177,6 +1457,8 @@ def _standard_llm_stream(
 
 def _reasoning_llm(prompt: str, system: str = "") -> tuple[str, str, str]:
     """T4 — deepseek-reasoner only; returns (answer, model, reasoning)."""
+    if _lockdown_block():
+        return ("", "ai_lockdown", "")
     env = load_env()
     ds_key = env.get("DEEPSEEK_API_KEY", "")
     if not ds_key:
@@ -1201,6 +1483,8 @@ def _text_llm(prompt: str, system: str = "", *, prefer_reasoning: bool = False, 
 
 
 def _vision_llm(image_b64: str, mime: str, prompt: str, system: str, *, max_tokens: int = VISION_MAX_TOKENS) -> tuple[str, str]:
+    if _lockdown_block():
+        return ("", "ai_lockdown")
     env = load_env()
     google_key = env.get("GOOGLE_API_KEY", "")
     if google_key:
@@ -1415,12 +1699,127 @@ def _prepare_text_chat(
                 "Web search returned nothing usable. Say you could not verify; do not invent.\n"
             )
     prompt = (
-        TEXT_CHAT_TEMPLATE.format(mode_prompt=MODES[mode], question=question[:6000])
+        # NOT .format(): the template teaches Mermaid, so it contains literal braces
+        # (`diamond {"?"}`, `id@{shape: tri, label: "Goal"}`). str.format reads those as
+        # placeholders and raises KeyError, which killed every text chat that reached
+        # this path. Plain substitution is immune to whatever the prompt text contains.
+        TEXT_CHAT_TEMPLATE
+        .replace("{mode_prompt}", MODES[mode])
+        .replace("{question}", question[:6000])
         + history_block
         + vault_block
         + url_block
     )
     return prompt, mode, bool(vault), gate
+
+
+# --- what is worth remembering ----------------------------------------------------
+# The store filled with rows like "what is the largest ocean in malaysia" because the
+# only filter was length. These rules are deliberately explicit and deterministic
+# rather than a model call: this runs on every turn, a classifier would add a network
+# hop and a failure mode to the write path, and "why was this kept" has to be
+# answerable when the user asks.
+
+_REMEMBER_RE = re.compile(
+    r"(?i)\b(?:remember|memoris[ez]|memoriz[ez]|don'?t forget|keep in mind|note that|"
+    r"take note|for future reference|from now on|going forward|always|never)\b"
+    r"|记住|记得|别忘|以后都|从现在开始"
+)
+_IDENTITY_RE = re.compile(
+    r"(?i)\b(?:my name is|call me|i am|i'?m|my email|my phone|my birthday|"
+    r"i prefer|i like|i hate|i work at|my role|my team|my dog|my cat|my pet|"
+    r"my favourite|my favorite)\b"
+    r"|我叫|我的名字|我喜欢|我不喜欢|我的"
+)
+_DECISION_RE = re.compile(
+    # "what did we decide about the ingest fix" was being dropped as trivia because
+    # this only matched the past tense "we decided".
+    r"(?i)\b(?:we (?:decide|decided|agreed|chose|settled)|did we decide|let'?s go with|"
+    r"the plan is|deadline|due on|must|should always|the goal is|priority is|agreed|"
+    r"policy|convention|rule)\b"
+    r"|决定|计划|截止"
+)
+# Throwaway general-knowledge lookups: the answer is re-derivable and the question
+# says nothing durable about the user.
+_TRIVIA_RE = re.compile(
+    r"(?i)^\s*(?:what|who|when|where|which|how much|how many|how tall|how far|"
+    r"is|are|was|were|does|do|did|can|could)\b"
+)
+# Anchoring the rule at the start was not enough: "I want to know what is the largest
+# ocean in malaysia" - the row the user pointed at as junk - slipped past it and was
+# classified substantive. Strip the polite lead-in and re-test the real question.
+_LEADIN_RE = re.compile(
+    r"(?i)^\s*(?:i (?:want|would like|'?d like) to know|i wonder|tell me|"
+    r"(?:can|could|would) you (?:please )?(?:tell me|explain|say)|do you know|"
+    r"please tell me|explain|quick question[,:]?|question[,:]|hey[,: ]|hi[,: ])\s*"
+    r"(?:about\s+)?(?:that\s+)?"
+)
+
+
+def _strip_leadin(text: str) -> str:
+    prev = None
+    s = (text or "").strip()
+    while s != prev:  # "hey, can you tell me what ..." peels in two passes
+        prev = s
+        s = _LEADIN_RE.sub("", s).strip()
+    return s
+
+
+def memory_salience(question: str, answer: str) -> tuple[bool, str]:
+    """(keep, why). `why` names the rule so a kept row can always be explained.
+
+    KEEP rules are evaluated before any size rule, because the shortest turns are
+    often the most durable ones.
+    """
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q:
+        return False, "empty"
+
+    if _REMEMBER_RE.search(q):
+        return True, "explicit-remember"
+    if _IDENTITY_RE.search(q):
+        return True, "identity-or-preference"
+    if _DECISION_RE.search(q):
+        return True, "decision-or-commitment"
+
+    # A question the user answered themselves, or a correction, is signal.
+    if re.search(r"(?i)\b(?:actually|no,|wrong|correct(?:ion)?|not right|i meant)\b", q):
+        return True, "correction"
+
+    # A question carrying a URL is kept on purpose, even though it is usually
+    # question-shaped: persist_turn_memory stores the question and refuses the answer,
+    # so "we looked at netie.ai" stays recallable while the invented biography does
+    # not. Dropping it here would delete the record of having looked at all.
+    if is_about_link(q):
+        return True, "link-question"
+
+    # Everything below here is a plain lookup. Re-derivable, and it crowds out the
+    # rows above - twelve of these were the entire injected memory.
+    if _TRIVIA_RE.match(_strip_leadin(q)) and not _IDENTITY_RE.search(q):
+        return False, "general-knowledge-lookup"
+
+    # Fall back to the old size heuristic for anything unclassified, so this is a
+    # narrowing of what gets stored rather than a rewrite of it.
+    if len(q) < 12 or len(a) < 40:
+        return False, "too-thin"
+    return True, "substantive"
+
+
+def is_about_link(text: str) -> bool:
+    """True when the text carries a URL, so the model's account of it must not persist.
+
+    One definition, used by every writer. It used to be computed inline inside
+    persist_turn_memory only, and _finish_chat_side_effects wrote the same answer to a
+    vault drawer 250 lines later with no such check - so the guard passed its test
+    while the fabrication landed on disk anyway and was grepped back into later
+    prompts. data/vault/company/rooms/feedback/ already holds one.
+    """
+    s = text or ""
+    try:
+        return bool(_URL_RE.search(s))
+    except NameError:
+        return "http://" in s or "https://" in s
 
 
 def persist_turn_memory(
@@ -1442,9 +1841,19 @@ def persist_turn_memory(
     """
     q = (question or "").strip()
     a = (answer or "").strip()
-    if len(q) < 12 or len(a) < 40:
+    if not q:
         return
-    about_link = bool(_URL_RE.search(q)) if "_URL_RE" in globals() else ("http://" in q or "https://" in q)
+
+    # Salience decides this, not length. The old `len(q) < 12 or len(a) < 40` gate ran
+    # first and threw away exactly the turns worth keeping: "call me JH" is 10 chars,
+    # "please remember my dog is called Xiaojimao" was dropped because the assistant
+    # only answered "Noted.", and 12 characters is a whole sentence in CJK. Meanwhile
+    # every long disposable exchange sailed through, which is how the store filled
+    # with "what is the largest ocean in malaysia".
+    keep, why = memory_salience(q, a)
+    if not keep:
+        return
+    about_link = is_about_link(q)
     try:
         import memory_index as mi
 
@@ -1506,6 +1915,15 @@ def chat_text(
     *,
     business_require: bool = False,
 ) -> dict:
+    blocked = _lockdown_block()
+    if blocked:
+        return {
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "analysis": "",
+            "model": "",
+        }
     prompt, mode, _, gate = _prepare_text_chat(
         question, mode, session_id=session_id, business_require=business_require,
     )
@@ -1538,6 +1956,16 @@ def chat_text_stream(
     thinking: when False, skip emitting thinking events (answer still streams)
     force_web: user armed Web search from the + menu
     """
+    blocked = _lockdown_block()
+    if blocked:
+        yield {
+            "type": "error",
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "text": "Host disabled AI. Your work is saved.",
+        }
+        return
     tier = (model_tier or "high").strip().lower()
     if tier not in ("basic", "high", "max"):
         tier = "high"
@@ -1598,8 +2026,12 @@ def chat_text_stream(
         )
         text, model, reasoning = _reasoning_llm(verify_prompt, MODES[mode])
         if reasoning and show_thinking:
+            # kind="reasoning" marks a FRAGMENT of one continuous trace, not a step.
+            # A plain thinking event ("Preparing...") is one whole step. Without the
+            # mark the UI renders every 48-char slice as its own step, which shreds a
+            # sentence across a dozen rows.
             for i in range(0, len(reasoning), 48):
-                yield {"type": "thinking", "text": reasoning[i : i + 48]}
+                yield {"type": "thinking", "kind": "reasoning", "text": reasoning[i : i + 48]}
         for chunk in _chunk_text(text):
             yield {"type": "token", "text": chunk}
         text = _finalize_answer(text)
@@ -1651,7 +2083,8 @@ def chat_text_stream(
         for delta in stream:
             if delta.startswith("\x1eT:"):
                 if show_thinking:
-                    yield {"type": "thinking", "text": delta[3:]}
+                    # Provider reasoning deltas: fragments of one trace, see above.
+                    yield {"type": "thinking", "kind": "reasoning", "text": delta[3:]}
                 continue
             parts.append(delta)
             yield {"type": "token", "text": delta}
@@ -1705,7 +2138,16 @@ def _finish_chat_side_effects(
     _record_chat_usage(model=model, text=answer, tier=tier, session_id=session_id)
     persist_turn_memory(question=question, answer=answer, mode=mode, session_id=session_id)
     try:
-        if tier in ("high", "max") and answer and len(answer) > 80:
+        # Same refusal as persist_turn_memory. Without it this drawer defeated the
+        # anti-fabrication guard entirely: the memory row correctly said
+        # "[not stored] asked about a link" while the invented biography was written
+        # here and grepped back into later prompts by retrieve_vault_snippets.
+        if (
+            tier in ("high", "max")
+            and answer
+            and len(answer) > 80
+            and not is_about_link(question)
+        ):
             import vault as vault_mod
 
             vault_mod.write_drawer(
@@ -1779,6 +2221,15 @@ def analyze_image(
     depth: str = "normal",
     early_classify: dict | None = None,
 ) -> dict:
+    blocked = _lockdown_block()
+    if blocked:
+        return {
+            "ok": False,
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "analysis": "",
+            "model": "",
+        }
     mode = mode if mode in MODES else "engineering"
     mode_prompt = MODES[mode]
     chain_steps: list[str] = []
@@ -1892,6 +2343,10 @@ def analyze_image(
         "analysis": _finalize_answer(text), "model": model, "classification": classification,
         "vision_cache": cache, "early_category": early_category,
         "early_title": fast.get("title", ""), "chain_steps": chain_steps,
+        # Ride the degradation out with the answer. last_degradation() has been
+        # correct since the routing fix but nothing displayed it, so a reply from the
+        # last rung of the cascade still looked identical to a reply from the first.
+        "degraded": degradation_note(),
     }
 
 

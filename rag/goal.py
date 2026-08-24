@@ -46,6 +46,13 @@ _STOP = {
     "need", "want", "know", "think", "say", "said", "work", "works", "help", "let",
     "any", "all", "some", "more", "most", "much", "many", "other", "same", "such",
     "like", "just", "only", "still", "even", "back", "out", "over", "down", "off",
+    # Ask chrome — never "missing evidence" for summarise/file/ensure/mentioned
+    "summarise", "summarize", "summary", "summarising", "summarizing", "overview",
+    "describe", "description", "ensure", "mention", "mentioned", "mentions",
+    "file", "files", "document", "documents", "doc", "docs", "content", "contents",
+    "thing", "things", "stuff", "detail", "details", "info", "information",
+    "every", "each", "entire", "whole", "full", "complete", "completely",
+    "based", "according", "provided", "available", "related", "topic", "topics",
 }
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9\-+./]{1,}")
 
@@ -85,6 +92,18 @@ def salient_terms(query: str, limit: int = 12) -> list[str]:
         t = w.lower().strip(".")
         if len(t) < 3 or t in _STOP or t in out:
             continue
+        # Drop typo crumbs ("tlel", "sna", "dall") — fast-typing debris that would
+        # otherwise be reported as missing evidence forever.
+        #
+        # Case is the discriminator, not shape. A short low-vowel token is just as
+        # likely to be an acronym, and in this corpus it usually is: RRF, SNR, PLL,
+        # CDR, ADC, DAC, LDO, API and SQL all match the crumb heuristic exactly.
+        # Dropping them left the goal layer blind to the one term the question was
+        # actually about, reporting full coverage while missing it.
+        if not w.isupper():
+            vowels = sum(1 for c in t if c in "aeiou")
+            if len(t) <= 4 and vowels <= 1 and not any(c.isdigit() for c in t):
+                continue
         out.append(t)
         if len(out) >= limit:
             break
@@ -152,18 +171,28 @@ def diagnose(a: Assessment, *, web_ran: bool = False, web_error: str = "") -> li
         out.append("No document or web evidence matched. Add sources on the Build tab.")
 
     if a.missing:
-        shown = ", ".join(a.missing[:6])
-        out.append(f"No source mentions: {shown}. The corpus likely does not cover this topic.")
+        # Don't tell the user the corpus is missing "summarise" / "file" / typos.
+        real_missing = [m for m in a.missing if m not in _STOP and len(m) >= 4]
+        if real_missing:
+            shown = ", ".join(real_missing[:6])
+            out.append(f"No source mentions: {shown}. The corpus likely does not cover this topic.")
+        elif not a.evidence_count:
+            out.append("No document or web evidence matched. Add sources on the Build tab.")
+        else:
+            out.append(
+                "The question looks like a space overview — try “summarise what this space contains” "
+                "to list every file, or ask about a specific topic by name."
+            )
 
-    if not web_ran:
-        out.append("Run a web search for this question — say \"web search about …\" or arm Web search in the composer.")
+    if(not web_ran):
+        out.append("Run a web search — type /search … or “web search about …”, or arm Web search in the composer.")
     elif web_error:
         out.append(f"Web search ran but failed ({web_error[:100]}). Retry, or paste a URL on the Build tab.")
     elif a.missing:
         out.append("Web search ran but the fetched pages did not cover the missing terms — try a narrower query, or paste a specific URL.")
 
     if a.evidence_count and a.coverage < 0.5:
-        out.append("Rebuild the space with smaller chunks so specific terms are not diluted across long passages.")
+        out.append("Rebuild the space with smaller chunks so specific terms are not diluted across long passages — or remove unrelated sources (e.g. old JEPA pages) on the Build tab.")
 
     return out[:5]
 

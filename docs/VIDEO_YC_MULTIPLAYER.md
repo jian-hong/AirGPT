@@ -16,7 +16,7 @@
 | Item | Status | Note |
 |------|--------|------|
 | P0-1 Presence + authorship | **DONE** | `presence.py` + `#presenceStack` + author chips + typing; film with `record_act1_interrupt.py` (2 contexts) |
-| P0-2 Cut all AI | **MOCK UI DONE** | `access_policy.ai_lockdown` + Hub button + red bar via `/api/wait` — **does not gate AI providers** (film-only) |
+| P0-2 Cut all AI | **REAL** | `access_policy.lockdown_block()` gates `ai_engine` + `agent_runtime` + chat/agent routes; Hub button + red bar via `/api/wait`; draft preserved |
 | P0-3 Hub Demo + drill-down | **DONE** | Demo mode grid, state colours, peer drawer, `GET /api/hub/peers/<ip>/activity`, View chat → `#msg-N` |
 | P1-4 Edit access | **DONE** | `ui/multiplayer_demo.js` — 3 radios + Can edit → existing ACL enum |
 | P1-5 Project share QR | **DONE** | Share on project header; default read-only |

@@ -1,0 +1,11 @@
+{
+  "plate": "plate02_qr_mesh",
+  "duration": 2,
+  "prompt": "Cinematic product film, anamorphic 2.39:1 framing inside a 16:9 frame, shallow depth of field, deep matte-black background, cool neutral grade with a single warm practical, subtle film grain, no text artefacts, no watermark, no UI mockups, no faces in focus. Single QR dissolves into glowing node constellation with light filaments and data pulses. Laptops, server, database as pure geometry. Slow dolly-in.",
+  "job": {
+    "ok": true,
+    "id": "281618a02606",
+    "status": "queued",
+    "mode": "mock"
+  }
+}

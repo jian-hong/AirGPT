@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -79,6 +80,46 @@ def _row(r: sqlite3.Row | None) -> dict | None:
     return d
 
 
+# Credential shapes that must never be persisted. Deliberately NOT the whole
+# pii_guard set: an email address or a phone number can be a legitimate durable fact
+# ("my work email is ...") and refusing those would make the store useless. Only
+# things that are secret by construction are rejected.
+_ASSIGNED_SECRET_RE = re.compile(
+    r"(?i)\b(?:pass(?:word|wd|phrase)|secret|api[_ -]?key|access[_ -]?token|"
+    r"auth[_ -]?token|bearer|client[_ -]?secret|private[_ -]?key)\b"
+    r"\s*[:=]\s*\S{6,}"
+)
+_PEM_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
+
+
+def _secret_kind(text: str) -> str:
+    """Name the credential shape found in `text`, or "" if there is none.
+
+    Returns a description rather than a bool so the refusal can say what it saw
+    without ever echoing the value back.
+    """
+    s = text or ""
+    if not s:
+        return ""
+    if _PEM_RE.search(s):
+        return "private key"
+    if _ASSIGNED_SECRET_RE.search(s):
+        return "password or token assignment"
+    try:
+        import pii_guard
+
+        # Use the pattern directly, not redact(): redact() is a no-op when the
+        # PII toggle is off, and a credential must be refused either way.
+        for name, pattern in pii_guard._PATTERNS:
+            if name == "KEY" and pattern.search(s):
+                return "provider API key"
+    except Exception:
+        # Fall back to the two most common prefixes rather than failing open.
+        if re.search(r"\b(?:sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16})\b", s):
+            return "provider API key"
+    return ""
+
+
 def add_memory(
     *,
     kind: str,
@@ -92,6 +133,26 @@ def add_memory(
     pinned: bool = False,
 ) -> dict:
     init()
+
+    # Fail closed on credentials, at the funnel rather than per caller.
+    # Six code paths reach this function and none of them scrubbed anything;
+    # pii_guard.redact ran only on the outbound cloud prompt. The likeliest route in
+    # is POST /api/memory/ingest, which stores a dropped file byte-for-byte - a .env
+    # or an exported key list lands verbatim. Memory is injected into later prompts,
+    # so a secret stored once is a secret re-sent on every subsequent turn.
+    # Refusing loudly, not redacting: a half-stored credential is still a leak, and a
+    # silent redaction hides that the user's paste went somewhere it should not.
+    leak = _secret_kind(f"{title}\n{body}")
+    if leak:
+        return {
+            "ok": False,
+            "refused": "secret",
+            "error": (
+                f"refused: this looks like a {leak}. Credentials belong in the vault, "
+                "not in memory - memory is replayed into later prompts."
+            ),
+        }
+
     kind = (kind or "memory").strip()[:40]
     if kind not in ("memory", "next_action", "global_goal", "note", "file"):
         kind = "memory"
@@ -215,6 +276,44 @@ def list_memories(
         return [_row(r) for r in conn.execute(q, args).fetchall() if _row(r)]
 
 
+# FTS5 treats ?, ', : and - as operators, so a natural question was a syntax error,
+# not a miss: "what is my favourite pet?" raised `fts5: syntax error near "?"` and
+# "dog: name" raised `no such column: dog`. Every one of those was swallowed by the
+# bare `except` below and fell through to a scorer that returns unrelated drawers, so
+# the store looked empty for exactly the phrasing people actually type.
+_FTS_TOKEN_RE = re.compile(r"[0-9A-Za-z_]+|[一-鿿぀-ヿ가-힯]+")
+_FTS_STOPWORDS = frozenset(
+    "a an and are as at be by do does did for from had has have how i in is it its me "
+    "my of on or our that the their them then there these this to was were what when "
+    "where which who whom why will with you your".split()
+)
+
+
+def fts_query(text: str) -> str:
+    """Turn free text into a valid FTS5 MATCH expression, or "" if nothing is usable.
+
+    Every term is quoted, which neutralises the operator characters, and they are
+    joined with OR because FTS5 defaults to AND - "who is my pet" found nothing purely
+    because the row did not contain the word "who".
+    """
+    terms: list[str] = []
+    for tok in _FTS_TOKEN_RE.findall(text or ""):
+        low = tok.lower()
+        if low in _FTS_STOPWORDS:
+            continue
+        if tok.isascii() and len(tok) < 2:
+            continue
+        terms.append(tok.replace('"', ""))
+    if not terms:
+        # All stopwords: keep the longest raw token rather than returning everything.
+        raw = [t for t in _FTS_TOKEN_RE.findall(text or "") if t]
+        if not raw:
+            return ""
+        terms = [max(raw, key=len)]
+    unique = list(dict.fromkeys(terms))[:12]
+    return " OR ".join(f'"{t}"' for t in unique)
+
+
 def search(query: str, *, project: str = "", session_id: int = 0, k: int = 8) -> list[dict]:
     """Hybrid: Chroma if available, else FTS, else vault keyword."""
     query = (query or "").strip()
@@ -225,18 +324,20 @@ def search(query: str, *, project: str = "", session_id: int = 0, k: int = 8) ->
         return hits
     init()
     out: list[dict] = []
-    try:
-        with _conn() as conn:
-            rows = conn.execute(
-                """SELECT m.* FROM memories_fts f
-                   JOIN memories m ON m.id=f.rowid
-                   WHERE memories_fts MATCH ?
-                   ORDER BY rank LIMIT ?""",
-                (query.replace('"', ""), k),
-            ).fetchall()
-            out = [_row(r) for r in rows if _row(r)]
-    except Exception:
-        out = []
+    match = fts_query(query)
+    if match:
+        try:
+            with _conn() as conn:
+                rows = conn.execute(
+                    """SELECT m.* FROM memories_fts f
+                       JOIN memories m ON m.id=f.rowid
+                       WHERE memories_fts MATCH ?
+                       ORDER BY rank LIMIT ?""",
+                    (match, k),
+                ).fetchall()
+                out = [_row(r) for r in rows if _row(r)]
+        except Exception:
+            out = []
     if not out:
         try:
             import vault as vault_mod
@@ -478,17 +579,61 @@ def content_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
 
 
-def carry_pack(*, project: str = "", session_id: int = 0, max_chars: int = 1200) -> str:
-    """Compressed hot/warm memory for prompt injection (JEPA-light carry)."""
+def _relevance(query_terms: set[str], title: str, body: str) -> float:
+    """Fraction of the query's terms present in this row. 0.0 when nothing matches."""
+    if not query_terms:
+        return 0.0
+    hay = f"{title} {body}".lower()
+    hit = sum(1 for t in query_terms if t in hay)
+    return hit / len(query_terms)
+
+
+def carry_pack(
+    *, project: str = "", session_id: int = 0, max_chars: int = 1200, query: str = ""
+) -> str:
+    """Compressed hot/warm memory for prompt injection (JEPA-light carry).
+
+    `query` makes this relevant rather than merely recent. Without it the function
+    took the 12 newest rows and nothing else, and because retrieve_vault_snippets
+    returns carry_pack early whenever it is non-empty, those 12 rows WERE the entire
+    injected memory - FTS and Chroma were never consulted on the chat path. So twelve
+    disposable exchanges could bury a durable fact, and no amount of filtering on the
+    write side would surface it again.
+
+    Recency still counts, and pinned rows still win, but a row that actually mentions
+    what was asked now outranks a newer row that does not.
+    """
     init()
     parts: list[str] = []
+    terms = {
+        t.lower()
+        for t in _FTS_TOKEN_RE.findall(query or "")
+        if t.lower() not in _FTS_STOPWORDS and (len(t) > 1 or not t.isascii())
+    }
     with _conn() as conn:
+        # Widen the candidate window when there is a query to rank within; the LIMIT
+        # 12 below is applied after scoring, not before it.
         rows = conn.execute(
             """SELECT kind,title,body,pinned,updated_at FROM memories
                WHERE (?='' OR project=?) AND (?=0 OR session_id=? OR kind='global_goal')
-               ORDER BY pinned DESC, updated_at DESC LIMIT 12""",
-            (project, project, int(session_id or 0), int(session_id or 0)),
+               ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
+            (project, project, int(session_id or 0), int(session_id or 0), 60 if terms else 12),
         ).fetchall()
+
+    if terms:
+        newest = max((r["updated_at"] or 0) for r in rows) if rows else 0
+        oldest = min((r["updated_at"] or 0) for r in rows) if rows else 0
+        span = max(1.0, float(newest - oldest))
+
+        def _rank(r) -> tuple:
+            rel = _relevance(terms, r["title"] or "", r["body"] or "")
+            recency = ((r["updated_at"] or 0) - oldest) / span
+            # Pinned first, then relevance, then recency as the tie-break. Relevance
+            # dominates recency so one on-topic row survives a burst of chatter.
+            return (int(r["pinned"] or 0), rel, recency)
+
+        rows = sorted(rows, key=_rank, reverse=True)[:12]
+
     used = 0
     for r in rows:
         kind = r["kind"] or "memory"

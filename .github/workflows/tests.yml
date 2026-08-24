@@ -1,0 +1,104 @@
+# AirGPT test suite.
+#
+# Runner: windows-latest, not ubuntu. requirements.txt pins pywin32, so `pip install
+# -r requirements.txt` cannot complete on Linux. Saying that here is cheaper than a
+# green Linux job that installed nothing.
+#
+# Runner command: pytest, not `python -m unittest discover`. 22 of the 45 modules
+# under tests/ are pytest-style bare functions with no TestCase subclass. unittest
+# collects ZERO tests from those and still exits 0 - a suite that proves nothing
+# while reporting success (R-0007). pytest collects both styles.
+#
+# A 396-pass local count on 2026-08-07 was a laptop number (R-0007): gitignored
+# data/skills packs, optional sqlite-vec, sentence-transformers + cached BGE
+# weights, and modules this job deliberately ignores (playwright, ltx2).
+# Skill-catalog tests pin to tests/fixtures/skills so a clean clone serves the
+# same packs. openpyxl and pandas are product xlsx deps and belong here. sqlite-vec stays
+# opt-in (Windows extension load is not a stranger-clone guarantee). Floor is
+# 380, the earned pass count. Do not lower it.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      # Do not open a browser when clipdrop is imported at module scope.
+      AIRGPT_NO_BROWSER: "1"
+      # rag/embed.py pulls BAAI/bge-small-en-v1.5 through sentence-transformers on
+      # first use. Offline is not a workaround: it makes the ranking assertions test
+      # our fallback embedder deterministically instead of whatever the hub serves
+      # that day. Confirmed the suite is green with an empty HF cache.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      # Guard for R-0007. Clean Actions checkout earns 380 passed: skill-catalog
+      # fixtures (the 5 that failed on empty data/skills) + openpyxl (6 xlsx
+      # tests) + fixture-pin tests that lock the committed packs. 9 stay skipped:
+      # 8 sqlite-vec (opt-in) and 1 BGE embedder (HF offline). If an exclusion is
+      # widened or a collection error silently drops a module, this goes red.
+      MIN_TESTS: "380"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run the suite
+        shell: pwsh
+        run: |
+          # Exclusions are listed here, by name and reason, rather than hidden behind
+          # a discover pattern. An excluded test is a test we are not running, and
+          # that should be readable in this file (R-0002).
+          #
+          #   tests/playwright          - drives the app in a real browser. Needs a
+          #                               running server and a base URL; with neither
+          #                               it fails on navigating to "". Bring it back
+          #                               when CI starts the app.
+          #   tests/test_apps_hub_ltx2  - ltx2_video.submit(mode="mock") writes a job
+          #                               record and video stubs into the checkout,
+          #                               and video-assets/ is not gitignored, so the
+          #                               run leaves the tree dirty. Bring it back
+          #                               when its output dir is redirectable.
+          $out = python -m pytest tests/ -q -p no:cacheprovider `
+            --ignore=tests/playwright `
+            --ignore=tests/test_apps_hub_ltx2.py 2>&1 | Tee-Object -Variable lines
+          $code = $LASTEXITCODE
+          $lines | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) { Write-Error "pytest exited $code"; exit 1 }
+
+          $summary = ($lines | Select-String -Pattern '(\d+) passed' | Select-Object -Last 1)
+          if (-not $summary) { Write-Error "no pass count in output - suite did not run"; exit 1 }
+          $passed = [int]$summary.Matches[0].Groups[1].Value
+          Write-Host "collected and passed: $passed (floor $env:MIN_TESTS)"
+          if ($passed -lt [int]$env:MIN_TESTS) {
+            Write-Error "only $passed tests passed, floor is $env:MIN_TESTS - coverage shrank"
+            exit 1
+          }
+
+      - name: Fail if the suite dirtied the checkout
+        shell: pwsh
+        run: |
+          # A test that writes into the repo is a test that will silently commit its
+          # own output one day. Catch it here rather than in someone's git status.
+          $dirty = git status --porcelain
+          if ($dirty) {
+            Write-Host $dirty
+            Write-Error "the test run modified tracked or added untracked files"
+            exit 1
+          }
+          Write-Host "checkout clean"

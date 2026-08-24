@@ -20,7 +20,45 @@ def test_wants_web_detects_natural_language():
     assert wants_web("web search about cortex edge ai for jepa")
     assert wants_web("please search for JEPA reasoning")
     assert wants_web("look up edge AI on cortex")
+    assert wants_web("/search who is jian hong and his netie ai startup")
+    assert wants_web("/web Netie AI")
     assert not wants_web("what is a resistor")
+
+
+def test_split_web_goals_person_company():
+    goals = split_web_goals("/search who is jian hong and his netie ai startup")
+    blob = " ".join(goals).lower()
+    assert "jian" in blob or "netie" in blob
+    assert "jepa" not in blob
+
+
+def test_wants_corpus_summary():
+    from rag.answer import wants_corpus_summary
+
+    assert wants_corpus_summary("summarise what is the rag contains about")
+    assert wants_corpus_summary("summarize what this space contains")
+    assert wants_corpus_summary("what is this corpus about")
+    assert wants_corpus_summary("list the sources")
+    assert wants_corpus_summary(
+        "summarise and tlel me what is the file about, ensure all thing sna dall files are mentioned"
+    )
+    assert wants_corpus_summary("summarise and tell me what is the file about")
+    assert wants_corpus_summary("ensure all files are mentioned")
+    assert not wants_corpus_summary("what is JEPA")
+    assert not wants_corpus_summary("/search who is jian hong")
+
+
+def test_goal_salient_ignores_ask_chrome():
+    from rag import goal
+
+    terms = goal.salient_terms(
+        "summarise and tell me what is the file about, ensure all things and all files are mentioned"
+    )
+    assert "summarise" not in terms
+    assert "file" not in terms
+    assert "ensure" not in terms
+    assert "mentioned" not in terms
+    assert "files" not in terms
 
 
 def test_web_query_strips_edit_and_wipe_chrome():
@@ -76,3 +114,36 @@ def test_destructive_injection_is_refused():
     assert msg
     assert "Build" in msg
     assert destructive_injection_reply("what is JEPA") is None
+
+
+def test_a_topic_named_search_is_not_a_request_to_search():
+    """"search" as a noun is a subject, not an instruction.
+
+    wants_web matched the bare word anywhere, so asking the local corpus about
+    "hybrid search RRF" fetched the public web and spent a retrieval round on it.
+    On a product that promises compute stays local, guessing wrong in this
+    direction is the expensive one: the question leaves the machine.
+    """
+    for q in (
+        "hybrid search RRF",
+        "vector search benchmark",
+        "full-text search in sqlite",
+        "explain semantic search",
+        "how does similarity search work",
+        "what is the search algorithm used here",
+    ):
+        assert not wants_web(q), f"topic sent to the web: {q!r}"
+
+
+def test_directed_search_still_reaches_the_web():
+    """R-0005: the narrower rule must not refuse a real web ask."""
+    for q in (
+        "search JEPA",
+        "serach for jepa papers",
+        "can you search the archive",
+        "please search for JEPA reasoning",
+        "look up edge AI on cortex",
+        "search about netie",
+        "google scholar lecun",
+    ):
+        assert wants_web(q), f"real web ask refused: {q!r}"

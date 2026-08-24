@@ -61,6 +61,8 @@ Prove a change works with real assertions. Never report success you did not obse
 
 Work safely in a tree that a parallel worker edits at the same time.
 
+Tools: `git_status`, `git_diff`, `fs_glob`, `fs_search`, `fs_read`, `fs_patch`, `fs_write`, `run_command`.
+
 - Stage file by file. Never git add all. Verify the staged list before committing.
 - Re-verify a failing test before diagnosing it. It may already be fixed, or be a transient mid-edit state.
 - Check file stability (mtime over a few seconds) before a burst of edits.

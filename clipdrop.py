@@ -8,6 +8,7 @@ import mimetypes
 import os
 import queue
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -117,6 +118,9 @@ _client_ai_enabled = True
 _ai_rate_lock = threading.Lock()
 _ai_last_ts = 0.0
 AI_RATE_LIMIT_SEC = 60
+# Ceiling on skills armed for one send. Each pack costs up to 2000 chars of preamble,
+# so an unbounded list is a quiet way to blow the context budget on instructions.
+MAX_ARMED_SKILLS = 3
 _online_cache: dict = {"ok": True, "ts": 0.0}
 _auth_fails: dict[str, list[float]] = {}
 _qr_session_token = ""
@@ -162,17 +166,50 @@ def _kill_orphan_cloudflared() -> None:
         print(f"[tunnel] orphan cleanup skip: {e}")
 
 
+def _kill_proc_tree(p: subprocess.Popen) -> None:
+    """Kill the process AND its children.
+
+    tunnel_localtunnel spawns `npx localtunnel` with shell=True, so the handle we
+    hold is the cmd/npx wrapper - terminate() kills the wrapper and leaves the real
+    `lt.js` node process alive, still holding a loca.lt URL nobody is tracking. Two
+    orphan pairs were observed on one machine. Orphans accumulate every sweep and
+    the provider starts refusing new tunnels, which is what "localtunnel totally
+    down" actually looks like. Kill the tree, not the handle.
+    """
+    pid = getattr(p, "pid", None)
+    if os.name == "nt" and pid:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, text=True, timeout=8,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+            )
+        except Exception as e:
+            print(f"[tunnel] tree kill {pid} skip: {e}")
+    elif pid:
+        # No tree kill off Windows. The tunnel children are not spawned with
+        # start_new_session, so they sit in our own process group and os.killpg
+        # would take AirGPT down with them. terminate() below reaps the wrapper
+        # only - which is exactly the orphan this function exists to prevent - so
+        # say so out loud rather than degrade in silence.
+        print(
+            f"[tunnel] no tree kill on os.name={os.name}: terminating wrapper {pid} "
+            f"only, its children may orphan"
+        )
+    try:
+        p.terminate()
+        p.wait(timeout=2)
+    except Exception:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
 def _kill_tunnel_procs() -> None:
     with _tunnel_lock:
         for p in _tunnel_procs:
-            try:
-                p.terminate()
-                p.wait(timeout=2)
-            except Exception:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
+            _kill_proc_tree(p)
         _tunnel_procs.clear()
     _kill_orphan_cloudflared()
 
@@ -194,6 +231,16 @@ def _image_file_path(msg: dict) -> Path | None:
         return p
     p2 = DATA_DIR / rel
     return p2 if p2.is_file() else None
+
+
+def _ai_lockdown_block() -> dict | None:
+    """Return error payload when emergency cut-off is on."""
+    try:
+        import access_policy
+
+        return access_policy.lockdown_block()
+    except Exception:
+        return None
 
 
 def _ai_allowed() -> bool:
@@ -260,6 +307,16 @@ def _check_ai_rate() -> str | None:
 
 
 def run_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
+    blocked = _ai_lockdown_block()
+    if blocked:
+        err = "Host disabled AI. Your work is saved."
+        if question:
+            db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=err, kind="text", source="ai", session_id=session_id)
+            bump_sync()
+        else:
+            db.update_ai(msg_id, status="error", analysis=err)
+            bump_sync()
+        return
     if not _is_online():
         err = "AI mode requires internet. Offline storage still works — export anytime."
         if question:
@@ -313,6 +370,14 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "general"
             vision_cache=cache or None,
             depth=depth,
         )
+        if result.get("error") == "ai_lockdown":
+            err = "Host disabled AI. Your work is saved."
+            if question:
+                db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=err, kind="text", source="ai", session_id=session_id)
+            else:
+                db.update_ai(msg_id, status="error", analysis=err)
+            bump_sync()
+            return
         cat = result.get("early_category") or msg.get("ai_category") or "general"
         sid = int(session_id or msg.get("session_id") or 0)
         ai_title = _title_from_ai_text(
@@ -362,6 +427,18 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
 
 
 def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+    blocked = _ai_lockdown_block()
+    if blocked:
+        db.add_message(
+            device_ip="127.0.0.1",
+            device_name="AirGPT",
+            text="Host disabled AI. Your work is saved.",
+            kind="text",
+            source="ai",
+            session_id=session_id,
+        )
+        bump_sync()
+        return
     if not _is_online():
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text="AI chat needs internet or local API keys. Manual local chat still works.", kind="text", source="ai", session_id=session_id)
         bump_sync()
@@ -377,6 +454,17 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> 
     try:
         business = bool((app_license.get_status() if app_license else {}).get("business_features"))
         result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business)
+        if result.get("error") == "ai_lockdown":
+            db.add_message(
+                device_ip="127.0.0.1",
+                device_name="AirGPT",
+                text="Host disabled AI. Your work is saved.",
+                kind="text",
+                source="ai",
+                session_id=session_id,
+            )
+            bump_sync()
+            return
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=result["analysis"], kind="text", source="ai", session_id=session_id)
         if session_id:
             db.maybe_set_ai_session_title(
@@ -488,6 +576,16 @@ def _chat_stream_events(
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
+        return
+    blocked = _ai_lockdown_block()
+    if blocked:
+        yield {
+            "type": "error",
+            "error": blocked["error"],
+            "by": blocked.get("by") or "host",
+            "text": "Host disabled AI. Your work is saved.",
+            "ok": False,
+        }
         return
     if not _is_online():
         yield {"type": "error", "text": "AI chat needs internet or local API keys. Manual local chat still works."}
@@ -692,13 +790,28 @@ def _is_local_host(ip: str) -> bool:
 
 
 def _ai_lockdown_payload() -> dict:
-    """Mock emergency flag for film Act 4 — visuals only, does not gate AI."""
+    """Emergency AI cut-off state for /api/info and /api/wait."""
     try:
         import access_policy
 
         return access_policy.get_ai_lockdown()
     except Exception:
-        return {"on": False, "mock": True}
+        return {"on": False}
+
+
+def _app_state_payload(q) -> dict:
+    """Live App Card shared state delta for /api/wait (no websocket)."""
+    try:
+        import apps_hub
+
+        since = 0
+        try:
+            since = int((q.get("app_epoch") or ["0"])[0])
+        except Exception:
+            since = 0
+        return apps_hub.app_state_poll(since)
+    except Exception:
+        return {"epoch": 0, "updates": []}
 
 
 # Host-only API surfaces (SECURITY_HARDENING #1/#5/#7). These can read/write host
@@ -732,11 +845,54 @@ def _is_host_only_path(path: str) -> bool:
     return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
 
 
+# HOST-DEMO-02 / F8a: non-local clients must complete POST /api/establish before
+# /api/ai/* and the chat POST paths the phone uses. Local host keeps today's path.
+# A leftover token (issued, never bound) is refused until it is bound here.
+AIRGPT_SECURITY_VERSION = "1"
+SESSION_NONCE_HEADER = "X-AirGPT-Session-Nonce"
+SECURITY_VERSION_HEADER = "X-AirGPT-Security-Version"
+_ESTABLISH_CHAT_POSTS = frozenset({
+    "/api/chat/stream",
+    "/api/chat/project-suggest",
+    "/api/messages",
+})
+_establish: dict[str, dict] = {}
+_establish_token: dict[str, str] = {}
+
+
+def _needs_establish(method: str, path: str) -> bool:
+    if path.startswith("/api/ai"):
+        return True
+    if method == "POST" and (path in _ESTABLISH_CHAT_POSTS or path.startswith("/api/chat/")):
+        return True
+    return False
+
+
 def _is_tunnel_host(host: str) -> bool:
     h = (host or "").split(":")[0].lower()
     return any(x in h for x in (
         "trycloudflare.com", "lhr.life", "loca.lt", "serveo.net", "localhost.run",
     ))
+
+
+# Stands in for a tunnel peer we cannot name. Deliberately not IP-shaped: it must
+# never satisfy _is_local_host(), and it should be obvious in an audit row that the
+# peer was unidentified rather than at some address we invented.
+TUNNEL_PEER = "tunnel-peer"
+
+
+def _is_host_request(headers, direct_ip: str) -> bool:
+    """True only for the host machine itself, never for anything off a tunnel.
+
+    The host-only gate used to be `not _is_local_host(ip)` over an ip that could be
+    supplied by the caller. Two independent things had to hold for that to be safe,
+    and neither is checked here, so this asks the question directly instead: a
+    request carrying a tunnel Host header came from outside this machine, whatever
+    any header claims.
+    """
+    if _is_tunnel_host(headers.get("Host", "")):
+        return False
+    return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
 
 
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
@@ -746,12 +902,23 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     if not _is_tunnel_host(headers.get("Host", "")):
         return None
     cf = (headers.get("CF-Connecting-IP") or "").strip()
-    if cf:
-        return cf
     xff = (headers.get("X-Forwarded-For") or "").strip()
-    if xff:
-        return xff.split(",")[0].strip()
-    return None
+    cand = cf or (xff.split(",")[0].strip() if xff else "")
+    # These headers are client-supplied. Only a provider that overwrites them makes
+    # them trustworthy, and we cannot tell from here which provider is in front of
+    # us: cloudflared sets CF-Connecting-IP, localtunnel sets X-Forwarded-For and
+    # touches nothing Cloudflare-shaped, and serveo/localhost.run are raw ssh
+    # forwards that set neither. So a caller could send CF-Connecting-IP: 127.0.0.1
+    # and _is_local_host() would hand a remote peer all 17 _HOST_ONLY_PREFIXES,
+    # /api/terminal/ and /api/fs/ included. Verified against a live loca.lt tunnel:
+    # GET /api/audit returned 403 bare and 200 with that one header.
+    # A request that arrived over a tunnel is remote by definition, so a forwarded
+    # value claiming to be this machine is always a lie. Refuse it, and fall back to
+    # a marker that is deliberately not an address so nothing downstream can mistake
+    # it for one.
+    if cand and not _is_local_host(cand):
+        return cand
+    return TUNNEL_PEER
 
 
 _net_profile_cache: dict = {"ts": 0.0, "value": "Unknown"}
@@ -1404,6 +1571,62 @@ def refresh_firewall_status() -> str:
 _cortex_info_cache: dict = {"ts": 0.0, "quick": None, "full": None}
 
 
+_asset_cache: dict[str, tuple[float, int, bytes, str]] = {}
+_asset_gzip: dict[str, bytes] = {}
+
+
+def _cached_asset(p: Path) -> tuple[bytes, str]:
+    """File bytes + a content ETag, re-read only when mtime or size changes."""
+    key = str(p)
+    st = p.stat()
+    hit = _asset_cache.get(key)
+    if hit and hit[0] == st.st_mtime and hit[1] == st.st_size:
+        return hit[2], hit[3]
+    body = p.read_bytes()
+    etag = '"%s"' % hashlib.sha256(body).hexdigest()[:20]
+    _asset_cache[key] = (st.st_mtime, st.st_size, body, etag)
+    _asset_gzip.pop(etag, None)
+    return body, etag
+
+
+def _maybe_gzip(body: bytes, accept: str) -> tuple[bytes, str]:
+    """Gzip when the client accepts it and it is worth the CPU."""
+    if "gzip" not in (accept or "").lower() or len(body) < 1024:
+        return body, ""
+    etag = '"%s"' % hashlib.sha256(body).hexdigest()[:20]
+    cached = _asset_gzip.get(etag)
+    if cached is None:
+        import gzip as _gzip
+
+        cached = _gzip.compress(body, 6)
+        # Only worth serving if it actually got smaller.
+        if len(cached) >= len(body):
+            cached = b""
+        _asset_gzip[etag] = cached
+    return (cached, "gzip") if cached else (body, "")
+
+
+def _with_deadline(fn, default, timeout: float = 2.0):
+    """Run fn in a worker; return default if it exceeds timeout (never block /api/info).
+
+    The `with ThreadPoolExecutor(...)` form did not honour the timeout at all: leaving
+    the block calls shutdown(wait=True), which waits for the very task the timeout
+    just gave up on. `/api/info` blocked for the full duration of whatever it wrapped
+    no matter what deadline was passed - the docstring above was describing behaviour
+    the code did not have.
+    """
+    import concurrent.futures
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        return pool.submit(fn).result(timeout=timeout)
+    except Exception:
+        return default
+    finally:
+        # wait=False is the whole point: abandon the straggler, do not join it.
+        pool.shutdown(wait=False)
+
+
 def _cortex_info(*, quick: bool = False) -> dict:
     now = time.time()
     key = "quick" if quick else "full"
@@ -1535,6 +1758,25 @@ def tunnel_health_loop():
         time.sleep(15)
 
 
+# Subdomains a provider prints in its startup banner that are not the forwarding
+# URL. localhost.run announces its admin console (https://admin.localhost.run)
+# several lines before the real *.lhr.life tunnel, and _read_tunnel_url used to
+# return the first line matching any pattern - so the console link won every
+# time, got probed, failed, and killed the ssh session before the actual URL was
+# ever printed. localhost.run could therefore never succeed on any network.
+# Reject the class (banner/console hostnames) rather than the one host, so the
+# same shape of bug cannot land again on serveo or localtunnel.
+_BANNER_LABELS = frozenset({
+    "admin", "dashboard", "console", "www", "docs", "status",
+    "auth", "login", "billing", "support",
+})
+
+
+def _is_banner_url(url: str) -> bool:
+    host = re.sub(r"^https?://", "", url or "").split("/")[0].split(":")[0].lower()
+    return host.split(".")[0] in _BANNER_LABELS
+
+
 def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines: int = 120) -> str | None:
     _register_tunnel_proc(proc)
     lines: queue.Queue[str] = queue.Queue()
@@ -1558,8 +1800,15 @@ def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines:
             continue
         for pat in patterns:
             m = re.search(pat, line)
-            if m:
-                return m.group(1)
+            if not m:
+                continue
+            cand = m.group(1)
+            if _is_banner_url(cand):
+                # Banner text, not a tunnel. Keep reading - the real URL is still
+                # to come on a later line. Never return it and never give up here.
+                print(f"[tunnel] ignoring banner URL {cand}")
+                continue
+            return cand
     return None
 
 
@@ -1713,9 +1962,26 @@ class Handler(BaseHTTPRequestHandler):
     # backend crashed. Track whether the body was consumed and drain it before replying.
     _DRAIN_MAX = 4 * 1024 * 1024
 
+    # A phone walking out of WiFi range, a closed tab, or a tunnel reconnect all abort
+    # the socket mid-request. That is normal operation, not a fault, but socketserver
+    # prints a full traceback for each one — which buried real errors in the console and
+    # made a healthy server look like it was crashing. Swallow only the disconnect
+    # family; everything else still propagates.
+    _BENIGN_DISCONNECTS = (
+        ConnectionAbortedError,   # WinError 10053 — host software aborted the connection
+        ConnectionResetError,     # WinError 10054 — peer vanished
+        BrokenPipeError,
+        TimeoutError,             # socket timeout on an idle keep-alive
+    )
+
     def handle_one_request(self):
         self._body_consumed = False
-        super().handle_one_request()
+        try:
+            super().handle_one_request()
+        except self._BENIGN_DISCONNECTS as e:
+            self.close_connection = True
+            if os.environ.get("AIRGPT_DEBUG_SOCKETS"):
+                print(f"[http] client disconnected: {type(e).__name__}")
 
     def _drain_request_body(self) -> None:
         if getattr(self, "_body_consumed", True):
@@ -1782,7 +2048,10 @@ class Handler(BaseHTTPRequestHandler):
         return join_url, qt
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        # /pomodoro is a self-contained timer page: no data, no API calls, nothing to
+        # authorise. It opens in its own small window, so requiring a token would just
+        # 401 a page that reads nothing.
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -1793,7 +2062,10 @@ class Handler(BaseHTTPRequestHandler):
         if not app_auth:
             return True
         st = app_auth.status()
-        if not st.get("needs_auth"):
+        # needs_auth is also True when no passcode exists so _join_url mints a
+        # QR token (#27 / #40). That is not an HTTP session gate: establish
+        # *creates* the session, and a missing passcode is not passcode_required.
+        if not st.get("passcode_required"):
             return True
         # Rate-limit brute force from LAN/WiFi attackers
         now = time.time()
@@ -1817,6 +2089,77 @@ class Handler(BaseHTTPRequestHandler):
                 )
         return ok
 
+    def _refuse_establish(self, path: str, code: str, error: str):
+        ip = self._client_ip()
+        if app_audit:
+            app_audit.log(code, ip=ip, detail=path, ok=False)
+        return self._json(403, {
+            "ok": False,
+            "error": error,
+            "code": code,
+            "establish": True,
+        })
+
+    def _establish_ok(self, path: str) -> bool:
+        """False if a refusal was already sent. Local host always passes."""
+        if path == "/api/establish":
+            return True
+        if _is_host_request(self.headers, self.client_address[0]):
+            return True
+        if not _needs_establish(self.command, path):
+            return True
+        tok = (self._request_token() or "").strip()
+        nonce = (self.headers.get(SESSION_NONCE_HEADER) or "").strip()
+        if tok and tok not in _establish_token:
+            self._refuse_establish(
+                path,
+                "establish_unbound",
+                "token is not bound to a handshake — POST /api/establish",
+            )
+            return False
+        if tok and nonce and _establish_token.get(tok) != nonce:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        rec = _establish.get(nonce) if nonce else None
+        if not rec:
+            self._refuse_establish(
+                path,
+                "establish_required",
+                "establish required — POST /api/establish",
+            )
+            return False
+        bound_tok = rec.get("token") or ""
+        if bound_tok and bound_tok != tok:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        return True
+
+    def _handle_establish(self):
+        ip = self._client_ip()
+        tok = (self._request_token() or "").strip()
+        nonce = secrets.token_urlsafe(24)
+        if tok:
+            old = _establish_token.get(tok)
+            if old:
+                _establish.pop(old, None)
+            _establish_token[tok] = nonce
+        _establish[nonce] = {"token": tok, "ip": ip, "ts": time.time()}
+        if app_audit:
+            app_audit.log("establish", ip=ip, detail="ok", ok=True)
+        return self._json(200, {
+            "ok": True,
+            "session_nonce": nonce,
+            "security_version": AIRGPT_SECURITY_VERSION,
+        })
+
     def _passcode_rate_limited(self, ip: str) -> bool:
         """Throttle passcode/join-code guessing. Local host is exempt.
 
@@ -1837,7 +2180,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
+        self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
     def _send(self, code, body: bytes, ctype):
         try:
@@ -1845,6 +2192,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
             self._cors()
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -1863,6 +2211,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.send_header("Transfer-Encoding", "chunked")
+        self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
         self._cors()
         self.end_headers()
 
@@ -1936,6 +2285,17 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
+        blocked = _ai_lockdown_block()
+        if blocked:
+            return self._json(
+                403,
+                {
+                    "ok": False,
+                    "error": blocked["error"],
+                    "by": blocked.get("by") or "host",
+                    "reason": blocked.get("reason") or "",
+                },
+            )
         rate_err = _check_ai_rate()
         if rate_err:
             return self._json(429, {"error": rate_err})
@@ -1993,21 +2353,32 @@ class Handler(BaseHTTPRequestHandler):
         exclude_id = int(user_msg["id"]) if user_msg else 0
         history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
 
-        # A skill snippet modifies THIS send only. The raw user text is what gets stored
-        # above — the pack is prepended to the model's copy so the transcript stays
+        # Armed skills modify THIS send only. The raw user text is what gets stored
+        # above — packs are prepended to the model's copy so the transcript stays
         # readable and the chat history never accumulates skill preambles.
+        #
+        # `skills` is the list form; `skill` is the original single field and still
+        # works, because an older client is still allowed to talk to this server.
         question = text
-        skill_id = str(data.get("skill") or "").strip().lower()
-        if skill_id:
-            pack = ""
-            try:
-                import invoke_registry
+        wanted: list[str] = []
+        raw = data.get("skills")
+        for candidate in [data.get("skill")] + (raw if isinstance(raw, list) else []):
+            sid = str(candidate or "").strip().lower()
+            if sid and sid not in wanted:
+                wanted.append(sid)
+        if wanted:
+            packs: list[str] = []
+            for sid in wanted[:MAX_ARMED_SKILLS]:
+                try:
+                    import invoke_registry
 
-                pack = invoke_registry.load_skill(skill_id, max_chars=2000).strip()
-            except Exception:
-                pack = ""
-            if pack:
-                question = f"[Skill: {skill_id}]\n{pack}\n\n---\n\n{text}"
+                    body = invoke_registry.load_skill(sid, max_chars=2000).strip()
+                except Exception:
+                    body = ""
+                if body:
+                    packs.append(f"[Skill: {sid}]\n{body}")
+            if packs:
+                question = "\n\n".join(packs) + f"\n\n---\n\n{text}"
 
         # Reserved for explicit cancellation. Deliberately NOT tripped by the client
         # disconnecting any more — a dropped socket used to abandon generation and
@@ -2122,7 +2493,13 @@ class Handler(BaseHTTPRequestHandler):
         if not sid or not q:
             return self._json(400, {"error": "space_id and query required"})
         depth = str(data.get("depth") or "high").lower()
-        if depth not in ("basic", "high", "max", "manual"):
+        # "adaptive" is the label the Settings UI shows; "auto" is what the store
+        # persists (rag/store.py). Accept both, or a space saved as Adaptive has its
+        # depth silently coerced to high on every single answer - the setting appears
+        # to save, and never takes effect. R-0011: a silent fallback is a lie.
+        if depth == "adaptive":
+            depth = "auto"
+        if depth not in ("basic", "high", "max", "manual", "auto"):
             depth = "high"
         chat_id = int(data.get("chat_id") or 0)
         use_llm = True if "use_llm" not in data else bool(data.get("use_llm"))
@@ -2166,6 +2543,14 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     if not self._sse_send(payload):
                         break
+                elif t == "reasoning":
+                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
+                    # and dropped here - every browser answer goes over SSE, so the
+                    # founder never saw a step of it while unit and JSON-path checks
+                    # both passed.
+                    reasoning = ev.get("reasoning") or {}
+                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
+                        break
                 elif t == "citations":
                     citations = ev.get("citations") or []
                     if not self._sse_send({"type": "citations", "citations": citations}):
@@ -2200,6 +2585,9 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_send({
             "type": "done",
             "answer": text,
+            # Rebuilt from a fixed key list, so anything not named here is dropped
+            # no matter what answer_events produced. #15's chain was missing.
+            "reasoning": done.get("reasoning") or {},
             "trace_id": done.get("trace_id"),
             "confidence": done.get("confidence"),
             "stop_reason": done.get("stop_reason"),
@@ -2208,6 +2596,9 @@ class Handler(BaseHTTPRequestHandler):
             "faithfulness": done.get("faithfulness"),
             "unsupported_claims": done.get("unsupported_claims") or [],
             "model": done.get("model"),
+            # Empty string when the preferred provider answered. A fallback used to
+            # be indistinguishable from a first-choice reply.
+            "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
         })
         self._sse_end()
@@ -2281,7 +2672,10 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET,HEAD,POST,DELETE,PATCH,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
         self.end_headers()
 
     def do_HEAD(self):
@@ -2306,7 +2700,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(length))
-            self.send_header("Cache-Control", "no-store")
+            # Match what GET actually sends for the page, or a HEAD-then-GET client
+            # is told the response is uncacheable and then handed an ETag.
+            if path in ("/", "/index.html"):
+                self.send_header("Cache-Control", "no-cache")
+                try:
+                    self.send_header("ETag", _cached_asset(ROOT / "index.html")[1])
+                except OSError:
+                    pass
+            else:
+                self.send_header("Cache-Control", "no-store")
             self._cors()
             self.end_headers()
             return
@@ -2342,8 +2745,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_local_host(ip):
+        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -2354,16 +2761,55 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "service": "airgpt", "version": APP_VERSION})
 
         if path in ("/", "/index.html"):
-            body = (ROOT / "index.html").read_bytes()
+            # 838KB re-read from disk and re-sent uncompressed on every single request.
+            # `no-store` also forbade revalidation, which made the ETag below dead code -
+            # the browser could never answer with a conditional request, so every open
+            # and every refresh pulled the whole file again.
+            body, etag = _cached_asset(ROOT / "index.html")
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self._cors()
+                self.end_headers()
+                return
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", ""))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("ETag", f'"v{APP_VERSION}-{int(time.time())//3600}"')
+            self.send_header("Content-Length", str(len(payload)))
+            # no-cache, not no-store: revalidate every time (so an edit still shows up
+            # immediately) but allow a 304 when nothing changed.
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", etag)
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Vary", "Accept-Encoding")
             self._cors()
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(payload)
+            return
+
+        if path in ("/pomodoro", "/pomodoro.html", "/tomato"):
+            body, etag = _cached_asset(ROOT / "pomodoro.html")
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self._cors()
+                self.end_headers()
+                return
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", ""))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", etag)
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Vary", "Accept-Encoding")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         if path in ("/admin", "/admin.html"):
@@ -2496,7 +2942,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/info":
             ips = local_ips()
-            lan = lan_diagnostics()
+            lan_fallback = {
+                "ips": ips,
+                "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
+                "network_profile": "Unknown",
+                "firewall": _firewall_status,
+                "listening": f"0.0.0.0:{PORT}",
+                "lan_likely_blocked": False,
+                "hint": "LAN diagnostics timed out — retry or run enable-lan.bat",
+            }
+            lan = _with_deadline(lan_diagnostics, lan_fallback, timeout=1.8)
             lic = app_license.get_status() if app_license else {"can_use_tunnel": True, "can_use_ai": True}
             tunnel_allowed = lic.get("can_use_tunnel", True)
             tunnel_url = (_tunnel.get("url") or None) if tunnel_allowed else None
@@ -2515,6 +2970,21 @@ class Handler(BaseHTTPRequestHandler):
                     lan_blocked=lan["lan_likely_blocked"],
                 )
             mdns_u = wifi_access.mdns_url() if wifi_access else None
+            share_meta: dict = {}
+            if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
+                scoped = app_auth.token_session_acl(self._request_token())
+                if scoped:
+                    share_meta = {
+                        "share_acl": scoped.get("acl"),
+                        "access_level": scoped.get("access_level"),
+                        "session_id": scoped.get("session_id"),
+                    }
+            devices = _with_deadline(db.list_devices, [], timeout=1.0)
+            cortex = _with_deadline(
+                lambda: _cortex_info(quick=True),
+                {"ok": False, "status": "timeout", "audit_sample": [], "ledger_verify": {"ok": False}},
+                timeout=1.5,
+            )
             return self._json(200, {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
@@ -2532,7 +3002,7 @@ class Handler(BaseHTTPRequestHandler):
                 "tunnel_provider": _tunnel_provider_label(),
                 "tunnel_error": _tunnel.get("error"),
                 "tunnel_uptime_s": int(time.time() - _tunnel["started_at"]) if _tunnel.get("started_at") else 0,
-                "devices": db.list_devices(),
+                "devices": devices,
                 "firewall": _firewall_status,
                 "network_profile": lan["network_profile"],
                 "lan_hint": lan["hint"],
@@ -2563,9 +3033,10 @@ class Handler(BaseHTTPRequestHandler):
                 "business_features": bool(lic.get("business_features")),
                 "demo_mock": bool(DEMO_MOCK),
                 "data_dir": str(DATA_DIR),
-                "cortex": _cortex_info(quick=True),
+                "cortex": cortex,
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
                 "ai_lockdown": _ai_lockdown_payload(),
+                **share_meta,
             })
 
         if path == "/api/input-notes":
@@ -2632,6 +3103,7 @@ class Handler(BaseHTTPRequestHandler):
                 "qr_token": qr_tok,
                 "network_epoch": _network_epoch,
                 "ai_lockdown": _ai_lockdown_payload(),
+                "app_state": _app_state_payload(q),
             })
 
         if path == "/api/presence":
@@ -2699,12 +3171,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
         if path == "/api/memory/thin":
-            try:
-                import memory_index as mi
-
-                return self._json(200, mi.thin_memories())
-            except Exception as e:
-                return self._json(500, {"error": str(e)[:200]})
+            # GET must never mutate. This one called thin_memories(), which
+            # irreversibly truncates every unpinned body over 160 chars down to ~140
+            # in place - so a link prefetch, a browser preconnect or an accidental
+            # reload silently destroyed memory text with no undo. Nothing in the UI
+            # ever called it, and the destructive path already exists on
+            # POST /api/memory/forget {"thin":true}.
+            return self._json(
+                405,
+                {
+                    "ok": False,
+                    "error": "GET /api/memory/thin is retired - it mutated on a GET",
+                    "use": 'POST /api/memory/forget {"thin": true}',
+                },
+            )
 
         if path == "/api/export":
             if q.get("package", ["0"])[0] == "1":
@@ -2910,7 +3390,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hub/peers/") and path.endswith("/events"):
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
                 return self._json(200, {"events": db.list_hub_events(80, ip=peer_ip)})
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -2921,7 +3401,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = unquote(path.split("/")[-2])
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
                 return self._json(200, hub.get_peer_activity(peer_ip, host_ip=ip))
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -3072,6 +3552,33 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": True, "spaces": rag_store.list_spaces()})
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/rag/demo-variants":
+            try:
+                from rag import demo_variants
+
+                return self._json(200, demo_variants.list_variants())
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ontology"):
+            try:
+                from rag import ontology as rag_ontology
+
+                sid = int(path.split("/")[4])
+                force = (q.get("force", ["0"])[0] if isinstance(q, dict) else "0") in ("1", "true", "yes")
+                return self._json(200, rag_ontology.ontology_for_space(sid, force=force))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/demo-variant"):
+            try:
+                from rag import demo_variants
+
+                sid = int(path.split("/")[4])
+                return self._json(200, {"ok": True, **demo_variants.resolve_for_space(sid)})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/spaces/") and path.endswith("/export"):
             try:
@@ -3319,11 +3826,30 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
+        if path.startswith("/api/apps/") and path.endswith("/state") and path.count("/") == 4:
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                return self._json(200, apps_hub.get_app_state(app_id))
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
+        if path == "/api/apps/ports":
+            try:
+                import apps_hub
+
+                return self._json(200, {"ok": True, "ports": apps_hub.allowlisted_ports()})
+            except Exception as e:
+                return self._json(503, {"error": str(e)[:200]})
+
         if path.startswith("/api/apps/") and path.count("/") == 3:
             # /api/apps/{id} — probe one
             try:
                 import apps_hub
                 app_id = path.rsplit("/", 1)[-1]
+                if app_id in ("ports", "register", "start", "stop", "open"):
+                    return self._json(404, {"error": "not found"})
                 st = apps_hub.status()
                 hit = next((a for a in st.get("apps") or [] if a.get("id") == app_id), None)
                 return self._json(200, hit or {"ok": False, "error": "unknown app"})
@@ -3703,8 +4229,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._auth_ok(path) and not path.startswith("/api/auth/"):
             return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_local_host(ip):
+        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
 
         if path == "/api/presence/typing":
             try:
@@ -3792,6 +4322,16 @@ class Handler(BaseHTTPRequestHandler):
                 sid = int(data.get("session_id", 0) or 0)
                 mode = str(data.get("mode", "general"))
                 if data.get("ai_mode"):
+                    blocked = _ai_lockdown_block()
+                    if blocked:
+                        return self._json(
+                            403,
+                            {
+                                "ok": False,
+                                "error": blocked["error"],
+                                "by": blocked.get("by") or "host",
+                            },
+                        )
                     if not text.strip():
                         return self._json(400, {"error": "question required"})
                     reply_to_id = int(data.get("reply_to_id", 0) or 0)
@@ -4185,7 +4725,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                # Must normalize — encodeURIComponent IPv6 without unquote used to
+                # create ghost peers keyed as 2a02%3A… / 2a02%253A…
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
+                if not peer_ip:
+                    return self._json(400, {"error": "invalid peer ip"})
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, hub.set_peer_acl(
                     peer_ip,
@@ -4200,7 +4744,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2])
+                if not peer_ip:
+                    return self._json(400, {"error": "invalid peer ip"})
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, hub.rename_peer(peer_ip, str(data.get("display_name", ""))))
             except Exception as e:
@@ -4211,7 +4757,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "host only"})
             try:
                 import hub
-                peer_ip = path.split("/")[-2]
+                peer_ip = hub.normalize_peer_ip(path.split("/")[-2]) or path.split("/")[-2]
                 return self._json(200, hub.kick_peer(peer_ip))
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
@@ -4241,6 +4787,24 @@ class Handler(BaseHTTPRequestHandler):
             qr_tok = str(data.get("qr_token", ""))
             # Prefer session-share redeem when token is a share token
             r = None
+            if hasattr(app_auth, "redeem_project_share"):
+                r = app_auth.redeem_project_share(qr_tok)
+                if r.get("ok"):
+                    if app_audit:
+                        app_audit.log("auth_project_share_ok", ip=ip, detail=qr_tok[:20], ok=True)
+                    try:
+                        import hub
+                        hub.touch_peer(
+                            ip,
+                            device_id=str(data.get("device_id", "") or self.headers.get("X-Device-Id", ""))[:80],
+                            display_name=str(data.get("display_name", "") or self.headers.get("X-Device-Name", ""))[:120],
+                            join_method="qr",
+                            logged_in=True,
+                            access_level=r.get("access_level", "read_only"),
+                        )
+                    except Exception:
+                        pass
+                    return self._json(200, r)
             if hasattr(app_auth, "redeem_session_share"):
                 r = app_auth.redeem_session_share(qr_tok)
                 if not r.get("ok"):
@@ -4301,6 +4865,52 @@ class Handler(BaseHTTPRequestHandler):
                     "session_share",
                     ip=ip,
                     detail=f"session={sid} acl={acl}",
+                    ok=True,
+                )
+            return self._json(200, {**r, "share_url": share_url})
+
+        if path.endswith("/share") and path.startswith("/api/projects/"):
+            if not app_auth:
+                return self._json(503, {"error": "auth unavailable"})
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            parts = path.rstrip("/").split("/")
+            # /api/projects/<key>/share
+            try:
+                key_idx = parts.index("projects") + 1
+                project_key = parts[key_idx]
+            except (ValueError, IndexError):
+                return self._json(400, {"error": "bad project key"})
+            if not project_key or project_key == "share":
+                return self._json(400, {"error": "project key required"})
+            data = json.loads(self._body().decode() or "{}")
+            acl = str(data.get("acl") or data.get("access_level") or "read_only")
+            if not hasattr(app_auth, "issue_project_share"):
+                return self._json(503, {"error": "project share unavailable"})
+            r = app_auth.issue_project_share(
+                project_key,
+                acl=acl,
+                host_token=self._request_token(),
+                host_verified=_is_local_host(ip),
+            )
+            if not r.get("ok"):
+                return self._json(400, r)
+            base = ""
+            with _tunnel_lock:
+                base = (_tunnel.get("url") or "").rstrip("/")
+            if not base:
+                ips = local_ips()
+                if ips:
+                    base = f"http://{ips[0]}:{PORT}"
+            share_url = ""
+            tok = r.get("share_token") or r.get("token")
+            if base and tok:
+                share_url = f"{base}/?qr={tok}&project={project_key}"
+            if app_audit:
+                app_audit.log(
+                    "project_share",
+                    ip=ip,
+                    detail=f"project={project_key} acl={acl}",
                     ok=True,
                 )
             return self._json(200, {**r, "share_url": share_url})
@@ -4367,6 +4977,16 @@ class Handler(BaseHTTPRequestHandler):
                 prompt = str(data.get("prompt") or data.get("text") or "").strip()
                 if not prompt:
                     return self._json(400, {"error": "prompt required"})
+                blocked = _ai_lockdown_block()
+                if blocked:
+                    return self._json(
+                        403,
+                        {
+                            "ok": False,
+                            "error": blocked["error"],
+                            "by": blocked.get("by") or "host",
+                        },
+                    )
                 session_id = int(data.get("session_id") or 0)
                 settings = cortex_orchestrator.get_settings()
                 thinking_mode = str(data.get("thinking_mode") or settings.get("thinking_mode") or "assist")
@@ -4650,6 +5270,156 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/rag/demo-variants":
+            try:
+                from rag import demo_variants
+
+                return self._json(200, demo_variants.list_variants())
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/insights-export":
+            try:
+                import sys
+                from pathlib import Path as _P
+
+                rag_tests = _P(__file__).resolve().parent / "tests" / "RAG"
+                if str(rag_tests) not in sys.path:
+                    sys.path.insert(0, str(rag_tests))
+                import insights_export as _ix
+
+                data = json.loads(self._body().decode() or "{}")
+                excl = data.get("exclude") or []
+                if isinstance(excl, str):
+                    excl = [s.strip() for s in excl.split(",") if s.strip()]
+                out = _ix.run_pipeline(
+                    ask=str(data.get("ask") or "Top 5 selling SKUs by revenue"),
+                    n=int(data.get("n") or 5),
+                    file_type=str(data.get("file_type") or "xlsx"),
+                    graph_type=str(data.get("graph_type") or "bar"),
+                    exclude=excl or None,
+                )
+                return self._json(200, out)
+            except Exception as e:
+                return self._json(
+                    400,
+                    {
+                        "ok": False,
+                        "error": str(e)[:300],
+                        "honesty": "Cortex-direct, not OpenVault-gated",
+                    },
+                )
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/demo-variant"):
+            try:
+                from rag import demo_variants
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                name = str(data.get("variant") or data.get("name") or "").strip()
+                if not name:
+                    return self._json(200, {"ok": True, **demo_variants.resolve_for_space(sid)})
+                out = demo_variants.select_variant(sid, name)
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/spaces/") and path.endswith("/ontology"):
+            try:
+                from rag import ontology as rag_ontology
+
+                sid = int(path.split("/")[4])
+                data = json.loads(self._body().decode() or "{}")
+                out = rag_ontology.ontology_for_space(sid, force=bool(data.get("force")))
+                if out.get("ok"):
+                    out["artifact"] = str(rag_ontology.save_ontology_artifact(sid))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/identify":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.identify_employee(
+                    str(data.get("path") or ""),
+                    str(data.get("ask") or data.get("query") or ""),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/confirm-identity":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.confirm_identity(
+                    str(data.get("token") or ""),
+                    bool(data.get("yes")),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/propose-amend":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.propose_amend(
+                    str(data.get("token") or ""),
+                    new_salary=float(data["new_salary"]) if data.get("new_salary") is not None else None,
+                    increment_pct=float(data["increment_pct"]) if data.get("increment_pct") is not None else None,
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/confirm-amend":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.confirm_amend(str(data.get("token") or ""), bool(data.get("yes")))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/continue":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.continue_loop(
+                    str(data.get("token") or ""),
+                    ask=str(data.get("ask") or ""),
+                    next_row=bool(data.get("next_row")),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/ops/chain":
+            try:
+                from rag import ops_amend
+
+                data = json.loads(self._body().decode() or "{}")
+                out = ops_amend.chain(str(data.get("token") or ""))
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/reveal-path":
+            try:
+                from rag import reveal as rag_reveal
+
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, rag_reveal.reveal_path(str(data.get("path") or "")))
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path.startswith("/api/rag/spaces/") and path.endswith("/archive"):
             try:
                 from rag import store as rag_store
@@ -4684,6 +5454,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/rag/sources/") and path.endswith("/reveal"):
+            try:
+                from rag import reveal as rag_reveal
+                from rag import store as rag_store
+
+                src_id = int(path.split("/")[4])
+                src = rag_store.get_source(src_id)
+                if not src:
+                    return self._json(404, {"ok": False, "error": "source not found"})
+                out = rag_reveal.reveal_source(src)
+                return self._json(200 if out.get("ok") else 404, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/sources/") and path.endswith("/delete"):
             try:
@@ -4766,16 +5550,32 @@ class Handler(BaseHTTPRequestHandler):
                 q = str(data.get("query") or data.get("q") or "").strip()
                 if not sid or not q:
                     return self._json(400, {"error": "space_id and query required"})
+                depth = str(data.get("depth") or "").strip()
+                if not depth:
+                    try:
+                        from rag import demo_variants
+
+                        depth = str(demo_variants.resolve_for_space(sid).get("depth") or "high")
+                    except Exception:
+                        depth = "high"
                 out = rag_answer.answer(
                     sid,
                     q,
-                    depth=str(data.get("depth") or "high"),
+                    depth=depth,
                     chat_id=int(data.get("chat_id") or 0),
                     use_llm=True if "use_llm" not in data else bool(data.get("use_llm")),
                     use_web=bool(data["use_web"]) if "use_web" in data else None,
                     source_ids=[int(x) for x in data.get("source_ids") or [] if str(x).strip()]
                     or None,
                 )
+                if isinstance(out, dict):
+                    try:
+                        from rag import demo_variants
+
+                        out.setdefault("honesty", demo_variants.HONESTY)
+                        out.setdefault("variant", demo_variants.resolve_for_space(sid).get("name"))
+                    except Exception:
+                        pass
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
@@ -4963,6 +5763,86 @@ class Handler(BaseHTTPRequestHandler):
                 import apps_hub
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, apps_hub.start(str(data.get("id") or "")))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path == "/api/apps/register":
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import apps_hub
+
+                data = json.loads(self._body().decode() or "{}")
+                return self._json(200, apps_hub.register_app(data if isinstance(data, dict) else {}))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/start") and path.count("/") == 4:
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                return self._json(200, apps_hub.start(app_id))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/state") and path.count("/") == 4:
+            try:
+                import apps_hub
+
+                app_id = path.split("/")[3]
+                # read_only peers cannot write shared card state
+                if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
+                    scoped = app_auth.token_session_acl(self._request_token()) or {}
+                    level = str(scoped.get("access_level") or "")
+                    if scoped.get("acl") == "view" or level in ("read_only", "limited"):
+                        return self._json(403, {"ok": False, "error": "view only"})
+                data = json.loads(self._body().decode() or "{}")
+                state = data.get("state") if isinstance(data, dict) else {}
+                if not isinstance(state, dict):
+                    state = {"value": state}
+                return self._json(200, apps_hub.set_app_state(app_id, state))
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/apps/") and path.endswith("/mount") and path.count("/") == 4:
+            # Start app + insert app_card message into session
+            try:
+                import apps_hub
+                import json as _json
+
+                app_id = path.split("/")[3]
+                data = json.loads(self._body().decode() or "{}")
+                session_id = int(data.get("session_id") or 0)
+                started = apps_hub.start(app_id)
+                health = "live" if started.get("ok") else "error"
+                if started.get("status") == "already_running":
+                    health = "live"
+                app = started.get("app") or {}
+                port = int(app.get("port") or data.get("port") or 0)
+                name = str(data.get("name") or app.get("name") or app_id)
+                card = {
+                    "app_id": app_id,
+                    "name": name,
+                    "port": port,
+                    "health": health if started.get("ok") or health == "live" else "error",
+                    "slug": app_id,
+                    "error": started.get("error") or "",
+                }
+                msg = None
+                if session_id:
+                    msg = db.add_message(
+                        device_ip="127.0.0.1",
+                        device_name="AirGPT",
+                        text=_json.dumps(card),
+                        kind="app_card",
+                        source="ai",
+                        session_id=session_id,
+                    )
+                    bump_sync()
+                return self._json(200, {"ok": True, "card": card, "start": started, "message": msg})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
@@ -5897,6 +6777,57 @@ def _startup_verify() -> None:
         print(f"[verify] skipped: {e}")
 
 
+def _port_holder(port: int) -> str:
+    """PID currently LISTENING on `port`, for an actionable error message."""
+    try:
+        if os.name != "nt":
+            return ""
+        r = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True, text=True, timeout=6,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        for line in (r.stdout or "").splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3].upper() == "LISTENING" and parts[1].endswith(f":{port}"):
+                return parts[4]
+    except Exception:
+        pass
+    return ""
+
+
+def _wait_for_port(host: str, port: int, *, seconds: float = 20.0) -> bool:
+    """Wait until `port` can actually be bound the way the real server binds it.
+
+    Two things used to make a restart leave the engine dead. The probe was a plain
+    socket while the server is a ThreadingHTTPServer with allow_reuse_address=1, so
+    a socket sitting in TIME_WAIT failed the probe even though the server itself
+    would have bound it fine - the check was stricter than the thing it guarded.
+    And it gave up on the first failure, when a restart is inherently a race with
+    the previous process letting go of the port.
+    """
+    deadline = time.time() + max(0.0, seconds)
+    delay = 0.25
+    while True:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            # Match the server's own option, or the probe rejects ports it could use.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((host, port))
+            return True
+        except OSError:
+            if time.time() >= deadline:
+                return False
+            print(f"[start] port {port} still busy - retrying...", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 1.6, 2.0)
+        finally:
+            try:
+                probe.close()
+            except Exception:
+                pass
+
+
 def main():
     global _firewall_status, AI_AUTO
     try:
@@ -5905,12 +6836,10 @@ def main():
     except Exception as e:
         print(f"[crashlog] disabled: {e}")
     AI_AUTO = _load_ai_auto()
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        probe.bind((HOST, PORT))
-        probe.close()
-    except OSError:
-        print(f"Port {PORT} in use. Run restart.bat first.")
+    if not _wait_for_port(HOST, PORT):
+        holder = _port_holder(PORT)
+        who = f" Held by PID {holder}." if holder else ""
+        print(f"Port {PORT} in use.{who} Run restart.bat, or stop that process first.")
         return
 
     _firewall_status = try_firewall()

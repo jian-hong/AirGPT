@@ -81,11 +81,189 @@ def scrub(*, dry_run: bool = True, limit: int = 2000) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# The .md mirror.
+#
+# scrub() above rewrites the SQLite row, but update_memory writes no drawer - only
+# add_memory mirrors - so the row read "[removed]" while the drawer beside it still
+# held the full claim. And retrieve_vault_snippets greps the drawers, not the rows.
+# Cleaning one side was worse than useless: it made the problem look solved while the
+# fabrication kept being injected. On the machine this was found on, 12 of 46 drawers
+# carried the same invented biography.
+
+_FRONTMATTER_RE = re.compile(r"^---\n(?P<meta>.*?)\n---\n(?P<rest>.*)$", re.S)
+_DRAWER_QA_RE = re.compile(r"(?P<head>.*?\nQ:.*?\n)A:\s*(?P<a>.*)$", re.S)
+
+
+def _drawer_meta(text: str) -> dict[str, str]:
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}
+    out: dict[str, str] = {}
+    for line in m.group("meta").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _classify_drawer(text: str) -> str | None:
+    """Why this drawer is a stored account of a link, or None to leave it alone.
+
+    Conservative on purpose. A drawer that merely mentions a URL in passing is not
+    evidence the model invented anything, and destroying real notes would be a far
+    worse failure than leaving one guess in place.
+    """
+    if not URL_RE.search(text):
+        return None
+    if "[removed]" in text or "[not stored]" in text:
+        return None  # already scrubbed
+    m = _FRONTMATTER_RE.match(text)
+    body = m.group("rest") if m else text
+
+    qa = _DRAWER_QA_RE.match(body)
+    if qa:
+        # The question carried the URL, so the answer is the model's guess about it.
+        return "qa_link_answer" if URL_RE.search(qa.group("head")) else None
+    # The dual_brain feedback drawer is written straight from a chat answer with no
+    # question stored beside it, so a URL in the body is the only signal available.
+    meta = _drawer_meta(text)
+    if meta.get("source") == "dual_brain" and meta.get("room") == "feedback":
+        return "dual_brain_link_answer"
+    return None
+
+
+def scrub_drawers(*, dry_run: bool = True, root: str = "") -> dict[str, Any]:
+    """Rewrite link-answer drawers under data/vault, keeping the question.
+
+    Rewrite, never delete - same reasoning as scrub(). dry_run is the default so the
+    operator sees the whole list before anything on disk changes.
+    """
+    from pathlib import Path
+
+    if root:
+        base = Path(root)
+    else:
+        from config import DATA_DIR
+
+        base = Path(DATA_DIR) / "vault"
+    if not base.is_dir():
+        return {"ok": False, "error": f"no vault at {base}", "scanned": 0, "affected": 0, "items": []}
+
+    changed: list[dict[str, Any]] = []
+    review: list[dict[str, Any]] = []
+    scanned = 0
+    for path in sorted(base.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        scanned += 1
+        why = _classify_drawer(text)
+        if not why:
+            # Carries a URL but the conservative rules above cannot prove it is an
+            # assistant guess - typically because the URL sits in the answer rather
+            # than the question, or the writer used a `source` this module does not
+            # know. Reporting it beats both silently rewriting real notes and
+            # silently leaving a fabrication in place: on the machine this was built
+            # for, 6 of the 12 drawers holding an invented biography landed here.
+            if URL_RE.search(text) and "[removed]" not in text and "[not stored]" not in text:
+                meta = _drawer_meta(text)
+                review.append(
+                    {
+                        "path": str(path),
+                        "source": meta.get("source", ""),
+                        "room": meta.get("room", ""),
+                        "excerpt": text[-400:].strip()[:160],
+                    }
+                )
+            continue
+
+        m = _FRONTMATTER_RE.match(text)
+        head = m.group("meta") if m else ""
+        body = m.group("rest") if m else text
+
+        if why == "qa_link_answer":
+            qa = _DRAWER_QA_RE.match(body)
+            new_body = qa.group("head") + REPLACEMENT
+            before = (qa.group("a") or "").strip()[:160]
+        else:
+            title = next((ln for ln in body.splitlines() if ln.startswith("# ")), "")
+            new_body = (title + "\n\n" if title else "") + REPLACEMENT
+            before = body.strip()[:160]
+
+        new_text = f"---\n{head}\n---\n{new_body}" if m else new_body
+        entry = {"path": str(path), "why": why, "before": before}
+        if not dry_run:
+            try:
+                path.write_text(new_text, encoding="utf-8")
+            except Exception as exc:  # one bad file must not stop the sweep
+                entry["error"] = str(exc)[:120]
+        changed.append(entry)
+
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "scanned": scanned,
+        "affected": len(changed),
+        "items": changed,
+        # Never empty silently. A sweep that reports only what it fixed reads as
+        # "all clear" when it is not.
+        "needs_review": len(review),
+        "review": review,
+    }
+
+
+def scrub_paths(paths: list[str], *, dry_run: bool = True) -> dict[str, Any]:
+    """Rewrite specific drawers an operator has reviewed and confirmed.
+
+    The automatic rules in `_classify_drawer` are deliberately conservative, so
+    drawers where the URL sits in the answer rather than the question land in
+    `needs_review` instead of being rewritten. Six of the twelve fabrication drawers
+    were in exactly that state, alongside two legitimate engineering notes that a
+    looser rule would have destroyed. This is the confirmed-by-a-human path: the
+    caller names the files, so nothing is guessed.
+
+    Rewrite, never delete, and the heading is kept so the drawer still says what it
+    was about.
+    """
+    from pathlib import Path
+
+    changed: list[dict[str, Any]] = []
+    for raw in paths:
+        path = Path(raw)
+        if not path.is_file():
+            changed.append({"path": str(path), "error": "not found"})
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if "[removed]" in text or "[not stored]" in text:
+            continue  # already scrubbed
+        m = _FRONTMATTER_RE.match(text)
+        head = m.group("meta") if m else ""
+        body = m.group("rest") if m else text
+        title = next((ln for ln in body.splitlines() if ln.startswith("# ")), "")
+        new_body = (title + "\n\n" if title else "") + REPLACEMENT
+        new_text = f"---\n{head}\n---\n{new_body}" if m else new_body
+        entry = {"path": str(path), "why": "operator-confirmed", "before": body.strip()[:160]}
+        if not dry_run:
+            try:
+                path.write_text(new_text, encoding="utf-8")
+            except Exception as exc:
+                entry["error"] = str(exc)[:120]
+        changed.append(entry)
+    return {"ok": True, "dry_run": dry_run, "affected": len(changed), "items": changed}
+
+
 if __name__ == "__main__":  # pragma: no cover - operator entry point
     import argparse
     import json
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true", help="write changes (default is a dry run)")
+    ap.add_argument("--drawers", action="store_true", help="also sweep the .md mirror under data/vault")
     args = ap.parse_args()
+    print("== memory rows ==")
     print(json.dumps(scrub(dry_run=not args.apply), indent=2)[:4000])
+    if args.drawers:
+        print("== vault drawers ==")
+        print(json.dumps(scrub_drawers(dry_run=not args.apply), indent=2)[:6000])

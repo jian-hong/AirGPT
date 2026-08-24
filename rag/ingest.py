@@ -4,12 +4,35 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import re
+import shutil
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
 
 from rag import chunking, sira, store, vectors
+
+
+def _retain_docs_original(space_id: int, path: Path, digest: str) -> str:
+    """Byte-faithful copy under space Docs/ for audit (RAG-BENCH-09). No encryption (P9)."""
+    try:
+        if not path.is_file():
+            return ""
+        docs_dir = store.BLOB_DIR / str(int(space_id)) / "Docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        # Already living in this space Docs/ — that IS the backup path.
+        if path.parent.resolve() == docs_dir.resolve():
+            return str(path.resolve())
+        safe = f"{(digest or 'x')[:8]}_{path.name}"
+        safe = safe.replace("/", "_").replace("\\", "_")
+        dest = docs_dir / safe
+        if dest.resolve() == path.resolve():
+            return str(dest)
+        if not dest.exists():
+            shutil.copy2(path, dest)
+        return str(dest)
+    except Exception:
+        return ""
 
 TEXT_SUFFIXES = {
     ".txt",
@@ -77,7 +100,11 @@ def _pdf_text(path: Path) -> str:
 
 
 def _xlsx_text(path: Path) -> str:
-    """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes."""
+    """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes.
+
+    Small sheets (Summary/KPI) are emitted first so parent-child chunking keeps
+    them intact near the top instead of burying them under detail-row dumps.
+    """
     try:
         import openpyxl
     except Exception:
@@ -86,21 +113,32 @@ def _xlsx_text(path: Path) -> str:
         wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
     except Exception:
         return ""
-    out: list[str] = []
+    sheets: list[tuple[int, str, list[str]]] = []
     try:
         for ws in wb.worksheets:
+            title = (ws.title or "").strip()
+            if title.casefold() in {"questions", "readme"}:
+                continue
             rows: list[str] = []
             for row in ws.iter_rows(values_only=True):
                 cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
                 if cells:
                     rows.append(" | ".join(cells))
             if rows:
-                out.append(f"## Sheet: {ws.title}\n" + "\n".join(rows))
+                sheets.append((len(rows), title, rows))
     finally:
         try:
             wb.close()
         except Exception:
             pass
+    if not sheets:
+        return ""
+    # Smallest sheets first (KPIs), then large fact tables
+    sheets.sort(key=lambda t: (t[0], t[1].casefold()))
+    index_lines = [f"- {title} ({n} rows)" for n, title, _ in sheets]
+    out: list[str] = ["## Spreadsheet index\n" + "\n".join(index_lines)]
+    for _n, title, rows in sheets:
+        out.append(f"## Sheet: {title}\n" + "\n".join(rows))
     return "\n\n".join(out).strip()
 
 
@@ -357,6 +395,11 @@ def ingest_paths(
             # than re-running a binary extractor (e.g. _xlsx_text) on plain text.
             dest_dir = store.BLOB_DIR / str(space_id) / "sources"
             dest_dir.mkdir(parents=True, exist_ok=True)
+            docs_path = ""
+            try:
+                orig_resolved = str(path.resolve())
+            except Exception:
+                orig_resolved = str(path)
             if path.parent.resolve() == dest_dir.resolve():
                 # Already this space's blob (rebuild re-reads it): use in place,
                 # never copy it onto itself with a stacked digest prefix.
@@ -367,12 +410,22 @@ def ingest_paths(
                     # newline="\n": Windows would translate to \r\n, so re-reading
                     # the blob on rebuild would hash differently and duplicate the row.
                     dest.write_text(text, encoding="utf-8", newline="\n")
+                # Real user file (not extracted .txt blob): keep Docs original for audit.
+                docs_path = _retain_docs_original(space_id, path, digest)
 
             file_authority = (authority or "").strip() or ""
             if not file_authority:
                 from rag import authority as authority_mod
 
                 file_authority = authority_mod.classify(str(path), path.name)
+            meta_src = {
+                "blob": str(dest),
+                "authority": file_authority,
+                "original_path": orig_resolved,
+                "original_name": path.name,
+            }
+            if docs_path:
+                meta_src["docs_path"] = docs_path
             src = store.add_source(
                 space_id,
                 path=str(path),
@@ -380,13 +433,21 @@ def ingest_paths(
                 content_hash=digest,
                 mime=mime,
                 bytes_n=len(text.encode("utf-8", errors="replace")),
-                meta={
-                    "blob": str(dest),
-                    "authority": file_authority,
-                    "original_path": path.name,
-                },
+                meta=meta_src,
                 status="indexing",
             )
+            # Content-hash hit returns prior row — merge Docs/original meta so audit paths stick.
+            prev_meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+            merged_meta = {**prev_meta, **meta_src}
+            if docs_path:
+                merged_meta["docs_path"] = docs_path
+            if merged_meta != prev_meta:
+                store.update_source_status(
+                    int(src["id"]),
+                    str(src.get("status") or "indexing"),
+                    meta=merged_meta,
+                )
+                src = {**src, "meta": merged_meta}
             source_id = int(src["id"])
             if src.get("status") == "ready" and not force and src.get("content_hash") == digest:
                 # already indexed identical content — still ok to skip rebuild pieces
@@ -466,17 +527,22 @@ def ingest_paths(
                 phrases=phrases,
                 headings=headings,
             )
-            store.update_source_status(
-                source_id,
-                "ready",
-                meta={
-                    "blob": str(dest),
-                    "phrases": phrases[:12],
-                    "import_map": import_map[:24],
-                    "authority": file_authority,
-                    "original_path": path.name,
-                },
-            )
+            # Merge — never wipe prior docs_path (rebuild-from-blob leaves docs_path "").
+            prior = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+            ready_meta = {
+                **prior,
+                "blob": str(dest),
+                "phrases": phrases[:12],
+                "import_map": import_map[:24],
+                "authority": file_authority,
+                "original_path": orig_resolved,
+                "original_name": path.name,
+            }
+            if docs_path:
+                ready_meta["docs_path"] = docs_path
+            elif prior.get("docs_path"):
+                ready_meta["docs_path"] = prior["docs_path"]
+            store.update_source_status(source_id, "ready", meta=ready_meta)
 
         store.update_job(job_id, stage="embed", detail=f"{len(child_pairs)} children")
         _p("embed", 55, f"embedding {len(child_pairs)} vectors")

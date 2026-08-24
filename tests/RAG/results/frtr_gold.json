@@ -1,0 +1,85 @@
+[
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 1,
+    "question": "What is total revenue in Q2 2024?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!B4",
+    "gold": "2176251.169851399",
+    "gold_values": [
+      "2176251.169851399"
+    ],
+    "provenance": "Cell: Summary!B4; Derived from Revenue!F3:F602"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 2,
+    "question": "Which quarter has the highest gross margin dollars?",
+    "reasoning_type": "Comparison",
+    "difficulty": "Medium",
+    "raw_answer": "Max of Summary!D3:D6",
+    "gold": "Q2 2024",
+    "gold_values": [
+      "Q2 2024",
+      "1070536.9958433171"
+    ],
+    "provenance": "Cells: Summary!D3:D6; Image: Summary_image_001"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 3,
+    "question": "What is the gross margin percentage in Q3 2024?",
+    "reasoning_type": "Computation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!E5",
+    "gold": "0.4429409225701213",
+    "gold_values": [
+      "0.4429409225701213"
+    ],
+    "provenance": "Cell: Summary!E5"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 4,
+    "question": "What is total expenses in Q1 2024?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!C3",
+    "gold": "1016549.3740205832",
+    "gold_values": [
+      "1016549.3740205832"
+    ],
+    "provenance": "Cell: Summary!C3; Derived from Expenses!C3:C302"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 5,
+    "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+    "reasoning_type": "TrendReasoning",
+    "difficulty": "Medium",
+    "raw_answer": "Yes",
+    "gold": "No",
+    "gold_values": [
+      "No",
+      "1966567.302699234",
+      "2176251.169851399",
+      "2127801.069858226",
+      "1361664.9191952057"
+    ],
+    "provenance": "Image: Summary_image_001"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 6,
+    "question": "Which region appears most frequently in revenue records?",
+    "reasoning_type": "Lookup/Count",
+    "difficulty": "Hard",
+    "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+    "gold": "West",
+    "gold_values": [
+      "West"
+    ],
+    "provenance": "Range: Revenue!B3:B602"
+  }
+]

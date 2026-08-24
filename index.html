@@ -504,7 +504,7 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
   .presence-typing span{animation:none;opacity:.6}
   .presence-av{transition:none}
 }
-/* ---- One access control (peer node · project share · shipped app) ------------ */
+/* ---- Access level picker (saved only -- not enforced yet) -------------------- */
 .access-pop{
   position:fixed;z-index:9999;min-width:260px;max-width:300px;padding:6px;
   border-radius:14px;border:1px solid var(--line);background:var(--surface);
@@ -513,6 +513,9 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
 .access-pop-title{
   font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
   padding:6px 8px 4px;
+}
+.access-pop-note{
+  font-size:11px;color:var(--muted);padding:0 8px 8px;margin:0;line-height:1.35;
 }
 .access-row{
   display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
@@ -971,7 +974,13 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
 .settings-section label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
 .save-receipt{font-size:11px;color:var(--ok);margin-top:8px;padding:8px;border-radius:var(--radius);background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.25);display:none;word-break:break-all}
 .save-receipt.show{display:block}
-.ai-block{margin-top:6px;padding:12px;border-radius:var(--radius);border:1px solid var(--line);background:var(--bg);font-size:14px;line-height:1.45;color:var(--text)}
+/* white-space:normal is load-bearing. .ai-block sits inside .body, which sets
+   white-space:pre-wrap for raw user text. Markdown rendered by marked() puts a real
+   newline between every block tag, so inheriting pre-wrap painted each of those as a
+   blank line ON TOP of the p/li margins below - measured at 331px vs 169px for the
+   same short answer. Code blocks and the un-rendered mermaid fallback set their own
+   white-space, so they are unaffected. */
+.ai-block{margin-top:6px;padding:12px;border-radius:var(--radius);border:1px solid var(--line);background:var(--bg);font-size:14px;line-height:1.45;color:var(--text);white-space:normal}
 .ai-block h2,.ai-block h3{font-size:13px;margin:8px 0 4px;color:var(--text)}
 .ai-block p{margin:4px 0}
 .ai-block ul,.ai-block ol{margin:4px 0 4px 18px;padding:0}
@@ -999,6 +1008,45 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
 .ai-block .mermaid.mm-rendered{color:#e6edf3}
 .ai-block .mermaid svg{max-width:100%;height:auto}
 .ai-block .mm-error{color:#ff9a9a;background:transparent;border:0;padding:0;margin:0;white-space:pre-wrap}
+/* Provider fallback badge. Deliberately quiet - amber, not red: the answer is real,
+   it just did not come from the provider that was asked for. */
+.degraded-note{margin-top:10px;padding:6px 10px;border-radius:8px;font-size:11.5px;line-height:1.4;
+  color:#e8c07d;background:rgba(232,192,125,.08);border:1px solid rgba(232,192,125,.22)}
+
+/* ---- ds-*: one editing pattern for every list of configured things -------------
+   Rules, Skills and Hooks each shipped a permanently-open textarea, so a panel with
+   nothing in it still looked like a form waiting to be filled in. The rule is:
+
+     empty   -> a single dashed "+ Add" row and nothing else
+     filled  -> one line per item, with icon-only edit / delete on the right
+     editing -> the editor appears only after a press, and closes again
+
+   Icon-only because the actions repeat per row and the words are noise once the
+   shape is learned; each still carries a title= for hover and screen readers. */
+.ds-add{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;margin-top:6px;
+  border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);
+  font:inherit;font-size:12.5px;cursor:pointer;text-align:left;transition:border-color .15s,color .15s}
+.ds-add:hover{border-color:rgba(128,128,128,.55);color:var(--text)}
+.ds-add .ds-plus{font-size:14px;line-height:1;opacity:.8}
+.ds-list{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.ds-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;
+  border:1px solid var(--line);background:rgba(255,255,255,.02);font-size:12.5px;min-width:0}
+.ds-row:hover{border-color:rgba(128,128,128,.4)}
+.ds-row .ds-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.ds-row .ds-sub{color:var(--muted);font-size:11px;flex:0 0 auto}
+.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:.55;transition:opacity .15s}
+.ds-row:hover .ds-acts{opacity:1}
+.ds-ico{width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:7px;
+  background:transparent;color:var(--muted);font-size:12px;line-height:1;cursor:pointer;padding:0}
+.ds-ico:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.ds-ico.danger:hover{background:rgba(255,120,120,.12);color:#ff9a9a}
+/* The editor is display:none until a press, so an untouched panel is never a wall
+   of empty inputs. */
+.ds-editor{display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;
+  background:rgba(255,255,255,.02)}
+.ds-editor.open{display:block}
+.ds-editor .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ds-empty{color:var(--muted);font-size:12px;margin:6px 0 0}
 .ai-pending{color:var(--muted);font-style:italic;font-size:11px}
 .ai-actions{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 .ai-actions button{font-size:10px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);cursor:pointer}
@@ -1160,9 +1208,14 @@ body.theme-light .project-hub-hdr .back:hover{color:var(--text);background:rgba(
 .main.project-mode.rail-open .project-rail{display:block!important}
 /* Claude-style project workspace */
 .proj-workspace{display:flex;flex-direction:column;min-height:100%;width:100%;max-width:1100px;margin:0 auto;padding:0 8px 48px;box-sizing:border-box;text-align:left}
+/* The background used to fade to transparent at 72%, so the page title scrolled
+   through the bottom of this sticky bar and showed as stray text sitting above
+   "Projects / General". Opaque, with a hairline instead of a gradient - a sticky
+   header has to actually cover what passes under it. Top padding trimmed with it,
+   since the fade was also reserving empty space nothing was drawn in. */
 .proj-crumb{
-  position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;padding:12px 4px 10px;
-  background:linear-gradient(180deg,var(--bg) 72%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;padding:8px 4px;
+  background:var(--bg);border-bottom:1px solid var(--line);
   font-size:13px;color:var(--muted);
 }
 .proj-crumb button{border:0;background:transparent;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;padding:4px 6px;border-radius:6px}
@@ -1344,6 +1397,19 @@ body.theme-light .rag-neon-card p.hint{color:var(--muted)!important;opacity:1}
 .rag-source-tile .st-meta{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rag-source-tile .st-x{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:8px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:12px}
 .rag-source-tile .st-x:hover{background:rgba(0,0,0,.12);color:var(--text)}
+/* Reveal sits bottom-right and only on hover, so the resting tile stays kind +
+   title + status and the icon cannot be mistaken for part of the card. */
+.rag-source-tile .st-reveal{
+  position:absolute;bottom:4px;right:4px;width:24px;height:24px;border:0;border-radius:8px;
+  background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:13px;line-height:1;
+  opacity:0;transition:opacity .15s,background .15s,color .15s;
+}
+.rag-source-tile:hover .st-reveal,
+.rag-source-tile:focus-within .st-reveal{opacity:1}
+.rag-source-tile .st-reveal:hover{background:rgba(0,0,0,.14);color:var(--text)}
+.rag-source-tile .st-reveal:focus-visible{opacity:1;outline:2px solid rgba(120,200,255,.6);outline-offset:1px}
+body.theme-dark .rag-source-tile .st-reveal{background:rgba(255,255,255,.08)}
+body.theme-dark .rag-source-tile .st-reveal:hover{background:rgba(255,255,255,.16)}
 .rag-build-layout{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;max-width:820px}
 @media(max-width:960px){.rag-build-layout{grid-template-columns:1fr}}
 .rag-pipe-inspect{margin-top:12px;border:1px solid var(--line);border-radius:14px;padding:0 12px 10px;background:var(--surface2);max-width:820px}
@@ -1565,16 +1631,23 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .cot-title{flex:1;min-width:0;font-weight:500}
 .cot-timer{flex-shrink:0;font-size:11px;color:var(--muted);font-weight:400}
 .cot-chev{flex-shrink:0;font-size:10px;opacity:.6;margin-top:2px}
-.cot-body{display:none;padding:0 0 6px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;line-height:1.4;max-height:140px;overflow:hidden}
+/* Open = the whole trace, scrolled. A clipped body plus a "Show more" button only
+   asked for a click to undo a limit the panel imposed on itself. */
+.cot-body{display:none;padding:0 0 6px;font-size:12.5px;color:var(--muted);line-height:1.4;max-height:280px;overflow-y:auto;overscroll-behavior:contain}
+/* One node per step. `white-space:pre-wrap` on the whole blob used to turn stray
+   newlines between steps into blank lines, which is what made an empty trace look
+   like a tall gap. */
+.cot-step{padding:2px 0;white-space:pre-wrap}
+.cot-step+.cot-step{border-top:1px solid transparent}
+/* A single step has no body at all, so the panel is exactly one line high. */
+.cot-panel.cot-solo{padding-bottom:0}
+.cot-panel.cot-solo::before{display:none}
+.cot-panel.cot-solo .cot-hdr{cursor:default;padding-bottom:2px}
 .cot-panel.open .cot-body{display:block}
-.cot-panel.open.expanded .cot-body{max-height:none;overflow:visible}
-.cot-more{display:none;font-size:11px;color:var(--muted);cursor:pointer;padding:0 0 6px;background:none;border:0;font:inherit}
-.cot-panel.open .cot-more{display:inline-block}
-.cot-panel.open.expanded .cot-more{display:none}
-.cot-done{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin:4px 0 10px;padding-left:14px}
-.cot-done .cot-done-icon{width:14px;height:14px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:9px;color:var(--text)}
 .msg.ai-msg .body{background:transparent;border:0;box-shadow:none;padding:2px 0;font-size:15px;line-height:1.5}
 .msg.ai-msg .ai-block{margin-top:0;padding:0;border:0;background:transparent;font-size:15px;line-height:1.45;color:var(--text)}
+/* Nothing streamed yet: take no vertical space at all rather than reserving a block. */
+.ai-block.stream-ans.is-empty{display:none}
 .side-nav{padding:22px 12px 12px;border-bottom:1px solid var(--line);flex-shrink:0}
 .workspace-switch{position:relative;display:flex;gap:4px;padding:5px;margin:0 0 14px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
 .workspace-switch .ws-thumb{position:absolute;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:999px;background:rgba(255,255,255,.92);transform:translateX(0);transition:transform .28s cubic-bezier(.22,.9,.28,1);pointer-events:none;z-index:0;box-shadow:0 1px 8px rgba(0,0,0,.25)}
@@ -1792,9 +1865,18 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 @keyframes ragSpin{to{transform:rotate(360deg)}}
 .rag-build-locked{opacity:.45;pointer-events:none;filter:grayscale(.2)}
 .rag-session-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:10px}
-.rag-session-card{padding:16px 14px;min-height:88px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);cursor:pointer;transition:transform var(--morph),border-color .2s,box-shadow .25s;text-align:left}
-.rag-session-card:hover{transform:translateY(-2px);border-color:rgba(120,200,255,.4);box-shadow:0 0 18px rgba(60,160,255,.18)}
-.rag-session-card h4{margin:0 0 6px;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rag-session-card{
+  padding:16px 14px;min-height:88px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:var(--text);cursor:pointer;text-align:left;
+  transition:transform var(--morph),border-color .2s,box-shadow .25s,background .2s;
+}
+.rag-session-card:hover{transform:translateY(-2px);border-color:rgba(120,200,255,.4);box-shadow:0 0 18px rgba(60,160,255,.18);background:rgba(255,255,255,.07)}
+.rag-session-card h4{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rag-session-card .rag-sess-preview{
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  margin:0 0 8px;font-size:12px;line-height:1.4;color:rgba(255,255,255,.72);
+}
+.rag-session-card .hint{color:rgba(255,255,255,.55);font-size:11px}
 .rag-chat-stage{display:flex;flex-direction:column;min-height:min(68vh,640px);height:min(72vh,720px);animation:ragMorphUp .38s cubic-bezier(.22,1,.36,1);border:1px solid rgba(80,180,255,.16);border-radius:18px;background:rgba(0,0,0,.22);overflow:hidden}
 .rag-chat-topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 .rag-back-sessions{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;padding:4px 2px;border-radius:8px;letter-spacing:.01em}
@@ -1880,19 +1962,91 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 }
 .cortex-recent-item .cr-tool.hi{border-color:rgba(61,214,140,.45);background:rgba(61,214,140,.1)}
 /* Skill / subagent snippet cards — UI shell; invoke wiring is Claude */
-.snippet-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:8px 0 16px;text-align:left}
+.snippet-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:8px 0 4px;text-align:left}
 .snippet-card{
+  position:relative;                      /* anchor for the floating tool list */
   border:1px solid var(--line);border-radius:14px;background:var(--surface);
   padding:12px 12px 10px;display:flex;flex-direction:column;gap:6px;min-width:0;
   box-shadow:var(--shadow-soft);cursor:default;transition:border-color .18s ease,transform .18s ease;
 }
-.snippet-card:hover{border-color:rgba(128,128,128,.4);transform:translateY(-1px)}
+.snippet-card:hover,.snippet-card:focus-within{border-color:rgba(128,128,128,.4);transform:translateY(-1px);z-index:5}
+.snippet-card.armed{border-color:rgba(61,214,140,.5);background:rgba(61,214,140,.06)}
+.snippet-card .sn-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .snippet-card .sn-kicker{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.snippet-card .sn-count{font-size:10px;color:var(--muted);white-space:nowrap;opacity:.8}
 .snippet-card .sn-title{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
-.snippet-card .sn-body{font-size:12px;color:var(--muted);line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:1}
-.snippet-card .sn-actions{display:flex;gap:6px;margin-top:4px}
-.snippet-card .sn-actions .btn{padding:4px 10px;font-size:11px;border-radius:8px}
+/* Descriptions stay off the card — title + Use; tools only on hover. */
+.snippet-card .sn-body{display:none}
+.snippet-card .sn-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+.snippet-card .sn-actions .btn{padding:4px 10px;font-size:11px;border-radius:8px;flex:0 0 auto}
+/* The tool list floats ABOVE the grid instead of growing the card. Revealing it used
+   to change the card's height, which reflowed every neighbour in the row — the layout
+   jump people read as the page breaking. Nothing here participates in flow. */
+.snippet-card .sn-tools{
+  position:absolute;top:calc(100% + 6px);left:50%;transform:translate(-50%,-4px);
+  z-index:40;display:flex;flex-wrap:wrap;gap:4px;
+  width:max-content;max-width:min(280px,calc(100vw - 40px));
+  padding:8px;border:1px solid var(--line);border-radius:10px;
+  background:var(--bg);box-shadow:0 10px 30px rgba(0,0,0,.35);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .14s ease,transform .14s ease,visibility .14s;
+}
+.snippet-card:hover .sn-tools,
+.snippet-card:focus-within .sn-tools{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.snippet-card .sn-tools-hd{
+  flex:1 0 100%;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:2px;
+}
+.snippet-card .sn-tool{
+  font-size:10px;line-height:1.6;padding:0 6px;border-radius:5px;white-space:nowrap;
+  color:#d6ecff;background:rgba(120,170,255,.18);border:1px solid rgba(160,200,255,.4);
+}
+.snippet-card .sn-tool.t-write{color:#ffe0cc;background:rgba(240,189,160,.18);border-color:rgba(240,189,160,.42)}
+.snippet-card .sn-tool.t-search{color:#d4f5dc;background:rgba(168,223,180,.18);border-color:rgba(168,223,180,.42)}
+.snippet-card .sn-tool.t-desktop{color:#f3e0ff;background:rgba(224,179,240,.2);border-color:rgba(224,179,240,.45)}
+.snippet-card .sn-more{font-size:10px;line-height:1.6;padding:0 6px;color:var(--muted);cursor:default}
 .snippet-card[data-wired="0"] .sn-actions .btn.primary{opacity:.55}
+/* Touch has no hover, so the popover would never open — the count on the card is the
+   whole story there rather than a control nobody can reach. */
+@media (hover:none){.snippet-card .sn-tools{display:none}}
+
+/* Collapsible console sections — closed by default, so the page opens short. */
+.cortex-fold{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:8px 0;text-align:left}
+.cortex-fold>summary{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;
+  list-style:none;font-size:12px;color:var(--text);user-select:none;border-radius:12px;
+}
+.cortex-fold>summary::-webkit-details-marker{display:none}
+.cortex-fold>summary:hover{background:rgba(128,128,128,.06)}
+.cortex-fold .fold-chev{
+  width:0;height:0;flex:0 0 auto;border-left:5px solid currentColor;
+  border-top:4px solid transparent;border-bottom:4px solid transparent;
+  color:var(--muted);transition:transform .16s ease;
+}
+.cortex-fold[open] .fold-chev{transform:rotate(90deg)}
+.cortex-fold .fold-name{font-weight:600}
+.cortex-fold .fold-count{
+  font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);
+  background:rgba(128,128,128,.1);color:var(--muted);
+}
+.cortex-fold .fold-armed{
+  font-size:10px;padding:1px 7px;border-radius:999px;
+  border:1px solid rgba(61,214,140,.45);background:rgba(61,214,140,.12);color:var(--text);
+}
+.cortex-fold .fold-note{margin-left:auto;font-size:11px;color:var(--muted);text-align:right}
+.cortex-fold .fold-body{padding:0 12px 12px}
+.reach-list{display:flex;flex-direction:column;gap:2px}
+.reach-row{
+  display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:12px;color:var(--text);
+  border:0;background:none;width:100%;text-align:left;
+}
+.reach-row.as-btn{cursor:pointer;border-radius:8px;padding:6px 8px}
+.reach-row.as-btn:hover{background:rgba(128,128,128,.08)}
+.reach-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#3dd68c}
+.reach-row.off .reach-dot{background:var(--muted);opacity:.5}
+.reach-row.off .reach-name{opacity:.65}
+.reach-name{font-weight:550}
+.reach-detail{margin-left:auto;font-size:11px;color:var(--muted);text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .session-item.with-kind{display:flex;align-items:flex-start;gap:8px}
 .session-item .sess-kind-ico{
   width:22px;height:22px;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center;
@@ -2042,6 +2196,7 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 .msg-flash{outline:2px solid rgba(61,214,140,.7);outline-offset:2px;border-radius:12px;transition:outline-color .8s}
 .access-pop{position:fixed;z-index:240;min-width:240px;max-width:280px;background:rgba(18,18,18,.98);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:0 16px 40px rgba(0,0,0,.55)}
 .access-pop-title{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:4px 8px 8px}
+.access-pop-note{font-size:11px;color:var(--muted);padding:0 8px 8px;margin:0;line-height:1.35}
 .access-row{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font:inherit;cursor:pointer}
 .access-row:hover,.access-row.on{background:rgba(255,255,255,.06)}
 .access-radio{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);margin-top:2px;flex-shrink:0}
@@ -3211,21 +3366,42 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <h3>Rules &amp; Skills</h3>
           <p class="hint">Cursor/Claude model: Rules always-on · Skills via <code>/skill</code>. Subagents live under <strong>Subagents</strong>.</p>
           <div class="settings-section">
-            <h4>Create Rule</h4>
+            <h4>Rules</h4>
             <p class="hint" id="scRulesMeta">Loads from workspace .airgpt/rules.md or AGENTS.md</p>
-            <textarea id="scRulesBody" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
-            <div class="btn-row" style="margin-top:8px;gap:8px;display:flex;flex-wrap:wrap">
-              <button type="button" class="btn primary" onclick="settingsSaveRules('airgpt')">Save .airgpt/rules.md</button>
-              <button type="button" class="btn" onclick="settingsSaveRules('agents')">Save AGENTS.md</button>
+            <div id="scRulesRow"></div>
+            <button type="button" class="ds-add" id="scRulesAdd" onclick="dsToggleEditor('scRulesEditor',true)">
+              <span class="ds-plus">+</span> New rule
+            </button>
+            <div class="ds-editor" id="scRulesEditor">
+              <textarea id="scRulesBody" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
+              <div class="btn-row">
+                <button type="button" class="btn primary" onclick="settingsSaveRules('airgpt')">Save .airgpt/rules.md</button>
+                <button type="button" class="btn" onclick="settingsSaveRules('agents')">Save AGENTS.md</button>
+                <button type="button" class="btn" onclick="dsToggleEditor('scRulesEditor',false)">Cancel</button>
+              </div>
             </div>
           </div>
           <div class="settings-section">
-            <h4>Create Skill</h4>
-            <div class="field-row"><input id="scSkillId" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
-            <div class="field-row"><input id="scSkillTitle" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
-            <textarea id="scSkillBody" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
-            <button type="button" class="btn primary" style="margin-top:8px" onclick="settingsSaveSkill()">Create Skill</button>
-            <div id="scSkillsList" class="sc-list" style="margin-top:12px"></div>
+            <h4>Skills</h4>
+            <div id="scSkillsList" class="ds-list"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="ds-add" style="flex:1;min-width:150px" onclick="dsToggleEditor('scSkillEditor',true)">
+                <span class="ds-plus">+</span> New skill
+              </button>
+              <button type="button" class="ds-add" style="flex:1;min-width:150px" onclick="document.getElementById('scSkillUpload').click()" title="Import a .md playbook">
+                <span class="ds-plus">⬆</span> Upload .md
+              </button>
+              <input type="file" id="scSkillUpload" accept=".md,.markdown,.txt" style="display:none" onchange="settingsUploadSkill(this)"/>
+            </div>
+            <div class="ds-editor" id="scSkillEditor">
+              <div class="field-row"><input id="scSkillId" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
+              <div class="field-row"><input id="scSkillTitle" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
+              <textarea id="scSkillBody" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
+              <div class="btn-row">
+                <button type="button" class="btn primary" onclick="settingsSaveSkill()">Create skill</button>
+                <button type="button" class="btn" onclick="dsToggleEditor('scSkillEditor',false)">Cancel</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3239,11 +3415,32 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <div class="sc-panel" id="scPanel-hooks" data-panel="hooks">
           <h3>Hooks</h3>
           <p class="hint">Policy hooks (deterministic): approve_write · path jail · audit.jsonl · safe_tool_result. Cursor-style PreToolUse parity is the approve gate.</p>
-          <ul class="hint" style="margin:8px 0 0 18px;line-height:1.6">
-            <li>Pre write → write_preview Approve/Reject</li>
-            <li>Post tool → redaction via cortex_runtime</li>
-            <li>Audit → every tool call ledgered</li>
-          </ul>
+          <h4 style="margin-top:12px">Built in</h4>
+          <div class="ds-list">
+            <div class="ds-row"><span class="ds-name">Pre write → write_preview Approve/Reject</span><span class="ds-sub">always on</span></div>
+            <div class="ds-row"><span class="ds-name">Post tool → redaction via cortex_runtime</span><span class="ds-sub">always on</span></div>
+            <div class="ds-row"><span class="ds-name">Audit → every tool call ledgered</span><span class="ds-sub">always on</span></div>
+          </div>
+          <h4 style="margin-top:14px">Your hooks</h4>
+          <div id="scHooksList" class="ds-list"></div>
+          <button type="button" class="ds-add" onclick="dsToggleEditor('scHookEditor',true)">
+            <span class="ds-plus">+</span> New hook
+          </button>
+          <div class="ds-editor" id="scHookEditor">
+            <div class="field-row"><input id="scHookName" class="side-search" placeholder="hook name (e.g. block-secrets)"/><span class="field-tick">✓</span></div>
+            <div class="field-row">
+              <select id="scHookEvent" class="side-search">
+                <option value="pre_tool">Pre tool — runs before a tool call</option>
+                <option value="post_tool">Post tool — runs on the result</option>
+                <option value="pre_write">Pre write — runs before a file write</option>
+              </select>
+            </div>
+            <textarea id="scHookBody" class="side-search" rows="5" placeholder="What should happen. Plain instructions; the gate is deterministic, this describes intent."></textarea>
+            <div class="btn-row">
+              <button type="button" class="btn primary" onclick="settingsSaveHook()">Create hook</button>
+              <button type="button" class="btn" onclick="dsToggleEditor('scHookEditor',false)">Cancel</button>
+            </div>
+          </div>
         </div>
 
         <div class="sc-panel" id="scPanel-index" data-panel="index">
@@ -3304,7 +3501,13 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 const $=id=>document.getElementById(id);
 const API=()=>location.protocol==='file:'?'http://127.0.0.1:8765':location.origin;
 let authToken=localStorage.getItem('airgpt_token')||'';
+let sessionNonce='';
+try{sessionNonce=sessionStorage.getItem('airgpt_session_nonce')||''}catch(e){sessionNonce=''}
 let appReady=false;
+function isLocalHost(){
+  const h=location.hostname;
+  return h==='127.0.0.1'||h==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(h);
+}
 function getDeviceId(){
   let id=localStorage.getItem('airgpt_device_id')||'';
   if(!id){
@@ -3313,6 +3516,22 @@ function getDeviceId(){
   }
   return id;
 }
+function handshakeHeaders(){
+  const h={'X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId()};
+  if(sessionNonce)h['X-AirGPT-Session-Nonce']=sessionNonce;
+  return h;
+}
+async function ensureEstablish(){
+  if(isLocalHost())return true;
+  try{
+    const r=await fetch(API()+'/api/establish',{method:'POST',headers:handshakeHeaders()});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.session_nonce)return false;
+    sessionNonce=d.session_nonce;
+    try{sessionStorage.setItem('airgpt_session_nonce',sessionNonce)}catch(e){}
+    return true;
+  }catch(e){return false}
+}
 async function api(path,opts={}){
   const headers={
     ...(opts.headers||{}),
@@ -3320,9 +3539,18 @@ async function api(path,opts={}){
     'X-Device-Id':getDeviceId(),
     'X-Device-Name':(typeof myName!=='undefined'&&myName)?myName:(localStorage.getItem('clipdrop_name')||''),
   };
+  if(sessionNonce)headers['X-AirGPT-Session-Nonce']=sessionNonce;
   if(opts.body&&typeof opts.body==='string')headers['Content-Type']='application/json';
   const url=API()+path;
   const r=await fetch(url,{...opts,headers});
+  if(r.status===403&&path!=='/api/establish'){
+    let ej=null;
+    try{ej=await r.clone().json()}catch(e){}
+    if(ej&&ej.establish&&await ensureEstablish()){
+      headers['X-AirGPT-Session-Nonce']=sessionNonce;
+      return fetch(url,{...opts,headers});
+    }
+  }
   if(r.status===401){
     const host=location.hostname;
     const isLocal=host==='127.0.0.1'||host==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(host);
@@ -3332,10 +3560,6 @@ async function api(path,opts={}){
     showLogin();throw new Error('auth');
   }
   return r;
-}
-function isLocalHost(){
-  const h=location.hostname;
-  return h==='127.0.0.1'||h==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(h);
 }
 
 // ===== Report a problem — continuous session until End (regions + clipboard images + action audit) =====
@@ -3684,10 +3908,10 @@ async function checkAuth(){
   try{
     const st=await fetch(API()+'/api/auth/status').then(r=>r.json());
     if(!st.initialized){authToken='';localStorage.removeItem('airgpt_token')}
-    if(!st.needs_auth)return true;
+    if(!st.needs_auth){await ensureEstablish();return true}
     if(authToken){
       const t=await fetch(API()+'/api/info',{headers:{'X-AirGPT-Token':authToken}});
-      if(t.ok)return true;
+      if(t.ok){await ensureEstablish();return true}
       authToken='';localStorage.removeItem('airgpt_token');
     }
     $('loginJoinPane').style.display=st.initialized?'block':'none';
@@ -3710,6 +3934,7 @@ async function doHostLogin(){
     body:JSON.stringify({email,passcode:p})}).then(x=>x.json());
   if(!r.ok)return toast(r.error||'Failed — workspace may already exist. Use Join with your passcode.');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+  await ensureEstablish();
   $('setWsPass').value='';$('setWsPass2').value='';
   toast('Workspace created');closeSettings();bootApp(true);
 }
@@ -3721,6 +3946,7 @@ async function doJoinLogin(id){
     body:JSON.stringify({passcode:p})}).then(x=>x.json());
   if(!r.ok)return toast(r.error||'Wrong passcode');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+  await ensureEstablish();
   if(el)el.value='';
   toast('Joined');hideLogin();closeSettings();bootApp(true);
 }
@@ -3832,13 +4058,17 @@ let connectPath=(()=>{const p=localStorage.getItem('airgpt_connect_path')||'tunn
 let terminalSessionId='';
 let stagedFiles=[];
 let replyContext=null; // {msgId, sessionId, snippet} — chip lives in composer-attach
-let pendingSkill=null; // {id, title} — armed by a snippet card, rides the NEXT send only
+let pendingSkills=[]; // [{id,title}] — armed by snippet cards, ride the NEXT send only
+const MAX_ARMED_SKILLS=3; // must match clipdrop.MAX_ARMED_SKILLS — the server truncates too
 let cachedSessions=[];
 let cachedCategories=[];
 let groupByMode=localStorage.getItem('airgpt_group_by')||'date';
 let sideView='chats';
 let _homeChatSnapshot=null; // preserve Home chat DOM while browsing Video/Usage/etc
 let _cotStreamStart=0;
+// True only once a `thinking` event marked kind:"reasoning" has arrived — status
+// chatter alone must not leave a thought panel behind next to the answer.
+let _cotHadReasoning=false;
 let modeIdx=(function(){
   const s=localStorage.getItem('ai_domain');
   if(s===null)return Math.max(0,MODES.indexOf('general'));
@@ -4048,8 +4278,11 @@ function renderStageBar(){
     }
     return `<span class="stage-tile ${meta.kind}" title="${title}"><span class="stage-letter">${esc(meta.letter)}</span><button type="button" class="stage-x" onclick="removeStagedFile(${i})" title="Remove" aria-label="Remove">×</button><span class="stage-name">${esc(tip)}</span></span>`;
   }).join('');
-  const skillHtml=pendingSkill?`<span class="reply-tile" title="${esc(pendingSkill.title||pendingSkill.id)}"><span class="reply-kicker">Skill</span><span class="reply-snip">${esc((pendingSkill.title||pendingSkill.id).slice(0,42))}</span><button type="button" class="stage-x" onclick="clearPendingSkill()" title="Remove skill" aria-label="Remove skill">×</button></span>`:'';
-  const has=!!(replyContext||stagedFiles.length||pendingSkill);
+  const skillHtml=pendingSkills.map(s=>{
+    const label=s.title||s.id;
+    return `<span class="reply-tile" title="${esc(label)}"><span class="reply-kicker">Skill</span><span class="reply-snip">${esc(label.slice(0,42))}</span><button type="button" class="stage-x" onclick="clearPendingSkill('${esc(s.id)}')" title="Remove skill" aria-label="Remove skill ${esc(label)}">×</button></span>`;
+  }).join('');
+  const has=!!(replyContext||stagedFiles.length||pendingSkills.length);
   if(!has){
     bar.classList.remove('show');bar.innerHTML='';
     if(chrome)chrome.classList.remove('has-attach');
@@ -6395,19 +6628,20 @@ function hubIconSvg(kind){
 }
 function hubAccessLabel(level){
   const m={read_only:'Read Only',read_write:'Read and Write',use_host_ai:'Use Host AI',use_own_ai:'Use Own AI',limited:'Limited',host:'Host'};
-  return m[level]||level||'—';
+  const name=m[level]||level||'—';
+  if(!level||level==='host')return name;
+  return name+' (not enforced)';
 }
-/* ===== One access control, used in three places ==============================
-   Peer node, project share, shipped app. The backend enum (hub.ACL_LEVELS) is a
-   flat single-valued list, so this maps 1:1 onto it — no invented semantics, no
-   two-dimensional control pretending a one-dimensional field is two.
-   Read-only is first and is the default everywhere it is offered. */
+/* ===== Access level picker (persist only -- not enforced) ====================
+   Peer node, project share, shipped app. hub.ACL_LEVELS is persisted by
+   set_peer_acl. Request gates are IP-only and never read access_level.
+   Labels must say so until DR-0003 / F22a lands. Read-only is first. */
 const ACCESS_LEVELS=[
-  {v:'read_only', label:'Read only',   hint:'can watch, cannot type'},
-  {v:'read_write',label:'Can write',   hint:'can type — no AI'},
-  {v:'use_host_ai',label:'Use Host AI',hint:'spends your tokens'},
-  {v:'use_own_ai',label:'Use Own AI',  hint:'brings their own key'},
-  {v:'limited',   label:'Restricted',  hint:'paused — no AI, no writes'},
+  {v:'read_only', label:'Read only',   hint:'saved, not yet enforced'},
+  {v:'read_write',label:'Can write',   hint:'saved, not yet enforced'},
+  {v:'use_host_ai',label:'Use Host AI',hint:'saved, not yet enforced'},
+  {v:'use_own_ai',label:'Use Own AI',  hint:'saved, not yet enforced'},
+  {v:'limited',   label:'Restricted',  hint:'saved, not yet enforced'},
 ];
 function closeAccessPopover(){document.querySelectorAll('.access-pop').forEach(x=>x.remove())}
 /**
@@ -6423,6 +6657,7 @@ function openAccessPopover(ev,opts){
   pop.className='access-pop';
   pop.innerHTML=
     `<div class="access-pop-title">${esc(o.title||'Access')}</div>`+
+    `<p class="access-pop-note">Levels are saved, not yet enforced</p>`+
     ACCESS_LEVELS.map(l=>
       `<button type="button" class="access-row${l.v===cur?' on':''}" data-v="${l.v}">
          <span class="access-radio" aria-hidden="true"></span>
@@ -6463,7 +6698,7 @@ function openAccessPopover(ev,opts){
 /** Peer node → same popover, plus the peer-only actions. */
 function openPeerAccess(ev,ip,level){
   openAccessPopover(ev,{
-    title:'Access',
+    title:'Access (not enforced)',
     level:level||'read_only',
     onPick:async v=>{
       try{
@@ -6520,9 +6755,9 @@ async function renderHubPage(){
   const events=(d.events||[]).slice(0,8).map(e=>`<div class="hint" style="padding:2px 0">${esc(e.event_type||'')} · ${esc(e.ip||'')} · ${esc((e.detail||'').slice(0,60))}</div>`).join('')||'';
   $('chat').innerHTML=`<div class="hub-page chat-page-enter">
     <h2 class="hub-title">Coherent Access Hub</h2>
-    <p class="cortex-tag">Host manages who joins, what they can do, and how they use AI. ✓ = logged in · dull = disconnected.</p>
+    <p class="cortex-tag">Host manages who joins. Access levels are saved, not yet enforced. Host-only paths stay host-only. ✓ = logged in · dull = disconnected.</p>
     <div class="hub-share-row">
-      <label class="hint">Share access:</label>
+      <label class="hint">Share level (not enforced):</label>
       <button type="button" class="btn" id="hubShareLevelBtn" data-level="read_only" onclick="hubPickShareLevel(event)">${hubAccessLabel('read_only')} ▾</button>
       <button type="button" class="btn primary" onclick="hubCreateJoinCode()">Team code</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'view')">QR View</button>
@@ -6543,7 +6778,7 @@ function hubPickShareLevel(ev){
 
   const btn=$('hubShareLevelBtn');
   openAccessPopover(ev,{
-    title:'Share access',
+    title:'Share level (not enforced)',
     level:btn?.dataset.level||'read_only',
     onPick:v=>{if(btn){btn.dataset.level=v;btn.textContent=hubAccessLabel(v)+' ▾'}},
   });
@@ -6794,22 +7029,104 @@ function cortexRecentAgentsHtml(agents){
     </button>`;
   }).join('')}</div>`;
 }
+/* -- Cortex console folds ----------------------------------------------------
+   Everything below the composer is a collapsed <details>. Native disclosure, so it
+   is keyboard-reachable for free and cannot desync from its own open state. The
+   Cortex page is a console for what Cortex can reach, not a catalog to shop in
+   (DR-0002: tools are engine-selected, agents are the user-facing unit).          */
+function cortexFoldHtml(o){
+  const open=localStorage.getItem('cortex_fold_'+o.id)==='1';
+  return `<details class="cortex-fold" id="${esc(o.id)}"${open?' open':''}>
+    <summary>
+      <span class="fold-chev" aria-hidden="true"></span>
+      <span class="fold-name">${esc(o.title)}</span>
+      <span class="fold-count" hidden></span>
+      <span class="fold-armed" hidden></span>
+      <span class="fold-note">${esc(o.note||'')}</span>
+    </summary>
+    <div class="fold-body">${o.body||''}</div>
+  </details>`;
+}
+function setFoldCount(id,n){
+  const el=$(id)?.querySelector('.fold-count');if(!el)return;
+  el.textContent=String(n||0);
+  el.hidden=!n;
+}
+function wireCortexFolds(){
+  document.querySelectorAll('.cortex-fold').forEach(d=>{
+    d.addEventListener('toggle',()=>{
+      try{localStorage.setItem('cortex_fold_'+d.id,d.open?'1':'0')}catch(e){}
+    });
+  });
+}
+/** One reach row: a capability, and whether it is actually wired right now. */
+function reachRowHtml(name,on,detail){
+  return `<div class="reach-row${on?'':' off'}">
+    <span class="reach-dot" aria-hidden="true"></span>
+    <span class="reach-name">${esc(name)}</span>
+    <span class="reach-detail">${esc(detail||'')}</span>
+  </div>`;
+}
+/* Probes the planes Cortex can actually call. Every row reports what the server
+   said — a plane that is down says so here rather than looking present and
+   failing mid-run. */
+async function loadCortexReach(){
+  const host=$('cortexReachBody');if(!host)return;
+  const get=async p=>{try{return await api(p).then(r=>r.json())}catch(e){return null}};
+  const [health,ws,mem,rag]=await Promise.all([
+    get('/api/cortex/health'),get('/api/workspace'),
+    get('/api/memory/overview'),get('/api/rag/spaces')
+  ]);
+  const engineOn=!!(health&&(health.ok||health.status==='live'||health.status==='ok'));
+  const wsOn=!!(ws&&ws.ok&&ws.root);
+  const spaces=(rag&&rag.spaces)||[];
+  const memCount=(mem&&mem.count)||0;
+  const rows=[
+    reachRowHtml('Cortex engine',engineOn,engineOn?'online':((health&&health.status)||'offline - running locally')),
+    reachRowHtml('Workspace',wsOn,wsOn?(String(ws.root).replace(/[\\/]+$/,'').split(/[\\/]/).pop()||String(ws.root)):'no folder opened'),
+    reachRowHtml('Memory / vault',!!mem,mem?`${(mem.backend||'local_vault')} - ${memCount} item${memCount===1?'':'s'}`:'unavailable'),
+    reachRowHtml('RAG spaces',spaces.length>0,spaces.length?`${spaces.length} space${spaces.length===1?'':'s'}`:'none created')
+  ].join('');
+  // Stated, not implied. There is no connector registry in this build, and an empty
+  // grid would read as "nothing connected yet" instead of "this does not exist".
+  host.innerHTML=rows+
+    `<p class="hint" style="margin:8px 0 0">External connectors (MCP) are not wired in this build - these four planes are everything Cortex can reach. Tools inside them are chosen by Cortex per prompt; force one with <code>/</code>.</p>`;
+  setFoldCount('cortexReachFold',[engineOn,wsOn,!!mem,spaces.length>0].filter(Boolean).length);
+}
 /** Skill / subagent snippet cards, sourced from the real registry (GET /api/skills). */
 function cortexSnippetCardsHtml(){
   // Container only — filled by loadCortexSnippets() so the Cortex home paints instantly.
   return `<div class="snippet-cards" id="cortexSnippetCards"><span class="hint">Loading skills…</span></div>`;
 }
 window.cortexSnippetCardsHtml=cortexSnippetCardsHtml;
+function snToolClass(name){
+  const n=String(name||'');
+  if(/^(fs_write|fs_patch|vault_write|run_command|app_scaffold|memory_add)/.test(n))return 't-write';
+  if(/^(desktop_)/.test(n))return 't-desktop';
+  if(/(search|rag_|web_|query|read|list|glob|observe|status|diff)/.test(n))return 't-search';
+  return '';
+}
 function snippetCardHtml(s){
-  const tools=(s.tools||[]).slice(0,3).map(t=>esc(t)).join(' · ');
-  return `<article class="snippet-card">
-    <div class="sn-kicker">${esc(s.kicker||'Skill')}</div>
-    <div class="sn-title">${esc(s.title||s.id||'Skill')}</div>
-    <div class="sn-body">${esc(s.summary||'')}</div>
-    <div class="sn-actions">
-      <button type="button" class="btn primary" data-sn-use="${esc(s.id||'')}" data-sn-kind="${esc(s.kind||'skill')}">Use</button>
-      ${tools?`<span class="hint" style="font-size:10.5px;align-self:center">${tools}</span>`:''}
+  const all=(s.tools||[]).map(String).filter(Boolean);
+  const id=String(s.id||'');
+  const armed=armedSkillIds().includes(id);
+  // The tool list lives in a floating layer (.sn-tools), so it costs the card no
+  // height and the grid cannot reflow when it appears. That reflow — every neighbour
+  // jumping on hover — is why the whole strip felt broken.
+  const chips=all.map(t=>
+    `<span class="sn-tool ${snToolClass(t)}">${esc(t)}</span>`).join('');
+  // Hover does not exist on touch, so the count stays on the card as the readable fallback.
+  const count=all.length?`<span class="sn-count">${all.length} tool${all.length>1?'s':''}</span>`:'';
+  return `<article class="snippet-card${armed?' armed':''}" data-sn-id="${esc(id)}" title="${esc(s.summary||s.title||'')}">
+    <div class="sn-head">
+      <span class="sn-kicker">${esc(s.kicker||'Skill')}</span>
+      ${count}
     </div>
+    <div class="sn-title">${esc(s.title||id||'Skill')}</div>
+    <div class="sn-actions">
+      <button type="button" class="btn${armed?'':' primary'}" data-sn-use="${esc(id)}" data-sn-kind="${esc(s.kind||'skill')}">${armed?'Armed':'Use'}</button>
+    </div>
+    ${all.length?`<div class="sn-tools" role="tooltip"><span class="sn-tools-hd">Orchestrates</span>${chips}</div>`:''}
   </article>`;
 }
 async function loadCortexSnippets(){
@@ -6819,36 +7136,72 @@ async function loadCortexSnippets(){
     const d=await api('/api/skills').then(r=>r.json()).catch(()=>null);
     skills=(d&&d.skills)||[];
   }catch(e){}
-  const cards=[{
-    kind:'subagent',id:'__subagent__',kicker:'Subagent',title:'One-shot helper',
-    summary:'Spawn a short-lived subagent for the draft in the composer — no durable agent.',tools:[]
-  }].concat(skills.map(s=>({kind:'skill',id:s.id,kicker:'Skill',title:s.title,summary:s.summary,tools:s.tools})));
   if(!skills.length){
-    host.innerHTML=snippetCardHtml(cards[0])+
-      `<span class="hint" style="align-self:center">No skill packs in data/skills yet.</span>`;
+    host.innerHTML=`<span class="hint">No skill packs in data/skills yet.</span>`;
   }else{
-    host.innerHTML=cards.map(snippetCardHtml).join('');
+    host.innerHTML=skills.map(s=>snippetCardHtml(
+      {kind:'skill',id:s.id,kicker:'Skill',title:s.title,summary:s.summary,tools:s.tools}
+    )).join('');
   }
+  setFoldCount('cortexSkillFold',skills.length);
   host.querySelectorAll('[data-sn-use]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const id=btn.getAttribute('data-sn-use')||'';
-      if(btn.getAttribute('data-sn-kind')==='subagent')return createSubagentQuick();
       const card=btn.closest('.snippet-card');
       useSkillSnippet(id,card?.querySelector('.sn-title')?.textContent||id);
     });
   });
+  syncSnippetArmedState();
 }
 window.loadCortexSnippets=loadCortexSnippets;
 // Arms the NEXT send with a skill pack. Deliberately does not send — the user still
 // edits the prompt; the chip just says which pack will ride along.
+//
+// Clicking an already-armed pack disarms it. Without that, Use is a one-way door and
+// the only way back is hunting for the × in the composer.
 function useSkillSnippet(id,title){
-  if(!id)return;
-  pendingSkill={id,title:title||id};
-  renderStageBar();
+  const sid=String(id||'').toLowerCase().replace(/[^a-z0-9._-]/g,'');
+  if(!sid)return;
+  const at=pendingSkills.findIndex(s=>s.id===sid);
+  if(at>=0){
+    pendingSkills.splice(at,1);
+    renderStageBar();syncSnippetArmedState();
+    toast('Skill removed: '+(title||sid));
+    return;
+  }
+  if(pendingSkills.length>=MAX_ARMED_SKILLS){
+    toast('Max '+MAX_ARMED_SKILLS+' skills per send — remove one first');
+    return;
+  }
+  pendingSkills.push({id:sid,title:title||sid});
+  renderStageBar();syncSnippetArmedState();
   $('input')?.focus();
-  toast('Skill armed: '+(title||id)+' — send when ready');
+  const n=pendingSkills.length;
+  toast('Skill armed: '+(title||sid)+(n>1?(' ('+n+' armed)'):'')+' — send when ready');
 }
-function clearPendingSkill(){pendingSkill=null;renderStageBar()}
+// No id clears everything (used after a send); an id removes just that pack.
+function clearPendingSkill(id){
+  if(id){pendingSkills=pendingSkills.filter(s=>s.id!==String(id))}
+  else{pendingSkills=[]}
+  renderStageBar();syncSnippetArmedState();
+}
+function armedSkillIds(){return pendingSkills.map(s=>s.id)}
+// Repaints only the armed flag on visible cards — never rebuilds the grid, because a
+// rebuild mid-hover yanks the tools popover out from under the pointer.
+function syncSnippetArmedState(){
+  const armed=new Set(armedSkillIds());
+  document.querySelectorAll('.snippet-card[data-sn-id]').forEach(card=>{
+    const on=armed.has(card.getAttribute('data-sn-id'));
+    card.classList.toggle('armed',on);
+    const btn=card.querySelector('[data-sn-use]');
+    if(btn){btn.textContent=on?'Armed':'Use';btn.classList.toggle('primary',!on)}
+  });
+  const fold=$('cortexSkillFold');
+  if(fold){
+    const tag=fold.querySelector('.fold-armed');
+    if(tag){tag.textContent=armed.size?(armed.size+' armed'):'';tag.hidden=!armed.size}
+  }
+}
 window.useSkillSnippet=useSkillSnippet;
 window.clearPendingSkill=clearPendingSkill;
 
@@ -6913,9 +7266,12 @@ async function showCortexAgentChat(){
   const chips=cortexSuggestionChips().map(s=>`<button type="button" onclick='useCortexSuggestion(${JSON.stringify(s)})'>${esc(s)}</button>`).join('');
   const active=window._cortexActiveAgent;
   const activeLine=active?`<p class="hint" style="margin:0 0 12px">Active: <strong>${esc(active.name||'agent')}</strong> — follow-ups continue this agent. Say “new agent …” to spawn another.</p>`:'';
+  const subs=(agents||[]).filter(a=>a.config?.is_subagent||a.kind==='subagent'||a.config?.task);
+  // Console shape: one open surface (what you can say), everything else folded away.
+  // The old page stacked four full-width sections and every one of them was open.
   $('chat').innerHTML=`<div class="cortex-page cortex-agent-home chat-page-enter">
     <h2>Cortex</h2>
-    <p class="cortex-tag">Agents are suggested from your trends; subagents spawn for one task. Every message is routed with hands &amp; tools. Refine with <code>/edit</code>.</p>
+    <p class="cortex-tag">Describe what you want; Cortex picks the tools. Agents are the thing you keep — skills and subagents are how one run is shaped.</p>
     ${activeLine}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
       <button type="button" class="btn primary" style="border-radius:10px" onclick="createSubagentQuick()">New subagent</button>
@@ -6923,16 +7279,33 @@ async function showCortexAgentChat(){
     </div>
     <p class="hint" style="margin:0 0 6px;text-align:left">Suggested agents</p>
     <div class="cortex-suggest">${chips}</div>
-    <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 6px;text-align:left">Snippets</h3>
-    ${cortexSnippetCardsHtml()}
-    <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 6px;text-align:left">Recent agents</h3>
+    ${cortexFoldHtml({id:'cortexReachFold',title:'What Cortex can reach',note:'planes wired now',body:'<div class="reach-list" id="cortexReachBody"><span class="hint">Checking…</span></div>'})}
+    ${cortexFoldHtml({id:'cortexSkillFold',title:'Skills',note:'force a pack for the next send',body:cortexSnippetCardsHtml()})}
+    ${cortexFoldHtml({id:'cortexSubFold',title:'Subagents',note:'one task, then gone',body:cortexSubagentsHtml(subs)})}
+    <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
     <p class="hint" style="margin-top:14px">Browse <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showCortexPage()">Apps</button> or <button type="button" class="btn" style="display:inline;padding:4px 10px;border-radius:8px;font-size:11px" onclick="showRoutinesPage()">Routines</button> for every agent you’ve built.</p>
   </div>`;
+  setFoldCount('cortexSubFold',subs.length);
+  wireCortexFolds();
   renderCortexSideAgents();
   loadCortexSnippets();
+  loadCortexReach();
   applyPlaceholder({force:true});
   setTimeout(()=>$('input')?.focus(),80);
+}
+/** Subagents already spawned. Same fold shape as skills so the page reads as one list. */
+function cortexSubagentsHtml(subs){
+  if(!subs.length){
+    return `<p class="hint" style="margin:0">None yet. <strong>New subagent</strong> spawns one for the draft in the composer — it does not become an agent you keep.</p>`;
+  }
+  return `<div class="reach-list">${subs.slice(0,8).map(a=>{
+    const task=a.config?.task||a.config?.description||a.skill_pack||'helper';
+    return `<button type="button" class="reach-row as-btn" onclick="openAgentById(${Number(a.id)||0})">
+      <span class="reach-name">${esc(a.name||'Subagent')}</span>
+      <span class="reach-detail">${esc(String(task).slice(0,80))}</span>
+    </button>`;
+  }).join('')}</div>`;
 }
 function stashHomeChatIfNeeded(){
   // Keep Home chat when opening Platform pages (Video/Usage/…) — sidebar Recents stay too
@@ -7385,7 +7758,9 @@ async function ensureCortexAgent(name,text,caps,intent){
     tools:caps.tools,
     config:{
       description:text.slice(0,600),
-      schedule_hint:intent==='schedule'?text.slice(0,400):'',
+      // No `schedule_hint` here. It was written on every scheduled agent and read
+      // nowhere, so it looked like scheduling had been recorded when nothing had.
+      // The real link is `routine_id`, set below once Cortex accepts the routine.
       goal_driven:true,
       created_from:'cortex_chat',
       organs:caps.organs,
@@ -7398,6 +7773,28 @@ async function ensureCortexAgent(name,text,caps,intent){
     const created=await api('/api/agents',{method:'POST',body:JSON.stringify(payload)}).then(r=>r.json());
     if(!(created&&(created.ok||created.agent)))throw new Error((created&&created.error)||'Create failed');
     agent=created.agent||created;
+  }
+  // "Morning news brief, daily" used to record a `schedule_hint` and stop there.
+  // That field is written here and read nowhere in the estate, so a scheduled agent
+  // was created, pinned, and never ran - the UI promised a routine that did not
+  // exist. Cortex already owns a real scheduler (/api/cortex/routines, with
+  // next_run_at and a governor); this hands the goal to it, and when it cannot,
+  // says so rather than leaving a chip that quietly does nothing.
+  if(intent==='schedule'){
+    try{
+      const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal:text})}).then(x=>x.json());
+      const rid=r&&(r.routine_id||r.id||(r.routine&&r.routine.id));
+      if(r&&r.ok&&rid){
+        agent.config=Object.assign({},agent.config,{routine_id:rid});
+        try{await api('/api/agents/'+agent.id,{method:'POST',body:JSON.stringify({config:agent.config})})}catch(e){}
+        const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||'';
+        toast('Scheduled'+(when?(' — '+String(when).slice(0,40)):''));
+      }else{
+        toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
+      }
+    }catch(e){
+      toast('Agent saved, but NOT scheduled — Cortex engine unreachable');
+    }
   }
   setCortexActiveAgent(agent);
   return agent;
@@ -9006,6 +9403,7 @@ const RAG_DEPTHS=[
   ['basic','Basic','Fast lookup — one-pass hybrid'],
   ['high','High','Default — thorough, cited'],
   ['max','Max','Research-grade multi-hop (slower)'],
+  ['auto','Adaptive','Picks depth per question from corpus size'],
   ['manual','Manual','Pick the pipeline yourself'],
 ];
 function ragAgo(ts){if(!ts)return'';const s=Math.max(0,Date.now()/1000-ts);if(s<90)return'just now';if(s<3600)return Math.round(s/60)+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';}
@@ -9706,10 +10104,14 @@ async function ragRenderTab(){
     body.innerHTML='<div class="empty">Loading chats…</div>';
     let chats=[];try{chats=(await api('/api/rag/spaces/'+sid+'/chats').then(r=>r.json())).chats||[]}catch(e){}
     if(!ragState.chatId){
-      const cards=chats.map(c=>`<button type="button" class="rag-session-card" onclick="ragOpenChat(${c.id})">
+      const cards=chats.map(c=>{
+        const rough=String(c.summary||c.preview||c.last_answer||'').replace(/\s+/g,' ').trim();
+        return `<button type="button" class="rag-session-card" onclick="ragOpenChat(${c.id})">
         <h4>${esc(c.title||'Chat')}</h4>
-        <span class="hint" style="font-size:11px">${esc(ragAgo(c.updated_at))}</span>
-      </button>`).join('');
+        ${rough?`<div class="rag-sess-preview">${esc(rough.slice(0,160))}</div>`:''}
+        <span class="hint">${esc(ragAgo(c.updated_at))}</span>
+      </button>`;
+      }).join('');
       const emptyHero=!chats.length?`<div class="rag-empty-hero">
         <h3>No sessions yet</h3>
         <p>Ask with the bottom bar to start a grounded conversation over this corpus.</p>
@@ -9741,11 +10143,15 @@ async function ragRenderTab(){
       const isChat=/(^|[\\/])chat_\d+\.md$/.test(String(x.path||''))||String(x.title||'').startsWith('chat_');
       const kind=isChat?'Chat':(/url_/i.test(String(x.title||x.path||''))?'Link':'File');
       const title=esc(x.title||ragFileName(x.path)||'source');
+      // Links have no local file to open. The server resolves the real path from the
+      // source row (Docs original, else host path) — the tile may only know a basename.
+      const canReveal=kind!=='Link';
       return `<div class="rag-source-tile" title="${title}">
         <button type="button" class="st-x" title="Remove" onclick="ragDeleteSource(${x.id})">✕</button>
         <div class="st-kind">${kind}</div>
         <div class="st-title">${title}</div>
         <div class="st-meta">${esc(x.status||'ready')}</div>
+        ${canReveal?`<button type="button" class="st-reveal" title="Show in folder" aria-label="Show ${title} in folder" onclick="ragRevealSource(${x.id},event)">🗂</button>`:''}
       </div>`;}).join('')}</div>`:'<p class="hint">No sources yet — add files, chats, a folder, or a link.</p>';
     body.innerHTML=`
       <div class="rag-build-layout">
@@ -9826,7 +10232,17 @@ async function ragRenderTab(){
       <div class="cortex-card rag-settings-card">
         <label class="hint" style="display:block;margin-bottom:4px">Name</label>
         <input id="ragSetName" value="${esc(s.name||'')}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:inherit;margin-bottom:12px;box-sizing:border-box"/>
-        <div class="btn-row"><button type="button" class="btn primary" onclick="ragSaveSettings()">Save</button></div>
+        <label class="hint" style="display:block;margin-bottom:4px">Index depth</label>
+        <select id="ragSetDepth" onchange="ragSettingsDepthChanged()" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;margin-bottom:4px;box-sizing:border-box">${depthOpts}</select>
+        <p class="hint" id="ragSetDepthHint" style="margin:0 0 12px;font-size:11px">${esc((RAG_DEPTHS.find(d=>d[0]===(s.depth_default||'high'))||[])[2]||'')}</p>
+        <label class="hint" style="display:block;margin-bottom:4px">Architecture</label>
+        <select id="ragSetArch" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;margin-bottom:4px;box-sizing:border-box"${(s.depth_default||'high')==='manual'?'':' disabled'}>${archOpts}</select>
+        <p class="hint" id="ragSetArchHint" style="margin:0 0 12px;font-size:11px">${(s.depth_default||'high')==='manual'?'Yours to pick.':'Chosen for you by the '+esc(s.depth_default||'high')+' preset — switch to Manual to override.'}</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" onclick="ragSaveSettings()">Save</button>
+          <button type="button" class="btn" id="ragSetRebuildBtn" onclick="ragSaveAndRebuild()">Save + Rebuild</button>
+        </div>
+        <p class="hint" style="margin:8px 0 0;font-size:11px">Save stores these as the space defaults. Rebuild re-runs extract → chunk → enrich → embed → index over every source under the saved config; existing chunks are replaced.</p>
       </div>
       <div class="rag-neon-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Share this RAG</div>
@@ -9860,7 +10276,7 @@ async function ragRenderTab(){
       </div>
       <div class="cortex-card rag-settings-card">
         <div style="font-size:14px;font-weight:600;margin-bottom:6px">Rebuild index</div>
-        <p class="hint" style="margin:0 0 10px;line-height:1.45">Re-extract and re-embed every source through the full pipeline (extract → chunk → embed → index). Run this after an ingestion upgrade or if answers look wrong. Sources are re-read from their local copy under <code>data/rag/${esc(String(s.id||''))}/</code>.</p>
+        <p class="hint" style="margin:0 0 10px;line-height:1.45">Re-extract and re-embed every source through the full pipeline (extract → chunk → enrich → index → publish). Run this after an ingestion upgrade or if answers look wrong. Sources are re-read from their local copy under <code>data/rag/${esc(String(s.id||''))}/</code>.</p>
         <button type="button" class="btn primary" onclick="ragRebuildSpace(${s.id||0})">Rebuild whole pipeline</button>
       </div>
       <div class="cortex-card rag-settings-card">
@@ -10037,7 +10453,7 @@ async function ragScoreRetrieval(){
       const recs=Object.entries(r.recommend||{}).map(([t,d])=>`${esc(t)}→<b>${esc(d)}</b>`).join(' · ');
       const hl=r.headline||{};
       out.innerHTML=`<div class="rag-neon-card" style="padding:10px">
-        <div style="font-size:13px;margin-bottom:6px">Retrieval quality over <b>${r.golden_size||0}</b> auto-generated test cases (Recall@${r.k||5}). Best: <b>${esc(hl.best_mode||'-')}</b> at <b>${Math.round((hl.best_recall_at_k||0)*100)}%</b>.</div>
+        <div style="font-size:13px;margin-bottom:6px">Retrieval quality over <b>${r.golden_size||0}</b> auto-generated test cases (Success@${r.k||5} &mdash; the share of asks where the expected file appeared in the top ${r.k||5}; not recall, since each ask has one right answer). Best: <b>${esc(hl.best_mode||'-')}</b> at <b>${Math.round((hl.best_recall_at_k||0)*100)}%</b>.</div>
         <table style="font-size:12px;border-collapse:collapse"><tr class="hint"><td style="padding:0 10px 4px 0">Mode</td><td style="padding:0 10px 4px">Recall@${r.k||5}</td><td style="padding:0 10px 4px">MRR</td><td style="padding:0 10px 4px">Rounds</td><td style="padding:0 10px 4px">Latency</td></tr>${rows}</table>
         ${recs?`<div class="hint" style="margin-top:6px">Best per task: ${recs}</div>`:''}
       </div>`;
@@ -10086,6 +10502,16 @@ async function ragDeleteSource(id){
     if(r&&r.ok){toast('Source removed');ragRefreshSpace();}else toast('Remove failed');
   }catch(e){toast('Remove failed')}
 }
+// Show an ingested source in the OS file manager. Fails closed and says why —
+// a file moved or deleted since ingest must not look like a silent no-op.
+async function ragRevealSource(id,ev){
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  try{
+    const r=await api('/api/rag/sources/'+id+'/reveal',{method:'POST',body:'{}'}).then(x=>x.json());
+    if(r&&r.ok)toast('Opened in folder');
+    else toast((r&&r.error)||'Could not open this file');
+  }catch(e){toast('Could not open this file')}
+}
 async function ragLoadTrace(det){
   if(!det||!det.open)return;
   const el=$('ragTraceBody');if(!el)return;
@@ -10098,19 +10524,56 @@ async function ragLoadTrace(det){
     else el.innerHTML='<p class="hint">Trace not found.</p>';
   }catch(e){el.innerHTML='<p class="hint">Trace load failed.</p>'}
 }
-async function ragSaveSettings(){
+function ragSettingsDepthChanged(){
+  const d=($('ragSetDepth')||{}).value||'high';
+  const hint=$('ragSetDepthHint');
+  if(hint)hint.textContent=(RAG_DEPTHS.find(x=>x[0]===d)||[])[2]||'';
+  const arch=$('ragSetArch'),ah=$('ragSetArchHint');
+  if(arch)arch.disabled=(d!=='manual');
+  if(ah)ah.textContent=(d==='manual')?'Yours to pick.':('Chosen for you by the '+d+' preset — switch to Manual to override.');
+}
+async function ragSaveSettings(opts){
   const name=($('ragSetName')?$('ragSetName').value.trim():'');
   const depth=$('ragSetDepth')?$('ragSetDepth').value:(((ragState.space||{}).depth_default)||'high');
   const prev=Object.assign({},((ragState.space&&ragState.space.config)||{}));
   const cfg=Object.assign({},prev);
   cfg.share_keys=Array.isArray(prev.share_keys)?prev.share_keys:[];
-  if(depth==='manual')cfg.architecture=($('ragSetArch')?$('ragSetArch').value:'hybrid_rrf');
+  // Persist the architecture whatever the depth. Storing it only under Manual meant
+  // a founder who picked an architecture, switched to Max to compare, then switched
+  // back to Manual silently got hybrid_rrf instead of the pipeline they chose.
+  if($('ragSetArch'))cfg.architecture=$('ragSetArch').value||cfg.architecture||'hybrid_rrf';
   if($('ragChatsEvidence'))cfg.chats_as_evidence=!!$('ragChatsEvidence').checked;
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/settings',{method:'POST',body:JSON.stringify({name,depth_default:depth,config:cfg})}).then(x=>x.json());
-    if(r&&r.ok){toast('Saved');ragState.space=r.space;ragState.depth=r.space.depth_default||'high';ragRenderSpace();}
-    else toast('Save failed');
-  }catch(e){toast('Save failed')}
+    if(r&&r.ok){
+      ragState.space=r.space;ragState.depth=r.space.depth_default||'high';
+      // Report what the server stored, not what was clicked - the two differ when a
+      // value is rejected, and "Saved" over a rejected value is a lie (R-0011).
+      const got=r.space.depth_default||'high';
+      if(got!==depth)toast('Saved, but depth stayed '+got);
+      else if(!(opts&&opts.quiet))toast('Saved');
+      if(!(opts&&opts.quiet))ragRenderSpace();
+      return r.space;
+    }
+    toast((r&&r.error)||'Save failed');return null;
+  }catch(e){toast('Save failed');return null}
+}
+async function ragSaveAndRebuild(){
+  const btn=$('ragSetRebuildBtn');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const space=await ragSaveSettings({quiet:true});
+  if(!space){if(btn){btn.disabled=false;btn.textContent='Save + Rebuild';}return;}
+  if(btn)btn.textContent='Rebuilding…';
+  try{
+    // Rebuild under what the server actually saved, not under the form values.
+    const depth=space.depth_default||'high';
+    const r=await api('/api/rag/spaces/'+ragState.spaceId+'/build',{method:'POST',body:JSON.stringify({depth})}).then(x=>x.json());
+    if(r&&r.ok){
+      toast('Rebuilt '+(r.chunks||0)+' chunk(s) from '+(r.sources||r.files||0)+' source(s) at '+depth+' depth');
+      ragState.summary='';await ragRefreshSpace();
+    }else toast((r&&r.error)||'Rebuild failed');
+  }catch(e){toast('Rebuild failed')}
+  if(btn){btn.disabled=false;btn.textContent='Save + Rebuild';}
 }
 async function ragPurgeChatSources(){
   if(!ragState.spaceId)return;
@@ -10490,9 +10953,9 @@ async function ragSend(){
     const useWebFlag=forceWeb?true:(/\bwebsearch\b/i.test(query)?true:null);
   ragState.streaming=true;const sendBtn=$('ragAskSend')||$('ragSendBtn');if(sendBtn)sendBtn.disabled=true;
   const aiId='ragai-'+Date.now();
-  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div></div>`);
+  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div><div class="ragreason"></div></div>`);
   ragScrollMsgs();
-  let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};
+  let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};let reasoning=null;
   const q1=s=>document.querySelector('#'+aiId+' '+s);
   const hideThink=()=>{const t=q1('.ragthink');if(t)t.style.display='none';};
   const sleuthWords=forceWeb
@@ -10550,7 +11013,8 @@ async function ragSend(){
             thoughts.push(line);if(!acc)setThink(line,g.verdict==='unsupported');
           }
         }
-        else if(j.type==='done'){if(j.answer)acc=j.answer;doneMeta=Object.assign(doneMeta,j||{});if(j.goal)ragState.lastGoal=j.goal;ragState.lastTraceId=j.trace_id||ragState.lastTraceId;}
+        else if(j.type==='reasoning'){reasoning=j.reasoning||reasoning;}
+        else if(j.type==='done'){if(j.answer)acc=j.answer;doneMeta=Object.assign(doneMeta,j||{});if(j.reasoning&&(j.reasoning.steps||[]).length)reasoning=j.reasoning;if(j.goal)ragState.lastGoal=j.goal;ragState.lastTraceId=j.trace_id||ragState.lastTraceId;}
         else if(j.type==='error'){hideThink();const b=q1('.ragbody');if(b)b.innerHTML='<span style="opacity:.85">'+esc(j.error||'error')+'</span>';}
       }
     }
@@ -10567,6 +11031,24 @@ async function ragSend(){
       tl.outerHTML=`<details class="rag-think-log"><summary>🧠 Thinking · ${thoughts.length} step${thoughts.length>1?'s':''}${meta.length?' · '+meta.join(' · '):''}</summary><div>${thoughts.map(t=>'<div class="step">'+esc(t)+'</div>').join('')}</div></details>`;
     } else hideThink();
     const cc=q1('.ragcite');if(cc)cc.innerHTML=ragCitesHtml(cites);
+    // EPIC-D01 #15. The chain is built per lane in rag/reasoning.py and streamed as
+    // its own SSE event; this is the only place a founder actually reads it. Open by
+    // default when the run refused or abstained - that is exactly when someone needs
+    // to see why, and a collapsed summary would hide the reason for the non-answer.
+    const rc=q1('.ragreason');
+    if(rc&&reasoning&&(reasoning.steps||[]).length){
+      const steps=reasoning.steps||[];
+      const refused=steps.some(s=>/^(Why I refused|Why I did not give a number)$/.test(s.title||''));
+      rc.innerHTML=`<details class="rag-think-log"${refused?' open':''}><summary>🔍 How I got this · ${steps.length} step${steps.length>1?'s':''}${reasoning.lane?' · '+esc(reasoning.lane)+' lane':''}</summary><div>`
+        +steps.map(s=>`<div class="step"><strong>${esc(s.title||'')}</strong>: ${esc(s.detail||'')}</div>`).join('')
+        +`</div></details>`;
+    } else if(rc){rc.innerHTML='';}
+    // A reply from the last rung of the cascade used to look identical to one from
+    // the preferred provider. Empty string when nothing was skipped, so this badge
+    // only ever appears when the answer really is a fallback.
+    if(doneMeta.degraded&&b){
+      b.insertAdjacentHTML('beforeend',`<div class="degraded-note" title="Provider fallback">⚠ ${esc(doneMeta.degraded)}</div>`);
+    }
     // Surface measured gap + Diagnose action when evidence is short
     const g=doneMeta.goal;
     if(g&&g.verdict&&g.verdict!=='answerable'&&b){
@@ -11899,7 +12381,7 @@ function renderAiBlock(m){
     const parts=typeof splitCot==='function'?splitCot(m.text||''):{thinking:'',answer:m.text||''};
     const showCot=parts.thinking&&(localStorage.getItem('airgpt_model_tier')||'high')!=='basic';
     const cot=showCot?renderCotPanel(parts.thinking,{open:false,done:true}):'';
-    return `${cot}${showCot?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':''}<div class="ai-block">${renderMd(parts.answer||m.text||'')}</div>`;
+    return `${cot}<div class="ai-block">${renderMd(parts.answer||m.text||'')}</div>`;
   }
   if(m.kind!=='image')return '';
   const cat=m.ai_category||'';
@@ -11916,7 +12398,7 @@ function renderAiBlock(m){
   const eqMenu=eqCount?`<div class="eq-menu" id="eqmenu-${m.id}">
     <button onclick="toggleEqMenu(${m.id})">Copy equation ▾</button>
     <div class="eq-menu-list">${Array.from({length:eqCount},(_,i)=>`<button onclick="copyEqImage(${m.id},${i})">EQ${i+1} as image</button>`).join('')}</div></div>`:'';
-  return `<div class="ai-block">${catBadge(cat)}${cot}${parts.thinking?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':''}${renderMd(bodyMd)}
+  return `<div class="ai-block">${catBadge(cat)}${cot}${renderMd(bodyMd)}
     <div class="ai-actions">${eqMenu}<button onclick="attachContext(${m.id})">Attach context</button>
     <button onclick="reanalyze(${m.id},'deep')">Think deeper</button>
     <button onclick="reanalyze(${m.id},'normal')">Re-analyze</button></div></div>`;
@@ -12415,34 +12897,72 @@ function splitCot(text){
     }
     (inThink?think:answer).push(line);
   }
-  if(!think.length&&/\bCHAIN\b|Router|Ponytail|first-principles|Dual-brain/i.test(raw.slice(0,400))){
-    return {thinking:raw.slice(0,Math.min(600,raw.length/3)),answer:raw};
-  }
+  // No marker => no chain of thought. Never slice the answer into a fake
+  // "thinking" panel: that printed the same text twice (header, panel, answer).
   return {thinking:think.join('\n').trim(),answer:(answer.join('\n').trim()||raw)};
 }
-function cotTitleFrom(thinking){
-  const line=(thinking||'').split('\n').map(s=>s.trim()).find(Boolean)||'Thinking';
-  return line.replace(/^(CHAIN:|SESSION_TITLE:|\*\*Chain\*?\*?)\s*/i,'').slice(0,96);
+// Status steps first, then the model's own reasoning as ONE node. The reasoning
+// arrives in fragments and can span paragraphs; its newlines are folded so the
+// panel keeps it as a single block instead of one row per line.
+function composeThinking(steps,reasoning){
+  const out=(steps||[]).slice();
+  const r=String(reasoning||'').replace(/\s+/g,' ').trim();
+  if(r)out.push(r);
+  return out.join('\n');
+}
+// Each `thinking` SSE event is one step. They used to be concatenated into a single
+// string, so "Connected - generating..." and "Preparing..." arrived as
+// "Connected - generating...Preparing..." - one unreadable line that then got
+// printed twice, once as the header (first line of the blob) and once as the body
+// (the same blob). Steps are kept discrete so the panel can grow a node at a time.
+function cotSteps(thinking){
+  if(Array.isArray(thinking))var raw=thinking;
+  else raw=String(thinking||'').split('\n');
+  const out=[];
+  for(let s of raw){
+    s=String(s==null?'':s).trim();
+    if(!s)continue;
+    // A provider that re-sends its status must not stutter the trace.
+    if(out.length&&out[out.length-1]===s)continue;
+    out.push(s);
+  }
+  return out;
 }
 function renderCotPanel(thinking,opts={}){
-  if(!thinking)return '';
-  const open=!!opts.open;
+  const steps=cotSteps(thinking);
+  if(!steps.length)return '';
   const done=!!opts.done;
   const timer=opts.timer||'';
-  const title=esc(cotTitleFrom(thinking));
-  const long=thinking.length>420;
+  // With one step the body would only repeat the header, which is what produced a
+  // tall empty-looking block saying the same thing twice. A trace worth opening
+  // needs at least two distinct steps.
+  const hasTrace=steps.length>1;
+  const open=!!opts.open&&hasTrace;
+  const head=done&&hasTrace
+    ? `Thought through ${steps.length} steps`
+    : steps[steps.length-1];
   const icon=done?'✓':'⏱';
   const openCls=open?' open':'';
-  return `<div class="cot-panel${openCls}" id="${opts.id||''}">
-    <div class="cot-hdr" onclick="toggleCotPanel(this)">
-      <span class="cot-icon" aria-hidden="true">${icon}</span>
-      <span class="cot-title">${title}</span>
-      ${timer?`<span class="cot-timer">${esc(timer)}</span>`:''}
-      <span class="cot-chev">${open?'▾':'▸'}</span>
-    </div>
-    <div class="cot-body">${esc(thinking)}</div>
-    ${long?`<button type="button" class="cot-more" onclick="expandCotPanel(this)">Show more</button>`:''}
-  </div>`;
+  const soloCls=hasTrace?'':' cot-solo';
+  // No "Show more": the open body scrolls. The button only ever revealed text the
+  // panel was already clipping, which is what a scrollbar does without a click.
+  //
+  // Joined with no whitespace between elements, deliberately. The indented template
+  // this replaces put a newline between each block child, and every one of those
+  // whitespace text nodes generated its own line box: a one-line panel measured
+  // 131.5px instead of 19px. That is the empty gap that appeared under a status line
+  // before anything had streamed.
+  const parts=[];
+  parts.push(`<div class="cot-panel${openCls}${soloCls}" id="${opts.id||''}">`);
+  parts.push(`<div class="cot-hdr"${hasTrace?' onclick="toggleCotPanel(this)"':''}>`);
+  parts.push(`<span class="cot-icon" aria-hidden="true">${icon}</span>`);
+  parts.push(`<span class="cot-title">${esc(head)}</span>`);
+  if(timer)parts.push(`<span class="cot-timer">${esc(timer)}</span>`);
+  if(hasTrace)parts.push(`<span class="cot-chev">${open?'▾':'▸'}</span>`);
+  parts.push('</div>');
+  if(hasTrace)parts.push(`<div class="cot-body">${steps.map(s=>`<div class="cot-step">${esc(s)}</div>`).join('')}</div>`);
+  parts.push('</div>');
+  return parts.join('');
 }
 window.toggleCotPanel=el=>{
   const panel=el?.closest?.('.cot-panel');if(!panel)return;
@@ -12450,28 +12970,33 @@ window.toggleCotPanel=el=>{
   const chev=panel.querySelector('.cot-chev');
   if(chev)chev.textContent=panel.classList.contains('open')?'▾':'▸';
 };
-window.expandCotPanel=btn=>{
-  const panel=btn?.closest?.('.cot-panel');if(!panel)return;
-  panel.classList.add('open','expanded');
-};
 function formatCotElapsed(ms){
   if(ms<1000)return Math.max(1,Math.round(ms/100))+'00ms';
   return (ms/1000).toFixed(1).replace(/\.0$/,'')+'s';
 }
 function renderStreamBubble(thinking,answer,opts={}){
   const streaming=!opts.done;
-  const showCot=!!thinking&&(opts.forceCot||isThinkingOn());
+  // Status chatter ("Preparing...", "Generating response...") is worth a live line
+  // while the answer is still coming and worth nothing once it is here. The panel
+  // survives the answer only when the model actually reasoned.
+  const showCot=!!thinking&&(opts.forceCot||isThinkingOn())&&(streaming||_cotHadReasoning);
   let timer='';
   if(_cotStreamStart){
     timer=streaming?formatCotElapsed(Date.now()-_cotStreamStart):('Thought for '+formatCotElapsed(Date.now()-_cotStreamStart));
   }
+  // No "Done" chip under the panel: the header already carries the check and the
+  // timer, so the chip was a third line saying what two lines already said.
   const cot=showCot?renderCotPanel(thinking,{open:streaming,done:!streaming,timer,id:'streamCot'}):'';
-  const doneChip=(!streaming&&showCot)?'<div class="cot-done"><span class="cot-done-icon">✓</span> Done</div>':'';
   const waiting=!answer&&streaming;
   let bodyHtml='';
   if(answer) bodyHtml=renderMarkdownLite(answer);
-  else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
-  return cot+doneChip+`<div class="ai-block stream-ans">${bodyHtml}</div>`;
+  // The cot panel already shows the live step. Printing "Netie Cortex is thinking..."
+  // underneath it said the same thing a third time and reserved a block of empty
+  // height while nothing had streamed. Dots only, and only when there is no step yet.
+  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
+  else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div>`;
+  const emptyCls=(!answer&&!bodyHtml)?' is-empty':'';
+  return cot+`<div class="ai-block stream-ans${emptyCls}">${bodyHtml}</div>`;
 }
 function renderMarkdownLite(t){
   try{return (typeof renderMd==='function')?renderMd(t):esc(t).replace(/\n/g,'<br>')}
@@ -12735,6 +13260,7 @@ function _flushStreamPaint(){
 function beginStreamUi(userText){
   hideThinking();
   _cotStreamStart=Date.now();
+  _cotHadReasoning=false;
   // Leave project focus rail — chat owns the pane; Memory stays on mem-fab overlay
   setProjectMode(false);
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page')){
@@ -12771,20 +13297,22 @@ async function sendStream(text,extra={}){
   beginStreamUi(text);
   aiPending=true;
   let thinking='',tokens='',donePayload=null,hadError=false,errMsg='';
+  const thinkSteps=[];let reasonBuf='';
   // Once the stream HTTP response opens, the server has already persisted the
   // user row — never let send() fall through to POST /api/messages after that.
   let streamOpened=false;
   try{
     const r=await fetch(API()+'/api/chat/stream',{
       method:'POST',
-      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'Accept':'text/event-stream'},
+      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'X-AirGPT-Session-Nonce':sessionNonce,'Accept':'text/event-stream'},
       body:JSON.stringify({
         text,device_name:myName,session_id:currentSession||0,mode:currentMode(),
         context_ids:contextIds.slice(0,3),
         model_tier:currentModelTier(),
         thinking:isThinkingOn(),
         web_search:!!(typeof webSearchArmed!=='undefined'&&webSearchArmed),
-        skill:(pendingSkill&&pendingSkill.id)||'',
+        skills:armedSkillIds(),
+        skill:armedSkillIds()[0]||'',   // legacy single field — an older server reads this
         ...extra
       }),
       signal:streamAbort.signal
@@ -12820,11 +13348,26 @@ async function sendStream(text,extra={}){
         if(!data)continue;
         let j={};try{j=JSON.parse(data)}catch(e){continue}
         if(j.session_id)adoptSessionId(j.session_id);
-        if(ev==='thinking'||j.type==='thinking'){thinking+=(j.text||'');updateStreamUi(thinking,tokens)}
+        // One plain event = one step. Concatenating them produced
+        // "Connected - generating...Preparing..." as a single unreadable line.
+        // kind:"reasoning" events are fragments of ONE trace (the model's own
+        // reasoning, sliced by the provider) — they append into a single node.
+        if(ev==='thinking'||j.type==='thinking'){
+          if(j.kind==='reasoning'){
+            reasonBuf+=String(j.text||'');
+            _cotHadReasoning=true;
+          }else{
+            const step=String(j.text||'').trim();
+            if(step&&thinkSteps[thinkSteps.length-1]!==step)thinkSteps.push(step);
+          }
+          thinking=composeThinking(thinkSteps,reasonBuf);
+          updateStreamUi(thinking,tokens);
+        }
         else if(ev==='token'||j.type==='token'){tokens+=(j.text||'');updateStreamUi(thinking,tokens)}
         else if(ev==='done'||j.type==='done'){
           donePayload=j;tokens=j.analysis||tokens;
-          if(j.reasoning&&!thinking)thinking=j.reasoning;
+          if(j.reasoning&&!reasonBuf){reasonBuf=String(j.reasoning);_cotHadReasoning=true}
+          thinking=composeThinking(thinkSteps,reasonBuf)||thinking;
           if(j.session_id)adoptSessionId(j.session_id);
           updateStreamUi(thinking,tokens,{done:true});
         }
@@ -12857,7 +13400,7 @@ async function sendStream(text,extra={}){
     }
     if(donePayload?.session_id)adoptSessionId(donePayload.session_id);
     clearReplyContext();
-    clearPendingSkill();  // one send, one skill — never sticky
+    clearPendingSkill();  // armed skills ride one send only — never sticky
     contextIds=[];contextLabels={};renderCtx();
     // Keep stream bubble until pullChat merges — avoids pop/reset flash
     try{await pullChat()}catch(e){}
@@ -13063,22 +13606,71 @@ async function refreshSettingsInvokePanel(){
         :'No rules yet — open a workspace folder, then save';
     }
     if($('scRulesBody')&&d.rules&&d.rules.text)$('scRulesBody').value=d.rules.text;
+    // One line for existing rules, with icon-only edit/delete, instead of a textarea
+    // sitting open whether or not anything is configured.
+    const rr=$('scRulesRow'), addBtn=$('scRulesAdd');
+    if(rr){
+      const has=d.rules&&d.rules.present;
+      rr.innerHTML=has?`<div class="ds-list"><div class="ds-row">
+          <span class="ds-name">${esc(d.rules.source||'rules.md')}</span>
+          <span class="ds-sub">${esc(String(d.rules.chars||0))} chars</span>
+          <span class="ds-acts">
+            <button type="button" class="ds-ico" title="Edit rules" onclick="dsToggleEditor('scRulesEditor',true)">✎</button>
+            <button type="button" class="ds-ico danger" title="Clear rules" onclick="settingsClearRules()">✕</button>
+          </span></div></div>`:'';
+      if(addBtn)addBtn.style.display=has?'none':'';
+    }
     const host=$('scSkillsList');
     if(host){
       const skills=d.skills||[];
+      // Several skills can be on at once - each carries its own scope, so "multiple
+      // skills" is a matter of leaving more than one set to global or project.
       host.innerHTML=skills.length?skills.map(s=>{
         const sc=s.scope||(s.enabled?'global':'off');
-        return `<div class="sc-row"><span><strong>${esc(s.id)}</strong> · ${esc(s.description||'')}</span>
-          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Enable scope" style="max-width:120px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:12px">
+        return `<div class="ds-row">
+          <span class="ds-name" title="${esc(s.description||s.id)}">${esc(s.id)}</span>
+          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Where this skill is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
             <option value="off"${sc==='off'?' selected':''}>Off</option>
             <option value="global"${sc==='global'?' selected':''}>Global</option>
             <option value="project"${sc==='project'?' selected':''}>Project</option>
-          </select></div>`;
+          </select>
+          <span class="ds-acts">
+            <button type="button" class="ds-ico" title="Edit skill" onclick="editSkill('${esc(s.id)}')">✎</button>
+            <button type="button" class="ds-ico danger" title="Delete skill" onclick="deleteSkill('${esc(s.id)}')">✕</button>
+          </span></div>`;
       }).join('')
-        :'<div class="hint">No skills yet — create one above</div>';
+        :'<p class="ds-empty">No skills yet.</p>';
     }
+    renderHooks();
   }catch(e){}
 }
+async function settingsClearRules(){
+  if(!confirm('Clear the saved rules file?'))return;
+  try{
+    const r=await api('/api/invoke/rules',{method:'POST',body:JSON.stringify({text:'',prefer:'airgpt'})}).then(x=>x.json());
+    if(r&&r.ok){toast('Rules cleared');if($('scRulesBody'))$('scRulesBody').value='';refreshSettingsInvokePanel()}
+    else toast((r&&r.error)||'Clear failed');
+  }catch(e){toast('Clear failed')}
+}
+async function editSkill(id){
+  try{
+    const d=await api('/api/cortex/invoke').then(r=>r.json());
+    const s=(d.skills||[]).find(x=>x.id===id);
+    if($('scSkillId'))$('scSkillId').value=id;
+    if($('scSkillTitle'))$('scSkillTitle').value=(s&&(s.title||s.description))||'';
+    if($('scSkillBody'))$('scSkillBody').value=(s&&s.body)||'';
+    dsToggleEditor('scSkillEditor',true);
+  }catch(e){dsToggleEditor('scSkillEditor',true)}
+}
+async function deleteSkill(id){
+  if(!confirm('Delete skill “'+id+'”?'))return;
+  try{
+    const r=await api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'delete',id})}).then(x=>x.json());
+    if(r&&r.ok){toast('Skill “'+id+'” deleted');refreshSettingsInvokePanel()}
+    else toast((r&&r.error)||'Delete failed');
+  }catch(e){toast('Delete failed')}
+}
+window.settingsClearRules=settingsClearRules;window.editSkill=editSkill;window.deleteSkill=deleteSkill;
 async function settingsSetSkillScope(id,scope){
   try{
     const r=await api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'enable',id,scope})}).then(x=>x.json());
@@ -13117,6 +13709,82 @@ async function settingsCreateAgent(){
   showCortexAgentChat();
   toast('Agents are suggested on Cortex — pick a chip to build one');
 }
+function dsToggleEditor(id,open){
+  const el=$(id);if(!el)return;
+  el.classList.toggle('open',open!==false);
+  if(open!==false){const f=el.querySelector('input,textarea');if(f)setTimeout(()=>f.focus(),30);}
+}
+window.dsToggleEditor=dsToggleEditor;
+
+async function settingsUploadSkill(input){
+  // A skill is a markdown playbook, so importing one should be a file pick, not a
+  // textarea the user pastes into. Id defaults to the filename so the common case
+  // needs no typing at all.
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  input.value='';
+  if(f.size>512*1024)return toast('That file is larger than 512 KB');
+  try{
+    const body=await f.text();
+    if(!body.trim())return toast('That file is empty');
+    const id=f.name.replace(/\.(md|markdown|txt)$/i,'').toLowerCase()
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48)||'skill';
+    // First markdown heading makes a better title than the slug when present.
+    const h=body.match(/^\s*#\s+(.{1,80})/m);
+    const r=await api('/api/invoke/skills',{method:'POST',
+      body:JSON.stringify({id,title:(h?h[1].trim():id),body})}).then(x=>x.json());
+    if(r&&r.ok){toast('Skill “'+r.id+'” imported — use /skill '+r.id);refreshSettingsInvokePanel();}
+    else toast((r&&r.error)||'Import failed');
+  }catch(e){toast('Import failed')}
+}
+window.settingsUploadSkill=settingsUploadSkill;
+
+// Hooks had no add control at all - the panel listed three built-ins and stopped.
+// Stored locally; the deterministic gate stays in policy code, these record intent.
+function dsHooks(){try{return JSON.parse(localStorage.getItem('airgpt_hooks')||'[]')}catch(e){return[]}}
+function dsSaveHooks(list){try{localStorage.setItem('airgpt_hooks',JSON.stringify(list))}catch(e){}}
+function renderHooks(){
+  const host=$('scHooksList');if(!host)return;
+  const list=dsHooks();
+  host.innerHTML=list.length?list.map((h,i)=>`<div class="ds-row">
+      <span class="ds-name" title="${esc(h.body||'')}">${esc(h.name||'hook')}</span>
+      <span class="ds-sub">${esc(h.event||'pre_tool')}</span>
+      <span class="ds-acts">
+        <button type="button" class="ds-ico" title="Edit" onclick="editHook(${i})">✎</button>
+        <button type="button" class="ds-ico danger" title="Delete" onclick="deleteHook(${i})">✕</button>
+      </span></div>`).join('')
+    :'<p class="ds-empty">No hooks yet.</p>';
+}
+function settingsSaveHook(){
+  const name=($('scHookName')?.value||'').trim();
+  const body=($('scHookBody')?.value||'').trim();
+  const event=$('scHookEvent')?.value||'pre_tool';
+  if(!name||!body)return toast('Need a name and what it should do');
+  const list=dsHooks();
+  const at=list.findIndex(h=>h.name===name);
+  if(at>=0)list[at]={name,event,body};else list.push({name,event,body});
+  dsSaveHooks(list);
+  if($('scHookName'))$('scHookName').value='';
+  if($('scHookBody'))$('scHookBody').value='';
+  dsToggleEditor('scHookEditor',false);
+  renderHooks();
+  toast('Hook “'+name+'” saved');
+}
+function editHook(i){
+  const h=dsHooks()[i];if(!h)return;
+  if($('scHookName'))$('scHookName').value=h.name||'';
+  if($('scHookEvent'))$('scHookEvent').value=h.event||'pre_tool';
+  if($('scHookBody'))$('scHookBody').value=h.body||'';
+  dsToggleEditor('scHookEditor',true);
+}
+function deleteHook(i){
+  const list=dsHooks();const h=list[i];if(!h)return;
+  if(!confirm('Delete hook “'+h.name+'”?'))return;
+  list.splice(i,1);dsSaveHooks(list);renderHooks();
+}
+window.settingsSaveHook=settingsSaveHook;window.editHook=editHook;window.deleteHook=deleteHook;
+window.renderHooks=renderHooks;
+
 async function settingsSaveRules(prefer){
   const text=($('scRulesBody')?.value||'').trim();
   if(!text)return toast('Write some rules first');
@@ -13176,7 +13844,7 @@ async function saveSettings(silent){
   const email=$('setEmail')?.value?.trim()||'';
   if(email)await fetch(API()+'/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
   const r=await fetch(API()+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken},body:JSON.stringify(body)}).then(x=>x.json());
-  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
+  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json',...handshakeHeaders()},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
   const rec=$('saveReceipt');
   if(r.saved_to){rec.textContent='✓  Saved to '+r.saved_to;rec.classList.add('show')}
   maskSavedKeys();loadAiConfig();
@@ -13338,7 +14006,12 @@ function applyTunnelUi(d){
   }
   if(d.lan_url){
     if(lanUrl)lanUrl.textContent=d.lan_url;
-    if(qrLan){qrLan.style.display='';setQR(qrLan,d.lan_url)}
+    // HOST-DEMO-05: never encode a bare LAN URL once a join token exists.
+    let lanQr=d.lan_url;
+    if(d.qr_token){
+      lanQr=d.lan_url.replace(/\/+$/,'')+'/?qr='+encodeURIComponent(d.qr_token);
+    }
+    if(qrLan){qrLan.style.display='';setQR(qrLan,lanQr)}
   }
   const mu=$('mdnsUrl');
   if(mu&&d.mdns_url&&d.firewall==='ok'){
@@ -14026,6 +14699,7 @@ async function tryQrAutoLogin(){
       body:JSON.stringify({qr_token:qr})}).then(x=>x.json());
     if(r.ok){
       authToken=r.token;localStorage.setItem('airgpt_token',authToken);
+      await ensureEstablish();
       const sid=r.session_id||(shareSess?parseInt(shareSess,10):0);
       if(sid){adoptSessionId(sid);localStorage.setItem('clipdrop_session',String(sid))}
       history.replaceState({},'',location.pathname);
@@ -14485,8 +15159,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       });
     }).catch(function(){});
   }
-  setInterval(upd, 4000);
+  // No interval here. The background-tasks panel already polls the same endpoint
+  // every 5s and its syncBadges() writes these exact elements
+  // (bgTasksTopBtn/Dot, bgTasksTitleBtn/Dot), so a second 4s timer doubled the load
+  // on /api/workflows/tasks to keep a badge that was already being kept. One paint
+  // on load is still needed, for the case where nothing has polled yet.
   setTimeout(upd, 800);
+  window.bgTasksBadgeRefresh = upd;
 })();
 
 /* ── Compact chrome on short viewports ────────────────────────────────────

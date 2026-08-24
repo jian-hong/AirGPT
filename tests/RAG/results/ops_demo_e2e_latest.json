@@ -1,0 +1,178 @@
+{
+  "ok": true,
+  "epic": "EPIC-D02",
+  "tickets": [
+    17,
+    18,
+    19
+  ],
+  "honesty": "Cortex-direct demo ops - not OpenVault-gated",
+  "fixture": "D:\\AirGPT\\tests\\RAG\\messy\\ops\\messy_payroll_ops.xlsx",
+  "scratch": "D:\\AirGPT\\tests\\RAG\\results\\ops\\e2e_payroll_copy.xlsx",
+  "started": "2026-08-20T17:23:16",
+  "finished": "2026-08-20T17:23:25",
+  "passed": 32,
+  "total": 32,
+  "steps": [
+    {
+      "step": "no_match status",
+      "ok": true,
+      "detail": "no_match"
+    },
+    {
+      "step": "no token issued",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "says it is not proposing a row",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "identified",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "matched on emp_id, not a guess",
+      "ok": true,
+      "detail": "emp_id"
+    },
+    {
+      "step": "rejection accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "file unchanged after reject",
+      "ok": true,
+      "detail": "salary still 5700.55"
+    },
+    {
+      "step": "propose before identity confirm refused",
+      "ok": true,
+      "detail": "confirm identity first (is it that one?)"
+    },
+    {
+      "step": "confirm-amend with no proposal refused",
+      "ok": true,
+      "detail": "no pending amend"
+    },
+    {
+      "step": "unknown token refused",
+      "ok": true,
+      "detail": "unknown token"
+    },
+    {
+      "step": "file unchanged after off-rails",
+      "ok": true,
+      "detail": "salary still 5700.55"
+    },
+    {
+      "step": "identity confirmed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "amend proposed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "proposal is +8%",
+      "ok": true,
+      "detail": "5700.55 -> 6156.59"
+    },
+    {
+      "step": "abort accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "file unchanged after abort",
+      "ok": true,
+      "detail": "salary still 5700.55"
+    },
+    {
+      "step": "re-confirm identity",
+      "ok": true,
+      "detail": "token spent by abort - a new cycle is required"
+    },
+    {
+      "step": "write reported",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "salary is the proposed value",
+      "ok": true,
+      "detail": "5700.55 -> 6156.59"
+    },
+    {
+      "step": "audit stamp written",
+      "ok": true,
+      "detail": "amended 2026-08-20T17:23:19 (confirmed, token ops_1787217798954_13)"
+    },
+    {
+      "step": "neighbour row untouched",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "asks for the next action",
+      "ok": true,
+      "detail": "Amended E-0012 (row 13). Next action? Name another employee, ask for the next row, or stop."
+    },
+    {
+      "step": "next row proposed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "chained to the first cycle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "new token is not pre-authorised",
+      "ok": true,
+      "detail": "governance restarts at identify"
+    },
+    {
+      "step": "second row unchanged so far",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "second write lands",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "second salary is +8%",
+      "ok": true,
+      "detail": "3446.06 -> 3721.74"
+    },
+    {
+      "step": "continue by name/id starts a fresh identify",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "third cycle still needs both gates",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "chain resolves",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "exactly two writes in this chain",
+      "ok": true,
+      "detail": "2 amended of 3 steps"
+    }
+  ]
+}

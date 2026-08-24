@@ -35,7 +35,10 @@ def _open() -> sqlite3.Connection:
     # instead left the real target's directory missing ("unable to open
     # database file").
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=60)
+    # Same-thread only: session() is a per-thread burst, not a pool. Sharing a
+    # handle across threads used to look like "one connection" under id() and
+    # SQLite would allow it (check_same_thread=False). Fail closed instead.
+    c = sqlite3.connect(str(DB_PATH), check_same_thread=True, timeout=60)
     c.row_factory = sqlite3.Row
     try:
         c.execute("PRAGMA journal_mode=WAL")
@@ -48,9 +51,15 @@ def _open() -> sqlite3.Connection:
 def _live_session() -> dict | None:
     """Active session for this thread, but only if it points at the current DB."""
     live = getattr(_local, "session", None)
-    if live is not None and live.get("path") == str(DB_PATH):
-        return live
-    return None
+    if live is None:
+        return None
+    # Thread-local can be stale after ident reuse or a test that rebinds
+    # `_local`. Never hand another thread's connection out.
+    if live.get("thread") != threading.get_ident():
+        return None
+    if live.get("path") != str(DB_PATH):
+        return None
+    return live
 
 
 @contextmanager
@@ -58,7 +67,9 @@ def session() -> Iterator[sqlite3.Connection]:
     """Share one connection across a burst of reads. Nests safely; read-mostly.
 
     Connections are closed when the outermost session exits, so no handle outlives the
-    call — temp-directory teardown on Windows keeps working.
+    call — temp-directory teardown on Windows keeps working. The live handle is
+    bound to `threading.get_ident()` as well as `_local`, so a worker never
+    inherits or reuses another thread's session connection.
     """
     live = _live_session()
     if live is not None:
@@ -71,7 +82,12 @@ def session() -> Iterator[sqlite3.Connection]:
 
     c = _open()
     prev = getattr(_local, "session", None)
-    _local.session = {"conn": c, "depth": 1, "path": str(DB_PATH)}
+    _local.session = {
+        "conn": c,
+        "depth": 1,
+        "path": str(DB_PATH),
+        "thread": threading.get_ident(),
+    }
     try:
         yield c
         c.commit()
@@ -370,7 +386,13 @@ def create_space(
     base = _slugify(name)
     slug = base
     depth = (depth_default or "high").lower()
-    if depth not in ("basic", "high", "max", "manual"):
+    # The create-space UI offers an "Adaptive" button (RAG_DEPTHS in index.html).
+    # Leaving "auto" out here meant choosing it stored "high" instead, so the
+    # control looked like it worked and never had. update_space_settings already
+    # accepted both; a space could be switched to Adaptive but never born one.
+    if depth == "adaptive":
+        depth = "auto"
+    if depth not in ("basic", "high", "max", "manual", "auto"):
         depth = "high"
     with _conn() as conn:
         n = 1
@@ -473,7 +495,12 @@ def update_space_settings(
             return None
         new_name = (str(name)[:120]) if name else row["name"]
         depth = str(depth_default or row["depth_default"] or "high").lower()
-        if depth not in ("basic", "high", "max", "manual"):
+        # "adaptive" is the label the UI shows; "auto" is the value retrieve resolves
+        # per question (rag/adaptive.resolve_depth). Accepting only one of the two
+        # made Settings silently keep the old depth when adaptive was chosen.
+        if depth == "adaptive":
+            depth = "auto"
+        if depth not in ("basic", "high", "max", "manual", "auto"):
             depth = row["depth_default"] or "high"
         new_profile = str(profile).strip().lower() if profile is not None else (row["profile"] or "local")
         if new_profile in ("local+", "local_plus", "local-qdrant"):
@@ -752,6 +779,15 @@ def list_sources(space_id: int) -> list[dict]:
         return [_row(r) for r in rows]  # type: ignore[misc]
 
 
+def get_source(source_id: int) -> dict | None:
+    init()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sources WHERE id=?", (int(source_id),)
+        ).fetchone()
+        return _row(row) if row else None  # type: ignore[misc]
+
+
 def update_source_status(source_id: int, status: str, *, meta: dict | None = None) -> None:
     init()
     with _conn() as conn:
@@ -840,20 +876,40 @@ def publish_revision(revision_id: int, *, chunk_count: int, source_count: int, m
         return _row(row)
 
 
+def count_chunks(space_id: int) -> int:
+    """Indexed chunk count for a space. Used by adaptive depth, which promises the
+    founder it "picks depth per question from corpus size" and had no size to read."""
+    init()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM chunks WHERE space_id=?", (int(space_id),)
+        ).fetchone()
+    return int(row["n"] if row else 0)
+
+
 def clear_chunks(space_id: int) -> None:
     """Remove chunk rows + FTS for a space before rebuild (Phase 1 simple rebuild)."""
     init()
     with _conn() as conn:
         ids = [int(r["id"]) for r in conn.execute("SELECT id FROM chunks WHERE space_id=?", (int(space_id),))]
-        if ids:
-            q = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM chunks_fts WHERE chunk_id IN ({q})", ids)
+        _delete_fts_by_ids(conn, "chunks_fts", "chunk_id", ids)
         conn.execute("DELETE FROM chunks WHERE space_id=?", (int(space_id),))
         fids = [int(r["id"]) for r in conn.execute("SELECT id FROM file_index WHERE space_id=?", (int(space_id),))]
-        if fids:
-            q = ",".join("?" * len(fids))
-            conn.execute(f"DELETE FROM file_index_fts WHERE file_id IN ({q})", fids)
+        _delete_fts_by_ids(conn, "file_index_fts", "file_id", fids)
         conn.execute("DELETE FROM file_index WHERE space_id=?", (int(space_id),))
+
+
+# SQLite caps host parameters per statement (999 on older builds). A space with
+# more chunks than that made rebuild die with "too many SQL variables" instead of
+# rebuilding, so the delete is chunked rather than one giant IN (...).
+_SQL_VARS_PER_BATCH = 800
+
+
+def _delete_fts_by_ids(conn: sqlite3.Connection, table: str, column: str, ids: list[int]) -> None:
+    for start in range(0, len(ids), _SQL_VARS_PER_BATCH):
+        batch = ids[start : start + _SQL_VARS_PER_BATCH]
+        marks = ",".join("?" * len(batch))
+        conn.execute(f"DELETE FROM {table} WHERE {column} IN ({marks})", batch)
 
 
 def insert_chunk(
@@ -1045,13 +1101,37 @@ def create_chat(space_id: int, title: str = "New chat") -> dict:
 
 
 def list_chats(space_id: int) -> list[dict]:
+    """Chats for a space, plus a rough preview for the Chats tab cards.
+
+    ``preview`` = first user message; ``summary`` prefers last assistant reply
+    (falls back to the user ask) so the card is readable without opening the thread.
+    """
     init()
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM rag_chats WHERE space_id=? ORDER BY updated_at DESC",
+            """
+            SELECT c.*,
+              (SELECT m.content FROM rag_messages m
+               WHERE m.chat_id=c.id AND m.role='user'
+               ORDER BY m.id ASC LIMIT 1) AS preview,
+              (SELECT m.content FROM rag_messages m
+               WHERE m.chat_id=c.id AND m.role='assistant'
+               ORDER BY m.id DESC LIMIT 1) AS last_answer
+            FROM rag_chats c
+            WHERE c.space_id=?
+            ORDER BY c.updated_at DESC
+            """,
             (int(space_id),),
         ).fetchall()
-        return [_row(r) for r in rows]  # type: ignore[misc]
+        out: list[dict] = []
+        for r in rows:
+            d = _row(r)  # type: ignore[arg-type]
+            prev = str(d.get("preview") or "").strip()
+            ans = str(d.get("last_answer") or "").strip()
+            rough = (ans or prev).replace("\n", " ").strip()
+            d["summary"] = rough[:220] if rough else ""
+            out.append(d)
+        return out
 
 
 def add_message(

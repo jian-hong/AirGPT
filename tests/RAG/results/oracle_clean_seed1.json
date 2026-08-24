@@ -1,0 +1,1660 @@
+{
+  "ok": true,
+  "workbook": "frtr_00027_supply-chain-regional.xlsx",
+  "seed": 1,
+  "n": 80,
+  "correct": 80,
+  "accuracy": 1.0,
+  "schema_link_recall": 1.0,
+  "right_value_wrong_binding": 0,
+  "by_family": {
+    "row_range_agg": {
+      "n": 12,
+      "ok": 12,
+      "linked": 12
+    },
+    "row_range_nocol": {
+      "n": 12,
+      "ok": 12,
+      "linked": 12
+    },
+    "filter_agg": {
+      "n": 12,
+      "ok": 12,
+      "linked": 12
+    },
+    "filter_count": {
+      "n": 11,
+      "ok": 11,
+      "linked": 11
+    },
+    "combined": {
+      "n": 11,
+      "ok": 11,
+      "linked": 11
+    },
+    "paraphrase": {
+      "n": 11,
+      "ok": 11,
+      "linked": 11
+    },
+    "out_of_range": {
+      "n": 11,
+      "ok": 11,
+      "linked": 11
+    }
+  },
+  "header_drift": [],
+  "rows": [
+    {
+      "family": "row_range_agg",
+      "question": "On the Carriers sheet, maximum BaseRate for rows 3119 to 4153",
+      "ok": true,
+      "why": "2.49",
+      "ms": 12.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 3119 AND 4153",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 127891 to 128103 on Shipments, minimum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 378.9,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 127891 AND 128103; SELECT MIN(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 127891 AND 128103; SELECT MIN(OnTime) FROM Shipments WHERE _excel_row BETWEEN 127891 AND 128103",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Carriers, what is the minimum OnTimeSLA where base rate below 1.58",
+      "ok": true,
+      "why": "0.9",
+      "ms": 1.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(OnTimeSLA) FROM Carriers WHERE BaseRate < 1.58",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [
+          "BaseRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Summary, how many rows have on time rate over 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 1.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Summary WHERE OnTimeRate > 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Summary sheet, minimum TotalShipments for rows 49 to 82 where on time rate at least 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(TotalShipments) FROM Summary WHERE OnTimeRate >= 0 AND _excel_row BETWEEN 49 AND 82",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Shipments sheet, mean OnTime for rows 177434 to 177926",
+      "ok": true,
+      "why": "0.9046653144016227 (3 phrasings agree)",
+      "ms": 1.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTime) FROM Shipments WHERE _excel_row BETWEEN 177434 AND 177926",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Carriers sheet, maximum OnTimeSLA for rows 37276 to 37376",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MAX(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 37276 AND 37376",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Summary sheet, sum AvgCost for rows 49 to 89",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(AvgCost) FROM Summary WHERE _excel_row BETWEEN 49 AND 89",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 175719 to 176778 on Shipments, highest",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 368.9,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 175719 AND 176778; SELECT MAX(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 175719 AND 176778; SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 175719 AND 176778",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Carriers, what is the highest OnTimeSLA where base rate greater than 1.58",
+      "ok": true,
+      "why": "0.99",
+      "ms": 1.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(OnTimeSLA) FROM Carriers WHERE BaseRate > 1.58",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [
+          "BaseRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Carriers, how many rows have base rate below 1.58",
+      "ok": true,
+      "why": "2659.0",
+      "ms": 5.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Carriers WHERE BaseRate < 1.58",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "BaseRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Shipments sheet, sum OnTime for rows 103092 to 104178 where cost usd at most 273.76",
+      "ok": true,
+      "why": "514.0",
+      "ms": 2.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(OnTime) FROM Shipments WHERE CostUSD <= 273.76 AND _excel_row BETWEEN 103092 AND 104178",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [
+          "CostUSD"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Shipments sheet, highest WeightLb for rows 44659 to 46004",
+      "ok": true,
+      "why": "499.7 (3 phrasings agree)",
+      "ms": 3.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 44659 AND 46004",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Carriers sheet, sum BaseRate for rows 45366 to 45466",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT SUM(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 45366 AND 45466",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Summary sheet, lowest TotalShipments for rows 39 to 86",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 39 AND 86",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 194121 to 194926 on Shipments, maximum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 368.0,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 194121 AND 194926; SELECT MAX(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 194121 AND 194926; SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 194121 AND 194926",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Summary, what is the mean TotalShipments where on time rate at most 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(TotalShipments) FROM Summary WHERE OnTimeRate <= 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Summary, how many rows have on time rate less than 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 1.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Summary WHERE OnTimeRate < 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Shipments sheet, highest WeightLb for rows 7336 to 8584 where cost usd at least 273.76",
+      "ok": true,
+      "why": "499.1",
+      "ms": 2.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE CostUSD >= 273.76 AND _excel_row BETWEEN 7336 AND 8584",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [
+          "CostUSD"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Carriers sheet, sum OnTimeSLA for rows 139 to 329",
+      "ok": true,
+      "why": "180.43 (3 phrasings agree)",
+      "ms": 1.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 139 AND 329",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Shipments sheet, maximum WeightLb for rows 222607 to 222707",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.0,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 222607 AND 222707",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Carriers sheet, highest BaseRate for rows 1374 to 1536",
+      "ok": true,
+      "why": "2.48",
+      "ms": 0.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 1374 AND 1536",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 2917 to 4264 on Carriers, mean",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 5.6,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 2917 AND 4264; SELECT AVG(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 2917 AND 4264",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Shipments, what is the highest CostUSD where on time above 1.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 2.2,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT MAX(CostUSD) FROM Shipments WHERE OnTime > 1",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "CostUSD",
+        "filters": [
+          "OnTime"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Shipments, how many rows have weight lb below 275.6",
+      "ok": true,
+      "why": "110279.0",
+      "ms": 380.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Shipments WHERE WeightLb < 275.6",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "WeightLb"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Shipments sheet, mean OnTime for rows 5460 to 7153 where weight lb greater than 275.6",
+      "ok": true,
+      "why": "0.9111111111111111",
+      "ms": 2.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTime) FROM Shipments WHERE WeightLb > 275.6 AND _excel_row BETWEEN 5460 AND 7153",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [
+          "WeightLb"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Carriers sheet, mean BaseRate for rows 2076 to 3539",
+      "ok": true,
+      "why": "1.5127322404371586 (3 phrasings agree)",
+      "ms": 1.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 2076 AND 3539",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Summary sheet, mean OnTimeRate for rows 19725 to 19825",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.3,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 19725 AND 19825",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Summary sheet, total AvgCost for rows 39 to 80",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(AvgCost) FROM Summary WHERE _excel_row BETWEEN 39 AND 80",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 78280 to 79810 on Shipments, minimum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 368.2,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 78280 AND 79810; SELECT MIN(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 78280 AND 79810; SELECT MIN(OnTime) FROM Shipments WHERE _excel_row BETWEEN 78280 AND 79810",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Carriers, what is the total BaseRate where on time sla greater than 0.95",
+      "ok": true,
+      "why": "2786.94",
+      "ms": 1.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(BaseRate) FROM Carriers WHERE OnTimeSLA > 0.95",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [
+          "OnTimeSLA"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Shipments, how many rows have cost usd at least 273.76",
+      "ok": true,
+      "why": "92921.0",
+      "ms": 378.0,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Shipments WHERE CostUSD >= 273.76",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "CostUSD"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Summary sheet, mean TotalShipments for rows 68 to 93 where on time rate at most 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 1.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(TotalShipments) FROM Summary WHERE OnTimeRate <= 0 AND _excel_row BETWEEN 68 AND 93",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Shipments sheet, mean WeightLb for rows 50890 to 52121",
+      "ok": true,
+      "why": "246.45560064935063 (3 phrasings agree)",
+      "ms": 3.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 50890 AND 52121",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Shipments sheet, lowest WeightLb for rows 238039 to 238139",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.8,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 238039 AND 238139",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Shipments sheet, highest WeightLb for rows 73757 to 75619",
+      "ok": true,
+      "why": "500.0",
+      "ms": 1.2,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 73757 AND 75619",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 2310 to 3991 on Carriers, mean",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 6.2,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT AVG(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 2310 AND 3991; SELECT AVG(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 2310 AND 3991",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Carriers, what is the minimum OnTimeSLA where base rate greater than 1.58",
+      "ok": true,
+      "why": "0.9",
+      "ms": 1.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(OnTimeSLA) FROM Carriers WHERE BaseRate > 1.58",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [
+          "BaseRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Summary, how many rows have total shipments above 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 1.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Summary WHERE TotalShipments > 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "TotalShipments"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Carriers sheet, average BaseRate for rows 2724 to 3292 where on time sla less than 0.95",
+      "ok": true,
+      "why": "1.5160207612456746",
+      "ms": 0.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(BaseRate) FROM Carriers WHERE OnTimeSLA < 0.95 AND _excel_row BETWEEN 2724 AND 3292",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [
+          "OnTimeSLA"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Shipments sheet, maximum WeightLb for rows 158333 to 160129",
+      "ok": true,
+      "why": "500.0 (3 phrasings agree)",
+      "ms": 3.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 158333 AND 160129",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Summary sheet, average OnTimeRate for rows 26117 to 26217",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 26117 AND 26217",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Carriers sheet, total OnTimeSLA for rows 606 to 2399",
+      "ok": true,
+      "why": "1694.9799999999998",
+      "ms": 0.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 606 AND 2399",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 4678 to 4854 on Carriers, total",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 4.7,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT SUM(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 4678 AND 4854; SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 4678 AND 4854",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Summary, what is the total TotalShipments where avg cost below 0.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 1.0,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT SUM(TotalShipments) FROM Summary WHERE AvgCost < 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "AvgCost"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Shipments, how many rows have on time over 1.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 370.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Shipments WHERE OnTime > 1",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "OnTime"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Summary sheet, total TotalShipments for rows 8 to 31 where on time rate at least 0.0",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(TotalShipments) FROM Summary WHERE OnTimeRate >= 0 AND _excel_row BETWEEN 8 AND 31",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Carriers sheet, minimum BaseRate for rows 991 to 2405",
+      "ok": true,
+      "why": "0.51 (3 phrasings agree)",
+      "ms": 1.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 991 AND 2405",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Carriers sheet, lowest BaseRate for rows 45583 to 45683",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 45583 AND 45683",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Shipments sheet, highest OnTime for rows 26251 to 26915",
+      "ok": true,
+      "why": "1.0",
+      "ms": 0.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 26251 AND 26915",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 2424 to 2465 on Carriers, sum",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 4.9,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT SUM(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 2424 AND 2465; SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 2424 AND 2465",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Summary, what is the highest AvgCost where on time rate less than 0.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 1.0,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT MAX(AvgCost) FROM Summary WHERE OnTimeRate < 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Carriers, how many rows have on time sla below 0.95",
+      "ok": true,
+      "why": "2589.0",
+      "ms": 5.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Carriers WHERE OnTimeSLA < 0.95",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "OnTimeSLA"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Summary sheet, lowest AvgCost for rows 26 to 54 where total shipments below 0.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 1.1,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT MIN(AvgCost) FROM Summary WHERE TotalShipments < 0 AND _excel_row BETWEEN 26 AND 54",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [
+          "TotalShipments"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Carriers sheet, total OnTimeSLA for rows 3672 to 3875",
+      "ok": true,
+      "why": "192.33999999999997 (3 phrasings agree)",
+      "ms": 1.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 3672 AND 3875",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Carriers sheet, mean OnTimeSLA for rows 30107 to 30207",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT AVG(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 30107 AND 30207",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Carriers sheet, mean OnTimeSLA for rows 2374 to 4017",
+      "ok": true,
+      "why": "0.9440936739659367",
+      "ms": 0.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 2374 AND 4017",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 160275 to 161409 on Shipments, maximum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 398.9,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 160275 AND 161409; SELECT MAX(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 160275 AND 161409; SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 160275 AND 161409",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Summary, what is the sum AvgCost where total shipments above 0.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 0.9,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT SUM(AvgCost) FROM Summary WHERE TotalShipments > 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [
+          "TotalShipments"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Shipments, how many rows have cost usd over 273.76",
+      "ok": true,
+      "why": "92914.0",
+      "ms": 399.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Shipments WHERE CostUSD > 273.76",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "CostUSD"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Carriers sheet, highest OnTimeSLA for rows 3536 to 4516 where base rate over 1.58",
+      "ok": true,
+      "why": "0.99",
+      "ms": 1.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(OnTimeSLA) FROM Carriers WHERE BaseRate > 1.58 AND _excel_row BETWEEN 3536 AND 4516",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [
+          "BaseRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Shipments sheet, average WeightLb for rows 39210 to 40819",
+      "ok": true,
+      "why": "254.93509316770187 (3 phrasings agree)",
+      "ms": 3.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 39210 AND 40819",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Carriers sheet, maximum OnTimeSLA for rows 43710 to 43810",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 0.4,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MAX(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 43710 AND 43810",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeSLA",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Summary sheet, average OnTimeRate for rows 72 to 96",
+      "ok": true,
+      "why": "0.0",
+      "ms": 0.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 72 AND 96",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 41 to 66 on Summary, maximum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 1.8,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MAX(Month) FROM Summary WHERE _excel_row BETWEEN 41 AND 66; SELECT MAX(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 41 AND 66; SELECT MAX(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 41 AND 66; SELECT MAX(AvgCost) FROM Summary WHERE _excel_row BETWEEN 41 AND 66",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Shipments, what is the average OnTime where weight lb below 275.6",
+      "ok": true,
+      "why": "0.9199394263640402",
+      "ms": 49.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTime) FROM Shipments WHERE WeightLb < 275.6",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [
+          "WeightLb"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Summary, how many rows have avg cost at most 0.0",
+      "ok": true,
+      "why": "96.0",
+      "ms": 1.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Summary WHERE AvgCost <= 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "AvgCost"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Shipments sheet, mean CostUSD for rows 6401 to 7415 where on time above 1.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 3.2,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT AVG(CostUSD) FROM Shipments WHERE OnTime > 1 AND _excel_row BETWEEN 6401 AND 7415",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "CostUSD",
+        "filters": [
+          "OnTime"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Summary sheet, average OnTimeRate for rows 36 to 60",
+      "ok": true,
+      "why": "0.0 (3 phrasings agree)",
+      "ms": 3.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 36 AND 60",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTimeRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Shipments sheet, minimum CostUSD for rows 245139 to 245239",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.8,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT MIN(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 245139 AND 245239",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "CostUSD",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Carriers sheet, minimum BaseRate for rows 4334 to 4717",
+      "ok": true,
+      "why": "0.5",
+      "ms": 1.3,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 4334 AND 4717",
+      "sheet": "Carriers",
+      "linked": {
+        "sheet": "Carriers",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "BaseRate",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 82050 to 82558 on Shipments, minimum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 406.7,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT MIN(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 82050 AND 82558; SELECT MIN(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 82050 AND 82558; SELECT MIN(OnTime) FROM Shipments WHERE _excel_row BETWEEN 82050 AND 82558",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Shipments, what is the minimum OnTime where cost usd less than 273.76",
+      "ok": true,
+      "why": "0.0",
+      "ms": 39.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(OnTime) FROM Shipments WHERE CostUSD < 273.76",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [
+          "CostUSD"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Summary, how many rows have avg cost at least 0.0",
+      "ok": true,
+      "why": "96.0",
+      "ms": 1.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Summary WHERE AvgCost >= 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [
+          "AvgCost"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Shipments sheet, highest CostUSD for rows 183840 to 184198 where on time above 1.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 3.4,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT MAX(CostUSD) FROM Shipments WHERE OnTime > 1 AND _excel_row BETWEEN 183840 AND 184198",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "CostUSD",
+        "filters": [
+          "OnTime"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Summary sheet, minimum AvgCost for rows 35 to 59",
+      "ok": true,
+      "why": "0.0 (3 phrasings agree)",
+      "ms": 1.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MIN(AvgCost) FROM Summary WHERE _excel_row BETWEEN 35 AND 59",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "AvgCost",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Shipments sheet, total WeightLb for rows 249673 to 249773",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 1.2,
+      "linked_ok": true,
+      "link_why": "refused: rows outside the sheet",
+      "sql": "SELECT SUM(WeightLb) FROM Shipments WHERE _excel_row BETWEEN 249673 AND 249773",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "WeightLb",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Shipments sheet, highest OnTime for rows 43203 to 44277",
+      "ok": true,
+      "why": "1.0",
+      "ms": 0.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 43203 AND 44277",
+      "sheet": "Shipments",
+      "linked": {
+        "sheet": "Shipments",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "OnTime",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 19 to 64 on Summary, sum",
+      "ok": true,
+      "why": "3 columns match",
+      "ms": 1.7,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns",
+      "sql": "SELECT SUM(Month) FROM Summary WHERE _excel_row BETWEEN 19 AND 64; SELECT SUM(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 19 AND 64; SELECT SUM(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 19 AND 64; SELECT SUM(AvgCost) FROM Summary WHERE _excel_row BETWEEN 19 AND 64",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Summary, what is the maximum TotalShipments where on time rate greater than 0.0",
+      "ok": true,
+      "why": "refused, and there was nothing to compute",
+      "ms": 0.8,
+      "linked_ok": true,
+      "link_why": "refused, bound correctly, no rows matched",
+      "sql": "SELECT MAX(TotalShipments) FROM Summary WHERE OnTimeRate > 0",
+      "sheet": "Summary",
+      "linked": {
+        "sheet": "Summary",
+        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "metric": "TotalShipments",
+        "filters": [
+          "OnTimeRate"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false
+    }
+  ],
+  "malformed_asks": 0,
+  "malformed_ask_rate": 0.0,
+  "index_fingerprint": {
+    "schema_version": 1,
+    "chunker": {
+      "name": "parent_child",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40
+    },
+    "embed": {
+      "backend": "model",
+      "model": "BAAI/bge-small-en-v1.5",
+      "dim": 384
+    },
+    "extra": {
+      "pack": "FRTR-bench",
+      "workbook": "frtr_00027_supply-chain-regional.xlsx"
+    },
+    "id": "eeb81ac9414bd5df"
+  },
+  "oracle": "openpyxl direct cell reads by spreadsheet row. Shares no code with the lane AND uses a different header signal: the lane picks by modal body width, this picks by type transition (last text row above the first row containing a number). They disagree in both directions on synthetic sheets, which is what makes the drift check meaningful. Shared residual: both fall back to the pre-#31 first-wide-row rule when their primary signal is inconclusive."
+}

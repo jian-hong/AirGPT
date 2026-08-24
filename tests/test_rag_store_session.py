@@ -109,10 +109,11 @@ class StoreSessionTest(unittest.TestCase):
                 self.assertIs(nested, outer)
 
     def test_connections_differ_without_a_session(self):
+        # Hold both open. Sequential open/close can recycle id(conn) and
+        # look like a singleton pool when there isn't one.
         with store._conn() as a:
-            first = id(a)
-        with store._conn() as b:
-            self.assertNotEqual(first, id(b))
+            with store._conn() as b:
+                self.assertIsNot(a, b)
 
     def test_session_closes_its_connection(self):
         with store.session() as conn:
@@ -158,12 +159,18 @@ class StoreSessionTest(unittest.TestCase):
         seen: dict[int, int] = {}
         errors: list[BaseException] = []
         ready = threading.Barrier(4)
+        # Hold every session open until all four have recorded id(conn).
+        # A start-only barrier lets a finished worker's Connection be freed
+        # and CPython recycle that id onto the next thread — 1 unique id,
+        # no actual leak. The assertion below is unchanged.
+        held = threading.Barrier(4)
 
         def worker(n: int) -> None:
             try:
                 ready.wait(timeout=10)
                 with store.session() as conn:
                     seen[n] = id(conn)
+                    held.wait(timeout=10)
                     for _ in range(20):
                         conn.execute("SELECT COUNT(*) FROM knowledge_spaces").fetchone()
             except BaseException as e:  # noqa: BLE001 - surfaced below

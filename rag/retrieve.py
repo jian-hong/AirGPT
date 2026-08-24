@@ -390,6 +390,29 @@ def _search(
 
     if not chats_as_evidence:
         chunk_hits = [h for h in chunk_hits if h.get("authority") != authority.CONVERSATION]
+
+    # Spreadsheet KPI bias: aggregation questions drown in detail-row chunks
+    # (e.g. 100+ Revenue windows bury a 1-screen Summary sheet). Soft-boost
+    # summary/KPI headings when the query looks numerical/aggregative.
+    _kpi_q = re.search(
+        r"\b(total|sum|revenue|expense|margin|quarter|kpi|percent|%|average|agg|highest|lowest)\b",
+        query or "",
+        re.I,
+    )
+    if _kpi_q:
+        _kpi_head = re.compile(r"\b(summary|kpi|dashboard|overview|totals?)\b", re.I)
+        for h in chunk_hits:
+            head = str(h.get("heading") or "")
+            text = str(h.get("text") or "")
+            boost = 0.0
+            if _kpi_head.search(head):
+                boost += 0.35
+            elif len(text) < 900 and _kpi_head.search(text[:240]):
+                boost += 0.2
+            if boost:
+                h["score"] = float(h.get("score") or 0) + boost
+                h["sheet_kpi_boost"] = boost
+
     chunk_hits.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
 
     # Cross-encoder rerank after RRF (feature-flagged; soft-falls to RRF order)

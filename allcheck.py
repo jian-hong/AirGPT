@@ -245,6 +245,35 @@ def main() -> int:
     except Exception as e:
         print(f"  [ERR] ditch_context: {e}")
         fails += 1
+    # Served-UI integrity. Every API can answer 200 while the page itself is dead: a
+    # truncated write to index.html once cut it at exactly 512 KiB, losing a closing
+    # </script>. The browser then swallowed the rest of the document as script text,
+    # every app function went undefined, and the UI sat on "Loading chat..." forever —
+    # while allcheck happily reported 29/29 local APIs OK. Cheap structural checks
+    # catch that class of damage before the user does.
+    try:
+        with urllib.request.urlopen(f"{BASE}/", timeout=8) as r:
+            page = r.read().decode("utf-8", errors="replace")
+        opens = page.count("<script")
+        closes = page.count("</script>")
+        problems = []
+        if opens != closes:
+            problems.append(f"{opens} <script> vs {closes} </script> — truncated or unclosed")
+        if "</html>" not in page[-4000:]:
+            problems.append("document does not end with </html> — truncated")
+        if len(page) < 200_000:
+            problems.append(f"page is only {len(page):,}B — suspiciously small")
+        if problems:
+            for p in problems:
+                print(f"  [FAIL] index.html: {p}")
+            print("         recover with: git checkout HEAD -- index.html")
+            fails += 1
+        else:
+            print(f"  [OK] index.html intact ({len(page):,}B, {opens} script tags balanced)")
+    except Exception as e:
+        print(f"  [ERR] index.html integrity: {e}")
+        fails += 1
+
     try:
         ok_w = False
         with urllib.request.urlopen(f"{BASE}/wasm_gate.js", timeout=5) as r:

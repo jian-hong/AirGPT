@@ -1,0 +1,579 @@
+[
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 1,
+    "question": "What is total revenue in Q2 2024?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!B4",
+    "gold": "2176251.169851399",
+    "gold_values": [
+      "2176251.169851399"
+    ],
+    "provenance": "Cell: Summary!B4; Derived from Revenue!F3:F602"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 2,
+    "question": "Which quarter has the highest gross margin dollars?",
+    "reasoning_type": "Comparison",
+    "difficulty": "Medium",
+    "raw_answer": "Max of Summary!D3:D6",
+    "gold": "Q2 2024",
+    "gold_values": [
+      "Q2 2024",
+      "1070536.9958433171"
+    ],
+    "provenance": "Cells: Summary!D3:D6; Image: Summary_image_001"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 3,
+    "question": "What is the gross margin percentage in Q3 2024?",
+    "reasoning_type": "Computation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!E5",
+    "gold": "0.4429409225701213",
+    "gold_values": [
+      "0.4429409225701213"
+    ],
+    "provenance": "Cell: Summary!E5"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 4,
+    "question": "What is total expenses in Q1 2024?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Easy",
+    "raw_answer": "See Summary!C3",
+    "gold": "1016549.3740205832",
+    "gold_values": [
+      "1016549.3740205832"
+    ],
+    "provenance": "Cell: Summary!C3; Derived from Expenses!C3:C302"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 5,
+    "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+    "reasoning_type": "TrendReasoning",
+    "difficulty": "Medium",
+    "raw_answer": "Yes",
+    "gold": "No",
+    "gold_values": [
+      "No",
+      "1966567.302699234",
+      "2176251.169851399",
+      "2127801.069858226",
+      "1361664.9191952057"
+    ],
+    "provenance": "Image: Summary_image_001"
+  },
+  {
+    "workbook": "frtr_0001_quarterly-summary.xlsx",
+    "qid": 6,
+    "question": "Which region appears most frequently in revenue records?",
+    "reasoning_type": "Lookup/Count",
+    "difficulty": "Hard",
+    "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+    "gold": "West",
+    "gold_values": [
+      "West"
+    ],
+    "provenance": "Range: Revenue!B3:B602"
+  },
+  {
+    "workbook": "frtr_00027_supply-chain-regional.xlsx",
+    "qid": 1,
+    "question": "On-time rate for West region in March 2024?",
+    "reasoning_type": "Percentage + Filter",
+    "difficulty": "Medium",
+    "raw_answer": "SUMIFS(Summary!D:D, Summary!A:A, DATE(2024,3,1), Summary!B:B, \"West\")",
+    "gold": "SUMIFS(Summary!D:D, Summary!A:A, DATE(2024,3,1), Summary!B:B, \"West\")",
+    "gold_values": [
+      "SUMIFS(Summary!D:D, Summary!A:A, DATE(2024,3,1), Summary!B:B, \"West\")"
+    ],
+    "provenance": "Summary!D:D"
+  },
+  {
+    "workbook": "frtr_00027_supply-chain-regional.xlsx",
+    "qid": 2,
+    "question": "Roughly what was the highest on time rate in the chart?",
+    "reasoning_type": "Visual Min",
+    "difficulty": "Hard",
+    "raw_answer": "0.97 (from image) or MAX(Summary!D3:D26)",
+    "gold": "0.97",
+    "gold_values": [
+      "0.97"
+    ],
+    "provenance": "ImageID: Supply_image_001"
+  },
+  {
+    "workbook": "frtr_00027_supply-chain-regional.xlsx",
+    "qid": 3,
+    "question": "Average cost per shipment for Midwest in September 2023?",
+    "reasoning_type": "AVERAGEIFS",
+    "difficulty": "Medium",
+    "raw_answer": "Summary!E37",
+    "gold": "0",
+    "gold_values": [
+      "0"
+    ],
+    "provenance": "Summary!E:E"
+  },
+  {
+    "workbook": "frtr_00027_supply-chain-regional.xlsx",
+    "qid": 4,
+    "question": "How many shipments from Northeast hubs in January 2024?",
+    "reasoning_type": "SUMPRODUCT Count",
+    "difficulty": "Easy",
+    "raw_answer": "Summary!TotalShipments at Month=2024-01-01 & Region=Northeast OR C51",
+    "gold": "C51",
+    "gold_values": [
+      "C51"
+    ],
+    "provenance": "Summary!C:C"
+  },
+  {
+    "workbook": "frtr_00027_supply-chain-regional.xlsx",
+    "qid": 5,
+    "question": "Region with highest variability in 2024 AvgCost?",
+    "reasoning_type": "Spread/Variance",
+    "difficulty": "Hard",
+    "raw_answer": "LET(range_2024, FILTER(Summary!A3:E100, YEAR(Summary!A3:A100)=2024), stdev_by_region, GROUPBY(CHOOSECOLS(range_2024, 2), CHOOSECOLS(range_2024, 5), STDEV.S), sorted_stdevs, SORT(stdev_by_region, 2, -1), INDEX(sorted_stdevs, 1, 1))",
+    "gold": "LET(range_2024, FILTER(Summary!A3:E100, YEAR(Summary!A3:A100)=2024), stdev_by_region, GROUPBY(CHOOSECOLS(range_2024, 2), CHOOSECOLS(range_2024, 5), STDEV.S), sorted_stdevs, SORT(stdev_by_region, 2, -1), INDEX(sorted_stdevs, 1, 1))",
+    "gold_values": [
+      "LET(range_2024, FILTER(Summary!A3:E100, YEAR(Summary!A3:A100)=2024), stdev_by_region, GROUPBY(CHOOSECOLS(range_2024, 2), CHOOSECOLS(range_2024, 5), STDEV.S), sorted_stdevs, SORT(stdev_by_region, 2, -1), INDEX(sorted_stdevs, 1, 1))"
+    ],
+    "provenance": "Summary!A:E"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 1,
+    "question": "Which vendor supplies SKU with the highest PO quantity among the summarized 50 SKUs?",
+    "reasoning_type": "Aggregation/Lookup",
+    "difficulty": "Medium",
+    "raw_answer": "Use KPIs sheet and KPIs_image_001 as a guide.",
+    "gold": "Use KPIs sheet and KPIs_image_001 as a guide.",
+    "gold_values": [
+      "Use KPIs sheet and KPIs_image_001 as a guide."
+    ],
+    "provenance": "Cells: KPIs!A3:G52; Image: KPIs_image_001"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 2,
+    "question": "What is the net movement quantity for SKU SKU-00103?",
+    "reasoning_type": "Lookup/Computation",
+    "difficulty": "Easy",
+    "raw_answer": "See KPIs!E3 for the first listed SKU row",
+    "gold": "920",
+    "gold_values": [
+      "920"
+    ],
+    "provenance": "Cell: KPIs!E3; Source: InventoryMovements data"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 3,
+    "question": "What average unit cost is reported for SKU SKU-00106?",
+    "reasoning_type": "Averaging",
+    "difficulty": "Easy",
+    "raw_answer": "See KPIs!F4",
+    "gold": "23.935",
+    "gold_values": [
+      "23.935"
+    ],
+    "provenance": "Cell: KPIs!F4; Derived from PurchaseOrders!F3:F3502"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 4,
+    "question": "Identify the VendorName for SKU SKU-00115 using XLOOKUP.",
+    "reasoning_type": "FormulaReasoning",
+    "difficulty": "Easy",
+    "raw_answer": "See KPIs!C5",
+    "gold": "Vendor 092",
+    "gold_values": [
+      "Vendor 092"
+    ],
+    "provenance": "Cell: KPIs!C5; XLOOKUP from Vendors"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 5,
+    "question": "From the scan image, what batch number was inspected?",
+    "reasoning_type": "ExtractionFromImage",
+    "difficulty": "Easy",
+    "raw_answer": "B-0915-77",
+    "gold": "B-0915-77",
+    "gold_values": [
+      "B-0915-77"
+    ],
+    "provenance": "Image: Receiving_Dock_scan_001"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 6,
+    "question": "Is there a stockout risk (>30%) for any SKU in the table?",
+    "reasoning_type": "Threshold/Logic",
+    "difficulty": "Medium",
+    "raw_answer": "MAX(KPIs!G:G)>0.3",
+    "gold": "MAX(KPIs!G:G)>0.3",
+    "gold_values": [
+      "MAX(KPIs!G:G)>0.3"
+    ],
+    "provenance": "Cells: KPIs!G3:G52"
+  },
+  {
+    "workbook": "frtr_0002_ops-inventory.xlsx",
+    "qid": 7,
+    "question": "What\u2019s the total PO quantity for SKU SKU-00121 (from Purchase Orders)?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "See KPIs!D6",
+    "gold": "2222",
+    "gold_values": [
+      "2222"
+    ],
+    "provenance": "Cell: KPIs!D6; SUMIFS over PurchaseOrders"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 1,
+    "question": "What is the consolidated total local amount for account 4000-Revenue?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "See Consolidated!B3",
+    "gold": "20065286.650000073",
+    "gold_values": [
+      "20065286.650000073"
+    ],
+    "provenance": "Cell: Consolidated!B3; Derived from GL_Transactions"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 2,
+    "question": "Which month shows the highest revenue in the chart?",
+    "reasoning_type": "Trend/Visual",
+    "difficulty": "Medium",
+    "raw_answer": "May/2024-05",
+    "gold": "May/2024-05",
+    "gold_values": [
+      "May/2024-05"
+    ],
+    "provenance": "Image: Consolidated_image_001"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 3,
+    "question": "How many subsidiaries operate in EUR?",
+    "reasoning_type": "Counting/Filter",
+    "difficulty": "Hard",
+    "raw_answer": "COUNTIF(Subsidiaries!B4:B23,\"EUR\")",
+    "gold": "2",
+    "gold_values": [
+      "2"
+    ],
+    "provenance": "Range: Subsidiaries!B3:B22"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 4,
+    "question": "What is the total local amount for 6000-Opex?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "See Consolidated!B5",
+    "gold": "-20540955.509999968",
+    "gold_values": [
+      "-20540955.509999968"
+    ],
+    "provenance": "Cell: Consolidated!B5"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 5,
+    "question": "Using FX_Rates, what rate is listed for EUR on 2024-06-30?",
+    "reasoning_type": "Lookup",
+    "difficulty": "Hard",
+    "raw_answer": "FX_Rates!C551",
+    "gold": "1.057154044400295",
+    "gold_values": [
+      "1.057154044400295"
+    ],
+    "provenance": "Range: FX_Rates!A3:C1832"
+  },
+  {
+    "workbook": "frtr_0003_consolidation.xlsx",
+    "qid": 6,
+    "question": "Does consolidated revenue trend upward in the second half of 2024?",
+    "reasoning_type": "TrendReasoning",
+    "difficulty": "Hard",
+    "raw_answer": "No (Consult Image)",
+    "gold": "No (Consult Image)",
+    "gold_values": [
+      "No (Consult Image)"
+    ],
+    "provenance": "Image: Consolidated_image_001"
+  },
+  {
+    "workbook": "frtr_0004_payroll-summary.xlsx",
+    "qid": 1,
+    "question": "What is total base pay for Engineering?",
+    "reasoning_type": "Cross-sheet SUMIFS",
+    "difficulty": "Easy",
+    "raw_answer": "Dept_Summary!B4",
+    "gold": "1711021.16",
+    "gold_values": [
+      "1711021.16"
+    ],
+    "provenance": "Dept_Summary!B4"
+  },
+  {
+    "workbook": "frtr_0004_payroll-summary.xlsx",
+    "qid": 2,
+    "question": "Which department shows the highest total compensation in the bar chart?",
+    "reasoning_type": "Chart reading",
+    "difficulty": "Easy",
+    "raw_answer": "Engineering (use image) OR XLOOKUP(MAX(Dept_Summary!E3:E7), Dept_Summary!E3:E7, Dept_Summary!A3:A7)",
+    "gold": "Engineering",
+    "gold_values": [
+      "Engineering"
+    ],
+    "provenance": "Payroll_image_002"
+  },
+  {
+    "workbook": "frtr_0004_payroll-summary.xlsx",
+    "qid": 3,
+    "question": "What is the sum of Q1 (Jan\u2013Mar) base pay?",
+    "reasoning_type": "Aggregation by month",
+    "difficulty": "Medium",
+    "raw_answer": "SUMIFS(Payroll!D:D,Payroll!A:A,\">=2025-01-01\",Payroll!A:A,\"<2025-04-01\")",
+    "gold": "SUMIFS(Payroll!D:D,Payroll!A:A,\">=2025-01-01\",Payroll!A:A,\"<2025-04-01\")",
+    "gold_values": [
+      "SUMIFS(Payroll!D:D,Payroll!A:A,\">=2025-01-01\",Payroll!A:A,\"<2025-04-01\")"
+    ],
+    "provenance": "Payroll!A:D"
+  },
+  {
+    "workbook": "frtr_0004_payroll-summary.xlsx",
+    "qid": 4,
+    "question": "How much employer contribution to 401k is recorded?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "SUMIFS(Benefits!C:C, Benefits!B:B, \"401k\")",
+    "gold": "SUMIFS(Benefits!C:C, Benefits!B:B, \"401k\")",
+    "gold_values": [
+      "SUMIFS(Benefits!C:C, Benefits!B:B, \"401k\")"
+    ],
+    "provenance": "Benefits!B:C"
+  },
+  {
+    "workbook": "frtr_0004_payroll-summary.xlsx",
+    "qid": 5,
+    "question": "Does Sales total compensation exceed Engineering by at least 10%?",
+    "reasoning_type": "Comparison",
+    "difficulty": "Hard",
+    "raw_answer": "Dept_Summary!E3 > 1.1*Dept_Summary!E4",
+    "gold": "No",
+    "gold_values": [
+      "No"
+    ],
+    "provenance": "Dept_Summary!E3:E4"
+  },
+  {
+    "workbook": "frtr_0005_ap-vendor-spend.xlsx",
+    "qid": 1,
+    "question": "What is total invoice spend for Logistics?",
+    "reasoning_type": "SUMIFS",
+    "difficulty": "Easy",
+    "raw_answer": "Category_Summary!B5",
+    "gold": "1295988.6799999995",
+    "gold_values": [
+      "1295988.6799999995"
+    ],
+    "provenance": "Category_Summary!B5"
+  },
+  {
+    "workbook": "frtr_0005_ap-vendor-spend.xlsx",
+    "qid": 2,
+    "question": "Which category has the highest overall spend?",
+    "reasoning_type": "Chart reading",
+    "difficulty": "Easy",
+    "raw_answer": "Professional Services (Use Bar Chart) OR XLOOKUP(MAX(B3:B9), B3:B9, A3:A9)",
+    "gold": "Professional Services",
+    "gold_values": [
+      "Professional Services"
+    ],
+    "provenance": "AP_image_001"
+  },
+  {
+    "workbook": "frtr_0005_ap-vendor-spend.xlsx",
+    "qid": 3,
+    "question": "What is the open (unpaid) amount for Marketing?",
+    "reasoning_type": "Cross-sheet calc",
+    "difficulty": "Medium",
+    "raw_answer": "Category_Summary!D6",
+    "gold": "1301601.5299999977",
+    "gold_values": [
+      "1301601.5299999977"
+    ],
+    "provenance": "Category_Summary!D6"
+  },
+  {
+    "workbook": "frtr_0005_ap-vendor-spend.xlsx",
+    "qid": 4,
+    "question": "In which month are payments the highest?",
+    "reasoning_type": "Chart reading (trend)",
+    "difficulty": "Medium",
+    "raw_answer": "January (use image)",
+    "gold": "January (use image)",
+    "gold_values": [
+      "January (use image)"
+    ],
+    "provenance": "AP_image_002"
+  },
+  {
+    "workbook": "frtr_0005_ap-vendor-spend.xlsx",
+    "qid": 5,
+    "question": "For tier A vendors, what is the count of unique vendors?",
+    "reasoning_type": "Lookup + Count",
+    "difficulty": "Hard",
+    "raw_answer": "COUNTIF(Vendor_Master!B:B,\"A\")",
+    "gold": "200",
+    "gold_values": [
+      "200"
+    ],
+    "provenance": "Vendor_Master!B:B"
+  },
+  {
+    "workbook": "frtr_0006_manufacturing-ops.xlsx",
+    "qid": 1,
+    "question": "Which workcenter produced the highest good quantity?",
+    "reasoning_type": "Chart reading",
+    "difficulty": "Easy",
+    "raw_answer": "WC 0027 (using image) or XLOOKUP(MAX(B3:B42), B3:B42, A3:A42)",
+    "gold": "WC 0027",
+    "gold_values": [
+      "WC 0027"
+    ],
+    "provenance": "MFG_image_002"
+  },
+  {
+    "workbook": "frtr_0006_manufacturing-ops.xlsx",
+    "qid": 2,
+    "question": "What is total good quantity at WC-001?",
+    "reasoning_type": "SUMIFS",
+    "difficulty": "Easy",
+    "raw_answer": "WC_Summary!B3",
+    "gold": "8382",
+    "gold_values": [
+      "8382"
+    ],
+    "provenance": "WC_Summary!B3"
+  },
+  {
+    "workbook": "frtr_0006_manufacturing-ops.xlsx",
+    "qid": 3,
+    "question": "What is the estimated standard cost at WC-010?",
+    "reasoning_type": "Cross-sheet XLOOKUP",
+    "difficulty": "Medium",
+    "raw_answer": "WC_Summary!D12",
+    "gold": "285246.55464857066",
+    "gold_values": [
+      "285246.55464857066"
+    ],
+    "provenance": "WC_Summary!D12"
+  },
+  {
+    "workbook": "frtr_0006_manufacturing-ops.xlsx",
+    "qid": 4,
+    "question": "What is the overall scrap rate (QtyScrap / QtyGood)?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "SUM(WC_Summary!C3:C42)/SUM(WC_Summary!B3:B42)",
+    "gold": "SUM(WC_Summary!C3:C42)/SUM(WC_Summary!B3:B42)",
+    "gold_values": [
+      "SUM(WC_Summary!C3:C42)/SUM(WC_Summary!B3:B42)"
+    ],
+    "provenance": "WC_Summary!B:C"
+  },
+  {
+    "workbook": "frtr_0006_manufacturing-ops.xlsx",
+    "qid": 5,
+    "question": "Is scrap trending downward over time?",
+    "reasoning_type": "Trend analysis",
+    "difficulty": "Hard",
+    "raw_answer": "Assess slope from line chart.",
+    "gold": "Assess slope from line chart.",
+    "gold_values": [
+      "Assess slope from line chart."
+    ],
+    "provenance": "MFG_image_001"
+  },
+  {
+    "workbook": "frtr_0007_ecommerce-metrics.xlsx",
+    "qid": 1,
+    "question": "Which channel generated the highest revenue?",
+    "reasoning_type": "Chart reading",
+    "difficulty": "Easy",
+    "raw_answer": "Paid Search (from Image) or INDEX(A3:A8, MATCH(MAX(E3:E8), E3:E8, 0))",
+    "gold": "Paid Search",
+    "gold_values": [
+      "Paid Search"
+    ],
+    "provenance": "Ecom_image_001"
+  },
+  {
+    "workbook": "frtr_0007_ecommerce-metrics.xlsx",
+    "qid": 2,
+    "question": "What is the conversion rate for Paid Search?",
+    "reasoning_type": "Cross-sheet",
+    "difficulty": "Medium",
+    "raw_answer": "XLOOKUP(\"Paid Search\", Channel_Summary!A:A, Channel_Summary!D:D)",
+    "gold": "0.003070354991519972",
+    "gold_values": [
+      "0.003070354991519972"
+    ],
+    "provenance": "Channel_Summary!D:D"
+  },
+  {
+    "workbook": "frtr_0007_ecommerce-metrics.xlsx",
+    "qid": 3,
+    "question": "How many sessions occurred in total across all channels?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Easy",
+    "raw_answer": "SUM(Channel_Summary!B3:B8)",
+    "gold": "239598.0",
+    "gold_values": [
+      "239598.0"
+    ],
+    "provenance": "Channel_Summary!B3:B8"
+  },
+  {
+    "workbook": "frtr_0007_ecommerce-metrics.xlsx",
+    "qid": 4,
+    "question": "Is traffic growing month-over-month?",
+    "reasoning_type": "Trend reading",
+    "difficulty": "Hard",
+    "raw_answer": "Assess from sessions line chart.",
+    "gold": "Assess from sessions line chart.",
+    "gold_values": [
+      "Assess from sessions line chart."
+    ],
+    "provenance": "Ecom_image_002"
+  },
+  {
+    "workbook": "frtr_0007_ecommerce-metrics.xlsx",
+    "qid": 5,
+    "question": "What is total email volume sent?",
+    "reasoning_type": "Aggregation",
+    "difficulty": "Medium",
+    "raw_answer": "SUM(Email_Campaigns!B:B)",
+    "gold": "SUM(Email_Campaigns!B:B)",
+    "gold_values": [
+      "SUM(Email_Campaigns!B:B)"
+    ],
+    "provenance": "Email_Campaigns!B:B"
+  }
+]

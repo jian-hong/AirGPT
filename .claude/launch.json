@@ -6,6 +6,24 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8801", "--directory", "D:\\AirGPT\\netie-scroll-world"],
       "port": 8801
+    },
+    {
+      "name": "airgpt",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["clipdrop.py"],
+      "port": 8765
+    },
+    {
+      "name": "airgpt-demo-mock",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["clipdrop.py"],
+      "port": 8765,
+      "env": {
+        "AIRGPT_DEMO_MOCK": "1",
+        "AIRGPT_DATA_DIR": "D:\\AirGPT\\data-demo-mock",
+        "AIRGPT_DEMO_LAN_IP": "10.10.20.42",
+        "AIRGPT_DEMO_HOSTNAME": "DEMO-LAPTOP"
+      }
     }
   ]
 }

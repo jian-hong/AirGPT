@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "note": "Canonical local ports — one app per port. Never reuse. Discovery via /api/apps.",
+  "version": 3,
+  "note": "Canonical local ports \u2014 one app per port. Never reuse. Discovery via /api/apps.",
   "apps": [
     {
       "id": "airgpt",
@@ -9,7 +9,10 @@
       "health": "/api/info",
       "url": "http://127.0.0.1:8765/",
       "cwd": ".",
-      "start": ["python", "clipdrop.py"],
+      "start": [
+        "python",
+        "clipdrop.py"
+      ],
       "kind": "self",
       "open": "browser"
     },
@@ -20,7 +23,11 @@
       "health": "/",
       "url": "http://127.0.0.1:3000/",
       "cwd": "D:/Cortex/demo/dms-ui",
-      "start": ["npm", "run", "dev"],
+      "start": [
+        "npm",
+        "run",
+        "dev"
+      ],
       "kind": "external",
       "open": "browser"
     },
@@ -31,9 +38,18 @@
       "health": "/health",
       "url": "http://127.0.0.1:8010/",
       "cwd": "D:/Cortex",
-      "start": ["pwsh", "-NoProfile", "-File", "scripts/start_cortex_engine.ps1", "-Port", "8010"],
+      "start": [
+        "pwsh",
+        "-NoProfile",
+        "-File",
+        "scripts/start_cortex_engine.ps1",
+        "-Port",
+        "8010"
+      ],
       "kind": "external",
-      "env": {"CORTEX_API_URL": "http://127.0.0.1:8010"},
+      "env": {
+        "CORTEX_API_URL": "http://127.0.0.1:8010"
+      },
       "open": "browser"
     },
     {
@@ -43,7 +59,14 @@
       "health": "/health",
       "url": "http://127.0.0.1:8020/",
       "cwd": ".",
-      "start": ["python", "-m", "ltx2_video", "--serve", "--port", "8020"],
+      "start": [
+        "python",
+        "-m",
+        "ltx2_video",
+        "--serve",
+        "--port",
+        "8020"
+      ],
       "kind": "sidecar",
       "open": "panel"
     },
@@ -55,7 +78,7 @@
       "url": "http://127.0.0.1:8765/",
       "kind": "surface",
       "open": "panel",
-      "note": "In-process AirGPT workspace — no extra TCP port"
+      "note": "In-process AirGPT workspace \u2014 no extra TCP port"
     },
     {
       "id": "openforge",
@@ -65,7 +88,7 @@
       "url": "http://127.0.0.1:8765/",
       "kind": "surface",
       "open": "panel",
-      "note": "In-process AirGPT workspace — shares AirGPT :8765"
+      "note": "In-process AirGPT workspace \u2014 shares AirGPT :8765"
     },
     {
       "id": "vllm",
@@ -119,7 +142,12 @@
       "health": "/",
       "url": "http://127.0.0.1:8801/",
       "cwd": "netie-scroll-world",
-      "start": ["python", "-m", "http.server", "8801"],
+      "start": [
+        "python",
+        "-m",
+        "http.server",
+        "8801"
+      ],
       "kind": "sidecar",
       "open": "browser"
     },
@@ -131,7 +159,24 @@
       "url": "http://127.0.0.1:20128/",
       "kind": "detect",
       "open": "browser",
-      "note": "OmniRoute free gateway — enable from Key Vault"
+      "note": "OmniRoute free gateway \u2014 enable from Key Vault"
+    },
+    {
+      "id": "vdml-sheet-demo",
+      "name": "VDML Sheet Demo",
+      "port": 9100,
+      "health": "/",
+      "url": "http://127.0.0.1:9100/",
+      "cwd": "apps/vdml-sheet-demo",
+      "start": [
+        "python",
+        "-m",
+        "http.server",
+        "9100"
+      ],
+      "kind": "sidecar",
+      "open": "card",
+      "scaffold": true
     }
   ],
   "reserved": {
