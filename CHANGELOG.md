@@ -2,6 +2,23 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-25 — Merge wave: demo line, extractor gate, D02 HTTP tests land on master
+
+- PR #12 merged the whole demo/rag-cross-compare integration line (six cursor
+  PRs, vault-first routing, UI design system). #2 was contained and auto-marked
+  merged; #5 closed on an empty diff vs master; #1 closed as superseded by
+  master's newer YC recorder. 13 branches deleted, each verified
+  ancestor-of-master (or PR-ref-recoverable) before deletion.
+- PR #46 rebased — its first 3 commits were already master's own SHAs — and
+  merged: `rag/ingest.py` extractor gate, DR-0001, `test_rag_extractor_gate.py`.
+  A duplicate `openpyxl` pin the rebase re-added was caught and dropped.
+- PR #41 merged master, un-drafted, merged: `tests/test_ops_http_gate.py` covers
+  the six `/api/rag/ops` endpoints over HTTP; the gate code itself was already
+  on master. `tests.yml` kept master's stricter version (MIN_TESTS 380).
+- Suite green on master after every merge (436 passed, floor 380). Kilo Code
+  Review is out of credits and reports ACTION_REQUIRED on every PR — a billing
+  notice, not findings (R-0011: named so the red check is not read as code).
+
 ## 2026-08-22 - #32 D02 HTTP gate
 
 - The D02 loop is now asserted where a client calls it. `ops_demo_e2e.py` still

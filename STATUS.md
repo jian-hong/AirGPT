@@ -24,8 +24,8 @@
    sheet/column collision). All fixed; 720/720 re-measured after. Suite 211 OK.
 4. **Verified live:** #15 chain over SSE; #20 Docs 7/7 sha256; #14 reveal
    `origin:"docs"`; #25 Settings 3 of 4. All await a **different-run** close.
-5. **D02 works in Python and nowhere else** - `ops_demo_e2e.py` 32/32 but imports
-   `rag.ops_amend` direct; six HTTP endpoints uncovered, 0 UI callers. #32 / P12.
+5. **D02 six /api/rag/ops endpoints asserted over HTTP** - `test_ops_http_gate.py`
+   landed via #41 (merge wave 2026-08-25, CI 436 green). UI callers 0. #32 / P12.
 6. **#35 xlsx/KPI is production code** - `rag/xlsx_sql.py`. Product no longer
    imports `frtr_sql_baseline` from `tests/`. Banner skip is the #31 rule.
 
