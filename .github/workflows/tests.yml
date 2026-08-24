@@ -9,8 +9,13 @@
 # collects ZERO tests from those and still exits 0 - a suite that proves nothing
 # while reporting success (R-0007). pytest collects both styles.
 #
-# Verified locally on 2026-08-07 with exactly the env and exclusions below:
-# 396 passed, 0 failed, 4m26s.
+# A 396-pass local count on 2026-08-07 was a laptop number (R-0007): gitignored
+# data/skills packs, optional sqlite-vec, sentence-transformers + cached BGE
+# weights, and modules this job deliberately ignores (playwright, ltx2).
+# Skill-catalog tests pin to tests/fixtures/skills so a clean clone serves the
+# same packs. openpyxl and pandas are product xlsx deps and belong here. sqlite-vec stays
+# opt-in (Windows extension load is not a stranger-clone guarantee). Floor is
+# 380, the earned pass count. Do not lower it.
 name: tests
 
 on:
@@ -33,8 +38,11 @@ jobs:
       # that day. Confirmed the suite is green with an empty HF cache.
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
-      # Guard for R-0007. The local run collects 396. If an exclusion is widened or a
-      # collection error silently drops a module, this goes red instead of green.
+      # Guard for R-0007. Clean Actions checkout earns 380 passed: skill-catalog
+      # fixtures (the 5 that failed on empty data/skills) + openpyxl (6 xlsx
+      # tests) + fixture-pin tests that lock the committed packs. 9 stay skipped:
+      # 8 sqlite-vec (opt-in) and 1 BGE embedder (HF offline). If an exclusion is
+      # widened or a collection error silently drops a module, this goes red.
       MIN_TESTS: "380"
 
     steps:
@@ -48,7 +56,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest openpyxl sqlite-vec
+          pip install pytest
 
       - name: Run the suite
         shell: pwsh

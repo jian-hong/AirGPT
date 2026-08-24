@@ -10,6 +10,8 @@ from urllib.parse import quote, unquote
 import db
 
 ONLINE_WINDOW_SEC = 300  # 5 min
+# Persisted labels only. clipdrop request gates are IP-only and never read these
+# (HOST-DEMO-04). DR-0003 / F22a would make them load-bearing; that is still proposed.
 ACL_LEVELS = ("read_only", "read_write", "use_host_ai", "use_own_ai", "limited")
 
 
@@ -243,6 +245,7 @@ def touch_peer(
 
 
 def set_peer_acl(ip: str, access_level: str, *, admin_name: str = "") -> dict:
+    """Persist a chosen level. Request gates do not read this (HOST-DEMO-04)."""
     ip = normalize_peer_ip(ip)
     if not ip:
         return {"ok": False, "error": "invalid peer ip"}

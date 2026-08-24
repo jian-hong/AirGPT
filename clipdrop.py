@@ -8,6 +8,7 @@ import mimetypes
 import os
 import queue
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -117,6 +118,9 @@ _client_ai_enabled = True
 _ai_rate_lock = threading.Lock()
 _ai_last_ts = 0.0
 AI_RATE_LIMIT_SEC = 60
+# Ceiling on skills armed for one send. Each pack costs up to 2000 chars of preamble,
+# so an unbounded list is a quiet way to blow the context budget on instructions.
+MAX_ARMED_SKILLS = 3
 _online_cache: dict = {"ok": True, "ts": 0.0}
 _auth_fails: dict[str, list[float]] = {}
 _qr_session_token = ""
@@ -839,6 +843,29 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
 
 def _is_host_only_path(path: str) -> bool:
     return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
+
+
+# HOST-DEMO-02 / F8a: non-local clients must complete POST /api/establish before
+# /api/ai/* and the chat POST paths the phone uses. Local host keeps today's path.
+# A leftover token (issued, never bound) is refused until it is bound here.
+AIRGPT_SECURITY_VERSION = "1"
+SESSION_NONCE_HEADER = "X-AirGPT-Session-Nonce"
+SECURITY_VERSION_HEADER = "X-AirGPT-Security-Version"
+_ESTABLISH_CHAT_POSTS = frozenset({
+    "/api/chat/stream",
+    "/api/chat/project-suggest",
+    "/api/messages",
+})
+_establish: dict[str, dict] = {}
+_establish_token: dict[str, str] = {}
+
+
+def _needs_establish(method: str, path: str) -> bool:
+    if path.startswith("/api/ai"):
+        return True
+    if method == "POST" and (path in _ESTABLISH_CHAT_POSTS or path.startswith("/api/chat/")):
+        return True
+    return False
 
 
 def _is_tunnel_host(host: str) -> bool:
@@ -2024,7 +2051,7 @@ class Handler(BaseHTTPRequestHandler):
         # /pomodoro is a self-contained timer page: no data, no API calls, nothing to
         # authorise. It opens in its own small window, so requiring a token would just
         # 401 a page that reads nothing.
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -2035,7 +2062,10 @@ class Handler(BaseHTTPRequestHandler):
         if not app_auth:
             return True
         st = app_auth.status()
-        if not st.get("needs_auth"):
+        # needs_auth is also True when no passcode exists so _join_url mints a
+        # QR token (#27 / #40). That is not an HTTP session gate: establish
+        # *creates* the session, and a missing passcode is not passcode_required.
+        if not st.get("passcode_required"):
             return True
         # Rate-limit brute force from LAN/WiFi attackers
         now = time.time()
@@ -2059,6 +2089,77 @@ class Handler(BaseHTTPRequestHandler):
                 )
         return ok
 
+    def _refuse_establish(self, path: str, code: str, error: str):
+        ip = self._client_ip()
+        if app_audit:
+            app_audit.log(code, ip=ip, detail=path, ok=False)
+        return self._json(403, {
+            "ok": False,
+            "error": error,
+            "code": code,
+            "establish": True,
+        })
+
+    def _establish_ok(self, path: str) -> bool:
+        """False if a refusal was already sent. Local host always passes."""
+        if path == "/api/establish":
+            return True
+        if _is_host_request(self.headers, self.client_address[0]):
+            return True
+        if not _needs_establish(self.command, path):
+            return True
+        tok = (self._request_token() or "").strip()
+        nonce = (self.headers.get(SESSION_NONCE_HEADER) or "").strip()
+        if tok and tok not in _establish_token:
+            self._refuse_establish(
+                path,
+                "establish_unbound",
+                "token is not bound to a handshake — POST /api/establish",
+            )
+            return False
+        if tok and nonce and _establish_token.get(tok) != nonce:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        rec = _establish.get(nonce) if nonce else None
+        if not rec:
+            self._refuse_establish(
+                path,
+                "establish_required",
+                "establish required — POST /api/establish",
+            )
+            return False
+        bound_tok = rec.get("token") or ""
+        if bound_tok and bound_tok != tok:
+            self._refuse_establish(
+                path,
+                "establish_mismatch",
+                "session nonce does not match this token",
+            )
+            return False
+        return True
+
+    def _handle_establish(self):
+        ip = self._client_ip()
+        tok = (self._request_token() or "").strip()
+        nonce = secrets.token_urlsafe(24)
+        if tok:
+            old = _establish_token.get(tok)
+            if old:
+                _establish.pop(old, None)
+            _establish_token[tok] = nonce
+        _establish[nonce] = {"token": tok, "ip": ip, "ts": time.time()}
+        if app_audit:
+            app_audit.log("establish", ip=ip, detail="ok", ok=True)
+        return self._json(200, {
+            "ok": True,
+            "session_nonce": nonce,
+            "security_version": AIRGPT_SECURITY_VERSION,
+        })
+
     def _passcode_rate_limited(self, ip: str) -> bool:
         """Throttle passcode/join-code guessing. Local host is exempt.
 
@@ -2079,7 +2180,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
+        self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
     def _send(self, code, body: bytes, ctype):
         try:
@@ -2087,6 +2192,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
             self._cors()
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -2105,6 +2211,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.send_header("Transfer-Encoding", "chunked")
+        self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
         self._cors()
         self.end_headers()
 
@@ -2246,21 +2353,32 @@ class Handler(BaseHTTPRequestHandler):
         exclude_id = int(user_msg["id"]) if user_msg else 0
         history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
 
-        # A skill snippet modifies THIS send only. The raw user text is what gets stored
-        # above — the pack is prepended to the model's copy so the transcript stays
+        # Armed skills modify THIS send only. The raw user text is what gets stored
+        # above — packs are prepended to the model's copy so the transcript stays
         # readable and the chat history never accumulates skill preambles.
+        #
+        # `skills` is the list form; `skill` is the original single field and still
+        # works, because an older client is still allowed to talk to this server.
         question = text
-        skill_id = str(data.get("skill") or "").strip().lower()
-        if skill_id:
-            pack = ""
-            try:
-                import invoke_registry
+        wanted: list[str] = []
+        raw = data.get("skills")
+        for candidate in [data.get("skill")] + (raw if isinstance(raw, list) else []):
+            sid = str(candidate or "").strip().lower()
+            if sid and sid not in wanted:
+                wanted.append(sid)
+        if wanted:
+            packs: list[str] = []
+            for sid in wanted[:MAX_ARMED_SKILLS]:
+                try:
+                    import invoke_registry
 
-                pack = invoke_registry.load_skill(skill_id, max_chars=2000).strip()
-            except Exception:
-                pack = ""
-            if pack:
-                question = f"[Skill: {skill_id}]\n{pack}\n\n---\n\n{text}"
+                    body = invoke_registry.load_skill(sid, max_chars=2000).strip()
+                except Exception:
+                    body = ""
+                if body:
+                    packs.append(f"[Skill: {sid}]\n{body}")
+            if packs:
+                question = "\n\n".join(packs) + f"\n\n---\n\n{text}"
 
         # Reserved for explicit cancellation. Deliberately NOT tripped by the client
         # disconnecting any more — a dropped socket used to abandon generation and
@@ -2425,6 +2543,14 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     if not self._sse_send(payload):
                         break
+                elif t == "reasoning":
+                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
+                    # and dropped here - every browser answer goes over SSE, so the
+                    # founder never saw a step of it while unit and JSON-path checks
+                    # both passed.
+                    reasoning = ev.get("reasoning") or {}
+                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
+                        break
                 elif t == "citations":
                     citations = ev.get("citations") or []
                     if not self._sse_send({"type": "citations", "citations": citations}):
@@ -2439,14 +2565,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self._sse_end()
                 elif t == "done":
                     done = ev
-                elif t == "reasoning":
-                    # EPIC-D01 #15. Without this branch the chain is built, yielded,
-                    # and dropped here - every browser answer goes over SSE, so the
-                    # founder never saw a step of it while unit and JSON-path checks
-                    # both passed.
-                    reasoning = ev.get("reasoning") or {}
-                    if not self._sse_send({"type": "reasoning", "reasoning": reasoning}):
-                        break
                     text = str(ev.get("answer") or text)
                     citations = ev.get("citations") or citations
         except Exception as e:
@@ -2467,6 +2585,9 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_send({
             "type": "done",
             "answer": text,
+            # Rebuilt from a fixed key list, so anything not named here is dropped
+            # no matter what answer_events produced. #15's chain was missing.
+            "reasoning": done.get("reasoning") or {},
             "trace_id": done.get("trace_id"),
             "confidence": done.get("confidence"),
             "stop_reason": done.get("stop_reason"),
@@ -2479,9 +2600,6 @@ class Handler(BaseHTTPRequestHandler):
             # be indistinguishable from a first-choice reply.
             "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
-            # Rebuilt from a fixed key list, so anything not named here is dropped
-            # no matter what answer_events produced. #15's chain was missing.
-            "reasoning": done.get("reasoning") or {},
         })
         self._sse_end()
 
@@ -2554,7 +2672,10 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET,HEAD,POST,DELETE,PATCH,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
+        )
         self.end_headers()
 
     def do_HEAD(self):
@@ -2626,6 +2747,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -4106,6 +4231,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if path == "/api/establish":
+            return self._handle_establish()
+        if not self._establish_ok(path):
+            return
 
         if path == "/api/presence/typing":
             try:

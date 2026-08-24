@@ -278,7 +278,7 @@
 
   function openPeerAccess(ev, ip, level) {
     accessPopover(ev, {
-      title: "Access",
+      title: "Access (not enforced)",
       level: level || "read_only",
       onPick: async (v) => {
         try {
@@ -509,12 +509,12 @@
       <div class="hub-title-row">
         <div>
           <h2 class="hub-title">Coherent Access Hub</h2>
-          <p class="cortex-tag">Host manages who joins, what they can do, and how they use AI.</p>
+          <p class="cortex-tag">Host manages who joins. Access levels are saved, not yet enforced. Host-only paths stay host-only.</p>
         </div>
         <label class="hub-demo-toggle"><input type="checkbox" id="hubDemoToggle"${demo ? " checked" : ""}/> Demo mode</label>
       </div>
       <div class="hub-share-row">
-        <label class="hint">Share access:</label>
+        <label class="hint">Share level (not enforced):</label>
         <button type="button" class="btn" id="hubShareLevelBtn" data-level="${esc(shareLevel)}" onclick="window.MP.pickShareLevel(event)">${esc(global.hubAccessLabel ? global.hubAccessLabel(shareLevel) : shareLevel)} ▾</button>
         <button type="button" class="btn primary" onclick="hubCreateJoinCode()">Team code</button>
         <button type="button" class="btn" onclick="shareSession(currentSession||0,'view')">QR View</button>
@@ -566,7 +566,7 @@
   function pickShareLevel(ev) {
     const btn = $("hubShareLevelBtn");
     accessPopover(ev, {
-      title: "Share access",
+      title: "Share level (not enforced)",
       level: btn?.dataset.level || "read_only",
       onPick: (v) => {
         if (btn) {
@@ -627,7 +627,7 @@
     global.__projectShareKey = catKey;
     global.__projectShareLevel = level;
     global.netieOpenModal("Share this project", `
-      <p class="hint" style="margin:0 0 10px">Default is <strong>Manual</strong> — no AI. Raise access on purpose.</p>
+      <p class="hint" style="margin:0 0 10px">Default is <strong>Manual</strong>. Levels are saved, not yet enforced.</p>
       <button type="button" class="btn" id="projShareAclBtn" data-level="${esc(level)}">${esc(global.hubAccessLabel ? global.hubAccessLabel(level) : level)} ▾</button>
       <div class="share-qr-actions" style="max-width:240px;margin:12px auto 0">
         <img class="qr-img" id="qrProjectShareModal" alt="Share QR"/>
