@@ -99,6 +99,39 @@ def _pdf_text(path: Path) -> str:
         return ""
 
 
+def xlsx_supported() -> bool:
+    """Spreadsheet extraction needs openpyxl. Declared in requirements, checked anyway."""
+    try:
+        import openpyxl  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+# Binary lanes whose extractor rides a third-party package. An install that lacks the
+# package must SAY the lane is down, never hand back an empty string that retrieval
+# reports as "no evidence" (R-0011 — a silent fallback is a lie). Stdlib-only lanes
+# (.docx, .pptx) are absent on purpose: they cannot go missing.
+_EXTRACTOR_GATES: list[tuple[frozenset[str], str, object]] = [
+    (frozenset({".pdf"}), "pdf needs text extract - pip install pypdf", pdf_supported),
+    (
+        frozenset({".xlsx", ".xlsm"}),
+        "spreadsheet needs text extract - pip install openpyxl",
+        xlsx_supported,
+    ),
+]
+
+
+def extractor_gap(suffix: str) -> str:
+    """Reason this suffix cannot be extracted here, or "" when the lane is healthy."""
+    suffix = (suffix or "").lower()
+    for suffixes, reason, probe in _EXTRACTOR_GATES:
+        if suffix in suffixes and not probe():  # type: ignore[operator]
+            return reason
+    return ""
+
+
 def _xlsx_text(path: Path) -> str:
     """Every sheet's cells as readable rows, so embeddings see the data, not zip bytes.
 
@@ -376,6 +409,7 @@ def ingest_paths(
             pass
 
     source_ids: list[int] = []
+    skipped: list[dict] = []
     chunk_count = 0
     phrases_by_doc: list[list[str]] = []
     child_pairs: list[tuple[int, str]] = []
@@ -386,8 +420,17 @@ def ingest_paths(
         for _fi, path in enumerate(collected, start=1):
             store.update_job(job_id, stage="normalize", detail=str(path))
             _p("chunk", 10 + int(40 * _fi / max(1, n_files)), f"{path.name} ({_fi}/{n_files})")
+            # Gate BEFORE extracting: a missing extractor and a genuinely blank file
+            # both yield "", and only the gate can tell them apart. Without this the
+            # file is dropped here and the space looks like it was never given the
+            # document at all.
+            gap = extractor_gap(path.suffix)
+            if gap:
+                skipped.append({"path": path.name, "reason": gap, "lane_unavailable": True})
+                continue
             text, digest = read_text_file(path)
             if not text.strip():
+                skipped.append({"path": path.name, "reason": "no extractable text", "lane_unavailable": False})
                 continue
             mime = mimetypes.guess_type(str(path))[0] or "text/plain"
             # copy into blob store. The blob is post-extraction TEXT, so store
@@ -592,6 +635,14 @@ def ingest_paths(
         except Exception:
             pass
         _p("publish", 100, "ready for retrieval")
+        # A run that indexed nothing because a lane is down is a failure that STATES
+        # itself, not an empty success the caller renders as "no evidence found".
+        down = [s for s in skipped if s.get("lane_unavailable")]
+        if not source_ids and down:
+            error = "; ".join(sorted({str(s["reason"]) for s in down}))
+            store.update_job(job_id, stage="done", status="error", error=error[:240])
+            store.touch_space(space_id, status="error")
+            return {"ok": False, "error": error, "job_id": job_id, "skipped": skipped}
         return {
             "ok": True,
             "job_id": job_id,
@@ -599,6 +650,8 @@ def ingest_paths(
             "sources": len(source_ids),
             "chunks": chunk_count,
             "metrics": metrics,
+            "skipped": skipped,
+            "lanes_unavailable": sorted({str(s["reason"]) for s in down}),
         }
     except Exception as e:
         store.update_job(job_id, stage="error", status="error", error=str(e)[:500])
@@ -749,8 +802,9 @@ def ingest_research(space_id: int, research_paths: list[str], *, force: bool = F
             skipped.append({"path": str(raw), "reason": "not found"})
             continue
         suffix = p.suffix.lower()
-        if suffix == ".pdf" and not pdf_supported():
-            skipped.append({"path": str(raw), "reason": "pdf needs text extract — pip install pypdf"})
+        gap = extractor_gap(suffix)
+        if gap:
+            skipped.append({"path": str(raw), "reason": gap, "lane_unavailable": True})
             continue
         if suffix != ".pdf" and suffix not in TEXT_SUFFIXES:
             skipped.append({"path": str(raw), "reason": f"unsupported type {suffix or '(none)'}"})
@@ -760,7 +814,9 @@ def ingest_research(space_id: int, research_paths: list[str], *, force: bool = F
     if not indexable:
         return {"ok": False, "error": "no indexable research files", "skipped": skipped}
     out = ingest_paths(space_id, indexable, force=force)
-    out["skipped"] = skipped
+    # Extend, never assign: ingest_paths reports its own downed lanes and losing
+    # those would put the silence back.
+    out["skipped"] = skipped + list(out.get("skipped") or [])
     if out.get("ok"):
         out["research_attached"] = len(indexable)
     return out
