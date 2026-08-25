@@ -2,6 +2,18 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-25 — #33 Rebuild stamps saved architecture; #34 Docs original is the rebuild path
+
+- **#33 / DR-0006 (proposed).** `ingest_paths` no longer hardcodes `_hybrid_` on
+  the revision. `revision_profile` reads `config.architecture` (default
+  `hybrid` so existing spaces stay `local_hybrid_high`). Ingest still builds
+  the one hybrid index; graph/agentic stay retrieve-time templates. Gate:
+  `tests/test_rag_rebuild_config.py`.
+- **#34.** `backfill_docs_originals` copies a still-live original into `Docs/`
+  when `meta.docs_path` is missing. Rebuild prefers that original over the
+  extracted `.txt` blob. Cannot invent bytes when the original is gone (space 8
+  stays 0/6 until those files exist on disk). `MIN_TESTS` stays 380.
+
 ## 2026-08-25 — Constructor + MCP auto-caller ride the Cortex sidecar
 
 - AirGPT agents and chat gain `constructor_ghost`, `constructor_recommend`,
@@ -9,7 +21,7 @@ Append-only. Never edited, only added to. Newest first.
   Constructor is a marketplace builtin. Soft-fail when the sidecar is down.
 - Rebased onto current master so skill-catalog fixtures still pin CI
   (`feat/constructor-cortex-sidecar-tools` was based pre-#29 and went red
-  11/373 on an empty `data/skills`). `MIN_TESTS` stays 380.
+  11/373 on an empty `data/skills`). Landed as #48. `MIN_TESTS` stays 380.
 
 ## 2026-08-25 — tests run once per PR push, not twice
 

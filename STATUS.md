@@ -35,15 +35,14 @@
    move (`malformed_field_gate.py`: 0.4375 pre-rule vs 0.0000 shipped). Still open in
    D07: retained `sira_max` vs `hybrid_max` (`frtr_cross_latest.json` holds **one**).
 1. **#32 awaiting different-run close** - HTTP gate is `test_ops_http_gate.py`.
-2. **#33 Rebuild ignores saved config** - `depth_default` only stamps a revision
-   label (`ingest.py:340`); `architecture` never read at ingest. Needs DR-0006.
-3. **#34 backfill `docs_path`** - #20 covers new ingests only; space 8 is 0/6.
-4. **P13 multilingual** - `sira.py:13` ASCII-only, non-Latin scripts tokenize to
+2. **#33/#34 shipped this run** - DR-0006 proposed (stamp architecture, hybrid
+   index stays). Docs backfill from live originals; space 8 stays 0/6 if gone.
+3. **P13 multilingual** - `sira.py:13` ASCII-only, non-Latin scripts tokenize to
    nothing, `_coverage` returns 1.0. `multilingual_gate.py` **7/25, deliberately
    red** - do not quiet it (R-0002).
-5. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
+4. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
    Fenced today (`/api/rag` host-only, `:834`); **DR-0003's grants would unfence it**.
-6. Constructor sidecar tools rebased onto master (this PR). OpenVault nvidia still separate.
+5. Constructor sidecar landed (#48). OpenVault nvidia still separate.
 
 ## WIP
 

@@ -13,6 +13,123 @@ from typing import Iterable
 from rag import chunking, sira, store, vectors
 
 
+_ARCH_SAFE = re.compile(r"[^a-z0-9_]+")
+
+
+def revision_profile(space: dict | None) -> str:
+    """Stamp profile + saved architecture + depth onto the revision row.
+
+    Ingest still builds one hybrid index (DR-0006). Architecture is
+    retrieve-time until a later epic owns a second indexer. The label must
+    still name what Settings saved, or Rebuild after Manual/graph is a lie.
+    """
+    space = space or {}
+    space_profile = str(space.get("profile") or "local").strip() or "local"
+    depth = str(space.get("depth_default") or "high").strip() or "high"
+    cfg = space.get("config") if isinstance(space.get("config"), dict) else {}
+    arch = str((cfg or {}).get("architecture") or "hybrid").strip().lower() or "hybrid"
+    arch = _ARCH_SAFE.sub("", arch)[:32] or "hybrid"
+    return f"{space_profile}_{arch}_{depth}"[:80]
+
+
+def _blob_dir(space_id: int) -> Path:
+    return store.BLOB_DIR / str(int(space_id)) / "sources"
+
+
+def _is_extracted_blob(path: Path, space_id: int) -> bool:
+    try:
+        return path.parent.resolve() == _blob_dir(space_id).resolve() and path.suffix.lower() == ".txt"
+    except Exception:
+        return False
+
+
+def _docs_dir(space_id: int) -> Path:
+    return store.BLOB_DIR / str(int(space_id)) / "Docs"
+
+
+def _original_basename(path: Path, space_id: int) -> str:
+    """User filename. Docs copies are stored as {8hex}_{original_name}."""
+    try:
+        if path.parent.resolve() == _docs_dir(space_id).resolve():
+            name = path.name
+            hex8 = name[:8].lower()
+            if len(name) > 9 and name[8] == "_" and all(c in "0123456789abcdef" for c in hex8):
+                return name[9:]
+    except Exception:
+        pass
+    return path.name
+
+
+def rebuild_source_paths(srcs: list | None) -> list[str]:
+    """Paths to re-ingest. Live original, then Docs original, then .txt blob."""
+    out: list[str] = []
+    for s in srcs or []:
+        meta = s.get("meta") if isinstance(s.get("meta"), dict) else {}
+        try:
+            sid = int(s.get("space_id") or 0)
+        except (TypeError, ValueError):
+            sid = 0
+        chosen = ""
+        for raw in (s.get("path"), meta.get("original_path"), meta.get("docs_path")):
+            if not raw:
+                continue
+            p = Path(str(raw))
+            try:
+                if p.is_file() and not (sid and _is_extracted_blob(p, sid)):
+                    chosen = str(p)
+                    break
+            except Exception:
+                continue
+        if not chosen:
+            blob = meta.get("blob")
+            if blob and Path(str(blob)).is_file():
+                chosen = str(blob)
+        if chosen:
+            out.append(chosen)
+    return out
+
+
+def backfill_docs_originals(space_id: int) -> dict:
+    """Fill missing meta.docs_path from a still-live original (#34). Cannot invent bytes."""
+    filled = 0
+    already = 0
+    missing = 0
+    for src in store.list_sources(int(space_id)):
+        meta = dict(src.get("meta") or {}) if isinstance(src.get("meta"), dict) else {}
+        existing = str(meta.get("docs_path") or "")
+        if existing and Path(existing).is_file():
+            already += 1
+            continue
+        digest = str(src.get("content_hash") or "")
+        dest = ""
+        for raw in (src.get("path"), meta.get("original_path")):
+            if not raw:
+                continue
+            p = Path(str(raw))
+            if not p.is_file() or _is_extracted_blob(p, int(space_id)):
+                continue
+            dest = _retain_docs_original(int(space_id), p, digest)
+            if dest:
+                break
+        if dest:
+            meta["docs_path"] = dest
+            store.update_source_status(
+                int(src["id"]),
+                str(src.get("status") or "ready"),
+                meta=meta,
+            )
+            filled += 1
+        else:
+            missing += 1
+    return {
+        "ok": True,
+        "space_id": int(space_id),
+        "filled": filled,
+        "already": already,
+        "missing": missing,
+    }
+
+
 def _retain_docs_original(space_id: int, path: Path, digest: str) -> str:
     """Byte-faithful copy under space Docs/ for audit (RAG-BENCH-09). No encryption (P9)."""
     try:
@@ -366,11 +483,17 @@ def ingest_paths(
     if not space:
         return {"ok": False, "error": "space not found"}
 
+    if force:
+        try:
+            backfill_docs_originals(int(space_id))
+        except Exception:
+            pass
+
     job = store.create_job(space_id, stage="authorize")
     job_id = int(job["id"])
     store.touch_space(space_id, status="indexing")
     space_profile = str(space.get("profile") or "local")
-    rev_profile = f"{space_profile}_hybrid_{space.get('depth_default') or 'high'}"
+    rev_profile = revision_profile(space)
     revision = store.create_revision(space_id, profile=rev_profile[:80])
     rev_id = int(revision["id"])
     _p("authorize", 3, "checking sources")
@@ -448,7 +571,8 @@ def ingest_paths(
                 # never copy it onto itself with a stacked digest prefix.
                 dest = path
             else:
-                dest = dest_dir / f"{digest[:12]}_{path.stem}.txt"
+                stem = Path(_original_basename(path, space_id)).stem
+                dest = dest_dir / f"{digest[:12]}_{stem}.txt"
                 if not dest.exists():
                     # newline="\n": Windows would translate to \r\n, so re-reading
                     # the blob on rebuild would hash differently and duplicate the row.
@@ -456,6 +580,7 @@ def ingest_paths(
                 # Real user file (not extracted .txt blob): keep Docs original for audit.
                 docs_path = _retain_docs_original(space_id, path, digest)
 
+            orig_name = _original_basename(path, space_id)
             file_authority = (authority or "").strip() or ""
             if not file_authority:
                 from rag import authority as authority_mod
@@ -465,7 +590,7 @@ def ingest_paths(
                 "blob": str(dest),
                 "authority": file_authority,
                 "original_path": orig_resolved,
-                "original_name": path.name,
+                "original_name": orig_name,
             }
             if docs_path:
                 meta_src["docs_path"] = docs_path
@@ -579,7 +704,7 @@ def ingest_paths(
                 "import_map": import_map[:24],
                 "authority": file_authority,
                 "original_path": orig_resolved,
-                "original_name": path.name,
+                "original_name": orig_name,
             }
             if docs_path:
                 ready_meta["docs_path"] = docs_path
@@ -621,6 +746,13 @@ def ingest_paths(
             "df_terms": len(sira.corpus_df(phrases_by_doc)),
             "demoted_children": demoted_total,
             "profile": space_profile,
+            "architecture": str(
+                ((space.get("config") if isinstance(space.get("config"), dict) else {}) or {}).get(
+                    "architecture"
+                )
+                or "hybrid"
+            ),
+            "depth_default": str(space.get("depth_default") or "high"),
         }
         store.publish_revision(rev_id, chunk_count=chunk_count, source_count=len(source_ids), metrics=metrics)
         store.update_job(
