@@ -2,6 +2,16 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-25 — tests run once per PR push, not twice
+
+- `tests.yml` triggered on both `push: ["**"]` and `pull_request`, so every push
+  to a PR branch ran the full windows-latest suite twice (live proof: runs
+  32764548500 and 32764552158, same SHA). Push now fires on master only;
+  `pull_request` and `workflow_dispatch` unchanged. Ledger F48,
+  repo-infrastructure exemption — no ticket.
+- Named consequence, accepted: a branch with no open PR gets no push CI —
+  open a PR or use `workflow_dispatch`. `MIN_TESTS` floor and exclusions untouched.
+
 ## 2026-08-25 — Merge wave: demo line, extractor gate, D02 HTTP tests land on master
 
 - PR #12 merged the whole demo/rag-cross-compare integration line (six cursor
