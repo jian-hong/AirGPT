@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-25 — Constructor + MCP auto-caller ride the Cortex sidecar
+
+- AirGPT agents and chat gain `constructor_ghost`, `constructor_recommend`,
+  `auto_caller_pick` (plus existing `dms_query`) through `cortex_client`.
+  Constructor is a marketplace builtin. Soft-fail when the sidecar is down.
+- Rebased onto current master so skill-catalog fixtures still pin CI
+  (`feat/constructor-cortex-sidecar-tools` was based pre-#29 and went red
+  11/373 on an empty `data/skills`). `MIN_TESTS` stays 380.
+
 ## 2026-08-25 — tests run once per PR push, not twice
 
 - `tests.yml` triggered on both `push: ["**"]` and `pull_request`, so every push

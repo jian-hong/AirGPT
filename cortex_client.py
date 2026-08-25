@@ -688,6 +688,33 @@ def cortex_apps_delete(app_id: str) -> dict[str, Any]:
     return _json_call("DELETE", f"/api/apps/{app_id}", timeout=6.0)
 
 
+def constructor_ghost(nodes: list | None = None, edges: list | None = None) -> dict[str, Any]:
+    """Compile a Constructor canvas on Cortex (no LLM run)."""
+    return _post_status(
+        "/cortex/constructor/ghost",
+        {"nodes": nodes or [], "edges": edges or []},
+        timeout=8.0,
+    )
+
+
+def constructor_recommend(nodes: list | None = None, edges: list | None = None) -> dict[str, Any]:
+    return _post_status(
+        "/cortex/constructor/recommend",
+        {"nodes": nodes or [], "edges": edges or []},
+        timeout=8.0,
+    )
+
+
+def mcp_list_tools() -> dict[str, Any]:
+    data = _get("/mcp/tools", timeout=4.0)
+    return data if isinstance(data, dict) else {"ok": False, "error": "unreachable"}
+
+
+def mcp_call(name: str, arguments: dict | None = None) -> dict[str, Any]:
+    return _post_status("/mcp/call", {"name": name, "arguments": arguments or {}}, timeout=12.0)
+
+
+
 def goals_list() -> dict[str, Any]:
     ensure_engine(wait_sec=6.0)
     data = _get("/api/goals", timeout=3.0)

@@ -43,7 +43,7 @@
    red** - do not quiet it (R-0002).
 5. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
    Fenced today (`/api/rag` host-only, `:834`); **DR-0003's grants would unfence it**.
-6. Commit OpenVault nvidia separately.
+6. Constructor sidecar tools rebased onto master (this PR). OpenVault nvidia still separate.
 
 ## WIP
 
