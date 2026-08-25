@@ -20,7 +20,10 @@ name: tests
 
 on:
   push:
-    branches: ["**"]
+    # master only. A PR branch already runs via pull_request; branches: ["**"]
+    # made every PR push run the suite twice (F48). A branch with no open PR
+    # gets no push CI - open a PR or use workflow_dispatch.
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
