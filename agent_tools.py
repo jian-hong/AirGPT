@@ -627,6 +627,51 @@ def dms_action(action_id: str = "", params: dict | None = None, confirmed: bool 
     return out
 
 
+def constructor_ghost(nodes: list | None = None, edges: list | None = None, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    """Compile a Constructor canvas via the Cortex sidecar (no LLM)."""
+    args = {"nodes": nodes or [], "edges": edges or []}
+    if not cortex_client or not hasattr(cortex_client, "constructor_ghost"):
+        out = {"ok": False, "error": "cortex sidecar unavailable"}
+        _audit("constructor_ghost", args, out, ok=False, run_id=run_id, agent_id=agent_id)
+        return out
+    out = cortex_client.constructor_ghost(args["nodes"], args["edges"]) or {"ok": False, "error": "offline"}
+    if "ok" not in out:
+        out = {"ok": True, **out}
+    _audit("constructor_ghost", args, {"ok": out.get("ok")}, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def constructor_recommend(nodes: list | None = None, edges: list | None = None, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    args = {"nodes": nodes or [], "edges": edges or []}
+    if not cortex_client or not hasattr(cortex_client, "constructor_recommend"):
+        out = {"ok": False, "error": "cortex sidecar unavailable"}
+        _audit("constructor_recommend", args, out, ok=False, run_id=run_id, agent_id=agent_id)
+        return out
+    out = cortex_client.constructor_recommend(args["nodes"], args["edges"]) or {"ok": False, "error": "offline"}
+    if "ok" not in out:
+        out = {"ok": True, **out}
+    _audit("constructor_recommend", args, {"ok": out.get("ok")}, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def auto_caller_pick(goal: str = "", top_k: int = 5, *, run_id: int = 0, agent_id: int = 0) -> dict:
+    """Ask Cortex MCP auto-caller which first-party tools match a goal."""
+    args = {"goal": goal, "top_k": int(top_k or 5)}
+    if not cortex_client or not hasattr(cortex_client, "mcp_call"):
+        out = {"ok": False, "error": "cortex sidecar unavailable"}
+        _audit("auto_caller_pick", args, out, ok=False, run_id=run_id, agent_id=agent_id)
+        return out
+    raw = cortex_client.mcp_call("auto_caller.pick", args) or {}
+    out = raw.get("result") if isinstance(raw.get("result"), dict) else raw
+    if not isinstance(out, dict):
+        out = {"ok": False, "error": "bad_mcp_payload"}
+    if "ok" not in out:
+        out = {"ok": bool(raw.get("ok", True)), **out}
+    _audit("auto_caller_pick", args, {"ok": out.get("ok")}, ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+
 def desktop_observe(*, run_id: int = 0, agent_id: int = 0) -> dict:
     """See the screen: cursor, foreground app, windows, screenshot meta."""
     import desktop_control
@@ -712,6 +757,9 @@ TOOLS: dict[str, Callable[..., dict]] = {
     "rag_answer": rag_answer,
     "dms_query": dms_query,
     "dms_action": dms_action,
+    "constructor_ghost": constructor_ghost,
+    "constructor_recommend": constructor_recommend,
+    "auto_caller_pick": auto_caller_pick,
     "desktop_observe": desktop_observe,
     "desktop_plan": desktop_plan,
     "desktop_click": desktop_click,
@@ -753,6 +801,9 @@ def tool_schemas(names: list[str] | None = None) -> list[dict]:
         "rag_answer": {"description": "Answer from a RAG space with citations", "params": ["query", "space_id", "depth", "chat_id"]},
         "dms_query": {"description": "Read DMS warehouse objects (inventory/suppliers/locations/shipments/transactions/alerts) via Cortex; PII columns are never returned", "params": ["object_type", "filters", "limit"]},
         "dms_action": {"description": "Invoke a governed DMS action type (e.g. export_pptx); may return confirm_required — ask the human, then retry with confirmed=true", "params": ["action_id", "params", "confirmed"]},
+        "constructor_ghost": {"description": "Compile a Constructor canvas via Cortex (no LLM run)", "params": ["nodes", "edges"]},
+        "constructor_recommend": {"description": "Rank live Constructor coordination patterns via Cortex", "params": ["nodes", "edges"]},
+        "auto_caller_pick": {"description": "Ask Cortex which first-party tools match a goal; WhatsApp send stays parked", "params": ["goal", "top_k"]},
         "desktop_observe": {"description": "See the desktop: cursor position, foreground app, open windows, screenshot", "params": []},
         "desktop_plan": {"description": "Plan a human-style action path (Word vs ChatGPT vs Claude vs tutorial) from what is already open", "params": ["goal", "tokens_left", "prefer"]},
         "desktop_click": {"description": "Click at screen x,y (needs confirmed=true)", "params": ["x", "y", "button", "confirmed"]},

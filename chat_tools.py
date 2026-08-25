@@ -49,6 +49,9 @@ CHAT_SAFE_TOOLS: tuple[str, ...] = (
     "git_diff",
     "session_summarize",
     "dms_query",
+    "constructor_ghost",
+    "constructor_recommend",
+    "auto_caller_pick",
     "desktop_observe",
 )
 
