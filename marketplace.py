@@ -284,6 +284,22 @@ SOFTWARE_MODULES: list[dict[str, Any]] = [
         "detect": "repomix",
         "builtin": "repomix",
     },
+    {
+        "id": "mod-constructor",
+        "hf_id": "",
+        "name": "Constructor",
+        "icon": "CT",
+        "blurb": "Chat-to-workflow canvas hosted inside Cortex at /cortex/constructor/.",
+        "serving": "module",
+        "effort": "low",
+        "approx_vram_gb": 0,
+        "approx_ram_gb": 1,
+        "approx_disk_gb": 0.01,
+        "quant_hint": "built-in",
+        "tags": ["module", "apps", "constructor", "netie"],
+        "profiles": ["cpu_gguf", "cloud_only", "vllm_small", "vllm_mid", "colibri_disk"],
+        "builtin": "constructor",
+    },
 ]
 
 MARKET_ITEMS = MARKET_ITEMS + SOFTWARE_MODULES
