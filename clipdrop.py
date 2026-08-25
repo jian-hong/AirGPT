@@ -1935,20 +1935,11 @@ def tunnel_worker():
 
 
 def _rag_rebuild_paths(srcs: list) -> list:
-    """Paths to re-ingest for a full rebuild. Prefer the original source path;
-    fall back to the local .txt blob when the original upload is gone (e.g. a
-    temp file from a browser upload), so a rebuild never silently drops sources."""
-    out = []
-    for s in srcs or []:
-        p = s.get("path")
-        if p and os.path.exists(p):
-            out.append(p)
-            continue
-        meta = s.get("meta") if isinstance(s.get("meta"), dict) else {}
-        blob = meta.get("blob")
-        if blob and os.path.exists(blob):
-            out.append(blob)
-    return out
+    """Paths to re-ingest for a full rebuild. Live original, then Docs original
+    (#34), then the extracted .txt blob so a rebuild never silently drops sources."""
+    from rag import ingest as rag_ingest
+
+    return rag_ingest.rebuild_source_paths(srcs)
 
 
 class Handler(BaseHTTPRequestHandler):

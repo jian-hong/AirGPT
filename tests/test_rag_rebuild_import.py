@@ -16,18 +16,9 @@ MARKER = "RS622XK"
 
 
 def _rebuild_paths(srcs):
-    import os
+    from rag import ingest
 
-    out = []
-    for s in srcs:
-        p = s.get("path")
-        if p and os.path.exists(p):
-            out.append(p)
-            continue
-        blob = (s.get("meta") or {}).get("blob")
-        if blob and os.path.exists(blob):
-            out.append(blob)
-    return out
+    return ingest.rebuild_source_paths(srcs)
 
 
 @pytest.fixture()
@@ -76,12 +67,32 @@ def test_blob_is_txt_and_rebuild_survives_deleted_upload(isolated):
     assert MARKER in Path(blob).read_text(encoding="utf-8")
     assert MARKER in _chunks_text(store, sid)
 
-    # Original upload deleted (temp file gone) -> rebuild must use the blob.
+    # Original upload deleted (temp file gone) -> Docs original (#34), not the
+    # extracted .txt blob, is the rebuild path. Blob remains the last fallback.
     xlsx.unlink()
     paths = _rebuild_paths(store.list_sources(sid))
-    assert paths and paths[0].endswith(".txt"), "rebuild should fall back to blob"
+    assert paths, "rebuild found no paths"
+    assert Path(paths[0]).suffix.lower() == ".xlsx", paths[0]
     assert ingest.ingest_paths(sid, paths, force=True).get("ok")
     assert MARKER in _chunks_text(store, sid), "rebuild dropped the source"
+
+
+def test_rebuild_falls_back_to_blob_when_docs_original_is_gone(isolated):
+    store, ingest, tmp = isolated
+    xlsx = tmp / "upload" / "gone.xlsx"
+    xlsx.parent.mkdir(parents=True)
+    _make_xlsx(xlsx)
+    sid = int(store.create_space(name="blob-fallback", depth_default="high")["id"])
+    assert ingest.ingest_paths(sid, [str(xlsx)], force=True).get("ok")
+    src = store.list_sources(sid)[0]
+    meta = src.get("meta") or {}
+    docs = Path(meta["docs_path"])
+    xlsx.unlink()
+    docs.unlink()
+    paths = _rebuild_paths(store.list_sources(sid))
+    assert paths and paths[0].endswith(".txt"), paths
+    assert ingest.ingest_paths(sid, paths, force=True).get("ok")
+    assert MARKER in _chunks_text(store, sid)
 
 
 def test_export_import_round_trips_content(isolated):

@@ -7,6 +7,9 @@ What exists in this repo and where. Update when structure changes, not when stat
   `data/skills/` (gitignored). Suite packs: `tests/fixtures/skills/`.
 - `openpyxl` and `pandas` are product xlsx deps (`rag/ingest.py`,
   `rag/xlsx_sql.py`) and live in `requirements.txt`. `sqlite-vec` stays opt-in.
+- `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
+  (DR-0006 / #33). `rebuild_source_paths` prefers Docs original over the
+  extracted blob; `backfill_docs_originals` fills missing `docs_path` (#34).
 - `rag/xlsx_sql.py` — production xlsx loader + SQL-ish KPI answers. Product
   must not import this from `tests/`.
 - `rag/sheet_sql.py` — schema-aware filter+aggregate over those frames.
