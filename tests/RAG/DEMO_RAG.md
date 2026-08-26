@@ -7,7 +7,8 @@ Branch: `demo/rag-cross-compare` | Epic [#6](https://github.com/jian-hong/AirGPT
 
 | Bench | Variant | Score | Artifact |
 |-------|---------|-------|----------|
-| FRTR `frtr_0001` cross | hybrid_max best | **6/6 = 1.000** (others 5/6) | `tests/RAG/results/frtr_cross_latest.xlsx` |
+| FRTR `frtr_0001` cross | hybrid_max **6/6**, sira_max 3/6 (`--no-llm`) | `tests/RAG/results/frtr_cross_latest.xlsx` |
+| Oracle F13 A/B `frtr_0001` n=7 | hybrid_max value **7/7**, sira_max **1/7** (abstain) | `tests/RAG/results/oracle_cross_latest.json` |
 | Warehouse 6 workbooks | hybrid_max | **10/10 = 1.000** | `tests/RAG/results/warehouse_hybrid_latest.xlsx` |
 | FRTR SQL batch (8 books) | hybrid_sql_only | **10/44 = 0.227** (0001 still 6/6) | `tests/RAG/results/frtr_batch_latest.xlsx` |
 | Edge / injection | hybrid_max space 8 | **9/9 = 1.000** | `tests/RAG/results/edge_probe_latest.json` |
@@ -110,7 +111,13 @@ A: BaseRate: 498.4 | OnTimeSLA: 312.5
 
 ```powershell
 python tests\RAG\oracle_bench.py --n 80 --seed 1
+
+# F13 retained A/B (sira_max vs hybrid_max, same generated questions).
+# Small smoke (frtr_0001, n=7, seed 1) is what CI gates. n=320 is F13b close, not CI.
+python tests\RAG\oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
 ```
+
+Retained: `tests/RAG/results/oracle_cross_latest.json`. Metrics: `value_accuracy`, `schema_link_accuracy` per family, `malformed_ask_rate`, `abstention_rate`. Not `precision@k` / `recall@k` / PR-AUC / MAP. Gate `tests/test_oracle_cross_variants_gate.py` fails if that file has only one variant.
 
 Ground truth is read straight from the workbook with openpyxl by spreadsheet row
 number - no `load_sheets`, no `sheet_sql`, no planner. Questions are **generated**,
@@ -119,8 +126,8 @@ spans; a curated list stops being evidence the moment the code is tuned to it.
 
 Reports two numbers, because they fail independently:
 
-- **value accuracy** - is the arithmetic right
-- **schema-link recall** - were the right sheet and columns bound
+- **value accuracy** - is the arithmetic right (`value_accuracy`)
+- **schema-link accuracy per family** - were the right sheet and columns bound (`schema_link_accuracy`; never pooled)
 
 A right value off the wrong column is flagged as coincidence, not a pass. Families:
 `row_range_agg`, `row_range_nocol`, `filter_agg`, `filter_count`, `combined`,

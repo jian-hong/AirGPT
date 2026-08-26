@@ -1,0 +1,466 @@
+{
+  "ok": true,
+  "artifact": "oracle_cross",
+  "workbook": "frtr_0001_quarterly-summary.xlsx",
+  "seed": 1,
+  "n": 7,
+  "questions": [
+    "On the Revenue sheet, total Revenue for rows 257 to 337",
+    "select rows 128 to 160 on Expenses, minimum",
+    "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
+    "On Revenue, how many rows have qty greater than 111.0",
+    "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
+    "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
+    "On the Revenue sheet, maximum Qty for rows 27382 to 27482"
+  ],
+  "header_drift": [
+    [
+      "Revenue",
+      3,
+      4
+    ],
+    [
+      "Expenses",
+      3,
+      4
+    ]
+  ],
+  "variants": [
+    {
+      "name": "sira_max",
+      "value_accuracy": 0.1429,
+      "schema_link_accuracy": {
+        "combined": 0.0,
+        "filter_agg": 0.0,
+        "filter_count": 0.0,
+        "out_of_range": 1.0,
+        "paraphrase": 0.0,
+        "row_range_agg": 0.0,
+        "row_range_nocol": 0.0
+      },
+      "malformed_ask_rate": 0.0,
+      "abstention_rate": 1.0,
+      "by_family": {
+        "row_range_agg": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "row_range_nocol": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "filter_agg": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "filter_count": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "combined": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "paraphrase": {
+          "n": 1,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 1,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "out_of_range": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 1,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 1.0
+        }
+      },
+      "n": 7,
+      "correct": 1,
+      "right_value_wrong_binding": 0,
+      "rows": [
+        {
+          "family": "row_range_agg",
+          "question": "On the Revenue sheet, total Revenue for rows 257 to 337",
+          "ok": false,
+          "why": "refused, but the oracle computed 701519.7395020829",
+          "ms": 2740.7,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "row_range_nocol",
+          "question": "select rows 128 to 160 on Expenses, minimum",
+          "ok": false,
+          "why": "refused, but the oracle computed None",
+          "ms": 1749.0,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "filter_agg",
+          "question": "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
+          "ok": false,
+          "why": "refused, but the oracle computed 20.18549447315856",
+          "ms": 1719.3,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "filter_count",
+          "question": "On Revenue, how many rows have qty greater than 111.0",
+          "ok": false,
+          "why": "refused, but the oracle computed 288.0",
+          "ms": 1370.6,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "combined",
+          "question": "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
+          "ok": false,
+          "why": "refused, but the oracle computed 10418.001190632627",
+          "ms": 899.7,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "paraphrase",
+          "question": "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
+          "ok": false,
+          "why": "refused, but the oracle computed 148.2090089308845",
+          "ms": 2533.6,
+          "linked_ok": false,
+          "link_why": "refused although the oracle found rows",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        },
+        {
+          "family": "out_of_range",
+          "question": "On the Revenue sheet, maximum Qty for rows 27382 to 27482",
+          "ok": true,
+          "why": "refused as it should",
+          "ms": 1210.6,
+          "linked_ok": true,
+          "link_why": "refused: rows outside the sheet",
+          "sql": "",
+          "sheet": null,
+          "linked": {},
+          "malformed": false,
+          "abstained": true
+        }
+      ]
+    },
+    {
+      "name": "hybrid_max",
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": {
+        "combined": 1.0,
+        "filter_agg": 1.0,
+        "filter_count": 1.0,
+        "out_of_range": 1.0,
+        "paraphrase": 1.0,
+        "row_range_agg": 1.0,
+        "row_range_nocol": 1.0
+      },
+      "malformed_ask_rate": 0.0,
+      "abstention_rate": 0.1429,
+      "by_family": {
+        "row_range_agg": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "row_range_nocol": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "filter_agg": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "filter_count": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "combined": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "paraphrase": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "out_of_range": {
+          "n": 1,
+          "ok": 1,
+          "linked": 1,
+          "abstained": 1,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 1.0
+        }
+      },
+      "n": 7,
+      "correct": 7,
+      "right_value_wrong_binding": 0,
+      "rows": [
+        {
+          "family": "row_range_agg",
+          "question": "On the Revenue sheet, total Revenue for rows 257 to 337",
+          "ok": true,
+          "why": "701519.7395020829",
+          "ms": 65.0,
+          "linked_ok": true,
+          "link_why": "sheet + columns bound",
+          "sql": "SELECT SUM(Revenue) FROM Revenue WHERE _excel_row BETWEEN 257 AND 337",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "Revenue",
+            "filters": [],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "row_range_nocol",
+          "question": "select rows 128 to 160 on Expenses, minimum",
+          "ok": true,
+          "why": "1 columns match",
+          "ms": 6.3,
+          "linked_ok": true,
+          "link_why": "bound sheet, all numeric columns",
+          "sql": "SELECT MIN(AmountUSD) FROM Expenses WHERE _excel_row BETWEEN 128 AND 160",
+          "sheet": "Expenses",
+          "linked": {
+            "sheet": "Expenses",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "",
+            "filters": [],
+            "all_numeric": true
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "filter_agg",
+          "question": "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
+          "ok": true,
+          "why": "20.18549447315856",
+          "ms": 8.4,
+          "linked_ok": true,
+          "link_why": "sheet + columns bound",
+          "sql": "SELECT MIN(UnitPrice) FROM Revenue WHERE Revenue < 7835.61",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "UnitPrice",
+            "filters": [
+              "Revenue"
+            ],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "filter_count",
+          "question": "On Revenue, how many rows have qty greater than 111.0",
+          "ok": true,
+          "why": "288.0",
+          "ms": 10.7,
+          "linked_ok": true,
+          "link_why": "sheet + columns bound",
+          "sql": "SELECT COUNT(*) FROM Revenue WHERE Qty > 111",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "",
+            "filters": [
+              "Qty"
+            ],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "combined",
+          "question": "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
+          "ok": true,
+          "why": "10418.001190632625",
+          "ms": 5.3,
+          "linked_ok": true,
+          "link_why": "sheet + columns bound",
+          "sql": "SELECT SUM(UnitPrice) FROM Revenue WHERE Qty < 111 AND _excel_row BETWEEN 257 AND 501",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "UnitPrice",
+            "filters": [
+              "Qty"
+            ],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "paraphrase",
+          "question": "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
+          "ok": true,
+          "why": "148.2090089308845 (3 phrasings agree)",
+          "ms": 7.3,
+          "linked_ok": true,
+          "link_why": "sheet + columns bound",
+          "sql": "SELECT MAX(UnitPrice) FROM Revenue WHERE _excel_row BETWEEN 288 AND 521",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "UnitPrice",
+            "filters": [],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": false
+        },
+        {
+          "family": "out_of_range",
+          "question": "On the Revenue sheet, maximum Qty for rows 27382 to 27482",
+          "ok": true,
+          "why": "refused as it should",
+          "ms": 1.6,
+          "linked_ok": true,
+          "link_why": "refused: rows outside the sheet",
+          "sql": "SELECT MAX(Qty) FROM Revenue WHERE _excel_row BETWEEN 27382 AND 27482",
+          "sheet": "Revenue",
+          "linked": {
+            "sheet": "Revenue",
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "metric": "Qty",
+            "filters": [],
+            "all_numeric": false
+          },
+          "malformed": false,
+          "abstained": true
+        }
+      ]
+    }
+  ],
+  "index_fingerprint": {
+    "schema_version": 1,
+    "chunker": {
+      "name": "parent_child",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40
+    },
+    "embed": {
+      "backend": "model",
+      "model": "BAAI/bge-small-en-v1.5",
+      "dim": 384
+    },
+    "extra": {
+      "pack": "FRTR-bench",
+      "workbook": "frtr_0001_quarterly-summary.xlsx"
+    },
+    "id": "eeb81ac9414bd5df"
+  },
+  "oracle": "openpyxl direct cell reads by spreadsheet row. Shares no code with the lane AND uses a different header signal: the lane picks by modal body width, this picks by type transition (last text row above the first row containing a number). They disagree in both directions on synthetic sheets, which is what makes the drift check meaningful. Shared residual: both fall back to the pre-#31 first-wide-row rule when their primary signal is inconclusive.",
+  "honesty": "hybrid_max scores the SQL engine (sheet_sql) on generated asks. sira_max scores retrieve-only (answer() with hybrid_sql_lane off, use_llm=False) on the SAME generated asks. F13 metrics only.",
+  "ts": "2026-08-26T16:52:27"
+}

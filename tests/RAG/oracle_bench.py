@@ -23,6 +23,10 @@ Families cover the shapes a founder actually asks:
 Usage:
     python tests/RAG/oracle_bench.py --workbook frtr_00027_supply-chain-regional.xlsx
     python tests/RAG/oracle_bench.py --space-id 6 --n 40 --seed 7
+
+    # F13 retained A/B (same generated questions; hybrid_max = SQL lane,
+    # sira_max = retrieve with hybrid_sql_lane off). Writes oracle_cross_latest.json.
+    python tests/RAG/oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
 """
 from __future__ import annotations
 
@@ -502,6 +506,177 @@ def judge(case: dict, exp: dict, got: dict | None) -> tuple[bool, str]:
     return False, f"got {gv!r} want {wv!r}"
 
 
+CROSS_VARIANTS = ("sira_max", "hybrid_max")
+FORBIDDEN_F13_KEYS = (
+    "precision@k",
+    "recall@k",
+    "precision_at_k",
+    "recall_at_k",
+    "pr_auc",
+    "PR-AUC",
+    "MAP",
+)
+
+
+def _row_abstained(got: dict | None) -> bool:
+    return got is None or bool((got or {}).get("abstained"))
+
+
+def score_cases(src: Path, cases: list[dict], ask_fn, *, label: str = "") -> list[dict]:
+    """Grade one ask function over an already-generated case list.
+
+    Same questions, same oracle, same judge. The only variable is ask_fn.
+    """
+    rows = []
+    prefix = f"{label} " if label else ""
+    for i, case in enumerate(cases, start=1):
+        exp = expected(src, case)
+        t0 = time.time()
+        if case["family"] == "paraphrase":
+            answers = [ask_fn(v) for v in case["variants"]]
+            ok, why = judge(case, exp, answers[0])
+            vals = [None if a is None or a.get("abstained") else a.get("value") for a in answers]
+            agree = all(close(v, vals[0]) for v in vals)
+            if not agree:
+                ok, why = False, f"paraphrases disagree: {vals}"
+            elif ok:
+                why = f"{vals[0]} (3 phrasings agree)"
+            got = answers[0]
+        else:
+            got = ask_fn(case["question"])
+            ok, why = judge(case, exp, got)
+        ms = round((time.time() - t0) * 1000, 1)
+        linked_ok, link_why = link_check(case, exp, got)
+        rows.append({
+            "family": case["family"], "question": case["question"],
+            "ok": ok, "why": why, "ms": ms, "linked_ok": linked_ok, "link_why": link_why,
+            "sql": (got or {}).get("sql"), "sheet": (got or {}).get("sheet"),
+            "linked": (got or {}).get("linked"),
+            "malformed": _case_is_malformed(case),
+            "abstained": _row_abstained(got),
+        })
+        flag = "OK  " if ok else "FAIL"
+        if ok and not linked_ok:
+            flag = "LUCK"
+        print(f"{prefix}[{i}/{len(cases)}] {flag} {case['family']:16} {why[:80]}", flush=True)
+        if not ok or not linked_ok:
+            print(f"        Q: {case['question']}", flush=True)
+            print(f"        link: {link_why}", flush=True)
+            print(f"        SQL: {(got or {}).get('sql')}", flush=True)
+    return rows
+
+
+def summarize_f13(rows: list[dict]) -> dict:
+    """F13 fields only: value_accuracy, schema_link_accuracy per family,
+    malformed_ask_rate, abstention_rate. No pooled schema-link. No IR@k.
+    """
+    by_family: dict[str, dict] = {}
+    for r in rows:
+        b = by_family.setdefault(r["family"], {"n": 0, "ok": 0, "linked": 0, "abstained": 0})
+        b["n"] += 1
+        b["ok"] += 1 if r["ok"] else 0
+        b["linked"] += 1 if r["linked_ok"] else 0
+        b["abstained"] += 1 if r.get("abstained") else 0
+    for _fam, b in by_family.items():
+        n = max(1, b["n"])
+        b["value_accuracy"] = round(b["ok"] / n, 4)
+        b["schema_link_accuracy"] = round(b["linked"] / n, 4)
+        b["abstention_rate"] = round(b["abstained"] / n, 4)
+    n = max(1, len(rows))
+    return {
+        "n": len(rows),
+        "correct": sum(1 for r in rows if r["ok"]),
+        "value_accuracy": round(sum(1 for r in rows if r["ok"]) / n, 4),
+        "schema_link_accuracy": {
+            fam: by_family[fam]["schema_link_accuracy"] for fam in sorted(by_family)
+        },
+        "malformed_ask_rate": round(
+            sum(1 for r in rows if r.get("malformed")) / n, 4
+        ),
+        "abstention_rate": round(
+            sum(1 for r in rows if r.get("abstained")) / n, 4
+        ),
+        "by_family": by_family,
+        "right_value_wrong_binding": sum(
+            1 for r in rows if r["ok"] and not r["linked_ok"]
+        ),
+    }
+
+
+def got_from_answer(res: dict | None) -> dict | None:
+    """Map rag.answer.answer() onto the sheet_sql-shaped dict the judge expects."""
+    if not res or not res.get("ok"):
+        return None
+    prov = res.get("provenance") or {}
+    if str(res.get("lane") or "") == "sql":
+        return {
+            "abstained": bool(prov.get("abstained")),
+            "value": prov.get("value"),
+            "per_column": prov.get("per_column"),
+            "linked": prov.get("linked") or {},
+            "sql": res.get("sql") or prov.get("sql"),
+            "sheet": res.get("sheet") or prov.get("sheet"),
+            "answer": res.get("answer"),
+        }
+    text = str(res.get("answer") or "").strip()
+    if not text:
+        return None
+    # Retrieve wrote prose, not a computed KPI. Counting that as a number would
+    # be a second grader. Abstain is the honest retrieve-only outcome.
+    return {
+        "abstained": True,
+        "linked": {},
+        "value": None,
+        "sql": res.get("sql") or "",
+        "sheet": None,
+        "answer": text,
+    }
+
+
+def ask_sira(space_id: int, question: str, *, depth: str = "max") -> dict | None:
+    from rag import answer as rag_answer
+
+    res = rag_answer.answer(
+        space_id, question, depth=depth, use_llm=False, use_web=False
+    )
+    return got_from_answer(res)
+
+
+def ingest_sira_space(src: Path) -> int:
+    import uuid
+
+    from rag import demo_variants, ingest, store
+
+    store.init()
+    space = store.create_space(f"oracle-cross-{uuid.uuid4().hex[:8]}")
+    sid = int(space["id"])
+    res = ingest.ingest_paths(sid, [str(src)])
+    if not res.get("ok"):
+        raise SystemExit(f"sira_max ingest failed: {res}")
+    demo_variants.select_variant(sid, "sira_max")
+    print(f"sira_max ingested -> space {sid} (hybrid_sql_lane=False)", flush=True)
+    return sid
+
+
+def _print_f13(name: str, summary: dict) -> None:
+    print(f"\n=== {name} ===", flush=True)
+    print(f"  {'family':16} {'value':>9}  {'schema-link':>11}  {'abstain':>8}", flush=True)
+    by_family = summary.get("by_family") or {}
+    for fam, b in sorted(by_family.items()):
+        print(
+            f"  {fam:16} {b['ok']:>4}/{b['n']:<4} {b['linked']:>6}/{b['n']:<4} "
+            f"{b.get('abstention_rate', 0):>8.3f}",
+            flush=True,
+        )
+    print(f"  value_accuracy          {summary.get('value_accuracy')}", flush=True)
+    print(f"  malformed_ask_rate      {summary.get('malformed_ask_rate')}", flush=True)
+    print(f"  abstention_rate         {summary.get('abstention_rate')}", flush=True)
+    print(
+        f"  schema_link_accuracy    {summary.get('schema_link_accuracy')}",
+        flush=True,
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workbook", default="frtr_00027_supply-chain-regional.xlsx")
@@ -509,6 +684,17 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=35)
     ap.add_argument("--seed", type=int, default=0, help="0 = fresh questions each run")
     ap.add_argument("--out", default="")
+    ap.add_argument(
+        "--variants",
+        default="",
+        help="comma names; empty = single SQL-lane run. F13 A/B: sira_max,hybrid_max",
+    )
+    ap.add_argument("--space-id", type=int, default=0)
+    ap.add_argument(
+        "--no-ingest",
+        action="store_true",
+        help="for sira_max, require --space-id instead of ingesting",
+    )
     args = ap.parse_args()
 
     src = ROOT / args.dir / args.workbook
@@ -545,72 +731,21 @@ def main() -> None:
             print(f"   {sheet}: loader={a} oracle={b}", flush=True)
 
     cases = generate(src, schema, rng, args.n)
-    rows = []
-    for i, case in enumerate(cases, start=1):
-        exp = expected(src, case)
-        t0 = time.time()
-        if case["family"] == "paraphrase":
-            answers = [ask(frames, v) for v in case["variants"]]
-            ok, why = judge(case, exp, answers[0])
-            vals = [None if a is None or a.get("abstained") else a.get("value") for a in answers]
-            agree = all(close(v, vals[0]) for v in vals)
-            if not agree:
-                ok, why = False, f"paraphrases disagree: {vals}"
-            elif ok:
-                why = f"{vals[0]} (3 phrasings agree)"
-            got = answers[0]
-        else:
-            got = ask(frames, case["question"])
-            ok, why = judge(case, exp, got)
-        ms = round((time.time() - t0) * 1000, 1)
-        linked_ok, link_why = link_check(case, exp, got)
-        rows.append({
-            "family": case["family"], "question": case["question"],
-            "ok": ok, "why": why, "ms": ms, "linked_ok": linked_ok, "link_why": link_why,
-            "sql": (got or {}).get("sql"), "sheet": (got or {}).get("sheet"),
-            "linked": (got or {}).get("linked"),
-            # F13b gates on malformed_ask_rate, so it has to be IN the artifact.
-            # It was derived in-session before and then lost, and `header_drift`
-            # could not stand in for it: that field read [] both when 89/320 asks
-            # were malformed and when 0/320 were, because it compares the loader
-            # against the oracle and both used to pick the same banner row. A field
-            # identical in the broken and the fixed state measures nothing (R-0007).
-            "malformed": _case_is_malformed(case),
-        })
-        flag = "OK  " if ok else "FAIL"
-        # A value that matches while the binding is wrong is a coincidence, not a
-        # pass - call it out rather than letting it hide inside the accuracy number.
-        if ok and not linked_ok:
-            flag = "LUCK"
-        print(f"[{i}/{len(cases)}] {flag} {case['family']:16} {why[:80]}", flush=True)
-        if not ok or not linked_ok:
-            print(f"        Q: {case['question']}", flush=True)
-            print(f"        link: {link_why}", flush=True)
-            print(f"        SQL: {(got or {}).get('sql')}", flush=True)
+    if not cases:
+        raise SystemExit("generator produced 0 cases - workbook has no usable numeric sheets")
 
-    by_family: dict[str, dict] = {}
-    for r in rows:
-        b = by_family.setdefault(r["family"], {"n": 0, "ok": 0, "linked": 0})
-        b["n"] += 1
-        b["ok"] += 1 if r["ok"] else 0
-        b["linked"] += 1 if r["linked_ok"] else 0
-    total_ok = sum(1 for r in rows if r["ok"])
-    total_linked = sum(1 for r in rows if r["linked_ok"])
-    lucky = [r for r in rows if r["ok"] and not r["linked_ok"]]
+    want = [v.strip() for v in args.variants.split(",") if v.strip()]
+    RESULTS.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== oracle bench ===", flush=True)
-    print(f"  {'family':16} {'value':>9}  {'schema-link':>11}", flush=True)
-    for fam, b in sorted(by_family.items()):
-        print(f"  {fam:16} {b['ok']:>4}/{b['n']:<4} {b['linked']:>6}/{b['n']:<4}", flush=True)
-    print(f"  {'TOTAL':16} {total_ok:>4}/{len(rows):<4} {total_linked:>6}/{len(rows):<4}", flush=True)
-    print(f"  value accuracy   {round(total_ok / max(1, len(rows)), 4)}", flush=True)
-    print(f"  schema-link rec. {round(total_linked / max(1, len(rows)), 4)}", flush=True)
-    if lucky:
-        print(f"  !! {len(lucky)} right-value-wrong-binding (coincidence, not a pass)", flush=True)
-    # Rule of three (R-0010): zero failures in n bounds the true rate at 3/n.
-    if total_ok == len(rows) and rows:
-        print(f"  0 failures in {len(rows)} -> true error rate bounded at "
-              f"{round(3 / len(rows) * 100, 1)}% (95%), not 0%", flush=True)
+    oracle_note = (
+        "openpyxl direct cell reads by spreadsheet row. Shares no code with the "
+        "lane AND uses a different header signal: the lane picks by modal body "
+        "width, this picks by type transition (last text row above the first row "
+        "containing a number). They disagree in both directions on synthetic "
+        "sheets, which is what makes the drift check meaningful. Shared residual: "
+        "both fall back to the pre-#31 first-wide-row rule when their primary "
+        "signal is inconclusive."
+    )
 
     try:
         from rag import index_fingerprint
@@ -621,43 +756,109 @@ def main() -> None:
         _fp = None
         print(f"  [warn] no index fingerprint: {type(exc).__name__}: {exc}", flush=True)
 
+    if want:
+        unknown = [n for n in want if n not in CROSS_VARIANTS]
+        if unknown:
+            raise SystemExit(
+                f"unknown variant(s) {unknown}; F13 cross-compare is {','.join(CROSS_VARIANTS)}"
+            )
+        questions = [c["question"] for c in cases]
+        variants_out = []
+        sira_space = args.space_id
+        for name in want:
+            print(f"\n=== variant {name} ===", flush=True)
+            if name == "hybrid_max":
+                ask_fn = lambda q, _frames=frames: ask(_frames, q)
+            else:
+                if not sira_space:
+                    if args.no_ingest:
+                        raise SystemExit("sira_max needs --space-id when --no-ingest is set")
+                    sira_space = ingest_sira_space(src)
+                else:
+                    from rag import demo_variants
+
+                    demo_variants.select_variant(sira_space, "sira_max")
+                ask_fn = lambda q, _sid=sira_space: ask_sira(_sid, q)
+            rows = score_cases(src, cases, ask_fn, label=name)
+            summary = summarize_f13(rows)
+            _print_f13(name, summary)
+            variant = {
+                "name": name,
+                "value_accuracy": summary["value_accuracy"],
+                "schema_link_accuracy": summary["schema_link_accuracy"],
+                "malformed_ask_rate": summary["malformed_ask_rate"],
+                "abstention_rate": summary["abstention_rate"],
+                "by_family": summary["by_family"],
+                "n": summary["n"],
+                "correct": summary["correct"],
+                "right_value_wrong_binding": summary["right_value_wrong_binding"],
+                "rows": rows,
+            }
+            variants_out.append(variant)
+
+        payload = {
+            "ok": True,
+            "artifact": "oracle_cross",
+            "workbook": src.name,
+            "seed": seed,
+            "n": len(cases),
+            "questions": questions,
+            "header_drift": drift,
+            "variants": variants_out,
+            "index_fingerprint": _fp,
+            "oracle": oracle_note,
+            "honesty": (
+                "hybrid_max scores the SQL engine (sheet_sql) on generated asks. "
+                "sira_max scores retrieve-only (answer() with hybrid_sql_lane off, "
+                "use_llm=False) on the SAME generated asks. F13 metrics only."
+            ),
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        out = Path(args.out) if args.out else RESULTS / "oracle_cross_latest.json"
+        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        latest = RESULTS / "oracle_cross_latest.json"
+        if out.resolve() != latest.resolve():
+            latest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"wrote {out}", flush=True)
+        names = [v["name"] for v in variants_out]
+        missing = [n for n in CROSS_VARIANTS if n not in names]
+        if missing:
+            raise SystemExit(f"retained cross artifact missing variants: {missing}")
+        return
+
+    rows = score_cases(src, cases, lambda q: ask(frames, q))
+    f13 = summarize_f13(rows)
+    by_family = f13["by_family"]
+    total_ok = f13["correct"]
+    total_linked = sum(1 for r in rows if r["linked_ok"])
+    lucky = [r for r in rows if r["ok"] and not r["linked_ok"]]
+
+    print("\n=== oracle bench ===", flush=True)
+    print(f"  {'family':16} {'value':>9}  {'schema-link':>11}", flush=True)
+    for fam, b in sorted(by_family.items()):
+        print(f"  {fam:16} {b['ok']:>4}/{b['n']:<4} {b['linked']:>6}/{b['n']:<4}", flush=True)
+    print(f"  {'TOTAL':16} {total_ok:>4}/{len(rows):<4} {total_linked:>6}/{len(rows):<4}", flush=True)
+    print(f"  value accuracy   {f13['value_accuracy']}", flush=True)
+    print(f"  schema-link rec. {round(total_linked / max(1, len(rows)), 4)}", flush=True)
+    print(f"  abstention_rate  {f13['abstention_rate']}", flush=True)
+    if lucky:
+        print(f"  !! {len(lucky)} right-value-wrong-binding (coincidence, not a pass)", flush=True)
+    if total_ok == len(rows) and rows:
+        print(f"  0 failures in {len(rows)} -> true error rate bounded at "
+              f"{round(3 / len(rows) * 100, 1)}% (95%), not 0%", flush=True)
+
     payload = {
         "ok": True, "workbook": src.name, "seed": seed, "n": len(rows),
-        "correct": total_ok, "accuracy": round(total_ok / max(1, len(rows)), 4),
+        "correct": total_ok, "accuracy": f13["value_accuracy"],
         "schema_link_recall": round(total_linked / max(1, len(rows)), 4),
         "right_value_wrong_binding": len(lucky),
         "by_family": by_family, "header_drift": drift, "rows": rows,
         "malformed_asks": sum(1 for r in rows if r.get("malformed")),
-        "malformed_ask_rate": round(
-            sum(1 for r in rows if r.get("malformed")) / max(1, len(rows)), 4
-        ),
-        # EPIC-D05 precondition: chunking by data type re-chunks the corpus, so a
-        # score taken before it is not comparable to one taken after. Without this
-        # the board merges two different indexes and says nothing.
+        "malformed_ask_rate": f13["malformed_ask_rate"],
+        "abstention_rate": f13["abstention_rate"],
         "index_fingerprint": _fp,
-        # This used to read "shares no code with the lane" full stop. That guarantee
-        # was insufficient and measurably so: the oracle and the loader are separate
-        # implementations that encoded the SAME wrong assumption about which row is
-        # the header, so the drift check below agreed with itself and passed while
-        # 28% of generated asks were built on a banner row. Sharing no code does not
-        # make an adversary (R-0003).
-        # This string is the reader's only account of how much the oracle is worth,
-        # so it has to track the code. It previously said the oracle was NOT
-        # independent - true when written, false once #31 gave the two sides
-        # different signals, and it sat in every result file declaring a coupling
-        # that no longer existed. An artifact that misreports its own guarantee is
-        # the same R-0001 failure as a gate asserting at the wrong layer.
-        "oracle": (
-            "openpyxl direct cell reads by spreadsheet row. Shares no code with the "
-            "lane AND uses a different header signal: the lane picks by modal body "
-            "width, this picks by type transition (last text row above the first row "
-            "containing a number). They disagree in both directions on synthetic "
-            "sheets, which is what makes the drift check meaningful. Shared residual: "
-            "both fall back to the pre-#31 first-wide-row rule when their primary "
-            "signal is inconclusive."
-        ),
+        "oracle": oracle_note,
     }
-    RESULTS.mkdir(parents=True, exist_ok=True)
     out = Path(args.out) if args.out else RESULTS / "oracle_bench_latest.json"
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"wrote {out}", flush=True)

@@ -4,51 +4,33 @@
 
 ## Now
 
-0. **All 16 orphans re-parented 2026-08-21** - no ticket may lack a live parent (founder;
-   `DOCUMENT_SYSTEM.md` Tier 6). Closing D01 #6 / D02 #16 orphaned **seventeen**, not the
-   five that were noticed. D07 #36: #13 #21 #31. D06 #37: #17 #18 #19 #32 #35. D08 #38:
-   #14 #15 #20 #25 #33 #34. #9/#10 parked (P11); #3 exempt repo hygiene.
-1. **F13a and F13b BOTH MET: 720/720** - clean 400/400 (5 seeds, <=0.75%), messy
-   **320/320** (<=0.94%), from 0.5375. Schema-link 720/720, 0 lucky passes,
-   `malformed_ask_rate` 0.0. Four fixes, one class (match without excluding the
-   non-target case): banner header, duplicate columns, sheet-name-binds-column,
-   short names invisible. **ENGINE number** - the bench calls `sheet_sql` direct.
-2. **#21 the SQL lane was off for every founder space** - only the `hybrid_max`
-   preset set `hybrid_sql_lane`, and a normal space has no variant, so every ask
-   fell through to retrieval. Now default-on; explicit False still honoured so the
-   variant A/B survives. `default_space_sql_gate.py` **7/7** asserts where a founder
-   stands: no variant, staging dir deleted after ingest (exercises #20), through
-   `answer()` -> `lane='sql'` carrying its SQL.
-3. **#31 independently verified** - six claims CONFIRMED by a different run, which
-   found 3 more defects (stale artifact string, banner substring match, forward-path
-   sheet/column collision). All fixed; 720/720 re-measured after. Suite 211 OK.
-4. **Verified live:** #15 chain over SSE; #20 Docs 7/7 sha256; #14 reveal
-   `origin:"docs"`; #25 Settings 3 of 4. All await a **different-run** close.
-5. **D02 six /api/rag/ops endpoints asserted over HTTP** - `test_ops_http_gate.py`
-   landed via #41 (merge wave 2026-08-25, CI 436 green). UI callers 0. #32 / P12.
-6. **#35 xlsx/KPI is production code** - `rag/xlsx_sql.py`. Product no longer
-   imports `frtr_sql_baseline` from `tests/`. Banner skip is the #31 rule.
+0. **D07 #36 leftover** - retained F13 A/B: `oracle_cross_latest.json` holds
+   `sira_max` AND `hybrid_max` on the same generated asks (frtr_0001 n=7 smoke).
+   Gate `test_oracle_cross_variants_gate.py`. `frtr_cross_latest.json` now has
+   both variants too (6 gold Qs). n=320 two-variant still owed for #13/#36 close.
+1. **Verify-close R-0003 (2026-08-26)** - closed **#3**, **#33**, **#34**. **#31**
+   and **#32** already CLOSED. **#42** stays OPEN until live host handshake.
+2. **F13a MET 400/400** (clean). F13b engine 320/320 is SQL-lane-only, not the
+   sira vs hybrid A/B. `malformed_ask_rate` 0.0 on those artifacts.
+3. **#21 SQL lane default-on** - `default_space_sql_gate.py` 7/7.
+4. **D02 ops HTTP** - `test_ops_http_gate.py`. UI callers 0.
+5. Orphan parents: D07 #36 (#13 #21), D06 #37 (#17-19 #35), D08 #38 (#14 #15 #20 #25).
 
 ## Next
 
-0. **#31 ready to close** - `malformed_ask_rate` now in the artifact and proven to
-   move (`malformed_field_gate.py`: 0.4375 pre-rule vs 0.0000 shipped). Still open in
-   D07: retained `sira_max` vs `hybrid_max` (`frtr_cross_latest.json` holds **one**).
-1. **#32 awaiting different-run close** - HTTP gate is `test_ops_http_gate.py`.
-2. **#33/#34 shipped this run** - DR-0006 proposed (stamp architecture, hybrid
-   index stays). Docs backfill from live originals; space 8 stays 0/6 if gone.
-3. **P13 multilingual** - `sira.py:13` ASCII-only, non-Latin scripts tokenize to
-   nothing, `_coverage` returns 1.0. `multilingual_gate.py` **7/25, deliberately
-   red** - do not quiet it (R-0002).
-4. **Routed 2026-08-21 -> D06 #37:** `clipdrop.py:5388-5389` `/build` path override.
-   Fenced today (`/api/rag` host-only, `:834`); **DR-0003's grants would unfence it**.
-5. Constructor sidecar landed (#48). OpenVault nvidia still separate.
+0. **#13/#36 not closeable yet** - F13 A/B smoke is retained (n=7). Still need
+   n>=320 two-variant on primary50, F13b floors (0.99 / 0.95 / 0.90), and a
+   different-run close. Do not quote 720/720 as the sira vs hybrid number.
+1. **READY for different-run close:** **#14** reveal, **#15** SSE chain, **#20**
+   Docs originals, **#25** Settings 3/4, **#21** SQL lane.
+2. **#42 HOST-DEMO-02** - loopback handshake proven; live host demo still owed.
+3. **P13 multilingual** - `multilingual_gate.py` **7/25, deliberately red** (R-0002).
+4. Constructor sidecar landed (#48). OpenVault nvidia still separate.
 
 ## WIP
 
-WIP counts **in-flight**, not open (founder 2026-08-21). In flight: D07 #36, D03 #26.
-Queued parents: D06 #37, D08 #38, D04 #22, D05. Never close an epic to free a slot - move
-it to queued. No-orphan never overrides the amendment gate.
+In flight: D07 #36, D03 #26. Queued parents: D06 #37, D08 #38, D04 #22, D05.
+Never close an epic to free a slot - move it to queued.
 
 ## Later
 

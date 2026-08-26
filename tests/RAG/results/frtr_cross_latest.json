@@ -1,32 +1,322 @@
 {
   "ok": true,
   "workbook": "frtr_0001_quarterly-summary.xlsx",
-  "space_id": 999,
+  "space_id": 33,
   "honesty": "Cortex-direct / ai_engine RAG path \u2014 not OpenVault-gated for this demo branch.",
   "spot_check": {
-    "ok": false,
-    "cited_gold_fragment": false,
+    "ok": true,
+    "cited_gold_fragment": true,
     "question": "What is total revenue in Q2 2024?",
     "gold": "2176251.169851399",
     "depth": "max",
-    "ms": 2578.7,
-    "n_hits": 0,
-    "top": [],
+    "ms": 36473.1,
+    "n_hits": 8,
+    "top": [
+      {
+        "path": "E:\\AirGPT\\tests\\RAG\\FRTR-bench\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.4163934426229508,
+        "sheet": null,
+        "text": "## Sheet: Summary\nSummary note: Quarterly KPIs with cross-sheet formulas\nQuarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM %\nQ1 2024 | 1966567.302699234 | 1016549.3740205832 | 950017.9286786509 | 0.4830843711144"
+      },
+      {
+        "path": "E:\\AirGPT\\tests\\RAG\\FRTR-bench\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.28151364764267994,
+        "sheet": null,
+        "text": "## Sheet: Revenue\nSummary note: Revenue detail by month/region/SKU\nDate | Region | SKU | Qty | UnitPrice | Revenue\nDate | Region | SKU | Qty | UnitPrice | Revenue\n2024-01-01 00:00:00 | West | SKU-001 | 195 | 49.55408037744047 | 9663.0456736"
+      },
+      {
+        "path": "E:\\AirGPT\\tests\\RAG\\FRTR-bench\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.26587301587301587,
+        "sheet": null,
+        "text": "## Spreadsheet index\n- Summary (7 rows)\n- Expenses (183 rows)\n- Revenue (579 rows)"
+      },
+      {
+        "path": "E:\\AirGPT\\tests\\RAG\\FRTR-bench\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.08201844262295083,
+        "sheet": null,
+        "text": "14289588\n2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258\n2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021618\n2024-10-01 00:00:00 | Central | SKU-004 | 160 | 133.7128935"
+      },
+      {
+        "path": "E:\\AirGPT\\tests\\RAG\\FRTR-bench\\frtr_0001_quarterly-summary.xlsx",
+        "score": 0.07928692699490662,
+        "sheet": null,
+        "text": "28 | 61.2157046517055 | 7835.610195418304\n2024-09-01 00:00:00 | Central | SKU-001 | 164 | 109.5748318048292 | 17970.27241599199\n2024-09-01 00:00:00 | Central | SKU-002 | 174 | 45.0260684647812 | 7834.535912871928\n2024-09-01 00:00:00 | Centr"
+      }
+    ],
     "template": null
   },
   "best_variant": "hybrid_max",
   "variants": [
     {
+      "name": "sira_max",
+      "label": "SiRA-enrich max",
+      "summary": {
+        "ok": true,
+        "space_id": 33,
+        "n": 6,
+        "correct": 3,
+        "accuracy": 0.5,
+        "depth": "max",
+        "use_llm": false,
+        "hybrid_sql": false,
+        "by_difficulty": {
+          "Easy": {
+            "n": 3,
+            "accuracy": 0.0
+          },
+          "Medium": {
+            "n": 2,
+            "accuracy": 1.0
+          },
+          "Hard": {
+            "n": 1,
+            "accuracy": 1.0
+          }
+        },
+        "by_reasoning": {
+          "Aggregation": {
+            "n": 2,
+            "accuracy": 0.0
+          },
+          "Comparison": {
+            "n": 1,
+            "accuracy": 1.0
+          },
+          "Computation": {
+            "n": 1,
+            "accuracy": 0.0
+          },
+          "TrendReasoning": {
+            "n": 1,
+            "accuracy": 1.0
+          },
+          "Lookup/Count": {
+            "n": 1,
+            "accuracy": 1.0
+          }
+        },
+        "misses": [
+          {
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "qid": 1,
+            "question": "What is total revenue in Q2 2024?",
+            "reasoning_type": "Aggregation",
+            "difficulty": "Easy",
+            "gold": "2176251.169851399",
+            "raw_answer": "See Summary!B4",
+            "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Revenue Summary note: Revenue detail by month/region/SKU Date | Region | SKU | Qty | UnitPrice | Revenue Date | Region | SKU | Qty | UnitPrice | Revenue 2024-01-01 00:\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 14289588 2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258 2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+            "correct": false,
+            "match_reason": "mismatch",
+            "lane": "rag",
+            "ms": 1070.5,
+            "error": null,
+            "citations": [
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx"
+            ],
+            "model": "extractive"
+          },
+          {
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "qid": 3,
+            "question": "What is the gross margin percentage in Q3 2024?",
+            "reasoning_type": "Computation",
+            "difficulty": "Easy",
+            "gold": "0.4429409225701213",
+            "raw_answer": "See Summary!E5",
+            "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 5248.466526308566 2024-03-01 00:00:00 | West | SKU-002 | 39 | 139.7291602170623 | 5449.43724846543 2024-03-01 00:00:00 | West | SKU-003 | 39 | 113.5121359261754 | 4426.973301120\u2026 1 00:00:00 | Central | SKU-001 | 177 | 86.53005165477899 | 15315.81914289588 2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258 2024-10-01 00:\u2026 28 | 61.2157046517055 | 7835.610195418304 2024-09-01 00:00:00 | Central | SKU-001 | 164 | 109.5748318048292 | 17970.27241599199 2024-09-01 00:00:00 | Central | SKU-002 | 174 | 4\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+            "correct": false,
+            "match_reason": "mismatch",
+            "lane": "rag",
+            "ms": 721.3,
+            "error": null,
+            "citations": [
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx"
+            ],
+            "model": "extractive"
+          },
+          {
+            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "qid": 4,
+            "question": "What is total expenses in Q1 2024?",
+            "reasoning_type": "Aggregation",
+            "difficulty": "Easy",
+            "gold": "1016549.3740205832",
+            "raw_answer": "See Summary!C3",
+            "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Expenses Summary note: Operating expenses by month and cost center Date | CostCenter | AmountUSD Date | CostCenter | AmountUSD 2024-01-01 00:00:00 | Sales | 6680.70251\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 14586.28978816295 2024-01-01 00:00:00 | R&D | 18474.68476607133 2024-01-01 00:00:00 | Operations | 13922.14699493315 2024-02-01 00:00:00 | Sales | 18872.39297338789 2024-02-01 0\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+            "correct": false,
+            "match_reason": "mismatch",
+            "lane": "rag",
+            "ms": 1277.0,
+            "error": null,
+            "citations": [
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx",
+              "frtr_0001_quarterly-summary.xlsx"
+            ],
+            "model": "extractive"
+          }
+        ],
+        "variant": "sira_max",
+        "label": "SiRA-enrich max"
+      },
+      "rows": [
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 1,
+          "question": "What is total revenue in Q2 2024?",
+          "reasoning_type": "Aggregation",
+          "difficulty": "Easy",
+          "gold": "2176251.169851399",
+          "raw_answer": "See Summary!B4",
+          "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Revenue Summary note: Revenue detail by month/region/SKU Date | Region | SKU | Qty | UnitPrice | Revenue Date | Region | SKU | Qty | UnitPrice | Revenue 2024-01-01 00:\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 14289588 2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258 2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 1070.5,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 2,
+          "question": "Which quarter has the highest gross margin dollars?",
+          "reasoning_type": "Comparison",
+          "difficulty": "Medium",
+          "gold": "Q2 2024",
+          "raw_answer": "Max of Summary!D3:D6",
+          "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx.)",
+          "correct": true,
+          "match_reason": "numeric_1pct",
+          "lane": "rag",
+          "ms": 817.2,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 3,
+          "question": "What is the gross margin percentage in Q3 2024?",
+          "reasoning_type": "Computation",
+          "difficulty": "Easy",
+          "gold": "0.4429409225701213",
+          "raw_answer": "See Summary!E5",
+          "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 5248.466526308566 2024-03-01 00:00:00 | West | SKU-002 | 39 | 139.7291602170623 | 5449.43724846543 2024-03-01 00:00:00 | West | SKU-003 | 39 | 113.5121359261754 | 4426.973301120\u2026 1 00:00:00 | Central | SKU-001 | 177 | 86.53005165477899 | 15315.81914289588 2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258 2024-10-01 00:\u2026 28 | 61.2157046517055 | 7835.610195418304 2024-09-01 00:00:00 | Central | SKU-001 | 164 | 109.5748318048292 | 17970.27241599199 2024-09-01 00:00:00 | Central | SKU-002 | 174 | 4\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 721.3,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 4,
+          "question": "What is total expenses in Q1 2024?",
+          "reasoning_type": "Aggregation",
+          "difficulty": "Easy",
+          "gold": "1016549.3740205832",
+          "raw_answer": "See Summary!C3",
+          "pred": "## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Expenses Summary note: Operating expenses by month and cost center Date | CostCenter | AmountUSD Date | CostCenter | AmountUSD 2024-01-01 00:00:00 | Sales | 6680.70251\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 14586.28978816295 2024-01-01 00:00:00 | R&D | 18474.68476607133 2024-01-01 00:00:00 | Operations | 13922.14699493315 2024-02-01 00:00:00 | Sales | 18872.39297338789 2024-02-01 0\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)",
+          "correct": false,
+          "match_reason": "mismatch",
+          "lane": "rag",
+          "ms": 1277.0,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 5,
+          "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
+          "reasoning_type": "TrendReasoning",
+          "difficulty": "Medium",
+          "gold": "No",
+          "raw_answer": "Yes",
+          "pred": "Partial answer only \u2014 50% of the asked terms appear in the sources; missing: trend, increase.\n\n## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Revenue Summary note: Revenue detail by month/region/SKU Date | Region | SKU | Qty | UnitPrice | Revenue Date | Region | SKU | Qty | UnitPrice | Revenue 2024-01-01 00:\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 14289588 2024-10-01 00:00:00 | Central | SKU-002 | 194 | 20.80297483848587 | 4035.777118666258 2024-10-01 00:00:00 | Central | SKU-003 | 122 | 57.38539247558703 | 7001.017882021\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)\n\nTo get a better answer:\n- No source mentions: trend, increase. The corpus likely does not cover this topic.\n- Run a web search \u2014 type /search \u2026 or \u201cweb search about \u2026\u201d, or arm Web search in the composer.",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "rag",
+          "ms": 1969.7,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        },
+        {
+          "workbook": "frtr_0001_quarterly-summary.xlsx",
+          "qid": 6,
+          "question": "Which region appears most frequently in revenue records?",
+          "reasoning_type": "Lookup/Count",
+          "difficulty": "Hard",
+          "gold": "West",
+          "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
+          "pred": "Partial answer only \u2014 40% of the asked terms appear in the sources; missing: appears, frequently, records.\n\n## Sheet: Summary Summary note: Quarterly KPIs with cross-sheet formulas Quarter | Total Revenue (SUMIFS) | Total Expenses (SUMIFS) | Gross Margin | GM % Q1 2024 | 1966567.30269\u2026 ## Sheet: Revenue Summary note: Revenue detail by month/region/SKU Date | Region | SKU | Qty | UnitPrice | Revenue Date | Region | SKU | Qty | UnitPrice | Revenue 2024-01-01 00:\u2026 ## Spreadsheet index - Summary (7 rows) - Expenses (183 rows) - Revenue (579 rows) 8692.4582848003 2024-12-01 00:00:00 | Central | SKU-004 | 101 | 135.7283643673518 | 13708.56480110253 2024-01-01 00:00:00 | West | SKU-001 | 195 | 49.55408037744047 | 9663.04567\u2026\n\n(Offline extractive answer \u2014 turn LLM ON for a fuller grounded reply. Sources: [1] frtr_0001_quarterly-summary.xlsx, [2] frtr_0001_quarterly-summary.xlsx, [3] frtr_0001_quarterly-summary.xlsx, [4] frtr_0001_quarterly-summary.xlsx, [5] frtr_0001_quarterly-summary.xlsx.)\n\nTo get a better answer:\n- No source mentions: appears, frequently, records. The corpus likely does not cover this topic.\n- Run a web search \u2014 type /search \u2026 or \u201cweb search about \u2026\u201d, or arm Web search ",
+          "correct": true,
+          "match_reason": "substring",
+          "lane": "rag",
+          "ms": 2072.8,
+          "error": null,
+          "citations": [
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx",
+            "frtr_0001_quarterly-summary.xlsx"
+          ],
+          "model": "extractive"
+        }
+      ]
+    },
+    {
       "name": "hybrid_max",
       "label": "hybrid SQL+SiRA max",
       "summary": {
         "ok": true,
-        "space_id": 999,
+        "space_id": 33,
         "n": 6,
         "correct": 6,
         "accuracy": 1.0,
         "depth": "max",
-        "use_llm": true,
+        "use_llm": false,
         "hybrid_sql": true,
         "by_difficulty": {
           "Easy": {
@@ -81,7 +371,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 248.2,
+          "ms": 266.9,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -98,7 +388,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 4.6,
+          "ms": 7.6,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -115,7 +405,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 1.6,
+          "ms": 2.2,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -132,7 +422,7 @@
           "correct": true,
           "match_reason": "numeric_1pct",
           "lane": "sql",
-          "ms": 3.1,
+          "ms": 2.1,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -149,7 +439,7 @@
           "correct": true,
           "match_reason": "gold_value",
           "lane": "sql",
-          "ms": 1.0,
+          "ms": 1.7,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -166,7 +456,7 @@
           "correct": true,
           "match_reason": "substring",
           "lane": "sql",
-          "ms": 5.5,
+          "ms": 15.6,
           "error": null,
           "citations": [],
           "model": "pandas-sql"
@@ -178,6 +468,10 @@
     {
       "name": "hybrid_max",
       "accuracy": 1.0
+    },
+    {
+      "name": "sira_max",
+      "accuracy": 0.5
     }
   ],
   "common_misses": [],
@@ -188,5 +482,5 @@
     "Export a scorecard: variant accuracy vs difficulty (Easy/Medium/Hard).",
     "List misses only and propose one retrieval fix per miss."
   ],
-  "ts": "2026-08-03T03:03:40"
+  "ts": "2026-08-26T16:55:30"
 }
