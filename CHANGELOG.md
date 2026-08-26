@@ -17,6 +17,15 @@ Append-only. Never edited, only added to. Newest first.
   `tests/test_xlsx_orch_http.py`. `MIN_TESTS` stays 380.
   `multilingual_gate.py` untouched.
 
+## 2026-08-26 — D02 #17-#19 thin ops click-through on Build
+
+- `index.html` now calls the six existing `/api/rag/ops` endpoints (P12 was
+  zero callers). Identify asks "is it that one?", amend still needs a second
+  confirm, continue starts a fresh pair of gates. Cortex-direct honesty.
+  Not a second ops product. Not OpenVault. Not DR-0003.
+- Gate `tests/test_ops_ui_callers.py`. HTTP loop still `test_ops_http_gate.py`.
+  `MIN_TESTS` stays 380. `multilingual_gate.py` untouched.
+
 ## 2026-08-26 — D07 leftover: n=320 two-variant on primary50
 
 - Ran `oracle_bench.py --variants sira_max,hybrid_max` over the four primary50
