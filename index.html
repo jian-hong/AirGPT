@@ -1406,6 +1406,9 @@ body.theme-light .rag-neon-card p.hint{color:var(--muted)!important;opacity:1}
 }
 .rag-source-tile:hover .st-reveal,
 .rag-source-tile:focus-within .st-reveal{opacity:1}
+.rag-orch-ask{width:100%;min-height:64px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:inherit;box-sizing:border-box;font:inherit;resize:vertical}
+.rag-orch-steps{margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.45}
+.rag-orch-badge{display:inline-block;margin:0 0 8px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px;color:var(--muted)}
 .rag-source-tile .st-reveal:hover{background:rgba(0,0,0,.14);color:var(--text)}
 .rag-source-tile .st-reveal:focus-visible{opacity:1;outline:2px solid rgba(120,200,255,.6);outline-offset:1px}
 body.theme-dark .rag-source-tile .st-reveal{background:rgba(255,255,255,.08)}
@@ -10172,6 +10175,23 @@ async function ragRenderTab(){
           <div id="ragIngestStatus" class="hint" style="margin-bottom:10px;color:var(--muted)"></div>
           ${list}
         </div>
+        <div class="rag-neon-card" id="ragXlsxOrchCard">
+          <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Excel Copilot pack</div>
+          <span class="rag-orch-badge" title="F15 / EPIC-D04">AirGPT pack only · DMS cross-check · Pointer paste</span>
+          <p class="hint" style="margin:0 0 8px;line-height:1.45">Identify an ingested workbook and emit a structured Copilot prompt pack. AirGPT does not run Copilot or paste. Handoff stays <em>awaiting DMS receipt</em> until a result path is posted.</p>
+          <textarea id="ragOrchAsk" class="rag-orch-ask" placeholder="OnTime=true average cost, export xlsx, chart for PPT">OnTime=true average cost, export a separate xlsx, and a chart for PPT</textarea>
+          <div class="btn-row" style="margin:8px 0;flex-wrap:wrap">
+            <button type="button" class="btn primary" onclick="ragOrchIdentify()">Identify + pack</button>
+            <button type="button" class="btn" onclick="ragOrchCopyPack()" title="Copy the pack JSON">Copy pack</button>
+            <button type="button" class="btn" onclick="ragOrchReveal('source')" title="Show identified workbook in folder">Reveal source</button>
+          </div>
+          <div class="btn-row" style="margin:0 0 8px;flex-wrap:wrap">
+            <input id="ragOrchResultPath" placeholder="DMS result xlsx path — paste when extract returns" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
+            <button type="button" class="btn" onclick="ragOrchHandoff()">Post result</button>
+            <button type="button" class="btn" onclick="ragOrchReveal('result')" title="Show resulting workbook in folder">Reveal result</button>
+          </div>
+          <div id="ragOrchOut" class="hint" style="line-height:1.45"></div>
+        </div>
         <div class="rag-neon-card${lock}" id="ragBuildControls">
           <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Ingest links</div>
           <p class="rag-url-warn" id="ragUrlWarn" aria-live="polite"></p>
@@ -10511,6 +10531,62 @@ async function ragRevealSource(id,ev){
     if(r&&r.ok)toast('Opened in folder');
     else toast((r&&r.error)||'Could not open this file');
   }catch(e){toast('Could not open this file')}
+}
+function ragOrchPaint(r){
+  const el=$('ragOrchOut');if(!el)return;
+  if(!r){el.textContent='';return;}
+  const hand=r.handoff||r;
+  const st=esc(hand.status||r.status||'');
+  const why=esc(hand.honesty||r.honesty||'');
+  const wb=r.workbook||{};
+  const pack=r.pack||(ragState.orchPack||null);
+  const steps=(pack&&pack.steps||[]).map(s=>`<li><strong>${esc(s.sheet)}</strong> — ${esc(s.intent)}<div class="hint">${esc(s.formula_hint)}</div></li>`).join('');
+  const miss=((r.result_sheets||{}).missing||[]).join(', ');
+  const warn=r.warning?`<p class="hint" style="color:#b91c1c">${esc(r.warning)}</p>`:(miss?`<p class="hint">Missing sheet families: ${esc(miss)}</p>`:'');
+  el.innerHTML=`<p><strong>${esc(wb.title||r.status||'Pack')}</strong> · ${st}</p>
+    <p class="hint">${why}</p>
+    ${wb.path?`<p class="hint">${esc(wb.path)}</p>`:''}
+    ${r.prompt?`<p>${esc(r.prompt)}</p>`:''}
+    ${steps?`<ol class="rag-orch-steps">${steps}</ol>`:''}
+    ${warn}`;
+}
+async function ragOrchIdentify(){
+  const ask=($('ragOrchAsk')||{}).value||'';
+  const sid=ragState.spaceId;
+  const el=$('ragOrchOut');if(el)el.textContent='Identifying workbook…';
+  try{
+    const r=await api('/api/rag/xlsx-orch/identify',{method:'POST',body:JSON.stringify({space_id:sid,ask})}).then(x=>x.json());
+    ragState.orchPackId=r.pack_id||'';
+    ragState.orchPack=r.pack||null;
+    ragOrchPaint(r);
+    if(r.status==='identified')toast('Pack ready for DMS');
+    else toast(r.prompt||r.error||r.status||'No workbook identified');
+  }catch(e){if(el)el.textContent='Identify failed';toast('Identify failed')}
+}
+async function ragOrchHandoff(){
+  const path=($('ragOrchResultPath')||{}).value||'';
+  const pack_id=ragState.orchPackId||'';
+  try{
+    const r=await api('/api/rag/xlsx-orch/handoff',{method:'POST',body:JSON.stringify({pack_id,result_path:path})}).then(x=>x.json());
+    r.pack=r.pack||ragState.orchPack;
+    r.workbook=(r.pack&&r.pack.workbook)||{};
+    ragOrchPaint(r);
+    toast(r.status==='received'?'Result path posted':(r.status||'Handoff'));
+  }catch(e){toast('Handoff failed')}
+}
+async function ragOrchReveal(which){
+  const pack_id=ragState.orchPackId||'';
+  const path=which==='result'?(($('ragOrchResultPath')||{}).value||''):'';
+  try{
+    const r=await api('/api/rag/xlsx-orch/reveal',{method:'POST',body:JSON.stringify({pack_id,path,which})}).then(x=>x.json());
+    if(r&&r.ok)toast(which==='result'?'Opened result workbook':'Opened source workbook');
+    else toast((r&&r.error)||'Could not reveal');
+  }catch(e){toast('Could not reveal')}
+}
+function ragOrchCopyPack(){
+  const pack=ragState.orchPack;
+  if(!pack){toast('Identify a workbook first');return;}
+  navigator.clipboard.writeText(JSON.stringify(pack,null,2)).then(()=>toast('Pack copied')).catch(()=>toast('Copy failed'));
 }
 async function ragLoadTrace(det){
   if(!det||!det.open)return;

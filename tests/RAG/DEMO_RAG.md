@@ -239,6 +239,24 @@ POST /api/rag/ops/chain            {"token":"..."}                   # audit vie
 An ask that matches no Emp ID and no name returns `status: no_match` with a shortlist -
 it does not dress the first payroll row up as a find.
 
+## Excel Copilot pack (F15 / EPIC-D04 #23 #24) — AirGPT half only
+
+Honesty: AirGPT identifies the workbook and drafts the pack. **DMS** cross-checks.
+**Pointer** pastes into Excel Copilot. AirGPT does not drive Copilot or MCP.
+
+```text
+POST /api/rag/xlsx-orch/identify  {"space_id":6,"ask":"OnTime=true avg cost + export + PPT chart"}
+POST /api/rag/xlsx-orch/handoff   {"pack_id":"..."}   # awaiting_dms_receipt until a path is posted
+POST /api/rag/xlsx-orch/handoff   {"pack_id":"...","result_path":"D:\\...\\result.xlsx"}
+POST /api/rag/xlsx-orch/reveal    {"pack_id":"...","which":"source"}
+POST /api/rag/xlsx-orch/reveal    {"pack_id":"...","which":"result"}
+```
+
+On Build, the **Excel Copilot pack** card is the click-through. Status stays
+`awaiting_dms_receipt` until DMS XLSX-ORCH-11 returns a durable path — that
+absence is visible, not a silent complete.
+
+
 ## Edge prompts to try live
 
 - `Top 5 selling SKUs by revenue`
