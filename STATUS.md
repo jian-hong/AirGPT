@@ -57,4 +57,4 @@ it to queued. No-orphan never overrides the amendment gate.
 
 ## Demo open
 
-- `tests/RAG/DEMO_RAG.md`, `results/ontology_space_8.json`. Suite 399 pass / 3 fail (Playwright, empty base URL, unrelated).
+- `tests/RAG/DEMO_RAG.md`. Suite CI on `7e5342c` failed 11 skill tests: gitignored `data/skills` is empty on a clean clone. Fix: pin tests to `tests/fixtures/skills`. MIN_TESTS stays 380.

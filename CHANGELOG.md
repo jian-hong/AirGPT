@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-26 - Suite red on demo/rag-cross-compare 7e5342c: empty skill catalog
+
+- GitHub Actions run 32950898880: 11 failed, 370 passed. `data/skills` is gitignored, so a
+  clean Windows checkout served zero packs. Tests expected `general`, `research`,
+  `visual-diagrams`, `web-research`.
+- Restored committed fixtures under `tests/fixtures/skills/` and pinned
+  `invoke_registry.SKILLS_DIR` in the registry tests. Product path still `data/skills`.
+- MIN_TESTS stays 380. Did not drop tests, did not touch PR #50, did not close #42.
+
 ## 2026-08-20 - EPIC-D01 and EPIC-D02 closed over unfinished work
 
 - Founder's explicit, informed call. **Neither epic completed.** Both closed as
