@@ -2,6 +2,34 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-26 — D07 leftover: retained sira_max vs hybrid_max (F13 A/B)
+
+- **Named defect:** `frtr_cross_latest.json` held one variant. Regenerated on
+  `frtr_0001` with `sira_max` + `hybrid_max` (6 gold Qs: hybrid 6/6, sira 3/6
+  `--no-llm`).
+- **F13 retained artifact:** `oracle_cross_latest.json` scores the SAME generated
+  asks (n=7, seed 1) through both variants. Fields: `value_accuracy`,
+  `schema_link_accuracy` per family, `malformed_ask_rate`, `abstention_rate`.
+  hybrid_max 7/7 value; sira_max 1/7 (out_of_range refuse; rest abstain). No
+  precision@k / recall@k / PR-AUC / MAP.
+- Gate `tests/test_oracle_cross_variants_gate.py` fails a one-variant payload
+  (R-0007) and the committed files. `MIN_TESTS` stays 380. `multilingual_gate.py`
+  untouched. n=320 two-variant still owed for #13/#36 close.
+- Regenerate: `python tests/RAG/oracle_bench.py --dir FRTR-bench --workbook
+  frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max`
+
+## 2026-08-26 — Verify-close wave R-0003 (#3, #33, #34)
+
+- **Verify Agent R-0003** on master `61c1f9b6` (CI 32902147637 green). Closed
+  **#3** REPO-01 (only `third_party/colibri` gitlink; `.gitmodules` parses;
+  `git submodule status` OK; OpenIDE/research normal files). Closed **#33**
+  RAG-BENCH-13 and **#34** RAG-BENCH-14 (PR #49; DR-0006 stamp architecture;
+  `backfill_docs_originals`; gates 9/9 pytest + 7/7 docs_original). EPIC-D08 #38
+  checkboxes updated. **#31** / **#32** noted CLOSED on epics #36 / #37 (not
+  reopened). **#42** commented: code landed, live host handshake still owed.
+- Gates re-run this session: `docs_original_gate.py` 7/7,
+  `test_establish_handshake.py` 16/16. Did not close #13/#14/#15/#20/#21/#25.
+
 ## 2026-08-25 — #33 Rebuild stamps saved architecture; #34 Docs original is the rebuild path
 
 - **#33 / DR-0006 (proposed).** `ingest_paths` no longer hardcodes `_hybrid_` on

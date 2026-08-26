@@ -51,6 +51,7 @@ def list_variants() -> dict:
             for k, v in PRESETS.items()
         ],
         "score_artifacts": [
+            "tests/RAG/results/oracle_cross_latest.json",
             "tests/RAG/results/frtr_cross_latest.json",
             "tests/RAG/results/frtr_cross_latest.xlsx",
             "tests/RAG/results/warehouse_hybrid_latest.json",
