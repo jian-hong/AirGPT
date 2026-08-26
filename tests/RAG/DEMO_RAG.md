@@ -9,6 +9,7 @@ Branch: `demo/rag-cross-compare` | Epic [#6](https://github.com/jian-hong/AirGPT
 |-------|---------|-------|----------|
 | FRTR `frtr_0001` cross | hybrid_max **6/6**, sira_max 3/6 (`--no-llm`) | `tests/RAG/results/frtr_cross_latest.xlsx` |
 | Oracle F13 A/B `frtr_0001` n=7 | hybrid_max value **7/7**, sira_max **1/7** (abstain) | `tests/RAG/results/oracle_cross_latest.json` |
+| Oracle F13b primary50 n=320 | hybrid_max **320/320**, sira_max **44/320** (out_of_range only) | `tests/RAG/results/oracle_cross_primary50.json` |
 | Warehouse 6 workbooks | hybrid_max | **10/10 = 1.000** | `tests/RAG/results/warehouse_hybrid_latest.xlsx` |
 | FRTR SQL batch (8 books) | hybrid_sql_only | **10/44 = 0.227** (0001 still 6/6) | `tests/RAG/results/frtr_batch_latest.xlsx` |
 | Edge / injection | hybrid_max space 8 | **9/9 = 1.000** | `tests/RAG/results/edge_probe_latest.json` |
@@ -115,9 +116,19 @@ python tests\RAG\oracle_bench.py --n 80 --seed 1
 # F13 retained A/B (sira_max vs hybrid_max, same generated questions).
 # Small smoke (frtr_0001, n=7, seed 1) is what CI gates. n=320 is F13b close, not CI.
 python tests\RAG\oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
+
+# F13b n=320 two-variant on primary50 (seeds 1-4, n=80). Named --out does not
+# replace the n=7 CI smoke. Then: python tests\RAG\oracle_bench.py --aggregate-primary50
+python tests\RAG\oracle_bench.py --dir primary50 --workbook p50_01_sales_messy.xlsx --n 80 --seed 1 --variants sira_max,hybrid_max --out tests\RAG\results\oracle_cross_primary50_1.json
 ```
 
-Retained: `tests/RAG/results/oracle_cross_latest.json`. Metrics: `value_accuracy`, `schema_link_accuracy` per family, `malformed_ask_rate`, `abstention_rate`. Not `precision@k` / `recall@k` / PR-AUC / MAP. Gate `tests/test_oracle_cross_variants_gate.py` fails if that file has only one variant.
+Retained: `tests/RAG/results/oracle_cross_latest.json` (n=7 smoke) and
+`oracle_cross_primary50.json` (n=320 pack). Metrics: `value_accuracy`,
+`schema_link_accuracy` per family, `malformed_ask_rate`, `abstention_rate`.
+Not `precision@k` / `recall@k` / PR-AUC / MAP. F13b floors (0.99 pooled /
+0.95 per workbook / 0.90 per family, malformed < 5%) apply to **hybrid_max**.
+sira_max on the same asks is retrieve-only: 44/320, all `out_of_range` refuses.
+Gate `tests/test_oracle_cross_variants_gate.py` fails a one-variant payload.
 
 Ground truth is read straight from the workbook with openpyxl by spreadsheet row
 number - no `load_sheets`, no `sheet_sql`, no planner. Questions are **generated**,
