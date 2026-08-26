@@ -10213,6 +10213,29 @@ async function ragRenderTab(){
           <div id="ragScoreOut" class="hint" style="margin-top:8px"></div>
           <div id="ragVecStatus" class="hint" style="margin-top:12px;font-size:11px"></div>
         </div>
+        <div class="rag-neon-card" id="ragOpsCard">
+          <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Ops amend</div>
+          <span class="rag-orch-badge" title="EPIC-D02 / #17-#19">Cortex-direct demo · not OpenVault · not a second ops product</span>
+          <p class="hint" style="margin:8px 0;line-height:1.45">Identify a payroll row, then confirm twice: "is it that one?" then the new salary. A confirm buys one cell. Thin caller for the six existing <code>/api/rag/ops</code> endpoints.</p>
+          <div class="btn-row" style="margin:0 0 8px;flex-wrap:wrap">
+            <input id="ragOpsPath" placeholder="Payroll xlsx path — tests\\RAG\\messy\\ops\\messy_payroll_ops.xlsx" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
+          </div>
+          <div class="btn-row" style="margin:0 0 8px;flex-wrap:wrap">
+            <input id="ragOpsAsk" placeholder="salary raise for E-0012" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit" value="salary raise for E-0012"/>
+            <button type="button" class="btn primary" onclick="ragOpsIdentify()">Identify</button>
+          </div>
+          <div class="btn-row" style="margin:0 0 8px;flex-wrap:wrap">
+            <input id="ragOpsPct" type="number" value="8" min="0" max="100" step="0.5" title="Increment percent" style="width:72px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
+            <button type="button" class="btn" onclick="ragOpsConfirmIdentity(true)">Yes, that one</button>
+            <button type="button" class="btn" onclick="ragOpsConfirmIdentity(false)">No</button>
+            <button type="button" class="btn" onclick="ragOpsPropose()">Propose amend</button>
+            <button type="button" class="btn" onclick="ragOpsConfirmAmend(true)">Confirm write</button>
+            <button type="button" class="btn" onclick="ragOpsConfirmAmend(false)">Abort write</button>
+            <button type="button" class="btn" onclick="ragOpsContinue(true)">Next row</button>
+            <button type="button" class="btn" onclick="ragOpsChain()">Audit chain</button>
+          </div>
+          <div id="ragOpsOut" class="hint" style="line-height:1.45"></div>
+        </div>
       </div>
       <details class="rag-pipe-inspect" id="ragPipeInspect" ontoggle="ragOnPipeInspect(this,${sid})">
         <summary>Inspect pipeline · chunk samples</summary>
@@ -10587,6 +10610,77 @@ function ragOrchCopyPack(){
   const pack=ragState.orchPack;
   if(!pack){toast('Identify a workbook first');return;}
   navigator.clipboard.writeText(JSON.stringify(pack,null,2)).then(()=>toast('Pack copied')).catch(()=>toast('Copy failed'));
+}
+function ragOpsPaint(r){
+  const el=$('ragOpsOut');if(!el)return;
+  if(!r){el.textContent='';return;}
+  const p=r.pending||{};
+  ragState.opsToken=p.token||ragState.opsToken||'';
+  const prompt=esc(r.prompt||p.prompt||p.amend_prompt||r.next||r.error||'');
+  const st=esc(r.status||p.status||'');
+  const who=p.emp_id?`${esc(p.emp_id)} / ${esc(p.name||'')} / salary ${esc(String(p.base_salary||''))} (row ${esc(String(p.row||''))})`:'';
+  const proposed=p.proposed_salary!=null?`<p>Proposed ${esc(String(p.proposed_salary))}</p>`:'';
+  const honesty=esc(r.honesty||'Cortex-direct demo ops — confirm required before amend');
+  const list=(r.shortlist||[]).map(x=>`<li>${esc(String(x.emp_id||''))} ${esc(String(x.name||''))} row ${esc(String(x.row||''))}</li>`).join('');
+  el.innerHTML=`<p><strong>${st||'ops'}</strong> ${who?('· '+who):''}</p>
+    <p>${prompt}</p>${proposed}
+    ${list?`<ul>${list}</ul>`:''}
+    <p class="hint">${honesty}</p>`;
+}
+async function ragOpsIdentify(){
+  const path=($('ragOpsPath')||{}).value||'';
+  const ask=($('ragOpsAsk')||{}).value||'';
+  try{
+    const r=await api('/api/rag/ops/identify',{method:'POST',body:JSON.stringify({path,ask})}).then(x=>x.json());
+    ragOpsPaint(r);
+    toast(r.status==='no_match'?(r.prompt||'No match'):(r.pending?'Is it that one?':(r.error||'Identify')));
+  }catch(e){toast('Identify failed')}
+}
+async function ragOpsConfirmIdentity(yes){
+  const token=ragState.opsToken||'';
+  try{
+    const r=await api('/api/rag/ops/confirm-identity',{method:'POST',body:JSON.stringify({token,yes:!!yes})}).then(x=>x.json());
+    ragOpsPaint(r);
+    toast(yes?(r.status==='confirmed'?'Row confirmed':'Confirm failed'):'Rejected — file unchanged');
+  }catch(e){toast('Identity confirm failed')}
+}
+async function ragOpsPropose(){
+  const token=ragState.opsToken||'';
+  const increment_pct=Number(($('ragOpsPct')||{}).value||8);
+  try{
+    const r=await api('/api/rag/ops/propose-amend',{method:'POST',body:JSON.stringify({token,increment_pct})}).then(x=>x.json());
+    ragOpsPaint(r);
+    toast(r.ok?'Confirm the write':'Propose refused — identity first?');
+  }catch(e){toast('Propose failed')}
+}
+async function ragOpsConfirmAmend(yes){
+  const token=ragState.opsToken||'';
+  try{
+    const r=await api('/api/rag/ops/confirm-amend',{method:'POST',body:JSON.stringify({token,yes:!!yes})}).then(x=>x.json());
+    ragOpsPaint(r);
+    toast(yes?(r.status==='written'?'Written':'Write refused'):'Aborted — file unchanged');
+  }catch(e){toast('Amend confirm failed')}
+}
+async function ragOpsContinue(nextRow){
+  const token=ragState.opsToken||'';
+  const ask=($('ragOpsAsk')||{}).value||'';
+  try{
+    const r=await api('/api/rag/ops/continue',{method:'POST',body:JSON.stringify({token,next_row:!!nextRow,ask:nextRow?'':ask})}).then(x=>x.json());
+    ragOpsPaint(r);
+    toast(r.pending?'Next row — confirm again':(r.prompt||r.status||'Continue'));
+  }catch(e){toast('Continue failed')}
+}
+async function ragOpsChain(){
+  const token=ragState.opsToken||'';
+  try{
+    const r=await api('/api/rag/ops/chain',{method:'POST',body:JSON.stringify({token})}).then(x=>x.json());
+    const el=$('ragOpsOut');
+    if(el){
+      const rows=(r.amended||r.steps||[]).map(s=>`<li>${esc(String(s.emp_id||s.token||''))} ${esc(String(s.status||''))} ${esc(String(s.proposed_salary||s.base_salary||''))}</li>`).join('');
+      el.innerHTML=`<p><strong>chain</strong> ${esc(r.chain_id||'')}</p><ul>${rows||'<li>No steps</li>'}</ul><p class="hint">${esc(r.honesty||'Cortex-direct demo ops')}</p>`;
+    }
+    toast(r.ok?'Chain loaded':(r.error||'Chain failed'));
+  }catch(e){toast('Chain failed')}
 }
 async function ragLoadTrace(det){
   if(!det||!det.open)return;
