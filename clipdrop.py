@@ -5402,6 +5402,48 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/rag/xlsx-orch/identify":
+            try:
+                from rag import xlsx_orch
+
+                data = json.loads(self._body().decode() or "{}")
+                sid = data.get("space_id")
+                out = xlsx_orch.identify_and_pack(
+                    ask=str(data.get("ask") or data.get("query") or ""),
+                    space_id=int(sid) if sid not in (None, "") else None,
+                    path=str(data.get("path") or ""),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/xlsx-orch/handoff":
+            try:
+                from rag import xlsx_orch
+
+                data = json.loads(self._body().decode() or "{}")
+                out = xlsx_orch.consume_result(
+                    pack_id=str(data.get("pack_id") or ""),
+                    result_path=str(data.get("result_path") or data.get("path") or ""),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/rag/xlsx-orch/reveal":
+            try:
+                from rag import xlsx_orch
+
+                data = json.loads(self._body().decode() or "{}")
+                out = xlsx_orch.reveal_handoff(
+                    pack_id=str(data.get("pack_id") or ""),
+                    path=str(data.get("path") or ""),
+                    which=str(data.get("which") or "result"),
+                )
+                return self._json(200 if out.get("ok") else 400, out)
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/rag/reveal-path":
             try:
                 from rag import reveal as rag_reveal

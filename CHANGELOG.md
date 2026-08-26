@@ -2,6 +2,21 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-26 — D04 #23/#24 AirGPT half: identify + Copilot pack + honest reveal
+
+- `rag/xlsx_orch.py` locates an ingested xlsx (schema + name; no first-file
+  guess) and emits a structured Excel Copilot prompt pack: Cover → OnTime
+  Export → Analysis (AVERAGEIF/FILTER) → Presentation Chart.
+- AirGPT does **not** paste, drive Copilot, or call Pointer. Pack is a DMS
+  cross-check candidate (`paste_owner=pointer`, `cross_check_owner=dms`).
+- Handoff stays `awaiting_dms_receipt` until a durable result path is posted
+  (no silent fake DMS wire). Reveal reuses `rag/reveal` (#14). Incomplete
+  result workbooks are flagged, not greened.
+- HTTP: `POST /api/rag/xlsx-orch/{identify,handoff,reveal}`. Build tab card
+  is the click-through. Gates: `tests/test_xlsx_orch.py` +
+  `tests/test_xlsx_orch_http.py`. `MIN_TESTS` stays 380.
+  `multilingual_gate.py` untouched.
+
 ## 2026-08-26 — D07 leftover: n=320 two-variant on primary50
 
 - Ran `oracle_bench.py --variants sira_max,hybrid_max` over the four primary50

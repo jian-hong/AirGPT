@@ -12,6 +12,9 @@ What exists in this repo and where. Update when structure changes, not when stat
   extracted blob; `backfill_docs_originals` fills missing `docs_path` (#34).
 - `rag/xlsx_sql.py` — production xlsx loader + SQL-ish KPI answers. Product
   must not import this from `tests/`.
+- `rag/xlsx_orch.py` — F15 / EPIC-D04 AirGPT half: identify ingested xlsx +
+  structured Copilot prompt pack + honest DMS handoff/reveal. Does not paste
+  or drive Copilot (`paste_owner=pointer`, `cross_check_owner=dms`).
 - `rag/sheet_sql.py` — schema-aware filter+aggregate over those frames.
 - `rag/answer.py` `_try_hybrid_sql_lane` — wires both into the ask path.
 - `tests/RAG/oracle_bench.py --variants sira_max,hybrid_max` — F13 A/B on one
