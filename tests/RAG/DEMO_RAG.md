@@ -224,7 +224,7 @@ file rather than about the return value:
 | Continue to the next row | new token is **not** pre-authorised - both gates again |
 | Audit chain | exactly 2 writes across 3 cycles |
 
-Live endpoints for the click-through:
+Live endpoints for the click-through (Build tab **Ops amend** card, or HTTP):
 
 ```text
 POST /api/rag/ops/identify         {"path":"...\\messy_payroll_ops.xlsx","ask":"salary raise for E-0012"}
@@ -235,6 +235,9 @@ POST /api/rag/ops/confirm-amend    {"token":"...","yes":true}
 POST /api/rag/ops/continue         {"token":"...","next_row":true}   # or {"ask":"... E-0500"}
 POST /api/rag/ops/chain            {"token":"..."}                   # audit view
 ```
+
+The card is a thin caller for those six routes — not a second ops product (P12).
+Cortex-direct, not OpenVault-gated. Two confirms: identity, then value.
 
 An ask that matches no Emp ID and no name returns `status: no_match` with a shortlist -
 it does not dress the first payroll row up as a find.
