@@ -2,6 +2,23 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-26 — D07 leftover: n=320 two-variant on primary50
+
+- Ran `oracle_bench.py --variants sira_max,hybrid_max` over the four primary50
+  workbooks, n=80, seeds 1-4. Same generated asks per workbook.
+- **hybrid_max** value **320/320 = 1.0** (per workbook 80/80, every family 1.0).
+  F13b floors 0.99 pooled / 0.95 per workbook / 0.90 per family MET.
+  `malformed_ask_rate` 0.0 (< 5%).
+- **sira_max** value **44/320 = 0.1375** - all 44 are `out_of_range` refuses;
+  every KPI family abstains (retrieve-only, `use_llm=False`). Not a 99% claim.
+- Retained: `tests/RAG/results/oracle_cross_primary50_{1..4}.json` and pooled
+  `oracle_cross_primary50.json`. n=7 CI smoke `oracle_cross_latest.json` kept.
+  Named `--out` no longer copies onto that smoke file.
+- Gate `test_oracle_cross_variants_gate.py` now reads the pack (shape + hybrid
+  floors + malformed ceiling). `MIN_TESTS` stays 380. `multilingual_gate.py`
+  untouched. Do not close #13/#36 from this run.
+- Regenerate: four `--dir primary50 --n 80 --seed {1..4} --variants sira_max,hybrid_max --out oracle_cross_primary50_{1..4}.json` then `--aggregate-primary50`.
+
 ## 2026-08-26 — D07 leftover: retained sira_max vs hybrid_max (F13 A/B)
 
 - **Named defect:** `frtr_cross_latest.json` held one variant. Regenerated on

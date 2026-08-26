@@ -1,0 +1,932 @@
+{
+  "ok": true,
+  "artifact": "oracle_cross_primary50",
+  "pack": "primary50",
+  "n": 320,
+  "workbooks": [
+    {
+      "workbook": "p50_01_sales_messy.xlsx",
+      "seed": 1,
+      "n": 80,
+      "header_drift": [],
+      "variants": {
+        "sira_max": {
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 1.0,
+          "schema_link_accuracy": {
+            "combined": 0.0,
+            "filter_agg": 0.0,
+            "filter_count": 0.0,
+            "out_of_range": 1.0,
+            "paraphrase": 0.0,
+            "row_range_agg": 0.0,
+            "row_range_nocol": 0.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        },
+        "hybrid_max": {
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 0.1375,
+          "schema_link_accuracy": {
+            "combined": 1.0,
+            "filter_agg": 1.0,
+            "filter_count": 1.0,
+            "out_of_range": 1.0,
+            "paraphrase": 1.0,
+            "row_range_agg": 1.0,
+            "row_range_nocol": 1.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "workbook": "p50_02_ops_messy.xlsx",
+      "seed": 2,
+      "n": 80,
+      "header_drift": [],
+      "variants": {
+        "sira_max": {
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 1.0,
+          "schema_link_accuracy": {
+            "combined": 0.0,
+            "filter_agg": 0.0,
+            "filter_count": 0.0,
+            "out_of_range": 1.0,
+            "paraphrase": 0.0,
+            "row_range_agg": 0.0,
+            "row_range_nocol": 0.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        },
+        "hybrid_max": {
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 0.1375,
+          "schema_link_accuracy": {
+            "combined": 1.0,
+            "filter_agg": 1.0,
+            "filter_count": 1.0,
+            "out_of_range": 1.0,
+            "paraphrase": 1.0,
+            "row_range_agg": 1.0,
+            "row_range_nocol": 1.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "workbook": "p50_03_inventory_messy.xlsx",
+      "seed": 3,
+      "n": 80,
+      "header_drift": [],
+      "variants": {
+        "sira_max": {
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 1.0,
+          "schema_link_accuracy": {
+            "combined": 0.0,
+            "filter_agg": 0.0,
+            "filter_count": 0.0,
+            "out_of_range": 1.0,
+            "paraphrase": 0.0,
+            "row_range_agg": 0.0,
+            "row_range_nocol": 0.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        },
+        "hybrid_max": {
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 0.1375,
+          "schema_link_accuracy": {
+            "combined": 1.0,
+            "filter_agg": 1.0,
+            "filter_count": 1.0,
+            "out_of_range": 1.0,
+            "paraphrase": 1.0,
+            "row_range_agg": 1.0,
+            "row_range_nocol": 1.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "workbook": "p50_04_mixed_messy.xlsx",
+      "seed": 4,
+      "n": 80,
+      "header_drift": [],
+      "variants": {
+        "sira_max": {
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 1.0,
+          "schema_link_accuracy": {
+            "combined": 0.0,
+            "filter_agg": 0.0,
+            "filter_count": 0.0,
+            "out_of_range": 1.0,
+            "paraphrase": 0.0,
+            "row_range_agg": 0.0,
+            "row_range_nocol": 0.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 12,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 0,
+              "linked": 0,
+              "abstained": 11,
+              "value_accuracy": 0.0,
+              "schema_link_accuracy": 0.0,
+              "abstention_rate": 1.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        },
+        "hybrid_max": {
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0,
+          "abstention_rate": 0.1375,
+          "schema_link_accuracy": {
+            "combined": 1.0,
+            "filter_agg": 1.0,
+            "filter_count": 1.0,
+            "out_of_range": 1.0,
+            "paraphrase": 1.0,
+            "row_range_agg": 1.0,
+            "row_range_nocol": 1.0
+          },
+          "by_family": {
+            "row_range_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "row_range_nocol": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_agg": {
+              "n": 12,
+              "ok": 12,
+              "linked": 12,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "filter_count": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "combined": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "paraphrase": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 0,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 0.0
+            },
+            "out_of_range": {
+              "n": 11,
+              "ok": 11,
+              "linked": 11,
+              "abstained": 11,
+              "value_accuracy": 1.0,
+              "schema_link_accuracy": 1.0,
+              "abstention_rate": 1.0
+            }
+          }
+        }
+      }
+    }
+  ],
+  "variants": [
+    {
+      "name": "sira_max",
+      "n": 320,
+      "correct": 44,
+      "value_accuracy": 0.1375,
+      "malformed_ask_rate": 0.0,
+      "abstention_rate": 1.0,
+      "schema_link_accuracy": {
+        "row_range_agg": 0.0,
+        "row_range_nocol": 0.0,
+        "filter_agg": 0.0,
+        "filter_count": 0.0,
+        "combined": 0.0,
+        "paraphrase": 0.0,
+        "out_of_range": 1.0
+      },
+      "by_family": {
+        "row_range_agg": {
+          "n": 48,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 48,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "row_range_nocol": {
+          "n": 48,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 48,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "filter_agg": {
+          "n": 48,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 48,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "filter_count": {
+          "n": 44,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 44,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "combined": {
+          "n": 44,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 44,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "paraphrase": {
+          "n": 44,
+          "ok": 0,
+          "linked": 0,
+          "abstained": 44,
+          "value_accuracy": 0.0,
+          "schema_link_accuracy": 0.0,
+          "abstention_rate": 1.0
+        },
+        "out_of_range": {
+          "n": 44,
+          "ok": 44,
+          "linked": 44,
+          "abstained": 44,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 1.0
+        }
+      },
+      "per_workbook": [
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "seed": 1,
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "seed": 2,
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_03_inventory_messy.xlsx",
+          "seed": 3,
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_04_mixed_messy.xlsx",
+          "seed": 4,
+          "n": 80,
+          "correct": 11,
+          "value_accuracy": 0.1375,
+          "malformed_ask_rate": 0.0
+        }
+      ]
+    },
+    {
+      "name": "hybrid_max",
+      "n": 320,
+      "correct": 320,
+      "value_accuracy": 1.0,
+      "malformed_ask_rate": 0.0,
+      "abstention_rate": 0.1375,
+      "schema_link_accuracy": {
+        "row_range_agg": 1.0,
+        "row_range_nocol": 1.0,
+        "filter_agg": 1.0,
+        "filter_count": 1.0,
+        "combined": 1.0,
+        "paraphrase": 1.0,
+        "out_of_range": 1.0
+      },
+      "by_family": {
+        "row_range_agg": {
+          "n": 48,
+          "ok": 48,
+          "linked": 48,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "row_range_nocol": {
+          "n": 48,
+          "ok": 48,
+          "linked": 48,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "filter_agg": {
+          "n": 48,
+          "ok": 48,
+          "linked": 48,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "filter_count": {
+          "n": 44,
+          "ok": 44,
+          "linked": 44,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "combined": {
+          "n": 44,
+          "ok": 44,
+          "linked": 44,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "paraphrase": {
+          "n": 44,
+          "ok": 44,
+          "linked": 44,
+          "abstained": 0,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 0.0
+        },
+        "out_of_range": {
+          "n": 44,
+          "ok": 44,
+          "linked": 44,
+          "abstained": 44,
+          "value_accuracy": 1.0,
+          "schema_link_accuracy": 1.0,
+          "abstention_rate": 1.0
+        }
+      },
+      "per_workbook": [
+        {
+          "workbook": "p50_01_sales_messy.xlsx",
+          "seed": 1,
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_02_ops_messy.xlsx",
+          "seed": 2,
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_03_inventory_messy.xlsx",
+          "seed": 3,
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0
+        },
+        {
+          "workbook": "p50_04_mixed_messy.xlsx",
+          "seed": 4,
+          "n": 80,
+          "correct": 80,
+          "value_accuracy": 1.0,
+          "malformed_ask_rate": 0.0
+        }
+      ]
+    }
+  ],
+  "floors": {
+    "pooled_value_accuracy": 0.99,
+    "per_workbook_value_accuracy": 0.95,
+    "per_family_value_accuracy": 0.9,
+    "malformed_ask_rate": 0.05,
+    "applies_to": "hybrid_max",
+    "sira_max": "retained on the same questions; retrieve-only, no 0.99 floor"
+  },
+  "honesty": "hybrid_max is the SQL lane on generated asks. sira_max is retrieve-only (hybrid_sql_lane off, use_llm=False) on the SAME asks. F13 fields only. No precision@k / recall@k / PR-AUC / MAP.",
+  "ts": "2026-08-26T17:41:29"
+}

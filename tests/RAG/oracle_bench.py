@@ -27,6 +27,10 @@ Usage:
     # F13 retained A/B (same generated questions; hybrid_max = SQL lane,
     # sira_max = retrieve with hybrid_sql_lane off). Writes oracle_cross_latest.json.
     python tests/RAG/oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
+
+    # F13b n=320 two-variant on primary50 (not CI). One workbook shown; seeds 1-4.
+    python tests/RAG/oracle_bench.py --dir primary50 --workbook p50_01_sales_messy.xlsx --n 80 --seed 1 --variants sira_max,hybrid_max --out tests/RAG/results/oracle_cross_primary50_1.json
+    python tests/RAG/oracle_bench.py --aggregate-primary50
 """
 from __future__ import annotations
 
@@ -658,6 +662,148 @@ def ingest_sira_space(src: Path) -> int:
     return sid
 
 
+PRIMARY50_BOOKS = (
+    ("p50_01_sales_messy.xlsx", 1, "oracle_cross_primary50_1.json"),
+    ("p50_02_ops_messy.xlsx", 2, "oracle_cross_primary50_2.json"),
+    ("p50_03_inventory_messy.xlsx", 3, "oracle_cross_primary50_3.json"),
+    ("p50_04_mixed_messy.xlsx", 4, "oracle_cross_primary50_4.json"),
+)
+F13B_POOLED_FLOOR = 0.99
+F13B_WORKBOOK_FLOOR = 0.95
+F13B_FAMILY_FLOOR = 0.90
+F13B_MALFORMED_CEILING = 0.05
+
+
+def aggregate_cross_pack(payloads: list[dict]) -> dict:
+    """Pool two-variant F13 metrics across workbooks. No precision@k.
+
+    Source of truth stays the per-workbook files; this summary is for quoting
+    pooled / per-workbook / per-family floors without re-deriving in session.
+    """
+    if not payloads:
+        raise ValueError("no payloads to aggregate")
+    variants: dict[str, dict] = {}
+    workbooks = []
+    for data in payloads:
+        wb = {
+            "workbook": data.get("workbook"),
+            "seed": data.get("seed"),
+            "n": data.get("n"),
+            "header_drift": data.get("header_drift") or [],
+            "variants": {},
+        }
+        for v in data.get("variants") or []:
+            name = v.get("name")
+            if not name:
+                continue
+            wb["variants"][name] = {
+                "n": v.get("n"),
+                "correct": v.get("correct"),
+                "value_accuracy": v.get("value_accuracy"),
+                "malformed_ask_rate": v.get("malformed_ask_rate"),
+                "abstention_rate": v.get("abstention_rate"),
+                "schema_link_accuracy": v.get("schema_link_accuracy"),
+                "by_family": v.get("by_family"),
+            }
+            acc = variants.setdefault(
+                name,
+                {
+                    "name": name,
+                    "n": 0,
+                    "correct": 0,
+                    "malformed": 0,
+                    "abstained": 0,
+                    "by_family": {},
+                    "per_workbook": [],
+                },
+            )
+            rows = v.get("rows") or []
+            n = int(v.get("n") or (len(rows) if rows else 0))
+            acc["n"] += n
+            if rows:
+                acc["correct"] += sum(1 for r in rows if r.get("ok"))
+                acc["malformed"] += sum(1 for r in rows if r.get("malformed"))
+                acc["abstained"] += sum(1 for r in rows if r.get("abstained"))
+            else:
+                acc["correct"] += int(v.get("correct") or 0)
+                acc["malformed"] += int(round(float(v.get("malformed_ask_rate") or 0) * n))
+                acc["abstained"] += int(round(float(v.get("abstention_rate") or 0) * n))
+            acc["per_workbook"].append(
+                {
+                    "workbook": data.get("workbook"),
+                    "seed": data.get("seed"),
+                    "n": n,
+                    "correct": v.get("correct"),
+                    "value_accuracy": v.get("value_accuracy"),
+                    "malformed_ask_rate": v.get("malformed_ask_rate"),
+                }
+            )
+            for fam, b in (v.get("by_family") or {}).items():
+                slot = acc["by_family"].setdefault(
+                    fam, {"n": 0, "ok": 0, "linked": 0, "abstained": 0}
+                )
+                slot["n"] += int(b.get("n") or 0)
+                slot["ok"] += int(b.get("ok") or 0)
+                slot["linked"] += int(b.get("linked") or 0)
+                slot["abstained"] += int(b.get("abstained") or 0)
+        workbooks.append(wb)
+
+    out_variants = []
+    for name in CROSS_VARIANTS:
+        acc = variants.get(name)
+        if not acc:
+            continue
+        n = max(1, acc["n"])
+        by_family = {}
+        sla = {}
+        for fam, b in acc["by_family"].items():
+            fn = max(1, b["n"])
+            by_family[fam] = {
+                "n": b["n"],
+                "ok": b["ok"],
+                "linked": b["linked"],
+                "abstained": b["abstained"],
+                "value_accuracy": round(b["ok"] / fn, 4),
+                "schema_link_accuracy": round(b["linked"] / fn, 4),
+                "abstention_rate": round(b["abstained"] / fn, 4),
+            }
+            sla[fam] = by_family[fam]["schema_link_accuracy"]
+        out_variants.append(
+            {
+                "name": name,
+                "n": acc["n"],
+                "correct": acc["correct"],
+                "value_accuracy": round(acc["correct"] / n, 4),
+                "malformed_ask_rate": round(acc["malformed"] / n, 4),
+                "abstention_rate": round(acc["abstained"] / n, 4),
+                "schema_link_accuracy": sla,
+                "by_family": by_family,
+                "per_workbook": acc["per_workbook"],
+            }
+        )
+    return {
+        "ok": True,
+        "artifact": "oracle_cross_primary50",
+        "pack": "primary50",
+        "n": sum(int(w.get("n") or 0) for w in workbooks),
+        "workbooks": workbooks,
+        "variants": out_variants,
+        "floors": {
+            "pooled_value_accuracy": F13B_POOLED_FLOOR,
+            "per_workbook_value_accuracy": F13B_WORKBOOK_FLOOR,
+            "per_family_value_accuracy": F13B_FAMILY_FLOOR,
+            "malformed_ask_rate": F13B_MALFORMED_CEILING,
+            "applies_to": "hybrid_max",
+            "sira_max": "retained on the same questions; retrieve-only, no 0.99 floor",
+        },
+        "honesty": (
+            "hybrid_max is the SQL lane on generated asks. sira_max is retrieve-only "
+            "(hybrid_sql_lane off, use_llm=False) on the SAME asks. F13 fields only. "
+            "No precision@k / recall@k / PR-AUC / MAP."
+        ),
+    }
+
+
 def _print_f13(name: str, summary: dict) -> None:
     print(f"\n=== {name} ===", flush=True)
     print(f"  {'family':16} {'value':>9}  {'schema-link':>11}  {'abstain':>8}", flush=True)
@@ -695,7 +841,30 @@ def main() -> None:
         action="store_true",
         help="for sira_max, require --space-id instead of ingesting",
     )
+    ap.add_argument(
+        "--aggregate-primary50",
+        action="store_true",
+        help="pool oracle_cross_primary50_{1..4}.json into oracle_cross_primary50.json",
+    )
     args = ap.parse_args()
+
+    if args.aggregate_primary50:
+        payloads = []
+        for _wb, _seed, name in PRIMARY50_BOOKS:
+            path = RESULTS / name
+            if not path.is_file():
+                raise SystemExit(f"missing {path}")
+            payloads.append(json.loads(path.read_text(encoding="utf-8")))
+        pooled = aggregate_cross_pack(payloads)
+        out = Path(args.out) if args.out else RESULTS / "oracle_cross_primary50.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        pooled["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        out.write_text(json.dumps(pooled, indent=2), encoding="utf-8")
+        print(f"pack n={pooled['n']} wrote {out}", flush=True)
+        for v in pooled.get("variants") or []:
+            _print_f13(f"pack {v['name']}", v)
+            print(f"  per_workbook {v.get('per_workbook')}", flush=True)
+        return
 
     src = ROOT / args.dir / args.workbook
     if not src.is_file():
@@ -815,11 +984,11 @@ def main() -> None:
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         out = Path(args.out) if args.out else RESULTS / "oracle_cross_latest.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        latest = RESULTS / "oracle_cross_latest.json"
-        if out.resolve() != latest.resolve():
-            latest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"wrote {out}", flush=True)
+        # Named --out must not clobber the n=7 CI smoke at oracle_cross_latest.json.
+        # F13b pack runs write oracle_cross_primary50_*.json instead.
         names = [v["name"] for v in variants_out]
         missing = [n for n in CROSS_VARIANTS if n not in names]
         if missing:

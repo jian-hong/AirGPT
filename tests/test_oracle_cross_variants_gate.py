@@ -10,7 +10,7 @@ Regenerate (small, frtr_0001, one ask per family):
 
     python tests/RAG/oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
 
-n=320 (primary50, four workbooks, seeds 1-4) is the F13b close command, not this gate.
+n=320 (primary50, four workbooks, seeds 1-4) is the F13b pack gate below, not a re-score.
 Do not write precision@k / recall@k / PR-AUC / MAP.
 """
 from __future__ import annotations
@@ -144,3 +144,104 @@ def test_frtr_cross_latest_has_sira_and_hybrid():
         "python tests/RAG/frtr_cross_compare.py --workbook "
         "frtr_0001_quarterly-summary.xlsx --variants sira_max,hybrid_max --no-llm"
     )
+
+
+PACK_ARTIFACTS = [RAG / "results" / name for _wb, _seed, name in ob.PRIMARY50_BOOKS]
+PACK_SUMMARY = RAG / "results" / "oracle_cross_primary50.json"
+PACK_REGEN = (
+    "python tests/RAG/oracle_bench.py --dir primary50 "
+    "--workbook p50_01_sales_messy.xlsx --n 80 --seed 1 "
+    "--variants sira_max,hybrid_max --out tests/RAG/results/oracle_cross_primary50_1.json "
+    "(repeat p50_02 seed 2, p50_03 seed 3, p50_04 seed 4) then "
+    "python tests/RAG/oracle_bench.py --aggregate-primary50"
+)
+
+
+def test_retained_primary50_pack_two_variant_and_f13b_floors():
+    """n>=320 two-variant on primary50. Floors apply to hybrid_max; sira_max is retained."""
+    payloads = []
+    for path in PACK_ARTIFACTS:
+        assert path.is_file(), f"missing {path.as_posix()}. {PACK_REGEN}"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert_cross_payload(data)
+        assert data.get("n") == 80, f"{path.name} n={data.get('n')} want 80"
+        payloads.append(data)
+    pooled = ob.aggregate_cross_pack(payloads)
+    assert pooled["n"] >= 320, f"pack n={pooled['n']} want >=320"
+    names = [v["name"] for v in pooled["variants"]]
+    missing = [n for n in ob.CROSS_VARIANTS if n not in names]
+    assert not missing, f"pack missing {missing}"
+
+    hybrid = next(v for v in pooled["variants"] if v["name"] == "hybrid_max")
+    assert hybrid["value_accuracy"] >= ob.F13B_POOLED_FLOOR, (
+        f"hybrid_max pooled value_accuracy {hybrid['value_accuracy']} "
+        f"< {ob.F13B_POOLED_FLOOR}"
+    )
+    for wb in hybrid["per_workbook"]:
+        assert wb["value_accuracy"] >= ob.F13B_WORKBOOK_FLOOR, (
+            f"{wb.get('workbook')} value_accuracy {wb['value_accuracy']} "
+            f"< {ob.F13B_WORKBOOK_FLOOR}"
+        )
+    for fam, b in hybrid["by_family"].items():
+        assert b["value_accuracy"] >= ob.F13B_FAMILY_FLOOR, (
+            f"hybrid_max {fam} value_accuracy {b['value_accuracy']} "
+            f"< {ob.F13B_FAMILY_FLOOR}"
+        )
+    for v in pooled["variants"]:
+        assert v["malformed_ask_rate"] < ob.F13B_MALFORMED_CEILING, (
+            f"{v['name']} malformed_ask_rate {v['malformed_ask_rate']} "
+            f">= {ob.F13B_MALFORMED_CEILING}"
+        )
+
+    forbidden = sorted({k for k in _walk_keys(pooled) if k in ob.FORBIDDEN_F13_KEYS})
+    assert not forbidden, f"F13-forbidden metric keys present: {forbidden}"
+
+    assert PACK_SUMMARY.is_file(), f"missing {PACK_SUMMARY.as_posix()}. {PACK_REGEN}"
+    summary = json.loads(PACK_SUMMARY.read_text(encoding="utf-8"))
+    assert_pack_summary_matches(summary, pooled)
+
+
+def assert_pack_summary_matches(summary: dict, pooled: dict) -> None:
+    assert summary.get("n") == pooled["n"]
+    s_names = [v.get("name") for v in summary.get("variants") or [] if isinstance(v, dict)]
+    p_names = [v["name"] for v in pooled["variants"]]
+    assert s_names == p_names
+    for s_v, p_v in zip(summary["variants"], pooled["variants"]):
+        assert s_v["value_accuracy"] == p_v["value_accuracy"]
+        assert s_v["malformed_ask_rate"] == p_v["malformed_ask_rate"]
+        assert s_v["n"] == p_v["n"]
+        assert s_v["correct"] == p_v["correct"]
+    forbidden = sorted({k for k in _walk_keys(summary) if k in ob.FORBIDDEN_F13_KEYS})
+    assert not forbidden, f"F13-forbidden metric keys present: {forbidden}"
+
+
+def test_primary50_floors_do_not_apply_to_one_variant_payload():
+    """R-0007: pack aggregator must not hide a missing variant."""
+    fake = {
+        "ok": True,
+        "workbook": "p50_01_sales_messy.xlsx",
+        "seed": 1,
+        "n": 1,
+        "questions": ["On Sales, sum qty for rows 1 to 2"],
+        "variants": [
+            {
+                "name": "hybrid_max",
+                "value_accuracy": 1.0,
+                "schema_link_accuracy": {fam: 1.0 for fam in FAMILIES},
+                "malformed_ask_rate": 0.0,
+                "abstention_rate": 0.0,
+                "n": 1,
+                "correct": 1,
+                "rows": [{"question": "On Sales, sum qty for rows 1 to 2"}],
+                "by_family": {
+                    fam: {"n": 1, "ok": 1, "linked": 1, "abstained": 0} for fam in FAMILIES
+                },
+            }
+        ],
+    }
+    with pytest.raises(AssertionError, match="missing"):
+        assert_cross_payload(fake)
+    pooled = ob.aggregate_cross_pack([fake])
+    names = [v["name"] for v in pooled["variants"]]
+    assert "sira_max" not in names
+

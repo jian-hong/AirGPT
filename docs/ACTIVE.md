@@ -15,4 +15,6 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `rag/sheet_sql.py` — schema-aware filter+aggregate over those frames.
 - `rag/answer.py` `_try_hybrid_sql_lane` — wires both into the ask path.
 - `tests/RAG/oracle_bench.py --variants sira_max,hybrid_max` — F13 A/B on one
-  generated question set; retained `tests/RAG/results/oracle_cross_latest.json`.
+  generated question set; CI smoke `tests/RAG/results/oracle_cross_latest.json`
+  (frtr_0001 n=7). Pack: `oracle_cross_primary50_{1..4}.json` + pooled
+  `oracle_cross_primary50.json` (n=320, F13b floors on hybrid_max).
