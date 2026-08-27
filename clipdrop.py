@@ -1942,6 +1942,131 @@ def _rag_rebuild_paths(srcs: list) -> list:
     return rag_ingest.rebuild_source_paths(srcs)
 
 
+def _rag_resolved(raw) -> Path | None:
+    """Absolute path with symlinks followed and `..` collapsed, or None."""
+    try:
+        return Path(str(raw)).resolve()
+    except (OSError, ValueError, TypeError, RuntimeError):
+        return None
+
+
+def _rag_space_storage_dirs(space_id: int) -> list[Path]:
+    """Directories the space itself owns: the Docs/ byte-faithful originals and
+    the extracted .txt blobs. Both are written by ingest, never by a client."""
+    from rag import store as rag_store
+
+    base = Path(rag_store.BLOB_DIR) / str(int(space_id))
+    return [base / "Docs", base / "sources"]
+
+
+def _rag_registered_source_paths(srcs: list) -> set[Path]:
+    """Every filesystem location the space's own registered sources name, resolved.
+
+    A source can carry four: the live original (``path``), the recorded original
+    (``meta.original_path``), the Docs/ audit copy (``meta.docs_path``) and the
+    extracted .txt blob (``meta.blob``) — the same set rag.ingest.rebuild_source_paths
+    picks a rebuild path out of.
+    """
+    out: set[Path] = set()
+    for s in srcs or []:
+        meta = s.get("meta") if isinstance(s.get("meta"), dict) else {}
+        for raw in (
+            s.get("path"),
+            meta.get("original_path"),
+            meta.get("docs_path"),
+            meta.get("blob"),
+        ):
+            if not raw:
+                continue
+            p = _rag_resolved(raw)
+            if p is not None:
+                out.add(p)
+    return out
+
+
+def _rag_check_build_paths(space_id: int, srcs: list, requested) -> tuple[list[str], str]:
+    """Validate a client-supplied ``paths`` override for a space rebuild.
+
+    The override exists so a caller can rebuild a SUBSET of a space's own sources.
+    Unvalidated it *replaced* them with any filesystem path, which was then ingested
+    and its text became retrievable answer material. Today ``/api/rag`` sits in
+    _HOST_ONLY_PREFIXES, so reaching this needs host-level access — it is not a
+    remote hole as shipped. It becomes one the moment level-based access grants let
+    a client through to ``/api/rag`` (DR-0003), which is why the check lands before
+    those grants, not after.
+
+    Compare RESOLVED absolute paths, never strings: a `..` segment and a symlink
+    planted inside the space's own Docs/ both still point outside once resolved,
+    and either would walk straight past a prefix match on the raw text.
+
+    Returns ``(paths, "")`` when every entry is the space's own, or ``([], reason)``
+    — and the caller must then refuse the whole build. Dropping the bad entries and
+    building the rest would report success for a build that quietly indexed
+    something else, which is the R-0011 defect class.
+    """
+    if not isinstance(requested, (list, tuple)):
+        return [], f"paths must be a list of registered source paths, got {type(requested).__name__}"
+
+    allowed = _rag_registered_source_paths(srcs)
+    own_dirs = [d for d in (_rag_resolved(x) for x in _rag_space_storage_dirs(space_id)) if d]
+    out: list[str] = []
+    for raw in requested:
+        text = str(raw)
+        p = _rag_resolved(text)
+        if p is None:
+            return [], f"rejected unreadable path: {text[:200]}"
+        # Exact registered source, or genuinely inside the space's own storage.
+        # The bare storage directory is not accepted: recursing it would re-open
+        # the symlink route this check exists to close. Omit `paths` for a full
+        # rebuild instead.
+        if p in allowed or any(d in p.parents for d in own_dirs):
+            out.append(str(p))
+            continue
+        detail = f"rejected path: {text[:200]}"
+        if str(p) != text:
+            detail += f" (resolves to {str(p)[:200]})"
+        return [], (
+            detail
+            + f" — not a registered source of space {int(space_id)}. "
+            "paths may only name this space's own sources; omit paths to rebuild all."
+        )
+    return out, ""
+
+
+def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
+    """Read a consent flag out of untyped JSON. Only a real boolean `true` is yes.
+
+    `bool("false")` is True in Python, so a JSON *string* "false" — a user saying
+    no in as many words — read as consent. Observed over real HTTP (#18):
+    confirm-identity yes="false" returned status 'confirmed', confirm-amend
+    yes="false" returned status 'written' and the salary cell went 50000.0 ->
+    54000.0. An unconfirmed amend landed on an explicit no.
+
+    Strings, numbers, null and a missing key are none of them a yes. Ambiguity
+    fails CLOSED — it is reported as a refusal, so the pending gate records a
+    rejection and nothing is written. Deliberately not raised as an error: an
+    error would leave the gate still open, and a malformed consent must not be
+    retryable into a write.
+
+    Returns (consent, why); a non-empty `why` names what was sent instead so the
+    refusal states its cause rather than looking like an ordinary no.
+    """
+    if not isinstance(data, dict):
+        return False, f"request body must be a JSON object; got {type(data).__name__}. Read as NO."
+    if key not in data:
+        return False, ""
+    v = data[key]
+    if v is True:
+        return True, ""
+    if v is False:
+        return False, ""
+    # `1 is True` is False in CPython, so an int 1 lands here too — as it must.
+    return False, (
+        f"{key!r} must be a JSON boolean, not {type(v).__name__} {v!r}. "
+        "Read as NO — nothing was written."
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
@@ -2608,7 +2733,11 @@ class Handler(BaseHTTPRequestHandler):
         srcs = rag_store.list_sources(sid)
         paths = _rag_rebuild_paths(srcs)
         if isinstance(data.get("paths"), list) and data.get("paths"):
-            paths = [str(p) for p in data["paths"]]
+            # Same override, same hole as POST /build — validated the same way, before
+            # the SSE stream opens so the refusal is a plain 400 the caller can read.
+            paths, why = _rag_check_build_paths(sid, srcs, data["paths"])
+            if why:
+                return self._json(400, {"ok": False, "error": why})
         if not paths:
             return self._json(400, {"error": "no sources to build"})
 
@@ -5346,10 +5475,11 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import ops_amend
 
                 data = json.loads(self._body().decode() or "{}")
-                out = ops_amend.confirm_identity(
-                    str(data.get("token") or ""),
-                    bool(data.get("yes")),
-                )
+                # Strict: only a real JSON boolean true is consent (#18).
+                consent, why = _explicit_consent(data)
+                out = ops_amend.confirm_identity(str(data.get("token") or ""), consent)
+                if why and isinstance(out, dict):
+                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
@@ -5373,7 +5503,11 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import ops_amend
 
                 data = json.loads(self._body().decode() or "{}")
-                out = ops_amend.confirm_amend(str(data.get("token") or ""), bool(data.get("yes")))
+                # Strict: only a real JSON boolean true authorises the write (#18).
+                consent, why = _explicit_consent(data)
+                out = ops_amend.confirm_amend(str(data.get("token") or ""), consent)
+                if why and isinstance(out, dict):
+                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
@@ -5536,7 +5670,11 @@ class Handler(BaseHTTPRequestHandler):
                 srcs = rag_store.list_sources(sid)
                 paths = _rag_rebuild_paths(srcs)
                 if data.get("paths"):
-                    paths = list(data.get("paths"))
+                    # A client may narrow the rebuild to a subset of this space's own
+                    # sources — it may not point the ingest at arbitrary host files.
+                    paths, why = _rag_check_build_paths(sid, srcs, data.get("paths"))
+                    if why:
+                        return self._json(400, {"ok": False, "error": why})
                 if not paths:
                     return self._json(400, {"error": "no sources to build"})
                 out = rag_ingest.ingest_paths(sid, paths, force=True)
