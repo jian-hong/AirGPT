@@ -21,3 +21,7 @@ What exists in this repo and where. Update when structure changes, not when stat
   generated question set; CI smoke `tests/RAG/results/oracle_cross_latest.json`
   (frtr_0001 n=7). Pack: `oracle_cross_primary50_{1..4}.json` + pooled
   `oracle_cross_primary50.json` (n=320, F13b floors on hybrid_max).
+- `tool_readout.py` — Claude Code-style grouped tool rows (kinds, counts, +N -M)
+  for the host shell; `index.html` `runCortexAgentStream` mirrors it.
+- `OpenIDE/workspace_api.py` — `fs_write` / `fs_patch` return `added_lines` and
+  `deleted_lines` so the readout can show +N -M.

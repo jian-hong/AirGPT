@@ -2012,6 +2012,11 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 /* Touch has no hover, so the popover would never open — the count on the card is the
    whole story there rather than a control nobody can reach. */
 @media (hover:none){.snippet-card .sn-tools{display:none}}
+.cortex-orch-live{white-space:normal;font-size:12px;max-height:360px;overflow:auto;margin:0;text-align:left}
+.tool-group-row{margin:6px 0;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surface)}
+.tool-group-row>summary{cursor:pointer;font-size:12px}
+.tool-group-items{margin:6px 0 4px 18px;padding:0;font-size:11px;color:var(--muted)}
+.orch-status,.orch-tokens{white-space:pre-wrap;margin:4px 0}
 
 /* Collapsible console sections — closed by default, so the page opens short. */
 .cortex-fold{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:8px 0;text-align:left}
@@ -7274,7 +7279,7 @@ async function showCortexAgentChat(){
   // The old page stacked four full-width sections and every one of them was open.
   $('chat').innerHTML=`<div class="cortex-page cortex-agent-home chat-page-enter">
     <h2>Cortex</h2>
-    <p class="cortex-tag">Describe what you want; Cortex picks the tools. Agents are the thing you keep — skills and subagents are how one run is shaped.</p>
+    <p class="cortex-tag">Describe what you want; Cortex auto-wires tools from the prompt. Agents are what you keep. Force a pack with <code>/skill:name</code> or <code>/anthropic-skills:name</code> -- explicit always wins.</p>
     ${activeLine}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
       <button type="button" class="btn primary" style="border-radius:10px" onclick="createSubagentQuick()">New subagent</button>
@@ -7283,7 +7288,6 @@ async function showCortexAgentChat(){
     <p class="hint" style="margin:0 0 6px;text-align:left">Suggested agents</p>
     <div class="cortex-suggest">${chips}</div>
     ${cortexFoldHtml({id:'cortexReachFold',title:'What Cortex can reach',note:'planes wired now',body:'<div class="reach-list" id="cortexReachBody"><span class="hint">Checking…</span></div>'})}
-    ${cortexFoldHtml({id:'cortexSkillFold',title:'Skills',note:'force a pack for the next send',body:cortexSnippetCardsHtml()})}
     ${cortexFoldHtml({id:'cortexSubFold',title:'Subagents',note:'one task, then gone',body:cortexSubagentsHtml(subs)})}
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
@@ -7292,7 +7296,6 @@ async function showCortexAgentChat(){
   setFoldCount('cortexSubFold',subs.length);
   wireCortexFolds();
   renderCortexSideAgents();
-  loadCortexSnippets();
   loadCortexReach();
   applyPlaceholder({force:true});
   setTimeout(()=>$('input')?.focus(),80);
@@ -7661,7 +7664,9 @@ async function assembleCortexCapabilities(text,intent){
     const hit=low.match(/\b(slack|discord|email|calendar|notion|linear|github)\b/g)||[];
     hit.forEach(h=>{if(!mcpWanted.includes(h))mcpWanted.push(h)});
   }
-  const skillPack=window.pendingSkillPack||(skills[0]&&skills[0].id)||'';
+  // Engine-populated on the wire. Client only fills skill_pack when the founder
+  // forced a pack with /skill: or /anthropic-skills: (explicit always wins).
+  const skillPack=window.pendingSkillPack||'';
   if(window.pendingSkillPack)window.pendingSkillPack='';
   return{
     tools,
@@ -7701,7 +7706,7 @@ function ensureCortexLiveCard(title,subtitle){
       <h3 id="cortexOrchTitle" style="margin:0 0 8px">${esc(title)}</h3>
       <p class="hint" id="cortexOrchSub" style="margin:0 0 8px">${esc(subtitle)}</p>
       <div class="cortex-cap-chips" id="cortexCapChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px"></div>
-      <pre id="cortexOrchLive" style="white-space:pre-wrap;font-size:12px;max-height:360px;overflow:auto;margin:0">Starting…</pre>
+      <div id="cortexOrchLive" class="cortex-orch-live">Starting…</div>
     </div></div>`);
     live=$('cortexOrchLive');
   }else{
@@ -7719,8 +7724,37 @@ function renderCortexCapChips(caps){
   ];
   host.innerHTML=bits.map(b=>`<span class="cr-tool${b.hi?' hi':''}">${esc(b.k)}</span>`).join('');
 }
+function groupToolEvents(events){
+  const kinds={};
+  let plus=0, minus=0, hasDelta=false;
+  const items=[];
+  (events||[]).forEach(ev=>{
+    const name=String((ev&&ev.name)||'tool');
+    kinds[name]=(kinds[name]||0)+1;
+    const result=(ev&&ev.result&&typeof ev.result==='object')?ev.result:{};
+    if('added_lines' in result && 'deleted_lines' in result){
+      plus+=Number(result.added_lines||0);
+      minus+=Number(result.deleted_lines||0);
+      hasDelta=true;
+    }
+    items.push(ev);
+  });
+  const kindList=Object.entries(kinds).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  return {count:items.length,kinds,kindList,added_lines:hasDelta?plus:null,deleted_lines:hasDelta?minus:null,items};
+}
+function toolGroupRowHtml(seg){
+  const kindStr=(seg.kindList||[]).map(([k,c])=>esc(k)+' x'+c).join(', ');
+  const delta=(seg.added_lines==null)?'':(' +'+seg.added_lines+' -'+seg.deleted_lines);
+  const lis=(seg.items||[]).map(it=>{
+    const r=(it&&it.result)||{};
+    const one=('added_lines' in r && 'deleted_lines' in r)?(' +'+r.added_lines+' -'+r.deleted_lines):'';
+    const err=r.ok===false?' (fallback)':'';
+    return `<li>${esc(it.name||'tool')}${err}${one}</li>`;
+  }).join('');
+  return `<details class="tool-group-row"><summary>[tools] ${seg.count} tool${seg.count===1?'':'s'}: ${kindStr}${delta}</summary><ul class="tool-group-items">${lis}</ul></details>`;
+}
 async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps=16,token_budget=4000,skill_pack=''}={}){
-  const live=ensureCortexLiveCard(agent.name||'Cortex','web_search → vault → hands → verify');
+  const live=ensureCortexLiveCard(agent.name||'Cortex','web_search -> vault -> hands -> verify');
   const body={prompt,session_id:currentSession||0,thinking_mode,max_steps,token_budget};
   if(skill_pack)body.skill_pack=skill_pack;
   else if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
@@ -7730,8 +7764,26 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
     body:JSON.stringify(body),
   });
   if(!r.ok||!r.body){toast('Run failed ('+r.status+')');return ''};
-  const reader=r.body.getReader();const dec=new TextDecoder();let buf='',final='',log=[];
-  const push=(line)=>{log.push(line);if(live){live.textContent=log.slice(-48).join('\n');live.scrollTop=live.scrollHeight}};
+  const reader=r.body.getReader();const dec=new TextDecoder();let buf='',final='';
+  if(live)live.innerHTML='';
+  let toolBuf=[];
+  let tokenEl=null;
+  const flushTools=()=>{
+    if(!toolBuf.length||!live){toolBuf=[];return}
+    const seg=groupToolEvents(toolBuf);
+    toolBuf=[];
+    live.insertAdjacentHTML('beforeend', toolGroupRowHtml(seg));
+    live.scrollTop=live.scrollHeight;
+  };
+  const pushStatus=(line)=>{
+    flushTools();
+    if(!live)return;
+    const p=document.createElement('div');
+    p.className='orch-status';
+    p.textContent=line;
+    live.appendChild(p);
+    live.scrollTop=live.scrollHeight;
+  };
   while(true){
     const {done,value}=await reader.read();if(done)break;
     buf+=dec.decode(value,{stream:true});
@@ -7740,14 +7792,22 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
       const line=chunk.split('\n').find(l=>l.startsWith('data:'));
       if(!line)continue;
       let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
-      if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
-      if(j.type==='tool'||j.type==='tool_call')push((j.name==='web_search'?'🔎 ':'⚙ ')+(j.name||'tool')+(j.result?.ok===false?' (fallback)':''));
-      if(j.type==='token'){final+=j.text||'';if(live)live.textContent=(log.slice(-14).join('\n')+'\n\n'+(final||'')).trim()}
-      if(j.type==='done')final=j.analysis||final;
-      if(j.type==='error'){toast(j.text||'Agent error');push('✗ '+(j.text||'error'))}
+      if(j.type==='tool'||j.type==='tool_call'){toolBuf.push(j);continue}
+      if(j.type==='status'||j.type==='thinking')pushStatus((j.text||j.type||'').trim());
+      if(j.type==='token'){
+        flushTools();
+        final+=j.text||'';
+        if(live){
+          if(!tokenEl){tokenEl=document.createElement('div');tokenEl.className='orch-tokens';live.appendChild(tokenEl)}
+          tokenEl.textContent=final;
+          live.scrollTop=live.scrollHeight;
+        }
+      }
+      if(j.type==='done'){flushTools();final=j.analysis||final;if(tokenEl)tokenEl.textContent=(final||'').slice(0,8000)}
+      if(j.type==='error'){toast(j.text||'Agent error');pushStatus('x '+(j.text||'error'))}
     }
   }
-  if(final&&live)live.textContent=final.slice(0,8000);
+  flushTools();
   return final;
 }
 async function ensureCortexAgent(name,text,caps,intent){
@@ -7787,16 +7847,18 @@ async function ensureCortexAgent(name,text,caps,intent){
     try{
       const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal:text})}).then(x=>x.json());
       const rid=r&&(r.routine_id||r.id||(r.routine&&r.routine.id));
-      if(r&&r.ok&&rid){
+      const next=r&&(r.next_run_at||(r.routine&&r.routine.next_run_at));
+      if(r&&r.ok&&rid&&next!=null&&next!==''){
         agent.config=Object.assign({},agent.config,{routine_id:rid});
         try{await api('/api/agents/'+agent.id,{method:'POST',body:JSON.stringify({config:agent.config})})}catch(e){}
-        const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||'';
-        toast('Scheduled'+(when?(' — '+String(when).slice(0,40)):''));
+        const when=(r.routine&&r.routine.schedule_text)||r.schedule_text||('next_run_at '+String(next).slice(0,32));
+        toast('Scheduled -- '+String(when).slice(0,80));
       }else{
-        toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
+        const why=(r&&(r.error||r.detail||r.reason||r.hint))||'Cortex engine offline';
+        toast('Agent saved, but NOT scheduled: '+why);
       }
     }catch(e){
-      toast('Agent saved, but NOT scheduled — Cortex engine unreachable');
+      toast('Agent saved, but NOT scheduled -- Cortex engine unreachable');
     }
   }
   setCortexActiveAgent(agent);
@@ -9066,24 +9128,28 @@ async function routineDraftPreview(){
   if(!goal){toast('Tell me what to do first');return}
   try{
     const r=await api('/api/cortex/routines/draft',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
-    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
+    if(!r.ok){toast(_explainedToast(r.detail||r.error||r.reason));return}
     _routinePreview=Object.assign({}, r.draft||{}, {suggestions:r.suggestions||[], goal});
     showRoutinesPage();
-  }catch(e){toast('Could not reach Cortex — is the engine on :8010?')}
+  }catch(e){toast('Could not reach Cortex -- is the engine on :8010?')}
 }
 async function routineCreateFromPreview(){
   const goal=(_routinePreview&&(_routinePreview.goal||_routinePreview.prompt))||'';
   if(!goal){toast('Tell me what to do first');return}
   try{
     const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
-    if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
-    _routinePreview=null;toast('Routine created');showRoutinesPage();
+    if(!r.ok){toast(_explainedToast(r.detail||r.error||r.reason));return}
+    const next=r.next_run_at||(r.routine&&r.routine.next_run_at);
+    if(next==null||next===''){toast('NOT scheduled: '+(r.error||'no next_run_at'));return}
+    _routinePreview=null;toast('Routine created -- next_run_at '+String(next).slice(0,32));showRoutinesPage();
   }catch(e){toast('Create failed')}
 }
 async function routineRunNow(id){
   try{
     const r=await api('/api/cortex/routines/'+encodeURIComponent(id)+'/run',{method:'POST',body:'{}'}).then(x=>x.json());
-    toast(r.ok?'Running…':_explainedToast(r.detail||r.error));
+    if(!r.ok){toast(_explainedToast(r.detail||r.error||r.reason));}
+    else if(r.fired===false){toast('Routine did not fire: '+(r.error||'next_run_at did not advance'));}
+    else toast('Running... next_run_at '+String(r.next_run_at_after||r.next_run_at||'').slice(0,32));
     showRoutinesPage();
   }catch(e){toast('Run failed')}
 }
@@ -9106,19 +9172,22 @@ async function routineDelete(id){
 async function showRoutinesPage(){
   sideView='routines';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
-  let list=[], budget=null, offline=false;
+  let list=[], budget=null, offline=false, why='';
   try{
     const d=await api('/api/cortex/routines').then(x=>x.json());
     if(d&&d.ok){list=d.routines||[];budget=d.budget||null}
-    else offline=true;
-  }catch(e){offline=true}
+    else{
+      offline=true;
+      why=(d&&(typeof d.error==='string'?d.error:(d.detail||d.reason)))||'Cortex engine offline';
+    }
+  }catch(e){offline=true;why='Cortex engine unreachable'}
   const preview=_routinePreview?routinePreviewHtml(_routinePreview):'';
   const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Type one sentence below and preview it.</p>';
   const bud=budget?`<p class="hint" style="margin:0 0 10px">Today's spend: RM${esc(String(budget.spent_myr??budget.spent??0))} / RM${esc(String(budget.cap_myr??budget.cap??25))}</p>`:'';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
     <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing. For always-on goal pursuit (no schedule needed), open <button type="button" class="btn" style="display:inline;padding:2px 8px;font-size:11px;border-radius:8px" onclick="showSeekPage()">Seek</button>.</p>
-    ${offline?'<p class="hint" style="color:#e03131">Cortex engine offline — start :8010, then refresh.</p>':''}
+    ${offline?`<p class="hint" id="routineOfflineWhy" style="color:#e03131">${esc(String(why))} -- scheduler did not fire.</p>`:''}
     ${bud}
     ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
@@ -11343,12 +11412,15 @@ function handleSlashCommand(text){
   const cmd=m[1].toLowerCase();const arg=(m[2]||'').trim();
   const full=(cmd+(arg?' '+arg.split(/\s+/)[0]:'')).toLowerCase();
   if(full==='rag new'||(cmd==='rag'&&arg.toLowerCase().startsWith('new'))){if(typeof ragCreateSpace==='function')ragCreateSpace();return true;}
-  // /skill <pack> [global|project|off] or /skill-<pack>
-  if(cmd==='skill'||cmd.startsWith('skill-')){
-    const parts=cmd.startsWith('skill-')?[cmd.slice(6),...arg.split(/\s+/)].filter(Boolean):arg.split(/\s+/).filter(Boolean);
-    const pack=(parts[0]||'').toLowerCase();
-    const scope=(parts[1]||'global').toLowerCase();
-    if(!pack){toast('Usage: /skill <pack> [global|project|off]');return true;}
+  // /skill <pack>, /skill:pack, /skill-<pack>, /anthropic-skills:pack -- explicit always wins
+  if(cmd==='skill'||cmd==='anthropic-skills'||cmd.startsWith('skill-')||cmd.startsWith('skill:')||cmd.startsWith('anthropic-skills:')){
+    let pack='', scope='global';
+    if(cmd.startsWith('skill:')){const bits=cmd.slice(6).split(/\s+/).filter(Boolean);pack=bits[0]||'';scope=(arg.split(/\s+/)[0]||'global').toLowerCase();}
+    else if(cmd.startsWith('anthropic-skills:')){pack=cmd.slice(17);scope=(arg.split(/\s+/)[0]||'global').toLowerCase();}
+    else if(cmd.startsWith('skill-')){const parts=[cmd.slice(6),...arg.split(/\s+/)].filter(Boolean);pack=parts[0]||'';scope=(parts[1]||'global').toLowerCase();}
+    else {const parts=arg.split(/\s+/).filter(Boolean);pack=parts[0]||'';scope=(parts[1]||'global').toLowerCase();}
+    pack=String(pack||'').toLowerCase();
+    if(!pack){toast('Usage: /skill:pack or /anthropic-skills:pack');return true;}
     window.pendingSkillPack=pack;
     if(['off','global','project'].includes(scope)){
       api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'enable',id:pack,scope})}).then(r=>r.json()).then(d=>{

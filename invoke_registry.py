@@ -231,6 +231,7 @@ def skill_slash_commands() -> list[dict[str, Any]]:
     """Dynamic slash entries for each skill pack + meta /skill /rules /subagent."""
     cmds: list[dict[str, Any]] = [
         {"name": "skill", "description": "Enable a skill pack (next turn + optional persist)", "args": "<pack> [global|project|off]"},
+        {"name": "anthropic-skills", "description": "Force a skill pack; explicit always wins", "args": "<pack>"},
         {"name": "rules", "description": "Show or open workspace rules", "args": "[edit]"},
         {"name": "subagent", "description": "Queue a helper subagent with a prompt", "args": "<prompt>"},
         {"name": "create-subagent", "description": "Create a focused subagent and open Cortex", "args": "<name> [prompt]"},

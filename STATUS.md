@@ -4,26 +4,29 @@
 
 ## Now
 
-0. **D02 #17-#19 thin UI** - Build tab calls the six `/api/rag/ops` endpoints.
-   Cortex-direct. Not a second ops product (P12). PR #54.
-1. **D04 #23/#24 AirGPT half** - identify ingested xlsx + Copilot prompt pack
-   + honest handoff (`awaiting_dms_receipt` until a result path is posted).
-   Not Pointer paste, not a second orchestrator. Merged PR #53.
-2. **D07 n=320 two-variant landed** (PR #52). hybrid_max **320/320** (F13b
-   floors MET). sira_max **44/320** (out_of_range only). Do not quote sira as
-   99%. n=7 CI smoke unchanged.
-3. **#42** stays OPEN until live host handshake. **#31/#32** already CLOSED.
-4. **P13** `multilingual_gate.py` 7/25, deliberately red. MIN_TESTS 380 kept.
+0. **D09 #59-#61 host shell** (feat/d09-shell-59-61). Grouped tool rows
+   with +N -M; scheduler names Constructor/DMS on :8010 (`wrong_surface`);
+   Skill+Use gallery off Cortex home. Slash `/skill:` wins. Verify-close
+   owed (R-0003). Do not push/merge from this run.
+1. **D02 #17-#19 thin UI** - Build tab calls the six `/api/rag/ops`
+   endpoints. Cortex-direct. PR #54 merged.
+2. **D04 #23/#24** identify + Copilot pack + honest handoff. PR #53.
+3. **D07 n=320** hybrid_max 320/320; sira_max 44/320. Do not quote sira
+   as 99%. **#42** OPEN until live handshake. **P13** deliberately red.
+4. **MIN_TESTS 380** kept. `multilingual_gate.py` 7/25, not xfailed.
 
 ## Next
 
 0. **#13/#36 stay OPEN** - different-run close. sira_max is not ~99% (R-0003).
 1. **D03** #27/#28 honesty; #42 live handshake.
 2. Do not work #9/#10 (P11). Do not implement DR-0003 grants.
+3. D09 close needs a different-run verify. Cortex scheduler still cannot
+   fire while :8010 is Constructor/DMS, not Cortex.
 
 ## WIP
 
-In flight: D02 #16/#37, D04 #22, D07 #36, D03 #26. Queued: D08 #38.
+In flight: D09 #59/#60/#61. Also D02 #16/#37, D04 #22, D07 #36, D03 #26.
+Queued: D08 #38.
 
 ## Later
 
@@ -32,3 +35,4 @@ In flight: D02 #16/#37, D04 #22, D07 #36, D03 #26. Queued: D08 #38.
 ## Demo open
 
 - `tests/RAG/DEMO_RAG.md`. Build tab: Excel Copilot pack card + Ops amend card.
+

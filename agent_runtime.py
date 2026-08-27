@@ -686,5 +686,10 @@ def _safe_tool_event(name: str, result: dict) -> dict:
 
         ev = {"type": "tool", "name": name, "result": safe_tool_result(result)}
     except Exception:
-        ev = {"type": "tool", "name": name, "result": {"ok": result.get("ok")}}
+        lean = {"ok": result.get("ok")}
+        if "added_lines" in result:
+            lean["added_lines"] = result.get("added_lines")
+        if "deleted_lines" in result:
+            lean["deleted_lines"] = result.get("deleted_lines")
+        ev = {"type": "tool", "name": name, "result": lean}
     return ev

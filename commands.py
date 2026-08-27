@@ -16,6 +16,7 @@ COMMANDS: list[dict[str, Any]] = [
     {"name": "create-subagent", "description": "Create a focused subagent and open Cortex", "args": "<name> [prompt]"},
     {"name": "edit", "description": "Tweak the last agent / open edit hints", "args": "[what to change]"},
     {"name": "skill", "description": "Enable a skill pack", "args": "<pack> [global|project|off]"},
+    {"name": "anthropic-skills", "description": "Force a skill pack (explicit always wins)", "args": "<pack>"},
     {"name": "rules", "description": "Show or edit workspace rules", "args": "[edit]"},
     {"name": "subagent", "description": "Queue a helper subagent", "args": "<prompt>"},
     {"name": "research", "description": "Fan out background research subagents on a topic", "args": "<topic>"},
@@ -56,6 +57,16 @@ def parse_slash(text: str) -> dict | None:
     body = s[1:].strip()
     if not body:
         return {"command": "", "args": "", "raw": s}
+    # /skill:pack and /anthropic-skills:pack -- explicit always wins (DR-0002)
+    if body.lower().startswith("skill:") or body.lower().startswith("anthropic-skills:"):
+        head, rest = body.split(":", 1)
+        pack_and_scope = rest.strip()
+        return {
+            "command": head.lower(),
+            "args": pack_and_scope,
+            "raw": s,
+            "pack": (pack_and_scope.split(None, 1)[0] if pack_and_scope else "").lower(),
+        }
     # longest-name match first
     names = sorted({c["name"] for c in _all_commands()}, key=len, reverse=True)
     lower = body.lower()

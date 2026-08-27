@@ -2,6 +2,22 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-08-27 -- D09 #59 #60 #61 Open WebUI-class host shell (EPIC-D09 #56)
+
+- SHELL-01: `fs_write` / `fs_patch` return `added_lines` / `deleted_lines`.
+  `runCortexAgentStream` groups consecutive tool events into expandable
+  rows (kinds, counts, +N -M). `tool_readout.py` is the testable grouping.
+- SHELL-02: `cortex_client.scheduler_status` names why the scheduler cannot
+  fire. Live :8010 this session is Constructor/DMS (`pack=dms`); create/run
+  refuse with `wrong_surface` instead of a green Scheduled toast. Forced
+  run on a real Cortex mock advances `next_run_at`. No `schedule_hint`.
+- SHELL-03: Cortex home no longer mounts the Skill+Use gallery. Cortex
+  auto-wires tools; `/skill:` and `/anthropic-skills:` still win.
+  `skill_pack` stays on the wire, client-filled only when slash-forced.
+- Gate `tests/test_d09_shell_gate.py` never skips. MIN_TESTS stays 380.
+  `multilingual_gate.py` untouched. Tickets stay OPEN for different-run
+  verify (R-0003).
+
 ## 2026-08-26 — D04 #23/#24 AirGPT half: identify + Copilot pack + honest reveal
 
 - `rag/xlsx_orch.py` locates an ingested xlsx (schema + name; no first-file

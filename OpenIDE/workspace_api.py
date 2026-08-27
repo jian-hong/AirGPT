@@ -1,6 +1,7 @@
 """OpenIDE workspace: repo bind, path-jailed filesystem, checkpoints."""
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
@@ -164,16 +165,56 @@ def read_file(rel: str, *, max_bytes: int = 512_000) -> dict:
         return {"ok": False, "error": str(e)[:200]}
 
 
+def line_deltas(before: str, after: str) -> tuple[int, int]:
+    """Return (added_lines, deleted_lines) so the host shell can show +N -M."""
+    a = (before or "").splitlines()
+    b = (after or "").splitlines()
+    added = deleted = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b).get_opcodes():
+        if tag == "insert":
+            added += j2 - j1
+        elif tag == "delete":
+            deleted += i2 - i1
+        elif tag == "replace":
+            deleted += i2 - i1
+            added += j2 - j1
+    return added, deleted
+
+
+def _file_text(target: Path) -> str:
+    if not target.is_file():
+        return ""
+    try:
+        return target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
 def write_file(rel: str, content: str, *, apply: bool = True) -> dict:
     target, err = resolve_rel(rel)
     if err or not target:
         return {"ok": False, "error": err or "invalid"}
+    after = content or ""
+    added, deleted = line_deltas(_file_text(target), after)
     if not apply:
-        return {"ok": True, "preview": True, "path": rel, "bytes": len(content or "")}
+        return {
+            "ok": True,
+            "preview": True,
+            "path": rel,
+            "bytes": len(after),
+            "added_lines": added,
+            "deleted_lines": deleted,
+        }
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content or "", encoding="utf-8")
-        return {"ok": True, "path": rel, "bytes": len(content or "")}
+        target.write_text(after, encoding="utf-8")
+        return {
+            "ok": True,
+            "path": rel,
+            "bytes": len(after),
+            "added_lines": added,
+            "deleted_lines": deleted,
+        }
     except OSError as e:
         return {"ok": False, "error": str(e)[:200]}
 
@@ -211,9 +252,23 @@ def patch_file(rel: str, old: str, new: str, *, apply: bool = True) -> dict:
     if old not in content:
         return {"ok": False, "error": "old text not found"}
     updated = content.replace(old, new, 1)
-    diff = {"path": rel, "before_len": len(content), "after_len": len(updated)}
+    added, deleted = line_deltas(content, updated)
+    diff = {
+        "path": rel,
+        "before_len": len(content),
+        "after_len": len(updated),
+        "added_lines": added,
+        "deleted_lines": deleted,
+    }
     if not apply:
-        return {"ok": True, "preview": True, "diff": diff, "content": updated}
+        return {
+            "ok": True,
+            "preview": True,
+            "diff": diff,
+            "content": updated,
+            "added_lines": added,
+            "deleted_lines": deleted,
+        }
     return {**write_file(rel, updated, apply=True), "diff": diff}
 
 

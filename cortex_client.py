@@ -605,45 +605,163 @@ def _json_call(
 def _wf_down(detail: str = "Cortex engine offline") -> dict[str, Any]:
     return {
         "ok": False,
+        "reason": "cortex_down",
         "error": detail,
-        "hint": "Start Cortex on :8010 (CORTEX_AUTOSPAWN=1) or open Hosting → Netie Engine",
+        "hint": "Start Cortex on :8010 (CORTEX_AUTOSPAWN=1) or open Hosting -> Netie Engine",
+    }
+
+
+def _next_run_at(obj: dict[str, Any] | None) -> Any:
+    if not isinstance(obj, dict):
+        return None
+    if obj.get("next_run_at") not in (None, ""):
+        return obj.get("next_run_at")
+    rt = obj.get("routine") if isinstance(obj.get("routine"), dict) else {}
+    return rt.get("next_run_at")
+
+
+def scheduler_status(*, try_spawn: bool = False) -> dict[str, Any]:
+    """Named reason the Cortex scheduler can fire. Never a silent no-op.
+
+    :8010 answering GET /health is not enough. Constructor/DMS returns
+    {status:ok, pack:dms, surface:constructor} and 404s /api/routines.
+    """
+    h = health()
+    if not h.get("ok") and try_spawn:
+        ensure_engine(wait_sec=6.0)
+        h = health()
+    raw = h.get("raw") if isinstance(h.get("raw"), dict) else {}
+    pack = str(raw.get("pack") or "")
+    surface = str(raw.get("surface") or "")
+    url = str(h.get("url") or _cfg()[0])
+    if not h.get("ok"):
+        err = str(h.get("error") or "Cortex engine offline")
+        return {
+            "ok": False,
+            "reason": "cortex_down",
+            "error": f"Cortex down at {url}: {err}",
+            "hint": "Start Cortex with start_cortex_engine.ps1 on :8010.",
+            "url": url,
+            "pack": pack,
+            "surface": surface,
+        }
+    if pack == "dms" or surface == "constructor":
+        who = surface or "Constructor/DMS"
+        return {
+            "ok": False,
+            "reason": "wrong_surface",
+            "error": (
+                f"{url} is {who} (pack={pack or 'dms'}), not the Cortex engine. "
+                "/api/routines is 404 here; the scheduler cannot fire."
+            ),
+            "hint": "Point CORTEX_API_URL at Cortex, or stop Constructor/DMS on that port.",
+            "url": url,
+            "pack": pack,
+            "surface": surface,
+        }
+    listed = _json_call("GET", "/api/routines", None, timeout=3.0)
+    http = listed.get("_http")
+    if listed.get("ok"):
+        out = dict(listed)
+        out["reason"] = "live"
+        out["url"] = url
+        out["pack"] = pack
+        out["surface"] = surface
+        return out
+    if http == 404:
+        return {
+            "ok": False,
+            "reason": "no_scheduler",
+            "error": (
+                f"{url} answered /health but GET /api/routines returned 404. "
+                "Not a Cortex scheduler."
+            ),
+            "hint": "This process is not the Cortex engine.",
+            "url": url,
+            "pack": pack,
+            "surface": surface,
+        }
+    return {
+        "ok": False,
+        "reason": "cortex_down",
+        "error": str(listed.get("error") or listed.get("detail") or "Cortex scheduler unreachable"),
+        "hint": "Start Cortex on :8010.",
+        "url": url,
+        "pack": pack,
+        "surface": surface,
+        "_http": http,
     }
 
 
 def routines_list() -> dict[str, Any]:
-    ensure_engine(wait_sec=6.0)
-    data = _get("/api/routines", timeout=3.0)
-    if isinstance(data, dict) and data.get("ok"):
-        return data
-    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+    return scheduler_status(try_spawn=True)
 
 
 def routines_draft(goal: str) -> dict[str, Any]:
-    """POST /api/routines/draft — preview only; nothing saved."""
-    ensure_engine(wait_sec=6.0)
+    """POST /api/routines/draft -- preview only; nothing saved."""
+    st = scheduler_status(try_spawn=True)
+    if not st.get("ok"):
+        return st
     return _json_call("POST", "/api/routines/draft", {"goal": goal}, timeout=6.0)
 
 
 def routines_create(goal: str, **extra: Any) -> dict[str, Any]:
-    """POST /api/routines — one sentence is enough; extras optional overrides."""
-    ensure_engine(wait_sec=6.0)
+    """POST /api/routines. Refuses without a real next_run_at (no schedule theater)."""
+    st = scheduler_status(try_spawn=True)
+    if not st.get("ok"):
+        return st
     body = {"goal": goal, **{k: v for k, v in extra.items() if v is not None}}
-    return _json_call("POST", "/api/routines", body, timeout=8.0)
+    out = _json_call("POST", "/api/routines", body, timeout=8.0)
+    nxt = _next_run_at(out)
+    if out.get("ok") and nxt in (None, ""):
+        out["ok"] = False
+        out["reason"] = "no_next_run"
+        out["error"] = "Cortex accepted the goal but returned no next_run_at -- not scheduled"
+    elif out.get("ok"):
+        out["reason"] = "live"
+        out["next_run_at"] = nxt
+    return out
 
 
 def routines_pause(rid: str, reason: str = "user") -> dict[str, Any]:
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("POST", f"/api/routines/{rid}/pause", {"reason": reason}, timeout=4.0)
 
 
 def routines_resume(rid: str) -> dict[str, Any]:
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("POST", f"/api/routines/{rid}/resume", {}, timeout=4.0)
 
 
 def routines_run(rid: str) -> dict[str, Any]:
-    return _json_call("POST", f"/api/routines/{rid}/run", {}, timeout=60.0)
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
+    before = _next_run_at(_json_call("GET", f"/api/routines/{rid}", None, timeout=4.0))
+    out = _json_call("POST", f"/api/routines/{rid}/run", {}, timeout=60.0)
+    after = _next_run_at(out)
+    if after in (None, ""):
+        after = _next_run_at(_json_call("GET", f"/api/routines/{rid}", None, timeout=4.0))
+    out["next_run_at_before"] = before
+    out["next_run_at_after"] = after
+    if after not in (None, ""):
+        out["next_run_at"] = after
+    fired = bool(out.get("ok") and after not in (None, "") and after != before)
+    out["fired"] = fired
+    if out.get("ok") and not fired:
+        out["error"] = "routine did not fire: next_run_at did not advance"
+        out["reason"] = "did_not_fire"
+    return out
 
 
 def routines_delete(rid: str) -> dict[str, Any]:
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("DELETE", f"/api/routines/{rid}", timeout=4.0)
 
 
