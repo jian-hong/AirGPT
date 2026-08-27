@@ -2033,6 +2033,40 @@ def _rag_check_build_paths(space_id: int, srcs: list, requested) -> tuple[list[s
     return out, ""
 
 
+def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
+    """Read a consent flag out of untyped JSON. Only a real boolean `true` is yes.
+
+    `bool("false")` is True in Python, so a JSON *string* "false" — a user saying
+    no in as many words — read as consent. Observed over real HTTP (#18):
+    confirm-identity yes="false" returned status 'confirmed', confirm-amend
+    yes="false" returned status 'written' and the salary cell went 50000.0 ->
+    54000.0. An unconfirmed amend landed on an explicit no.
+
+    Strings, numbers, null and a missing key are none of them a yes. Ambiguity
+    fails CLOSED — it is reported as a refusal, so the pending gate records a
+    rejection and nothing is written. Deliberately not raised as an error: an
+    error would leave the gate still open, and a malformed consent must not be
+    retryable into a write.
+
+    Returns (consent, why); a non-empty `why` names what was sent instead so the
+    refusal states its cause rather than looking like an ordinary no.
+    """
+    if not isinstance(data, dict):
+        return False, f"request body must be a JSON object; got {type(data).__name__}. Read as NO."
+    if key not in data:
+        return False, ""
+    v = data[key]
+    if v is True:
+        return True, ""
+    if v is False:
+        return False, ""
+    # `1 is True` is False in CPython, so an int 1 lands here too — as it must.
+    return False, (
+        f"{key!r} must be a JSON boolean, not {type(v).__name__} {v!r}. "
+        "Read as NO — nothing was written."
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
@@ -5441,10 +5475,11 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import ops_amend
 
                 data = json.loads(self._body().decode() or "{}")
-                out = ops_amend.confirm_identity(
-                    str(data.get("token") or ""),
-                    bool(data.get("yes")),
-                )
+                # Strict: only a real JSON boolean true is consent (#18).
+                consent, why = _explicit_consent(data)
+                out = ops_amend.confirm_identity(str(data.get("token") or ""), consent)
+                if why and isinstance(out, dict):
+                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
@@ -5468,7 +5503,11 @@ class Handler(BaseHTTPRequestHandler):
                 from rag import ops_amend
 
                 data = json.loads(self._body().decode() or "{}")
-                out = ops_amend.confirm_amend(str(data.get("token") or ""), bool(data.get("yes")))
+                # Strict: only a real JSON boolean true authorises the write (#18).
+                consent, why = _explicit_consent(data)
+                out = ops_amend.confirm_amend(str(data.get("token") or ""), consent)
+                if why and isinstance(out, dict):
+                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
