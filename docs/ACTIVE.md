@@ -3,13 +3,20 @@
 What exists in this repo and where. Update when structure changes, not when state changes
 - state lives in STATUS.md.
 
-- `invoke_registry.py` — rules / skills / slash catalog. Product packs:
-  `data/skills/` (gitignored). Suite packs: `tests/fixtures/skills/`.
+- `commands.py` `peel_skill_slash` — `/skill`, `/skill:`, `/skill-`,
+  `/anthropic-skills:` arm a pack; remainder is the job (SHELL-03).
 - `openpyxl` and `pandas` are product xlsx deps (`rag/ingest.py`,
   `rag/xlsx_sql.py`) and live in `requirements.txt`. `sqlite-vec` stays opt-in.
+- `rag/chunking.py` -- parent/child: heading + paragraph windows (prose),
+  code-symbol parents (source), whole-row children (`table=True` for
+  xlsx/csv). Never regex-the-file; never mid-row char-split.
+- `rag/sira.py` `tokenize` / `TOKENIZER_ID=unicode_v1` -- CHUNK-02; ASCII
+  identifiers plus CJK/Thai n-grams and Hangul/Arabic/Cyrillic letter runs.
+- `cortex_client.scheduler_status` -- named refusal (`wrong_surface` /
+  `cortex_down` / `no_scheduler`). AirGPT host clock is legacy-only.
+- `clipdrop._rag_check_build_paths` -- `/build` paths must be this space.
 - `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
-  (DR-0006 / #33). `rebuild_source_paths` prefers Docs original over the
-  extracted blob; `backfill_docs_originals` fills missing `docs_path` (#34).
+  (DR-0006 / #33). `table=True` for xlsx/csv. Rebuild prefers Docs original.
 - `rag/xlsx_sql.py` — production xlsx loader + SQL-ish KPI answers. Product
   must not import this from `tests/`.
 - `rag/xlsx_orch.py` — F15 / EPIC-D04 AirGPT half: identify ingested xlsx +
@@ -21,3 +28,6 @@ What exists in this repo and where. Update when structure changes, not when stat
   generated question set; CI smoke `tests/RAG/results/oracle_cross_latest.json`
   (frtr_0001 n=7). Pack: `oracle_cross_primary50_{1..4}.json` + pooled
   `oracle_cross_primary50.json` (n=320, F13b floors on hybrid_max).
+- `idea_to_paper.py` — OpenVault `/v1/chat/completions` + Cortex constructor
+  recommend/generate + pytest gate 80. HTTP `POST /api/research/idea-to-paper`,
+  skill `.cursor/skills/idea-to-paper/`. Cursor is not the generator.

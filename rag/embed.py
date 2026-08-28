@@ -24,7 +24,12 @@ BGE_MODEL_ID = "BAAI/bge-small-en-v1.5"
 def _hash_embed(text: str, dim: int = DEFAULT_DIM) -> list[float]:
     """Cheap deterministic bag-of-hashes embedding (no model download)."""
     vec = [0.0] * dim
-    toks = (text or "").lower().split()
+    try:
+        from rag.sira import tokenize
+
+        toks = tokenize(text)
+    except Exception:
+        toks = (text or "").lower().split()
     if not toks:
         toks = ["_empty_"]
     for tok in toks:

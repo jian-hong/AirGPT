@@ -106,7 +106,9 @@ _last_img_hash = ""
 _last_text_hash = ""
 _suppress_clipboard_until = 0.0
 _seen_ss: dict[str, float] = {}
-_tunnel = {"url": "", "provider": "", "status": "off", "error": "", "healthy": False, "started_at": 0}
+_tunnel = {"url": "", "provider": "", "status": "off", "error": "", "healthy": False, "started_at": 0,
+           # last_provider survives a failed sweep; provider is only ever the one serving.
+           "last_provider": ""}
 _tunnel_procs: list[subprocess.Popen] = []
 _tunnel_lock = threading.Lock()
 _health_fails = 0
@@ -587,6 +589,47 @@ def _chat_stream_events(
             "ok": False,
         }
         return
+    if web_search:
+        try:
+            import cortex_client
+
+            yield {"type": "thinking", "text": "Cortex quality loop…", "session_id": session_id}
+            cortex = cortex_client.engine_agent_loop(
+                question or "",
+                session_id=f"chat-{session_id}",
+                max_steps=6,
+                tools=["web_search", "web_fetch"],
+            )
+        except Exception as e:
+            cortex = {"ok": False, "error": str(e)[:200]}
+        if isinstance(cortex, dict) and cortex.get("ok") and (cortex.get("content") or "").strip():
+            for t in ((cortex.get("telemetry") or {}).get("tools") or []):
+                if isinstance(t, dict):
+                    yield {
+                        "type": "thinking",
+                        "text": f"tool {t.get('tool')}: {t.get('summary') or t.get('ok')}",
+                        "session_id": session_id,
+                    }
+            analysis = str(cortex.get("content") or "")
+            yield {"type": "token", "text": analysis, "session_id": session_id}
+            yield {
+                "type": "done",
+                "analysis": analysis,
+                "model": "cortex-agent",
+                "session_id": session_id,
+                "stop_reason": cortex.get("stop_reason"),
+                "quality_passed": cortex.get("quality_passed"),
+                "runner": "agent_task",
+            }
+            return
+        why = ""
+        if isinstance(cortex, dict):
+            why = str(cortex.get("error") or cortex.get("stop_reason") or "")[:180]
+        yield {
+            "type": "thinking",
+            "text": f"Quality loop skipped: {why or 'no answer'}",
+            "session_id": session_id,
+        }
     if not _is_online():
         yield {"type": "error", "text": "AI chat needs internet or local API keys. Manual local chat still works."}
         return
@@ -1627,6 +1670,20 @@ def _with_deadline(fn, default, timeout: float = 2.0):
         pool.shutdown(wait=False)
 
 
+# What /api/hosting answers while a cold backend fan-out is still in flight. Say
+# "checking", never "offline": a slow probe is not a dead backend, and the poll
+# 8s later gets the real verdict off hosting.py's warmed cache.
+_HOSTING_PENDING: dict = {
+    "ok": True,
+    "pending": True,
+    "ollama": {"ok": False, "status": "checking"},
+    "vllm": {"ok": False, "status": "checking"},
+    "sglang": {"ok": False, "status": "checking"},
+    "colibri": {"ok": False, "status": "checking"},
+    "collaboration": {"note": "Checking backend health…"},
+}
+
+
 def _cortex_info(*, quick: bool = False) -> dict:
     now = time.time()
     key = "quick" if quick else "full"
@@ -1665,18 +1722,108 @@ def _cortex_info(*, quick: bool = False) -> dict:
         return info
 
 
-def _probe_tunnel_url(url: str, attempts: int = 24, delay: float = 2.0) -> bool:
+# --- HOST-DEMO-03 tunnel wall-clock budgets -------------------------------------
+# Nothing here bounded time. _probe_tunnel_url ran 24 attempts x (6s urlopen + 2s
+# sleep) = up to ~192s for one doomed candidate; the four read windows alone totalled
+# ~172s per pass and tunnel_worker made two passes. "No provider is reachable" took
+# roughly six minutes to say, which the founder reads as a hang, not as an answer
+# (R-0011). Everything below is sized so a sweep either succeeds or reports.
+#
+# Per-provider slice for reading stdout until a forwarding URL appears. Sized from
+# what each provider actually costs to start: npx has to cold-start localtunnel out
+# of the registry, so it gets the widest slice; the two ssh providers print their
+# banner within a couple of seconds or never; cloudflared answers in single digits
+# unless it is rate-limited, in which case it says so immediately. R-0005: these are
+# the slow-but-still-working ceiling, not the typical case - a provider that is going
+# to work is comfortably inside its slice.
+TUNNEL_PROVIDER_BUDGET = {
+    "cloudflared": 30.0,
+    "localhost.run": 20.0,
+    "localtunnel": 25.0,
+    "serveo.net": 20.0,
+}
+# Wall clock for the whole sweep, probes included. 90s fits one honest pass over all
+# four providers (30+20+25+20 = 95, the tail clamped by whatever is left).
+TUNNEL_SWEEP_BUDGET = 90.0
+# Below this there is no honest attempt left to make. Say "not tried" rather than
+# starting a provider we are about to cut off mid-handshake.
+TUNNEL_MIN_SLICE = 8.0
+# Breather between providers so a rate-limiter sees a gap, skipped once the budget
+# is thin - it is dead time, and dead time is the thing being bounded.
+TUNNEL_PROVIDER_GAP = 2.0
+# Reachability budget for a URL that has just been printed. The probe leaves this PC,
+# reaches the provider edge and comes back in - single-digit seconds once the edge is
+# live, so 20s is edge-propagation headroom, not a hang.
+TUNNEL_PROBE_BUDGET = 20.0
+
+# Per-provider outcomes of the current/last sweep, published on /api/info.
+_tunnel_attempts: list[dict] = []
+# Monotonic wall-clock deadline of the sweep in flight; 0.0 when none is.
+_tunnel_deadline: dict = {"at": 0.0}
+
+
+def _probe_budget() -> float:
+    """Probe budget for a URL that just appeared, clamped by the sweep's wall clock.
+
+    Never returns zero: handing a working tunnel a 0s probe would reject it, and a
+    control that refuses working work is a failure, not a win (R-0005).
+    """
+    at = float(_tunnel_deadline.get("at") or 0.0)
+    if not at:
+        return TUNNEL_PROBE_BUDGET
+    return max(4.0, min(TUNNEL_PROBE_BUDGET, at - time.monotonic()))
+
+
+def _attempt(provider: str, ok: bool, reason: str, url: str = "", started: float = 0.0) -> dict:
+    """One provider's outcome, in the shape /api/info publishes."""
+    return {
+        "provider": provider,
+        "ok": ok,
+        "reason": reason,
+        "url": url,
+        "elapsed_s": round(time.monotonic() - started, 1) if started else 0.0,
+    }
+
+
+def _record_attempt(res: dict, attempt: int = 1) -> dict:
+    res["attempt"] = attempt
+    with _tunnel_lock:
+        _tunnel_attempts.append(res)
+    return res
+
+
+def _no_url_reason(proc: subprocess.Popen, started: float) -> str:
+    """Why a read window closed without a forwarding URL - exit vs. silence."""
+    waited = time.monotonic() - started
+    code = proc.poll()
+    if code is not None:
+        return f"process exited (code {code}) after {waited:.0f}s without printing a forwarding URL"
+    return f"no forwarding URL printed in {waited:.0f}s"
+
+
+def _probe_tunnel_url(url: str, attempts: int = 8, delay: float = 1.5,
+                      timeout: float = 5.0, budget: float = TUNNEL_PROBE_BUDGET) -> tuple[bool, str]:
+    """Does `url` route back to us? Returns (ok, reason) - the reason goes on the wire."""
     import urllib.request
-    for _ in range(attempts):
+
+    deadline = time.monotonic() + max(1.0, budget)
+    why = "no probe attempt fitted in the budget"
+    tried = 0
+    while tried < attempts and time.monotonic() < deadline:
+        tried += 1
         try:
             req = urllib.request.Request(f"{url.rstrip('/')}/api/probe", headers={"Cache-Control": "no-store"})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = json.loads(r.read())
             if data.get("ok") is True:
-                return True
-        except Exception:
-            time.sleep(delay)
-    return False
+                return True, "ok"
+            why = "answered /api/probe without ok:true"
+        except Exception as e:
+            why = f"{type(e).__name__}: {str(e)[:90]}"
+        if time.monotonic() + delay >= deadline:
+            break
+        time.sleep(delay)
+    return False, f"{why} ({tried} probe attempts, {budget:.0f}s budget)"
 
 
 def _tunnel_provider_label() -> str:
@@ -1695,17 +1842,21 @@ def _tunnel_provider_label() -> str:
     return ""
 
 
-def _set_tunnel(url: str, provider: str) -> bool:
-    if not _probe_tunnel_url(url):
-        _tunnel.update(url="", provider="", status=f"{provider} unreachable", error=f"{url} did not pass /api/probe", healthy=False)
+def _set_tunnel(url: str, provider: str, *, probe_budget: float = TUNNEL_PROBE_BUDGET) -> tuple[bool, str]:
+    """Adopt `url` if it probes clean. Returns (ok, reason); the reason is reported,
+    not just printed - a rejection the founder cannot see is the R-0011 shape."""
+    ok, why = _probe_tunnel_url(url, budget=probe_budget)
+    if not ok:
+        reason = f"{url} did not pass /api/probe - {why}"
+        _tunnel.update(url="", provider="", status=f"{provider} unreachable", error=reason, healthy=False)
         bump_sync()
-        print(f"[tunnel] rejected {provider}: {url} did not pass /api/probe")
-        return False
+        print(f"[tunnel] rejected {provider}: {reason}")
+        return False, reason
     _tunnel.update(url=url, provider=provider, status="ready", error="", healthy=True, started_at=time.time())
     _qr_join_cache.clear()
     bump_sync()
     print(f"[tunnel] ready → UI sync: {url}")
-    return True
+    return True, "ok"
 
 
 def tunnel_health_loop():
@@ -1777,7 +1928,10 @@ def _is_banner_url(url: str) -> bool:
     return host.split(".")[0] in _BANNER_LABELS
 
 
-def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines: int = 120) -> str | None:
+def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines: int = 120,
+                     budget: float | None = None) -> str | None:
+    """Read stdout for a forwarding URL. `budget` clamps the read window to whatever
+    the sweep has left, so one provider cannot eat the whole wall clock."""
     _register_tunnel_proc(proc)
     lines: queue.Queue[str] = queue.Queue()
 
@@ -1790,7 +1944,10 @@ def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines:
             pass
 
     threading.Thread(target=_reader, daemon=True).start()
-    deadline = time.time() + max(8.0, timeout_lines * 0.4)
+    window = max(8.0, timeout_lines * 0.4)
+    if budget is not None:
+        window = max(1.0, min(window, budget))
+    deadline = time.time() + window
     while time.time() < deadline:
         try:
             line = lines.get(timeout=0.4)
@@ -1812,7 +1969,8 @@ def _read_tunnel_url(proc: subprocess.Popen, patterns: list[str], timeout_lines:
     return None
 
 
-def tunnel_cloudflared() -> bool:
+def tunnel_cloudflared(budget: float | None = None) -> dict:
+    started = time.monotonic()
     exe = BIN / "cloudflared.exe"
     if not exe.is_file():
         try:
@@ -1822,28 +1980,34 @@ def tunnel_cloudflared() -> bool:
                 "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe", exe)
         except Exception as e:
             print(f"[tunnel] cloudflared download failed: {e}")
-            return False
+            return _attempt("cloudflared", False,
+                            f"cloudflared.exe absent and download failed: {str(e)[:120]}", started=started)
     try:
         proc = subprocess.Popen(
             [str(exe), "tunnel", "--url", f"http://127.0.0.1:{PORT}", "--no-autoupdate"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
-        url = _read_tunnel_url(proc, [r"(https://[a-z0-9-]+\.trycloudflare\.com)"], timeout_lines=180)
+        url = _read_tunnel_url(proc, [r"(https://[a-z0-9-]+\.trycloudflare\.com)"],
+                               timeout_lines=180, budget=budget)
         if url:
             _qr_join_cache.clear()
-            if _set_tunnel(url, "cloudflared"):
+            ok, why = _set_tunnel(url, "cloudflared", probe_budget=_probe_budget())
+            if ok:
                 print(f"[tunnel] cloudflared: {url}")
-                return True
+                return _attempt("cloudflared", True, "ready", url, started)
             _kill_tunnel_procs()
-            return False
+            return _attempt("cloudflared", False, why, url, started)
+        reason = _no_url_reason(proc, started)
         _kill_tunnel_procs()
+        return _attempt("cloudflared", False, reason, started=started)
     except Exception as e:
         print(f"[tunnel] cloudflared: {e}")
-    return False
+        return _attempt("cloudflared", False, f"{type(e).__name__}: {str(e)[:120]}", started=started)
 
 
-def tunnel_localhost_run() -> bool:
+def tunnel_localhost_run(budget: float | None = None) -> dict:
+    started = time.monotonic()
     try:
         proc = subprocess.Popen(
             ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=60",
@@ -1854,38 +2018,49 @@ def tunnel_localhost_run() -> bool:
         url = _read_tunnel_url(proc, [
             r"(https://[a-zA-Z0-9.-]+\.lhr\.life)",
             r"(https://\S+\.localhost\.run)",
-        ], timeout_lines=80)
+        ], timeout_lines=80, budget=budget)
         if url:
-            if _set_tunnel(url, "localhost.run"):
+            ok, why = _set_tunnel(url, "localhost.run", probe_budget=_probe_budget())
+            if ok:
                 print(f"[tunnel] localhost.run: {url}")
-                return True
+                return _attempt("localhost.run", True, "ready", url, started)
             _kill_tunnel_procs()
+            return _attempt("localhost.run", False, why, url, started)
+        reason = _no_url_reason(proc, started)
         _kill_tunnel_procs()
+        return _attempt("localhost.run", False, reason, started=started)
     except Exception as e:
         print(f"[tunnel] localhost.run: {e}")
-    return False
+        return _attempt("localhost.run", False, f"{type(e).__name__}: {str(e)[:120]}", started=started)
 
 
-def tunnel_localtunnel() -> bool:
+def tunnel_localtunnel(budget: float | None = None) -> dict:
+    started = time.monotonic()
     try:
         proc = subprocess.Popen(
             ["npx", "--yes", "localtunnel", "--port", str(PORT)],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
-        url = _read_tunnel_url(proc, [r"(https://[a-z0-9-]+\.loca\.lt)"], timeout_lines=90)
+        url = _read_tunnel_url(proc, [r"(https://[a-z0-9-]+\.loca\.lt)"],
+                               timeout_lines=90, budget=budget)
         if url:
-            if _set_tunnel(url, "localtunnel"):
+            ok, why = _set_tunnel(url, "localtunnel", probe_budget=_probe_budget())
+            if ok:
                 print(f"[tunnel] localtunnel: {url}")
-                return True
+                return _attempt("localtunnel", True, "ready", url, started)
             _kill_tunnel_procs()
+            return _attempt("localtunnel", False, why, url, started)
+        reason = _no_url_reason(proc, started)
         _kill_tunnel_procs()
+        return _attempt("localtunnel", False, reason, started=started)
     except Exception as e:
         print(f"[tunnel] localtunnel: {e}")
-    return False
+        return _attempt("localtunnel", False, f"{type(e).__name__}: {str(e)[:120]}", started=started)
 
 
-def tunnel_serveo() -> bool:
+def tunnel_serveo(budget: float | None = None) -> dict:
+    started = time.monotonic()
     try:
         proc = subprocess.Popen(
             ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
@@ -1896,22 +2071,38 @@ def tunnel_serveo() -> bool:
         url = _read_tunnel_url(proc, [
             r"(https://[a-z0-9-]+\.serveo\.net)",
             r"(https://\S+\.serveousercontent\.com)",
-        ], timeout_lines=80)
+        ], timeout_lines=80, budget=budget)
         if url:
-            if _set_tunnel(url, "serveo.net"):
+            ok, why = _set_tunnel(url, "serveo.net", probe_budget=_probe_budget())
+            if ok:
                 print(f"[tunnel] serveo: {url}")
-                return True
+                return _attempt("serveo.net", True, "ready", url, started)
             _kill_tunnel_procs()
+            return _attempt("serveo.net", False, why, url, started)
+        reason = _no_url_reason(proc, started)
         _kill_tunnel_procs()
+        return _attempt("serveo.net", False, reason, started=started)
     except Exception as e:
         print(f"[tunnel] serveo: {e}")
-    return False
+        return _attempt("serveo.net", False, f"{type(e).__name__}: {str(e)[:120]}", started=started)
 
 
 def tunnel_worker():
+    """Sweep the providers inside TUNNEL_SWEEP_BUDGET and report every outcome.
+
+    Two things used to be missing. There was no wall clock at all - read deadlines
+    alone ran ~172s per pass over two passes - and the terminal state was one
+    hardcoded sentence, so the per-provider reasons that the code already knew were
+    print()ed and thrown away. The phone got "All tunnels failed" and nothing else.
+    Every attempt now lands in _tunnel_attempts, which /api/info publishes.
+    """
     global _health_fails
     _health_fails = 0
-    _tunnel.update(url="", provider="", status="starting", error="", healthy=False)
+    with _tunnel_lock:
+        _tunnel_attempts.clear()
+    _tunnel.update(url="", provider="", status="starting", error="", healthy=False, last_provider="")
+    deadline = time.monotonic() + TUNNEL_SWEEP_BUDGET
+    _tunnel_deadline["at"] = deadline
     bump_sync()
     providers = [
         (tunnel_cloudflared, "cloudflared"),
@@ -1919,19 +2110,52 @@ def tunnel_worker():
         (tunnel_localtunnel, "localtunnel"),
         (tunnel_serveo, "serveo.net"),
     ]
-    for attempt in range(2):
-        for fn, name in providers:
-            _tunnel.update(status=f"trying {name}" + (f" (retry {attempt + 1})" if attempt else ""))
-            bump_sync()
-            print(f"[tunnel] {_tunnel['status']}")
-            if fn():
-                return
-            time.sleep(2)
+    try:
+        for attempt in range(2):
+            exhausted = False
+            for fn, name in providers:
+                remaining = deadline - time.monotonic()
+                if remaining < TUNNEL_MIN_SLICE:
+                    exhausted = True
+                    if attempt == 0:
+                        # Named, not silently skipped: "which providers were tried"
+                        # has to include the ones we ran out of clock for.
+                        _record_attempt(_attempt(
+                            name, False,
+                            f"not tried - {TUNNEL_SWEEP_BUDGET:.0f}s sweep budget spent on earlier providers"),
+                            attempt + 1)
+                    continue
+                _tunnel.update(
+                    status=f"trying {name}" + (f" (retry {attempt + 1})" if attempt else ""),
+                    last_provider=name,
+                )
+                bump_sync()
+                print(f"[tunnel] {_tunnel['status']}")
+                res = _record_attempt(
+                    fn(budget=min(TUNNEL_PROVIDER_BUDGET.get(name, 20.0), remaining)), attempt + 1)
+                if res.get("ok"):
+                    return
+                print(f"[tunnel] {name} failed: {res.get('reason')}")
+                if TUNNEL_PROVIDER_GAP and deadline - time.monotonic() >= TUNNEL_MIN_SLICE:
+                    time.sleep(TUNNEL_PROVIDER_GAP)
+            if exhausted or deadline - time.monotonic() < TUNNEL_MIN_SLICE:
+                break
+    finally:
+        _tunnel_deadline["at"] = 0.0
+    with _tunnel_lock:
+        # One line per provider - its last word, not one line per attempt.
+        last: dict[str, str] = {}
+        for a in _tunnel_attempts:
+            last[a["provider"]] = a["reason"]
+    summary = "; ".join(f"{p}: {why}" for p, why in last.items())
     _tunnel.update(
         url="", provider="",
-        status="failed", error="All tunnels failed (Cloudflare may be rate-limited). Use LAN/hotspot or press Restart Tunnel.",
+        status="failed",
+        error=(f"No tunnel provider reachable within {TUNNEL_SWEEP_BUDGET:.0f}s — {summary}"
+               " · Use LAN/hotspot or press Restart Tunnel.")[:900],
         healthy=False,
     )
+    bump_sync()
 
 
 def _rag_rebuild_paths(srcs: list) -> list:
@@ -2006,7 +2230,6 @@ def _rag_check_build_paths(space_id: int, srcs: list, requested) -> tuple[list[s
     """
     if not isinstance(requested, (list, tuple)):
         return [], f"paths must be a list of registered source paths, got {type(requested).__name__}"
-
     allowed = _rag_registered_source_paths(srcs)
     own_dirs = [d for d in (_rag_resolved(x) for x in _rag_space_storage_dirs(space_id)) if d]
     out: list[str] = []
@@ -2027,8 +2250,7 @@ def _rag_check_build_paths(space_id: int, srcs: list, requested) -> tuple[list[s
             detail += f" (resolves to {str(p)[:200]})"
         return [], (
             detail
-            + f" — not a registered source of space {int(space_id)}. "
-            "paths may only name this space's own sources; omit paths to rebuild all."
+            + f" — not a registered source of space {int(space_id)}. "            "paths may only name this space's own sources; omit paths to rebuild all."
         )
     return out, ""
 
@@ -2037,8 +2259,7 @@ def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
     """Read a consent flag out of untyped JSON. Only a real boolean `true` is yes.
 
     `bool("false")` is True in Python, so a JSON *string* "false" — a user saying
-    no in as many words — read as consent. Observed over real HTTP (#18):
-    confirm-identity yes="false" returned status 'confirmed', confirm-amend
+    no in as many words — read as consent. Observed over real HTTP (#18):    confirm-identity yes="false" returned status 'confirmed', confirm-amend
     yes="false" returned status 'written' and the salary cell went 50000.0 ->
     54000.0. An unconfirmed amend landed on an explicit no.
 
@@ -2047,7 +2268,6 @@ def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
     rejection and nothing is written. Deliberately not raised as an error: an
     error would leave the gate still open, and a malformed consent must not be
     retryable into a write.
-
     Returns (consent, why); a non-empty `why` names what was sent instead so the
     refusal states its cause rather than looking like an ordinary no.
     """
@@ -3121,6 +3341,11 @@ class Handler(BaseHTTPRequestHandler):
                 "tunnel_status": _tunnel.get("status"),
                 "tunnel_provider": _tunnel_provider_label(),
                 "tunnel_error": _tunnel.get("error"),
+                # HOST-DEMO-03: which providers were tried and why each one failed,
+                # on the wire the phone reads - not in a log line the founder cannot see.
+                "tunnel_attempts": list(_tunnel_attempts),
+                "tunnel_last_provider": _tunnel.get("last_provider") or "",
+                "tunnel_budget_s": TUNNEL_SWEEP_BUDGET,
                 "tunnel_uptime_s": int(time.time() - _tunnel["started_at"]) if _tunnel.get("started_at") else 0,
                 "devices": devices,
                 "firewall": _firewall_status,
@@ -3269,7 +3494,25 @@ class Handler(BaseHTTPRequestHandler):
 
                 research_lib.ensure()
                 research_lib.seed_agents()
-                return self._json(200, research_lib.list_library())
+                lib = research_lib.list_library()
+                try:
+                    import idea_to_paper
+
+                    lib["runs"] = idea_to_paper.list_runs().get("runs") or []
+                except Exception:
+                    lib["runs"] = []
+                return self._json(200, lib)
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/research/runs":
+            try:
+                import idea_to_paper
+
+                rid = (q.get("id") or [""])[0]
+                if rid:
+                    return self._json(200, idea_to_paper.get_run(str(rid)))
+                return self._json(200, idea_to_paper.list_runs())
             except Exception as e:
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
@@ -4025,7 +4268,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/hosting":
             try:
                 import hosting
-                return self._json(200, hosting.status())
+                # hosting.status() throttles its backend pings behind a TTL, but a cold
+                # cache (or a .env re-point) still fans out to four backends. This route
+                # is polled every 8s by the Hosting page, so it gets the same treatment
+                # as /api/info: never hold the request thread on a hung backend. The
+                # abandoned worker keeps running and warms the cache for the next poll.
+                return self._json(200, _with_deadline(
+                    hosting.status, _HOSTING_PENDING, timeout=3.0))
             except Exception as e:
                 return self._json(503, {"error": str(e)[:200]})
 
@@ -5066,9 +5315,10 @@ class Handler(BaseHTTPRequestHandler):
             url = str(data.get("url", "")).strip().rstrip("/")
             if not url.startswith("https://"):
                 return self._json(400, {"error": "https tunnel URL required"})
-            if _set_tunnel(url, "cloudflared"):
+            ok, why = _set_tunnel(url, "cloudflared")
+            if ok:
                 return self._json(200, {"ok": True, "url": url})
-            return self._json(400, {"ok": False, "error": _tunnel.get("error") or "tunnel probe failed"})
+            return self._json(400, {"ok": False, "error": why or _tunnel.get("error") or "tunnel probe failed"})
 
         if path == "/api/agents":
             try:
@@ -5137,7 +5387,7 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     if not self._sse_send(ev):
                         break
-                return
+                return self._sse_end()
             except Exception as e:
                 return self._json(500, {"error": str(e)[:200]})
 
@@ -5478,8 +5728,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Strict: only a real JSON boolean true is consent (#18).
                 consent, why = _explicit_consent(data)
                 out = ops_amend.confirm_identity(str(data.get("token") or ""), consent)
-                if why and isinstance(out, dict):
-                    out["consent_warning"] = why
+                if why and isinstance(out, dict):                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
@@ -5506,8 +5755,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Strict: only a real JSON boolean true authorises the write (#18).
                 consent, why = _explicit_consent(data)
                 out = ops_amend.confirm_amend(str(data.get("token") or ""), consent)
-                if why and isinstance(out, dict):
-                    out["consent_warning"] = why
+                if why and isinstance(out, dict):                    out["consent_warning"] = why
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
@@ -6104,6 +6352,28 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
 
+        if path == "/api/research/idea-to-paper":
+            try:
+                import idea_to_paper
+
+                data = json.loads(self._body().decode() or "{}")
+                rid = str(data.get("run_id") or "").strip()
+                if rid and data.get("resume"):
+                    return self._json(200, idea_to_paper.start_run(resume_id=rid, sync=bool(data.get("sync"))))
+                if rid and (data.get("continue") or data.get("continue_run")):
+                    return self._json(200, idea_to_paper.start_run(continue_id=rid, sync=bool(data.get("sync"))))
+                return self._json(
+                    200,
+                    idea_to_paper.start_run(
+                        str(data.get("idea") or ""),
+                        str(data.get("non_goals") or ""),
+                        domain_hint=str(data.get("domain") or "software"),
+                        sync=bool(data.get("sync")),
+                    ),
+                )
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/research/draft":
             try:
                 import research as research_lib
@@ -6474,7 +6744,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import cortex_client
                 body = json.loads(self._body().decode() or "{}")
-                out = cortex_client.routines_create(str(body.get("goal") or body.get("prompt") or ""))
+                out = cortex_client.routines_create(
+                    str(body.get("goal") or body.get("prompt") or ""),
+                    agent_id=int(body.get("agent_id") or 0),
+                )
                 return self._json(int(out.get("_http") or (200 if out.get("ok") else 400)), out)
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})

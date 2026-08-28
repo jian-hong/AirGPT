@@ -173,8 +173,10 @@ def normalize_text(text: str, *, path: str | Path | None = None, suffix: str | N
 
 
 def jaccard_tokens(a: str, b: str) -> float:
-    ta = set(re.findall(r"[a-zA-Z0-9_]{2,}", (a or "").lower()))
-    tb = set(re.findall(r"[a-zA-Z0-9_]{2,}", (b or "").lower()))
+    from rag.sira import tokenize
+
+    ta = set(tokenize(a))
+    tb = set(tokenize(b))
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / float(len(ta | tb))
@@ -182,7 +184,9 @@ def jaccard_tokens(a: str, b: str) -> float:
 
 def salience_score(text: str, terms: list[str] | None = None) -> float:
     """Proxy information density: rare-term hits + unique token fraction."""
-    toks = re.findall(r"[a-zA-Z0-9_]{2,}", (text or "").lower())
+    from rag.sira import tokenize
+
+    toks = tokenize(text)
     if not toks:
         return 0.0
     uniq = len(set(toks)) / float(len(toks))

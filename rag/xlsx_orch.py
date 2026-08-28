@@ -4,15 +4,20 @@ AirGPT locates an ingested xlsx and drafts a structured Excel Copilot prompt
 pack. DMS owns cross-check. Pointer owns paste. AirGPT does not drive Copilot,
 does not paste, and does not become a second orchestrator (P3 superseded).
 
-Handoff consume is a posted durable path (DMS XLSX-ORCH-11 when that wire
-exists). Until then status is ``awaiting_dms_receipt`` — visible, not silent
-(R-0011). Reveal reuses ``rag.reveal`` (#14).
+Handoff POSTs the pack to DMS ``POST /v1/studio/xlsx-orch/crosscheck``. DMS
+down stays ``awaiting_dms_receipt`` with the cause named (R-0011). DMS accept
+becomes ``awaiting_pointer_receipt``. A durable result path (DMS #31 /
+Pointer receipt) is still posted to ``consume_result``. Reveal reuses
+``rag.reveal`` (#14). AirGPT does not paste.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -20,14 +25,20 @@ from config import DATA_DIR
 
 PACK_DIR = DATA_DIR / "rag" / "xlsx_orch"
 XLSX_SUFFIXES = {".xlsx", ".xlsm"}
+DEFAULT_DMS_API = "http://127.0.0.1:8090"
 HONESTY = (
     "AirGPT candidate pack only. DMS owns governed cross-check. "
     "Pointer owns Excel Copilot paste. AirGPT does not run Copilot or MCP paste."
 )
-HANDOFF_HONESTY = (
-    "No DMS receipt wire in this repo. Status stays awaiting_dms_receipt until "
-    "a durable result path is posted (DMS XLSX-ORCH-11). Reveal uses rag/reveal."
+HANDOFF_WAITING_DMS = (
+    "DMS did not take the pack. Status stays awaiting_dms_receipt until "
+    "POST /v1/studio/xlsx-orch/crosscheck accepts it. Reveal uses rag/reveal."
 )
+HANDOFF_WAITING_POINTER = (
+    "DMS accepted the pack. Status awaiting_pointer_receipt. Pointer owns paste. "
+    "AirGPT does not paste. Reveal uses rag/reveal once a result path is posted."
+)
+HANDOFF_HONESTY = HANDOFF_WAITING_DMS
 
 # Result workbook families from F15 / XLSX-ORCH-02. Names may vary slightly.
 RESULT_SHEET_FAMILIES: dict[str, tuple[str, ...]] = {
@@ -410,14 +421,84 @@ def identify_and_pack(
         return identified
     pack = build_prompt_pack(ask=ask, workbook=identified["workbook"])
     rec = save_pack(pack)
+    dms = post_pack_to_dms(pack, workbook_path=str((identified.get("workbook") or {}).get("path") or ""))
+    rec = apply_dms_receipt(rec, dms)
     identified["pack"] = pack
     identified["pack_id"] = rec["pack_id"]
     identified["handoff"] = {
-        "status": "awaiting_dms_receipt",
+        "status": rec.get("status") or "awaiting_dms_receipt",
         "pack_id": rec["pack_id"],
-        "honesty": HANDOFF_HONESTY,
+        "honesty": rec.get("honesty") or HANDOFF_HONESTY,
+        "dms": {k: dms.get(k) for k in ("ok", "reason", "error", "status", "url") if k in dms},
     }
     return identified
+
+
+def dms_crosscheck_url() -> str:
+    raw = (os.environ.get("DMS_XLSX_ORCH_URL") or "").strip()
+    if raw.endswith("/crosscheck"):
+        return raw
+    base = (raw or os.environ.get("DMS_API_URL") or DEFAULT_DMS_API).rstrip("/")
+    return base + "/v1/studio/xlsx-orch/crosscheck"
+
+
+def post_pack_to_dms(pack: dict, *, workbook_path: str = "", timeout: float = 4.0) -> dict:
+    """POST the candidate pack to DMS. Soft-fail with a named reason. Never paste."""
+    url = dms_crosscheck_url()
+    body = {"pack": pack}
+    if workbook_path:
+        body["workbook_path"] = workbook_path
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8")
+            data = json.loads(raw) if raw.strip() else {}
+        if not isinstance(data, dict):
+            return {"ok": False, "reason": "empty_draft", "error": "DMS returned a non-object", "url": url}
+        status = str(data.get("status") or "")
+        if data.get("ok") is False or status in ("", "rejected"):
+            return {
+                "ok": False,
+                "reason": str(data.get("reason") or "dms_refused"),
+                "error": str(data.get("error") or data.get("detail") or "DMS refused the pack")[:300],
+                "status": status or "awaiting_dms_receipt",
+                "url": url,
+                "dms": data,
+            }
+        return {"ok": True, "reason": "live", "status": status or "awaiting_pointer_receipt", "url": url, "dms": data}
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")[:300]
+        return {"ok": False, "reason": "dms_refused", "error": f"HTTP {e.code}: {detail}", "url": url}
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "dms_down",
+            "error": f"{type(e).__name__}: {e}"[:200],
+            "url": url,
+        }
+
+
+def apply_dms_receipt(rec: dict, dms: dict) -> dict:
+    """Stamp the pack record from a DMS crosscheck response. Never invent a result path."""
+    if dms.get("ok") and str(dms.get("status") or "") in ("awaiting_pointer_receipt", "received"):
+        rec["status"] = str(dms.get("status"))
+        rec["honesty"] = HANDOFF_WAITING_POINTER
+        rec["dms"] = dms.get("dms") or dms
+        nested = dms.get("dms") if isinstance(dms.get("dms"), dict) else {}
+        if nested.get("result_path"):
+            rec["result_path"] = nested["result_path"]
+    else:
+        rec["status"] = "awaiting_dms_receipt"
+        err = str(dms.get("error") or dms.get("reason") or "dms_down")
+        rec["honesty"] = HANDOFF_WAITING_DMS + f" Cause: {err[:180]}"
+        rec["dms"] = dms
+    _save_rec(rec)
+    return rec
 
 
 def _ensure_dir() -> Path:

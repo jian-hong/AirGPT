@@ -752,6 +752,8 @@ body.theme-light .project-dd-menu .dd-label{color:var(--muted);opacity:1}
 .composer .model-dd-btn:hover{transform:translateY(-1px)}
 .composer .send{transition:background .2s ease,transform .22s cubic-bezier(.22,1,.36,1),opacity .2s!important}
 .composer-attach{display:none;flex-wrap:wrap;gap:8px;padding:8px 4px 2px;width:100%;max-height:0;opacity:0;overflow:hidden;transition:max-height .35s cubic-bezier(.22,1,.36,1),opacity .28s ease,padding .28s ease}
+.cortex-wire-hint{margin:0;padding:2px 8px 6px;font-size:11px;color:var(--muted);line-height:1.35;letter-spacing:.01em}
+.cortex-wire-hint[hidden]{display:none!important}
 .composer-attach.show{display:flex;max-height:120px;opacity:1;overflow:visible}
 .stage-tile{position:relative;width:52px;height:52px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.045);display:grid;place-items:center;overflow:hidden;flex-shrink:0;animation:stageIn .32s cubic-bezier(.22,1,.36,1) both}
 .stage-tile img{width:100%;height:100%;object-fit:cover;display:block}
@@ -2938,6 +2940,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           </div>
           <div class="composer-inner">
             <div class="composer-attach" id="stageBar" aria-live="polite"></div>
+            <p class="cortex-wire-hint" id="cortexWireHint" hidden></p>
             <div class="composer-row">
               <div class="phone-attach" id="phoneAttach">
                 <button type="button" id="camBtn" title="Take photo">📷</button>
@@ -4242,6 +4245,7 @@ function updateSendVisibility(){
   const btn=$('sendBtn');
   if(!btn)return;
   btn.classList.toggle('visible',composerHasContent());
+  if(typeof updateCortexWireHint==='function')updateCortexWireHint();
 }
 function fileTypeMeta(f){
   const name=(f.name||'').toLowerCase();
@@ -4283,7 +4287,7 @@ function renderStageBar(){
   }).join('');
   const skillHtml=pendingSkills.map(s=>{
     const label=s.title||s.id;
-    return `<span class="reply-tile" title="${esc(label)}"><span class="reply-kicker">Skill</span><span class="reply-snip">${esc(label.slice(0,42))}</span><button type="button" class="stage-x" onclick="clearPendingSkill('${esc(s.id)}')" title="Remove skill" aria-label="Remove skill ${esc(label)}">×</button></span>`;
+    return `<span class="reply-tile" title="${esc(label)}"><span class="reply-kicker">Force</span><span class="reply-snip">${esc(label.slice(0,42))}</span><button type="button" class="stage-x" onclick="clearPendingSkill('${esc(s.id)}')" title="Remove skill" aria-label="Remove skill ${esc(label)}">×</button></span>`;
   }).join('');
   const has=!!(replyContext||stagedFiles.length||pendingSkills.length);
   if(!has){
@@ -4486,16 +4490,7 @@ function pickStableQotd(){
   return row;
 }
 function pickCortexAgentHint(){
-  const seed=String(daySeed())+':cortex';
-  try{
-    const cached=JSON.parse(localStorage.getItem('airgpt_cortex_hint')||'{}');
-    if(cached.day===seed&&cached.q&&CORTEX_AGENT_HINTS.includes(cached.q))return cached.q;
-  }catch(e){}
-  const rng=mulberry32(daySeed()+91);
-  const idx=Math.floor(rng()*CORTEX_AGENT_HINTS.length)%CORTEX_AGENT_HINTS.length;
-  const q=CORTEX_AGENT_HINTS[idx]||CORTEX_AGENT_HINTS[0];
-  localStorage.setItem('airgpt_cortex_hint',JSON.stringify({day:seed,q}));
-  return q;
+  return 'Describe the job - Cortex picks tools. /skill pack to force.';
 }
 function questionOfTheDay(track){
   const pick=pickStableQotd();
@@ -6052,6 +6047,7 @@ function updateSideNav(){
   applyPlaceholder({force:false});
   syncMemFabVisibility();
   if(typeof syncRagAskBar==='function')syncRagAskBar();
+  if(typeof updateCortexWireHint==='function')updateCortexWireHint();
 }
 function inCortexAgentsSpace(){
   return ['cortex','cortex-catalog','research','rag','apps'].includes(sideView);
@@ -7113,21 +7109,19 @@ function snippetCardHtml(s){
   const all=(s.tools||[]).map(String).filter(Boolean);
   const id=String(s.id||'');
   const armed=armedSkillIds().includes(id);
-  // The tool list lives in a floating layer (.sn-tools), so it costs the card no
-  // height and the grid cannot reflow when it appears. That reflow — every neighbour
-  // jumping on hover — is why the whole strip felt broken.
   const chips=all.map(t=>
     `<span class="sn-tool ${snToolClass(t)}">${esc(t)}</span>`).join('');
-  // Hover does not exist on touch, so the count stays on the card as the readable fallback.
   const count=all.length?`<span class="sn-count">${all.length} tool${all.length>1?'s':''}</span>`:'';
+  // SHELL-03: gallery is not the primary path. Force is a slash-shaped escape,
+  // not a Use button that shops skills (DR-0002).
   return `<article class="snippet-card${armed?' armed':''}" data-sn-id="${esc(id)}" title="${esc(s.summary||s.title||'')}">
     <div class="sn-head">
-      <span class="sn-kicker">${esc(s.kicker||'Skill')}</span>
+      <span class="sn-kicker">/skill ${esc(id)}</span>
       ${count}
     </div>
     <div class="sn-title">${esc(s.title||id||'Skill')}</div>
     <div class="sn-actions">
-      <button type="button" class="btn${armed?'':' primary'}" data-sn-use="${esc(id)}" data-sn-kind="${esc(s.kind||'skill')}">${armed?'Armed':'Use'}</button>
+      <button type="button" class="btn" data-sn-use="${esc(id)}" data-sn-kind="${esc(s.kind||'skill')}">${armed?'Armed':'Force'}</button>
     </div>
     ${all.length?`<div class="sn-tools" role="tooltip"><span class="sn-tools-hd">Orchestrates</span>${chips}</div>`:''}
   </article>`;
@@ -7143,7 +7137,7 @@ async function loadCortexSnippets(){
     host.innerHTML=`<span class="hint">No skill packs in data/skills yet.</span>`;
   }else{
     host.innerHTML=skills.map(s=>snippetCardHtml(
-      {kind:'skill',id:s.id,kicker:'Skill',title:s.title,summary:s.summary,tools:s.tools}
+      {kind:'skill',id:s.id,kicker:'/skill',title:s.title,summary:s.summary,tools:s.tools}
     )).join('');
   }
   setFoldCount('cortexSkillFold',skills.length);
@@ -7197,7 +7191,7 @@ function syncSnippetArmedState(){
     const on=armed.has(card.getAttribute('data-sn-id'));
     card.classList.toggle('armed',on);
     const btn=card.querySelector('[data-sn-use]');
-    if(btn){btn.textContent=on?'Armed':'Use';btn.classList.toggle('primary',!on)}
+    if(btn){btn.textContent=on?'Armed':'Force';btn.classList.toggle('primary',false)}
   });
   const fold=$('cortexSkillFold');
   if(fold){
@@ -7283,7 +7277,7 @@ async function showCortexAgentChat(){
     <p class="hint" style="margin:0 0 6px;text-align:left">Suggested agents</p>
     <div class="cortex-suggest">${chips}</div>
     ${cortexFoldHtml({id:'cortexReachFold',title:'What Cortex can reach',note:'planes wired now',body:'<div class="reach-list" id="cortexReachBody"><span class="hint">Checking…</span></div>'})}
-    ${cortexFoldHtml({id:'cortexSkillFold',title:'Skills',note:'force a pack for the next send',body:cortexSnippetCardsHtml()})}
+    ${cortexFoldHtml({id:'cortexSkillFold',title:'Force a skill',note:'optional - /skill pack always wins',body:cortexSnippetCardsHtml()})}
     ${cortexFoldHtml({id:'cortexSubFold',title:'Subagents',note:'one task, then gone',body:cortexSubagentsHtml(subs)})}
     <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;text-align:left">Recent agents</h3>
     ${cortexRecentAgentsHtml(agents)}
@@ -7295,6 +7289,7 @@ async function showCortexAgentChat(){
   loadCortexSnippets();
   loadCortexReach();
   applyPlaceholder({force:true});
+  updateSendVisibility();
   setTimeout(()=>$('input')?.focus(),80);
 }
 /** Subagents already spawned. Same fold shape as skills so the page reads as one list. */
@@ -7661,7 +7656,12 @@ async function assembleCortexCapabilities(text,intent){
     const hit=low.match(/\b(slack|discord|email|calendar|notion|linear|github)\b/g)||[];
     hit.forEach(h=>{if(!mcpWanted.includes(h))mcpWanted.push(h)});
   }
-  const skillPack=window.pendingSkillPack||(skills[0]&&skills[0].id)||'';
+  const forced=String(window.pendingSkillPack||(pendingSkills[0]&&pendingSkills[0].id)||'').toLowerCase();
+  if(forced){
+    const hit=skills.find(s=>String(s.id||'').toLowerCase()===forced);
+    skills=hit?[hit,...skills.filter(s=>s!==hit)]:[{id:forced,name:forced,description:'forced by /skill'},...skills];
+  }
+  const skillPack=forced;
   if(window.pendingSkillPack)window.pendingSkillPack='';
   return{
     tools,
@@ -7701,7 +7701,10 @@ function ensureCortexLiveCard(title,subtitle){
       <h3 id="cortexOrchTitle" style="margin:0 0 8px">${esc(title)}</h3>
       <p class="hint" id="cortexOrchSub" style="margin:0 0 8px">${esc(subtitle)}</p>
       <div class="cortex-cap-chips" id="cortexCapChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px"></div>
-      <pre id="cortexOrchLive" style="white-space:pre-wrap;font-size:12px;max-height:360px;overflow:auto;margin:0">Starting…</pre>
+      <div id="cortexOrchLive" style="font-size:12px;max-height:360px;overflow:auto;margin:0">
+        <div id="cortexOrchRows"><div class="cortex-row cortex-row-start" style="opacity:.7">Starting…</div></div>
+        <div id="cortexOrchFinal" style="white-space:pre-wrap;margin:10px 0 0;display:none"></div>
+      </div>
     </div></div>`);
     live=$('cortexOrchLive');
   }else{
@@ -7710,10 +7713,83 @@ function ensureCortexLiveCard(title,subtitle){
   }
   return live;
 }
+/* SHELL-01 / F20a — Claude Code readout. Consecutive tool events collapse into ONE
+   expandable row per segment, aggregated per KIND (fs_write ×3 +8 -1), never per call
+   instance. The per-call args/results stay on the entry, so a collapsed row is lossy in
+   pixels only — open it and every call is still there.
+   Segmentation is adjacency: the engine (agent_runtime.py) emits no step marker on its
+   tool events, and F20a does not change the engine loop, so a `status`/`error` between
+   two calls still starts a new row. A tool_call/tool PAIR is one call, not two — the
+   pairing is tracked across a segment break so a mid-step status cannot double-count.
+   The rendered row is output only: nothing matches it back out of the DOM with a
+   `tools?:` regex the way the first cut did, so a ' (fallback)' suffix can no longer be
+   swallowed into a tool name on the next merge. */
+const CORTEX_TOOL_MARKS={web_search:'🔎',rag_search:'🔎',vault_read:'📚',vault_write:'📝',fs_read:'📄',fs_write:'✎',fs_patch:'✎',shell_run:'❯',subagent_dispatch:'🧠',audit_append:'🗒'};
+function cortexToolMark(kinds){
+  const marks=[...new Set([...kinds].map(k=>CORTEX_TOOL_MARKS[k]||'⚙'))];
+  return marks.length===1?marks[0]:'⚙';
+}
+function cortexToolSummary(seg){
+  const bits=[];let total=0;
+  seg.kinds.forEach((v,k)=>{
+    total+=v.n;
+    let b=k+(v.n>1?' ×'+v.n:'');
+    if(v.hasDelta)b+=' +'+v.added+' -'+v.removed;
+    if(v.failed)b+=' (fallback)';
+    bits.push(b);
+  });
+  const open=seg.calls.filter(c=>c.result===null).length;
+  return cortexToolMark(seg.kinds.keys())+' '+total+' '+(total===1?'tool:':'tools:')+' '+bits.join(', ')+(open?' …':'');
+}
+function cortexCallDetailHtml(calls){
+  if(!calls.length)return '<div class="hint">no detail</div>';
+  return calls.map(c=>{
+    let p='';try{p=c.params&&Object.keys(c.params).length?JSON.stringify(c.params):''}catch(e){p=''}
+    let r='';try{r=c.result?JSON.stringify(c.result):''}catch(e){r=''}
+    return '<div class="cortex-call" style="margin:6px 0 0;padding-left:8px;border-left:2px solid rgba(127,127,127,.35)">'
+      +'<b>'+esc(c.name)+'</b>'+(c.ok===false?' <span style="color:#e06c6c">failed</span>':'')
+      +(p?'<div style="opacity:.75;word-break:break-word">args '+esc(p.slice(0,700))+'</div>':'')
+      +(r?'<div style="opacity:.75;word-break:break-word">→ '+esc(r.slice(0,700))+'</div>':'<div style="opacity:.5">→ running…</div>')
+      +'</div>';
+  }).join('');
+}
+function cortexLogPaint(entry){
+  if(!entry||!entry.el)return;
+  if(entry.t==='tools'){
+    const s=entry.el.querySelector('summary');const b=entry.el.querySelector('.cortex-row-body');
+    if(s)s.textContent=cortexToolSummary(entry);
+    if(b)b.innerHTML=cortexCallDetailHtml(entry.calls);
+  }else{
+    entry.el.textContent=entry.text;
+  }
+}
+function cortexLogAppend(log,entry){
+  log.push(entry);
+  const rows=$('cortexOrchRows');
+  if(rows){
+    const start=rows.querySelector('.cortex-row-start');if(start)start.remove();
+    const el=document.createElement(entry.t==='tools'?'details':'div');
+    el.className='cortex-row'+(entry.t==='tools'?' cortex-row-tools':'');
+    el.style.cssText='margin:2px 0;white-space:pre-wrap;word-break:break-word';
+    if(entry.t==='tools')el.innerHTML='<summary style="cursor:pointer;list-style:disclosure-closed"></summary><div class="cortex-row-body"></div>';
+    entry.el=el;
+    rows.appendChild(el);
+    cortexLogPaint(entry);
+    while(rows.children.length>48)rows.removeChild(rows.firstChild);
+    const live=$('cortexOrchLive');if(live)live.scrollTop=live.scrollHeight;
+  }
+  return entry;
+}
+function resetCortexLiveLog(){
+  const rows=$('cortexOrchRows');const fin=$('cortexOrchFinal');
+  if(rows)rows.innerHTML='<div class="cortex-row cortex-row-start" style="opacity:.7">Starting…</div>';
+  if(fin){fin.textContent='';fin.style.display='none'}
+}
 function renderCortexCapChips(caps){
   const host=$('cortexCapChips');if(!host||!caps)return;
   const bits=[
     ...(caps.tools||[]).slice(0,8).map(t=>({k:t,hi:t==='web_search'})),
+    ...(caps.skill_pack?[{k:'forced:'+caps.skill_pack,hi:true}]:[]),
     ...(caps.skills||[]).slice(0,3).map(s=>({k:'skill:'+(s.id||s.name),hi:false})),
     ...(caps.mcp_wanted||[]).map(m=>({k:'mcp:'+m,hi:false})),
   ];
@@ -7721,6 +7797,7 @@ function renderCortexCapChips(caps){
 }
 async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps=16,token_budget=4000,skill_pack=''}={}){
   const live=ensureCortexLiveCard(agent.name||'Cortex','web_search → vault → hands → verify');
+  resetCortexLiveLog();
   const body={prompt,session_id:currentSession||0,thinking_mode,max_steps,token_budget};
   if(skill_pack)body.skill_pack=skill_pack;
   else if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
@@ -7731,7 +7808,30 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
   });
   if(!r.ok||!r.body){toast('Run failed ('+r.status+')');return ''};
   const reader=r.body.getReader();const dec=new TextDecoder();let buf='',final='',log=[];
-  const push=(line)=>{log.push(line);if(live){live.textContent=log.slice(-48).join('\n');live.scrollTop=live.scrollHeight}};
+  const push=(line)=>{const t=String(line||'').trim();if(t)cortexLogAppend(log,{t:'text',text:t})};
+  // pending: name -> queue of calls opened by `tool_call` and still awaiting their `tool`
+  // result. Run-scoped, not segment-scoped, so a status event arriving mid-step resolves
+  // into the row that opened the call instead of counting the same call twice.
+  const pending=new Map();
+  const openSeg=()=>{
+    const last=log[log.length-1];
+    if(last&&last.t==='tools')return last;
+    return cortexLogAppend(log,{t:'tools',kinds:new Map(),calls:[]});
+  };
+  const noteCall=(seg,name,params)=>{
+    const k=seg.kinds.get(name)||{n:0,added:0,removed:0,hasDelta:false,failed:false};
+    k.n++;seg.kinds.set(name,k);
+    const call={name,params:params||null,result:null,ok:null,seg};
+    seg.calls.push(call);
+    return call;
+  };
+  const paintFinal=()=>{
+    const fin=$('cortexOrchFinal');
+    if(!fin)return;
+    fin.textContent=(final||'').slice(0,8000);
+    fin.style.display=final?'':'none';
+    if(live)live.scrollTop=live.scrollHeight;
+  };
   while(true){
     const {done,value}=await reader.read();if(done)break;
     buf+=dec.decode(value,{stream:true});
@@ -7741,13 +7841,36 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
       if(!line)continue;
       let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
       if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
-      if(j.type==='tool'||j.type==='tool_call')push((j.name==='web_search'?'🔎 ':'⚙ ')+(j.name||'tool')+(j.result?.ok===false?' (fallback)':''));
-      if(j.type==='token'){final+=j.text||'';if(live)live.textContent=(log.slice(-14).join('\n')+'\n\n'+(final||'')).trim()}
-      if(j.type==='done')final=j.analysis||final;
+      if(j.type==='tool_call'){
+        const name=j.name||'tool';
+        const call=noteCall(openSeg(),name,j.params);
+        let q=pending.get(name);if(!q){q=[];pending.set(name,q)}
+        q.push(call);
+        cortexLogPaint(call.seg);
+      }
+      if(j.type==='tool'){
+        const name=j.name||'tool';
+        const q=pending.get(name)||[];
+        const call=q.length?q.shift():noteCall(openSeg(),name,j.params);
+        const seg=call.seg;
+        call.result=j.result||{};
+        call.ok=j.result?j.result.ok:null;
+        const k=seg.kinds.get(name);
+        if(k){
+          const a=(j.result&&typeof j.result.added==='number')?j.result.added:null;
+          const rm=(j.result&&typeof j.result.removed==='number')?j.result.removed:null;
+          if(a!==null||rm!==null){k.hasDelta=true;k.added+=a||0;k.removed+=rm||0}
+          if(j.result&&j.result.ok===false)k.failed=true;
+        }
+        cortexLogPaint(seg);
+      }
+      if(j.type==='token'){final+=j.text||'';paintFinal()}
+      if(j.type==='done'){final=j.analysis||final;paintFinal()}
       if(j.type==='error'){toast(j.text||'Agent error');push('✗ '+(j.text||'error'))}
     }
   }
-  if(final&&live)live.textContent=final.slice(0,8000);
+  // The grouped rows stay. The final analysis renders BELOW them, never over them.
+  paintFinal();
   return final;
 }
 async function ensureCortexAgent(name,text,caps,intent){
@@ -7785,13 +7908,14 @@ async function ensureCortexAgent(name,text,caps,intent){
   // says so rather than leaving a chip that quietly does nothing.
   if(intent==='schedule'){
     try{
-      const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal:text})}).then(x=>x.json());
+      const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal:text,agent_id:agent.id||0})}).then(x=>x.json());
       const rid=r&&(r.routine_id||r.id||(r.routine&&r.routine.id));
       if(r&&r.ok&&rid){
-        agent.config=Object.assign({},agent.config,{routine_id:rid});
+        agent.config=Object.assign({},agent.config,{routine_id:rid,scheduler:r.scheduler||'cortex'});
         try{await api('/api/agents/'+agent.id,{method:'POST',body:JSON.stringify({config:agent.config})})}catch(e){}
-        const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||'';
-        toast('Scheduled'+(when?(' — '+String(when).slice(0,40)):''));
+        const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||r.next_run_at||'';
+        const host=r.scheduler==='airgpt_host'?' (host clock)':'';
+        toast('Scheduled'+host+(when?(' — '+String(when).slice(0,40)):''));
       }else{
         toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
       }
@@ -8904,7 +9028,7 @@ async function showResearchPage(){
   sideView='research';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
   $('chat').innerHTML=`<div class="cortex-page"><div class="empty">Loading research…</div></div>`;
-  let d={drafts:[],papers:[],sources:[]};
+  let d={drafts:[],papers:[],sources:[],runs:[]};
   try{d=await api('/api/research').then(r=>r.json())}catch(e){}
   const drafts=(d.drafts||[]).slice(0,20).map(x=>`<div class="cortex-card" style="margin-bottom:8px" draggable="true">
     <h3>${esc(x.name)}</h3>
@@ -8915,15 +9039,22 @@ async function showResearchPage(){
     <div class="hint">${esc(x.category||'paper')} · ${esc(String(x.bytes||0))} B · drag to reorder · resize from corner</div>
     <div class="btn-row" style="margin-top:6px"><button type="button" class="btn" style="padding:2px 10px;font-size:12px" title="Index this paper into a RAG knowledge space" onclick="event.stopPropagation();ragAddResearch(decodeURIComponent('${encodeURIComponent(x.path||'')}'),this)">Add to RAG</button></div>
   </div>`).join('')||'<p class="hint">No papers uploaded yet. Upload PDF/MD to build a scalable paper playground.</p>';
+  const runs=(d.runs||[]).slice(0,12).map(x=>`<div class="cortex-card" style="margin-bottom:8px">
+    <h3>${esc(x.id||'')}</h3>
+    <p>${esc(x.stage||'')} · ${esc(x.status||'')} · ${esc(String(((x.cost||{}).usd_est!=null)?x.cost.usd_est:''))}</p>
+  </div>`).join('')||'<p class="hint">No Idea-to-Paper runs yet.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Research library</h2>
-    <p class="cortex-tag">Notebook-style workspace: drafts auto-format toward a complete paper; papers are resizable cards you can drag.</p>
+    <p class="cortex-tag">Notebook-style workspace: drafts auto-format toward a complete paper; papers are resizable cards you can drag. Idea-to-Paper runs OpenVault + Cortex (not Cursor).</p>
     <div class="btn-row" style="margin-bottom:12px">
-      <button type="button" class="btn primary" onclick="createResearchDraft()">New arXiv draft</button>
+      <button type="button" class="btn primary" onclick="startIdeaToPaper()">Idea to Paper</button>
+      <button type="button" class="btn" onclick="createResearchDraft()">New arXiv draft</button>
       <button type="button" class="btn" onclick="document.getElementById('researchUpload').click()">Upload paper</button>
       <input type="file" id="researchUpload" accept=".pdf,.md,.txt" style="display:none" onchange="uploadResearchPaper(this)"/>
       <button type="button" class="btn" onclick="showWorkspace('cortex')">Open agents</button>
     </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0">Idea-to-Paper runs</h3>
+    ${runs}
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0">Drafts</h3>
     ${drafts}
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Papers</h3>
@@ -8939,6 +9070,46 @@ function bindResearchPaperDrag(){
     el.addEventListener('dragend',()=>{el.style.opacity='';dragEl=null});
     el.addEventListener('dragover',e=>{e.preventDefault();if(!dragEl||dragEl===el)return;const rect=el.getBoundingClientRect();const before=(e.clientY-rect.top)<rect.height/2;stack.insertBefore(dragEl,before?el:el.nextSibling)});
   });
+}
+async function startIdeaToPaper(){
+  const idea=prompt('One-sentence idea the paper must defend', 'A local citation gate should drop any DOI, arXiv id, or URL that does not resolve over HTTP, and a methods preprint may only cite the kept set.');
+  if(!idea)return;
+  const nonGoals=prompt('Non-goals (comma list)', 'No silicon PPA, no invented metrics, no Cursor-authored paper body')||'';
+  try{
+    let r=await api('/api/research/idea-to-paper',{method:'POST',body:JSON.stringify({idea,non_goals:nonGoals,domain:'software'})}).then(x=>x.json());
+    if(!r.ok){toast(r.error||'Run failed');return}
+    toast('Run '+r.run_id+' queued — OpenVault+Cortex, not Cursor');
+    for(let i=0;i<90;i++){
+      await new Promise(res=>setTimeout(res,4000));
+      const s=await api('/api/research/runs?id='+encodeURIComponent(r.run_id)).then(x=>x.json());
+      const st=s.status||s;
+      const pdfOk=!!((st.pdf||{}).ok || (s.status&&s.status.pdf&&s.status.pdf.ok));
+      if((st.status==='pass' || (s.status&&s.status.status==='pass')) && (pdfOk || (st.paper_chars||0)>3000)){
+        toast('PDF ready — '+r.run_id); showResearchPage(); return;
+      }
+                    const failed=(st.status==='fail' || (s.status&&s.status.status==='fail'));
+      const blocked=(st.status==='blocked' || (s.status&&s.status.status==='blocked'));
+      if(blocked && !r._continued){
+        r._continued=true;
+        toast('Verifier blocked — salvaging PoC then paper');
+        await api('/api/research/idea-to-paper',{method:'POST',body:JSON.stringify({run_id:r.run_id,continue:true})}).then(x=>x.json());
+        continue;
+      }
+      if(failed){
+        const next=st.next_action || (s.status&&s.status.next_action) || '';
+        if(next==='retry_paper' && !r._resumed){
+          r._resumed=true;
+          toast('OpenVault cooldown — retrying paper');
+          await api('/api/research/idea-to-paper',{method:'POST',body:JSON.stringify({run_id:r.run_id,resume:true})}).then(x=>x.json());
+          continue;
+        }
+        toast(st.error || (s.status&&s.status.error) || 'Run failed');
+        showResearchPage(); return;
+      }
+    }
+    toast('still running — refresh Research');
+    showResearchPage();
+  }catch(e){toast('Idea-to-Paper failed')}
 }
 async function createResearchDraft(){
   const title=prompt('Draft title','Research note');
@@ -9016,11 +9187,17 @@ function routineCardHtml(r){
   const paused=String(r.status||'')==='paused'||r.enabled===false;
   const when=r.schedule_text||routineNextRunLabel(r.next_run_at)||'';
   const err=r.explained_error||(r.paused_reason?_explainedToast(r.paused_reason):'');
+  // A host-clock row is not a Cortex routine. Rendering the two identically is what
+  // let hr-25660b22 look scheduled while running nothing (SHELL-02 #60).
+  const host=String(r.scheduler||'')==='airgpt_host';
+  const why=r.unhealthy_why||r.why||'';
   return `<div class="cortex-card routine-card" style="margin:0;${paused?'opacity:.6;':''}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <strong style="flex:1">${esc(r.name||'Routine')}</strong>
+      ${host?`<span class="sess-agent-tag" style="background:rgba(224,49,49,.15)" title="AirGPT host clock, not a Cortex routine">Host clock</span>`:''}
       <span class="sess-agent-tag">${esc(when||(paused?'Paused':'Scheduled'))}</span>
     </div>
+    ${why?`<p class="hint" style="margin:0 0 6px;color:#e03131">${esc(why)}</p>`:''}
     <p class="hint" style="margin:0 0 8px">${esc(r.prompt||r.goal||'')}</p>
     ${err?`<p class="hint" style="margin:0 0 8px;color:#e03131">${esc(typeof err==='string'?err:_explainedToast(err))}</p>`:''}
     <div class="btn-row" style="gap:6px;flex-wrap:wrap">
@@ -9074,8 +9251,13 @@ async function routineDraftPreview(){
 async function routineCreateFromPreview(){
   const goal=(_routinePreview&&(_routinePreview.goal||_routinePreview.prompt))||'';
   if(!goal){toast('Tell me what to do first');return}
+  // Without an agent the routine fires and runs nothing (host_routines fired_no_agent).
+  // Refuse at the control rather than mint a chip that looks scheduled (SHELL-02 #60).
+  const _aa=window._cortexActiveAgent||(typeof getCortexActiveAgent==='function'?getCortexActiveAgent():null);
+  const aid=(_aa&&_aa.id)||0;
+  if(!aid){toast('Pick an agent first - a routine with no agent fires and runs nothing');return}
   try{
-    const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
+    const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal,agent_id:aid})}).then(x=>x.json());
     if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
     _routinePreview=null;toast('Routine created');showRoutinesPage();
   }catch(e){toast('Create failed')}
@@ -9083,7 +9265,12 @@ async function routineCreateFromPreview(){
 async function routineRunNow(id){
   try{
     const r=await api('/api/cortex/routines/'+encodeURIComponent(id)+'/run',{method:'POST',body:'{}'}).then(x=>x.json());
-    toast(r.ok?'Running…':_explainedToast(r.detail||r.error));
+    // HTTP 200 is not "it fired". routines_run reports fired:false when the clock
+    // did not advance, and saying "Running..." over that is the #60 defect (R-0011).
+    const nxt=routineNextRunLabel(r.next_run_at_after||r.next_run_at);
+    toast(r.ok&&r.fired!==false
+      ?('Ran'+(nxt?' - next '+nxt:''))
+      :('Did not fire: '+_explainedToast(r.detail||r.error||r.reason||'no reason given')));
     showRoutinesPage();
   }catch(e){toast('Run failed')}
 }
@@ -9106,22 +9293,32 @@ async function routineDelete(id){
 async function showRoutinesPage(){
   sideView='routines';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
-  let list=[], budget=null, offline=false;
+  let list=[], budget=null, offline=false, offlineWhy='', hostRows=[];
   try{
     const d=await api('/api/cortex/routines').then(x=>x.json());
     if(d&&d.ok){list=d.routines||[];budget=d.budget||null}
-    else offline=true;
-  }catch(e){offline=true}
+    // routines_list names the reason now (cortex_down / wrong_surface / no_scheduler);
+    // guessing one at the banner was the #60 defect.
+    else{offline=true;offlineWhy=(d&&(d.error||d.hint))||''}
+    hostRows=(d&&d.host_routines)||[];
+  }catch(e){offline=true;offlineWhy='Could not reach the AirGPT host'}
   const preview=_routinePreview?routinePreviewHtml(_routinePreview):'';
   const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Type one sentence below and preview it.</p>';
   const bud=budget?`<p class="hint" style="margin:0 0 10px">Today's spend: RM${esc(String(budget.spent_myr??budget.spent??0))} / RM${esc(String(budget.cap_myr??budget.cap??25))}</p>`:'';
+  // Legacy AirGPT-host rows are no longer creatable, but rows already on disk must
+  // stay visible or the founder cannot reach them to delete (SHELL-02 #60).
+  const hostBlock=hostRows.length?`
+    <h3 style="margin:18px 0 4px">Host clock (legacy)</h3>
+    <p class="hint" style="margin:0 0 10px">Created by an older AirGPT build, not by Cortex. These are not Cortex routines and will not fire from the customer seat.</p>
+    <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${hostRows.map(routineCardHtml).join('')}</div>`:'';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
     <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing. For always-on goal pursuit (no schedule needed), open <button type="button" class="btn" style="display:inline;padding:2px 8px;font-size:11px;border-radius:8px" onclick="showSeekPage()">Seek</button>.</p>
-    ${offline?'<p class="hint" style="color:#e03131">Cortex engine offline — start :8010, then refresh.</p>':''}
+    ${offline?`<p class="hint" style="color:#e03131">Cortex scheduler is not available — ${esc(offlineWhy||'start :8010, then refresh')}</p>`:''}
     ${bud}
     ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
+    ${hostBlock}
   </div>`;
 }
 
@@ -11337,27 +11534,75 @@ document.addEventListener('keydown',_acOnKey,true);
 document.addEventListener('click',e=>{const m=document.getElementById('composerAc');if(m&&_acState.open&&!m.contains(e.target)&&e.target!==_acState.el)_acClose();});
 
 // Slash-command routing for the main home composer ("all features from chats").
+function peelSkillSlash(text){
+  const s=String(text||'').trim();
+  if(!s.startsWith('/'))return null;
+  let m=s.match(/^\/(anthropic-skills|skill):([A-Za-z0-9][\w.-]*)(?:\s+([\s\S]*))?$/i);
+  if(m)return{pack:m[2].toLowerCase(),scope:'',rest:(m[3]||'').trim(),form:m[1].toLowerCase()};
+  m=s.match(/^\/skill-([A-Za-z0-9][\w.-]*)(?:\s+([\s\S]*))?$/i);
+  if(m)return{pack:m[1].toLowerCase(),scope:'',rest:(m[2]||'').trim(),form:'skill-id'};
+  m=s.match(/^\/skill(?:\s+|$)([\s\S]*)$/i);
+  if(!m)return null;
+  const tail=(m[1]||'').trim();
+  if(!tail)return{pack:'',scope:'',rest:'',form:'skill'};
+  const bits=tail.split(/\s+/);
+  const pack=bits[0].toLowerCase().replace(/^:/,'');
+  const SCOPES={global:1,project:1,off:1};
+  let scope='',rest='';
+  if(bits[1]&&SCOPES[bits[1].toLowerCase()]){
+    scope=bits[1].toLowerCase();
+    rest=bits.slice(2).join(' ');
+  }else{
+    rest=bits.slice(1).join(' ');
+  }
+  return{pack,scope,rest,form:'skill'};
+}
+function armSkillFromSlash(pack,scope,quiet){
+  pack=String(pack||'').toLowerCase();
+  if(!pack)return;
+  window.pendingSkillPack=pack;
+  if(!pendingSkills.some(s=>s.id===pack)){
+    if(pendingSkills.length>=MAX_ARMED_SKILLS)pendingSkills.shift();
+    pendingSkills.push({id:pack,title:pack});
+  }
+  renderStageBar();
+  syncSnippetArmedState();
+  if(['off','global','project'].includes(scope||'')){
+    api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'enable',id:pack,scope})}).then(r=>r.json()).then(d=>{
+      if(d&&d.ok)toast('Skill “'+pack+'” → '+scope+(scope==='off'?' (disabled)':''));
+      else toast((d&&d.error)||'Skill update failed');
+    }).catch(()=>{if(!quiet)toast('Skill pack “'+pack+'” armed')});
+  }else if(!quiet)toast('Skill “'+pack+'” forced - Cortex still auto-wires tools');
+}
+function previewCortexToolNames(text){
+  const low=(text||'').toLowerCase();
+  const tools=['web_search'];
+  if(/code|file|patch|repo|git|workspace|openide|edit\b|implement/.test(low))tools.push('fs','git');
+  if(/rag|knowledge|ingest|cite|document|pdf/.test(low))tools.push('rag');
+  if(/dms|warehouse|inventory|shipment|supplier/.test(low))tools.push('dms');
+  if(/terminal|shell|command|run\b|execute|script/.test(low))tools.push('run_command');
+  if(/\bremind|every|daily|weekly|cron|schedule|at\s+\d/.test(low))tools.push('schedule');
+  return tools;
+}
+function updateCortexWireHint(){
+  const el=$('cortexWireHint');if(!el)return;
+  if(typeof sideView!=='undefined'&&sideView!=='cortex'){el.hidden=true;el.textContent='';return}
+  const raw=($('input')?.value||'').trim();
+  const peeled=peelSkillSlash(raw);
+  const forced=(peeled&&peeled.pack)||(pendingSkills[0]&&pendingSkills[0].id)||window.pendingSkillPack||'';
+  const tools=previewCortexToolNames(peeled&&peeled.rest?peeled.rest:raw);
+  el.hidden=false;
+  el.textContent=forced
+    ?('Force /skill '+forced+' · auto '+tools.join(' · '))
+    :('Auto '+tools.join(' · ')+' · /skill pack to force');
+}
 function handleSlashCommand(text){
   const m=/^\/(\S+)(?:\s+([\s\S]*))?$/.exec((text||'').trim());
   if(!m)return false;
   const cmd=m[1].toLowerCase();const arg=(m[2]||'').trim();
   const full=(cmd+(arg?' '+arg.split(/\s+/)[0]:'')).toLowerCase();
   if(full==='rag new'||(cmd==='rag'&&arg.toLowerCase().startsWith('new'))){if(typeof ragCreateSpace==='function')ragCreateSpace();return true;}
-  // /skill <pack> [global|project|off] or /skill-<pack>
-  if(cmd==='skill'||cmd.startsWith('skill-')){
-    const parts=cmd.startsWith('skill-')?[cmd.slice(6),...arg.split(/\s+/)].filter(Boolean):arg.split(/\s+/).filter(Boolean);
-    const pack=(parts[0]||'').toLowerCase();
-    const scope=(parts[1]||'global').toLowerCase();
-    if(!pack){toast('Usage: /skill <pack> [global|project|off]');return true;}
-    window.pendingSkillPack=pack;
-    if(['off','global','project'].includes(scope)){
-      api('/api/invoke/skills',{method:'POST',body:JSON.stringify({action:'enable',id:pack,scope})}).then(r=>r.json()).then(d=>{
-        if(d&&d.ok)toast('Skill “'+pack+'” → '+scope+(scope==='off'?' (disabled)':''));
-        else toast((d&&d.error)||'Skill update failed');
-      }).catch(()=>toast('Skill pack “'+pack+'” armed for next turn'));
-    }else toast('Skill pack “'+pack+'” armed for next agent turn');
-    return true;
-  }
+  // /skill is peeled in send() so a job after the pack still goes to Cortex.
   if(cmd==='rules'){
     if(arg.toLowerCase()==='edit'||arg.toLowerCase().startsWith('edit')){
       openSettings();setTimeout(()=>showSettingsPanel('invoke'),80);
@@ -14365,7 +14610,20 @@ async function send(){
   let text=(el?.value||'').trim();
   const hasFiles=stagedFiles.length>0;
   if(!text&&!hasFiles&&!contextIds.length)return;
-  if(text.startsWith('/')&&handleSlashCommand(text)){if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}return}
+  const peeled=peelSkillSlash(text);
+  if(peeled){
+    if(!peeled.pack){
+      toast('Usage: /skill <pack> [global|project|off] [job]  or  /anthropic-skills:<pack> [job]');
+      if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}
+      return;
+    }
+    armSkillFromSlash(peeled.pack,peeled.scope,!!peeled.rest);
+    text=peeled.rest;
+    if(!text&&!hasFiles&&!contextIds.length){
+      if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}
+      return;
+    }
+  }else if(text.startsWith('/')&&handleSlashCommand(text)){if(el){el.value='';autoGrowInput?.();updateSendVisibility?.();}return}
   if(text.startsWith('@')&&await dispatchAtAgent(text)){if(el)el.value='';return}
   // Background workflow auto-fanout (Cortex recognizer) — explicit phrases or strong match.
   if(text&&!hasFiles&&!text.startsWith('/')&&window.bgTasks){
@@ -14633,7 +14891,7 @@ $('plusMenu')?.addEventListener('click',e=>{
     webSearchArmed=true;localStorage.setItem('airgpt_web_search','1');
   }else if(act==='skills'){
     const el=$('input');if(el){el.value='/skill ';el.focus();el.dispatchEvent(new Event('input'))}
-    toast('Type /skill <pack> global|project');
+    toast('Cortex auto-wires. Type /skill <pack> to force.');
   }else if(act==='connectors'){
     toast('Connectors — open Settings → Integrations');
     try{$('settingsBtn')?.click()}catch(err){}

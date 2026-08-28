@@ -4,31 +4,31 @@
 
 ## Now
 
-0. **D02 #17-#19 thin UI** - Build tab calls the six `/api/rag/ops` endpoints.
-   Cortex-direct. Not a second ops product (P12). PR #54.
-1. **D04 #23/#24 AirGPT half** - identify ingested xlsx + Copilot prompt pack
-   + honest handoff (`awaiting_dms_receipt` until a result path is posted).
-   Not Pointer paste, not a second orchestrator. Merged PR #53.
-2. **D07 n=320 two-variant landed** (PR #52). hybrid_max **320/320** (F13b
-   floors MET). sira_max **44/320** (out_of_range only). Do not quote sira as
-   99%. n=7 CI smoke unchanged.
-3. **#42** stays OPEN until live host handshake. **#31/#32** already CLOSED.
-4. **P13** `multilingual_gate.py` 7/25, deliberately red. MIN_TESTS 380 kept.
+0. **Landed on local master** - D05/D09/D07/D04-wire + D06 already on
+   origin via PR #66. Gates 125 passed + 16 subtests this verify.
+1. **CHUNK-02** unicode_v1 + own-doc positives. Gate stays red on
+   English-only embedder (F25d-R). Do not xfail.
+2. **SHELL-02** Cortex owns scheduler. `_engine_cfg` hops only for
+   `surface=constructor`.
+3. **D04** pack POSTs to DMS crosscheck. Live Demo-2 waits on Pointer.
+4. **F53** Cortex F20b + SEC-01 closed. Jailbreak/leaks refused.
 
 ## Next
 
-0. **#13/#36 stay OPEN** - different-run close. sira_max is not ~99% (R-0003).
-1. **D03** #27/#28 honesty; #42 live handshake.
-2. Do not work #9/#10 (P11). Do not implement DR-0003 grants.
+0. Close #57 #58 #59 #60 #61 #65 #67 on GitHub (code is on master).
+1. Founder OK to restart `:8765` so the tunnel seat matches this tree.
+2. P11 #9/#10 parked. D04 epic waits on Pointer paste + DMS #32.
 
 ## WIP
 
-In flight: D02 #16/#37, D04 #22, D07 #36, D03 #26. Queued: D08 #38.
+In flight: D05 #55, D09 #56. Queued: D07 #36, D03 #26, D06 #37, D08 #38, D04 #22.
 
 ## Later
 
-- P1 50GB / P2 Meta SIRA / P3 charts / P4 vault-first / P5 Outerbase-Grafana / P6 2GB / P7 NVIDIA
+- P1 50GB / P2 Meta SIRA / P4 vault-first / P7 NVIDIA
+- F19 connectors = PRD-002. F20b quality loop = Cortex.
+- F25d-R opt-in multilingual embedder (gate section 3)
 
 ## Demo open
 
-- `tests/RAG/DEMO_RAG.md`. Build tab: Excel Copilot pack card + Ops amend card.
+- `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.

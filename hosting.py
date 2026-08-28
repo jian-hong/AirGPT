@@ -50,6 +50,41 @@ def _ping_openai(base: str, key: str = "EMPTY", timeout: float = 2.5) -> dict:
         return {"ok": False, "status": "offline", "error": str(e)[:160], "url": url}
 
 
+# Backend health pings are polled, not asked for. The Hosting page re-fetches
+# /api/hosting every 8s while it is open, and every call used to fan out to four
+# live _ping_openai() requests at 2.5s apiece — up to ~10s of serial blocking
+# network I/O on the request thread, so an 8s poll could arrive while the handler
+# was still servicing the previous one. Throttle the fan-out behind a TTL, same
+# shape as _net_profile_cache / _lan_diag_cache in clipdrop.py. HOST-DEMO-01.
+PING_TTL = 20.0
+_ping_cache: dict = {"ts": 0.0, "key": "", "value": None}
+
+
+def _backend_pings(env: dict[str, str]) -> dict[str, dict]:
+    """The four backend probes, cached for PING_TTL seconds."""
+    backends = {
+        "ollama": (env.get("OLLAMA_BASE_URL") or "", env.get("OLLAMA_API_KEY") or "ollama"),
+        "vllm": (env.get("VLLM_BASE_URL") or "", env.get("VLLM_API_KEY") or "EMPTY"),
+        "sglang": (env.get("SGLANG_BASE_URL") or "", env.get("SGLANG_API_KEY") or "EMPTY"),
+        "colibri": (env.get("COLIBRI_BASE_URL") or "", env.get("COLIBRI_API_KEY") or "EMPTY"),
+    }
+    # Re-point a base URL in .env and the cached verdict for the old one is a lie,
+    # so the URLs are part of the key rather than just the clock.
+    key = "|".join(f"{n}={b}" for n, (b, _k) in sorted(backends.items()))
+    now = time.time()
+    cached = _ping_cache.get("value")
+    if cached and _ping_cache.get("key") == key and now - float(_ping_cache["ts"]) < PING_TTL:
+        return {n: dict(v) for n, v in cached.items()}
+    out = {
+        n: (_ping_openai(base, k) if base else {"ok": False, "status": "unset"})
+        for n, (base, k) in backends.items()
+    }
+    _ping_cache["ts"] = now
+    _ping_cache["key"] = key
+    _ping_cache["value"] = {n: dict(v) for n, v in out.items()}
+    return out
+
+
 def status() -> dict:
     ensure()
     env = _env()
@@ -57,10 +92,11 @@ def status() -> dict:
     vllm_base = env.get("VLLM_BASE_URL") or ""
     sglang_base = env.get("SGLANG_BASE_URL") or ""
     coli_base = env.get("COLIBRI_BASE_URL") or ""
-    ollama = _ping_openai(ollama_base, env.get("OLLAMA_API_KEY") or "ollama") if ollama_base else {"ok": False, "status": "unset"}
-    vllm = _ping_openai(vllm_base, env.get("VLLM_API_KEY") or "EMPTY") if vllm_base else {"ok": False, "status": "unset"}
-    sglang = _ping_openai(sglang_base, env.get("SGLANG_API_KEY") or "EMPTY") if sglang_base else {"ok": False, "status": "unset"}
-    coli = _ping_openai(coli_base, env.get("COLIBRI_API_KEY") or "EMPTY") if coli_base else {"ok": False, "status": "unset"}
+    pings = _backend_pings(env)
+    ollama = pings["ollama"]
+    vllm = pings["vllm"]
+    sglang = pings["sglang"]
+    coli = pings["colibri"]
     coli_engine = ROOT / "third_party" / "colibri"
     state = {}
     if HOST_STATE.is_file():

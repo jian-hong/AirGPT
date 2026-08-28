@@ -153,7 +153,17 @@ def list_recipes() -> list[dict]:
 def _worker_tick() -> None:
     global _active_run_id
     settings = get_settings()
-    if settings["thinking_mode"] == "idle":
+    idle = settings["thinking_mode"] == "idle"
+    try:
+        import host_routines
+
+        # Ticking before the idle check queued runs that this worker then refused to
+        # drain: last_status sat at "queued" forever with nothing disclosing it.
+        # Tell the clock whether the queue is actually being served.
+        host_routines.tick(drains=not idle)
+    except Exception:
+        pass
+    if idle:
         return
     if _active_run_id is not None:
         return

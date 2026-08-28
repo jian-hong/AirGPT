@@ -71,6 +71,16 @@ def _result_wb(path: Path) -> Path:
 def orch_dir(tmp_path, monkeypatch):
     d = tmp_path / "orch"
     monkeypatch.setattr(xlsx_orch, "PACK_DIR", d)
+    monkeypatch.setattr(
+        xlsx_orch,
+        "post_pack_to_dms",
+        lambda *a, **k: {
+            "ok": False,
+            "reason": "dms_down",
+            "error": "test stub: DMS not on the wire",
+            "url": "http://127.0.0.1:8090/v1/studio/xlsx-orch/crosscheck",
+        },
+    )
     return d
 
 
@@ -98,7 +108,8 @@ def test_identifies_ontime_workbook_not_payroll(tmp_path, orch_dir):
     assert pack["workbook"]["cost_col"] == "Cost"
     assert "pointer_paste" in pack["not_doing"]
     assert out["handoff"]["status"] == "awaiting_dms_receipt"
-    assert "No DMS receipt wire" in out["handoff"]["honesty"]
+    assert "awaiting_dms_receipt" in out["handoff"]["honesty"]
+    assert out["handoff"]["dms"]["reason"] == "dms_down"
 
 
 def test_no_match_does_not_guess_the_only_xlsx(tmp_path, orch_dir):
@@ -173,6 +184,41 @@ def test_posted_result_workbook_inspects_sheet_families(tmp_path, orch_dir, monk
     src = xlsx_orch.reveal_handoff(pack_id=identified["pack_id"], which="source")
     assert src["ok"] is True
     assert "00027" in Path(seen["path"]).name
+
+
+def test_dms_accept_moves_handoff_to_awaiting_pointer(tmp_path, orch_dir, monkeypatch):
+    frtr = _frtr(tmp_path)
+    monkeypatch.setattr(
+        xlsx_orch,
+        "post_pack_to_dms",
+        lambda pack, **k: {
+            "ok": True,
+            "reason": "live",
+            "status": "awaiting_pointer_receipt",
+            "url": "http://127.0.0.1:8090/v1/studio/xlsx-orch/crosscheck",
+            "dms": {"status": "awaiting_pointer_receipt", "paste_owner": "pointer", "result_path": None},
+        },
+    )
+    out = xlsx_orch.identify_and_pack(
+        ask=F15_ASK,
+        sources=[{"path": str(frtr), "title": frtr.name, "meta": {}}],
+    )
+    assert out["handoff"]["status"] == "awaiting_pointer_receipt", out["handoff"]
+    assert "Pointer owns paste" in out["handoff"]["honesty"]
+    rec = xlsx_orch.load_pack(out["pack_id"])
+    assert rec["status"] == "awaiting_pointer_receipt"
+    assert rec.get("result_path") in (None, "")
+
+
+def test_dms_down_names_the_cause(tmp_path, orch_dir):
+    frtr = _frtr(tmp_path)
+    out = xlsx_orch.identify_and_pack(
+        ask=F15_ASK,
+        sources=[{"path": str(frtr), "title": frtr.name, "meta": {}}],
+    )
+    assert out["handoff"]["status"] == "awaiting_dms_receipt"
+    assert out["handoff"]["dms"]["reason"] == "dms_down"
+    assert "Cause:" in out["handoff"]["honesty"]
 
 
 def test_incomplete_result_workbook_is_flagged_not_green(tmp_path, orch_dir):

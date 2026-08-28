@@ -628,6 +628,155 @@ class RagFoundationTests(unittest.TestCase):
         md, _, _ = parent_child_chunk("# Title\n\nbody text here\n\n# Two\n\nmore text here\n", code=False)
         self.assertGreaterEqual(len(md), 2)
 
+    # Row shape for the table gate: five fields, a marker that only survives an
+    # uncut row, and no blank lines anywhere (the shape that used to char-split).
+    ROW_FIELDS = 5
+    ROW_END = "<eor>"
+
+    def _sheet_body(self, n_rows: int = 40) -> str:
+        tail = ("x" * 74) + self.ROW_END
+        return "## Sheet: Carrier\n" + "\n".join(
+            f"r{i} | CarrierA | 12.5 | true | {tail}" for i in range(n_rows)
+        )
+
+    def _broken_rows(self, chunks) -> list[str]:
+        """Every chunk line that is not the sheet heading and not a WHOLE row.
+
+        Checked positively over ALL lines: a truncated row must be REPORTED, not
+        silently skipped by an `if needle in line` that a cut row cannot match.
+        """
+        bad: list[str] = []
+        for ch in chunks:
+            for line in (getattr(ch, "text", "") or "").splitlines():
+                line = line.strip()
+                if not line or line.startswith("## "):
+                    continue
+                whole = (
+                    line.startswith("r")
+                    and line.count(" | ") == self.ROW_FIELDS - 1
+                    and line.endswith(self.ROW_END)
+                )
+                if not whole:
+                    bad.append(line[:60])
+        return bad
+
+    def test_table_chunking_never_splits_row(self):
+        """Sheet extract: heading parents, whole-row children, never mid-row cut."""
+        from rag.chunking import parent_child_chunk
+
+        body = self._sheet_body(40)
+        parents, children, metrics = parent_child_chunk(
+            body, table=True, child_tokens=80, parent_max_tokens=200
+        )
+        self.assertTrue(metrics["table"])
+        self.assertGreaterEqual(len(parents), 1)
+        self.assertGreaterEqual(len(children), 2)
+        self.assertEqual(self._broken_rows(children), [], "child window cut a row")
+        self.assertEqual(self._broken_rows(parents), [], "parent window cut a row")
+        # …and no row was dropped on the way through the windower.
+        seen = {
+            line.split(" | ", 1)[0]
+            for ch in children
+            for line in (ln.strip() for ln in ch.text.splitlines())
+            if line.startswith("r")
+        }
+        self.assertEqual(seen, {f"r{i}" for i in range(40)}, "rows lost, not just intact")
+
+        # CONTROL — the same body through the prose windower MUST break rows. Without
+        # this the gate above could pass with _window_rows deleted (R-0007: a gate that
+        # cannot fail is not a gate).
+        _, prose_children, prose_m = parent_child_chunk(body, table=False, child_tokens=80)
+        self.assertFalse(prose_m["table"])
+        self.assertGreaterEqual(len(prose_children), 1)
+        self.assertTrue(
+            self._broken_rows(prose_children),
+            "control produced no broken row — the row gate proves nothing",
+        )
+
+    def test_csv_gets_sheet_parents(self):
+        """.csv extracts as `## Sheet:` + pipe rows, so parents carry a heading (#57)."""
+        from rag import ingest
+        from rag.chunking import parent_child_chunk
+
+        csv_path = self.fixture / "carriers.csv"
+        csv_path.write_text(
+            'code,rate,note\nA1,12.5,"plain, quoted"\nB2,7.25,second\nC3,9.0,third\n',
+            encoding="utf-8",
+        )
+        text, _digest = ingest.read_text_file(csv_path)
+        self.assertIn("## Sheet: carriers", text)
+        # the quoted comma stayed inside its cell (stdlib csv, not a split on ',')
+        self.assertIn("A1 | 12.5 | plain, quoted", text)
+        self.assertTrue(ingest.is_table_text(csv_path, text))
+
+        parents, _children, _m = parent_child_chunk(text, table=True)
+        headings = [p.heading for p in parents]
+        self.assertTrue(any(h.startswith("Sheet: carriers") for h in headings), headings)
+        self.assertNotEqual(headings, [""] * len(headings))
+
+    def test_rebuild_blob_still_chunks_as_table(self):
+        """Rebuild re-ingests the .txt blob — table-ness must survive the lost suffix."""
+        from rag import chunking, ingest
+
+        sheet = self.fixture / "sheet.csv"
+        sheet.write_text(
+            "code,rate,flag,note\n"
+            + "\n".join(f"r{i},12.5,true,{'x' * 60}" for i in range(60))
+            + "\n",
+            encoding="utf-8",
+        )
+        space = self.store.create_space("Rebuild RAG", depth_default="high")
+        sid = int(space["id"])
+        self.assertTrue(ingest.ingest_paths(sid, [sheet], force=True).get("ok"))
+        src = [s for s in self.store.list_sources(sid) if s["title"] == "sheet.csv"][0]
+        self.assertTrue((src.get("meta") or {}).get("table"), "table-ness not persisted")
+
+        # Original AND its Docs copy gone: rebuild falls back to the .txt blob.
+        sheet.unlink()
+        docs_copy = (src.get("meta") or {}).get("docs_path")
+        if docs_copy and Path(docs_copy).is_file():
+            Path(docs_copy).unlink()
+        paths = ingest.rebuild_source_paths([src])
+        self.assertEqual(len(paths), 1, paths)
+        self.assertTrue(paths[0].endswith(".txt"), paths)
+        blob_text = Path(paths[0]).read_text(encoding="utf-8")
+        self.assertTrue(ingest.is_table_text(Path(paths[0]), blob_text))
+
+        real = chunking.parent_child_chunk
+        calls: list[tuple[bool, tuple]] = []
+
+        def _spy(text, **kw):
+            out = real(text, **kw)
+            calls.append((bool(kw.get("table")), out))
+            return out
+
+        with mock.patch.object(chunking, "parent_child_chunk", _spy):
+            self.assertTrue(ingest.ingest_paths(sid, paths, force=True).get("ok"))
+        self.assertEqual([c[0] for c in calls], [True], "rebuild re-split the blob as prose")
+
+        # Every chunk line is either a line the blob itself holds verbatim outside the
+        # rows (index / sheet heading / csv header) or a WHOLE data row — matched
+        # exactly, so a fragment can never slip through the skip.
+        non_rows = {ln.strip() for ln in blob_text.splitlines() if not ln.strip().startswith("r")}
+
+        def _check(texts, where):
+            for body in texts:
+                for line in (body or "").splitlines():
+                    line = line.strip()
+                    if not line or line in non_rows:
+                        continue
+                    self.assertTrue(
+                        line.count(" | ") == 3 and line.endswith("x" * 60),
+                        f"{where} cut a row: {line[:70]!r}",
+                    )
+
+        rebuilt_parents, rebuilt_children, _m = calls[0][1]
+        _check([c.text for c in rebuilt_children], "rebuild child")
+        _check([p.text for p in rebuilt_parents], "rebuild parent")
+        rows = self.store.sample_parent_chunks(sid, limit=50)
+        self.assertTrue(rows)
+        _check([r.get("text") for r in rows], "stored chunk")
+
     def test_diversify_evidence(self):
         """Per-source cap + near-dup drop surface complementary evidence in top-k."""
         from rag.answer import _diversify

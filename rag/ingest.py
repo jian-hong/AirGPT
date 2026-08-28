@@ -292,6 +292,70 @@ def _xlsx_text(path: Path) -> str:
     return "\n\n".join(out).strip()
 
 
+def _csv_text(path: Path, raw_text: str) -> str:
+    """Delimited rows as a sheet extract, same shape as `_xlsx_text`.
+
+    Without this a .csv fell through to raw bytes: no `## Sheet:` line, so every
+    parent heading came back empty and the header row never travelled with the
+    later row windows. Rows stayed intact, but "whole-row children under sheet
+    parents" was only half true. Stdlib csv, never a split on ',' — a quoted
+    comma has to stay inside its cell.
+    """
+    import csv as _csv
+    import io
+
+    rows: list[str] = []
+    try:
+        for row in _csv.reader(io.StringIO(raw_text, newline="")):
+            cells = [str(c).strip() for c in row if c is not None and str(c).strip() != ""]
+            if cells:
+                rows.append(" | ".join(cells))
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    title = (path.stem or path.name).strip() or "csv"
+    index = f"## Spreadsheet index\n- {title} ({len(rows)} rows)"
+    return f"{index}\n\n## Sheet: {title}\n" + "\n".join(rows)
+
+
+# Suffixes whose extract is sheet rows, so chunking packs whole rows. `.xls` is
+# gone on purpose: it is absent from TEXT_SUFFIXES and has no extractor branch, so
+# naming it here only advertised support that never existed.
+TABLE_SUFFIXES = {".xlsx", ".xlsm", ".csv"}
+
+_SHEET_MARKERS = ("## Sheet:", "## Spreadsheet index")
+
+
+def is_table_text(path: Path, text: str) -> bool:
+    """Is this extract sheet rows? Decided on provenance/content, never on suffix.
+
+    The rebuild path re-ingests the extracted `{digest}_{stem}.txt` blob (see
+    `rebuild_source_paths`), whose suffix is `.txt`. Keying table-ness off the
+    suffix there sent sheet rows back through the paragraph windower, which
+    char-splits mid-row — the exact defect `chunking._window_rows` exists to
+    prevent, returning on every rebuild after the original file was gone.
+    """
+    suffix = Path(path).suffix.lower()
+    if suffix in TABLE_SUFFIXES:
+        return True
+    # The sniff is scoped to .txt on purpose. That is the shape the blob is written
+    # in, and widening it would re-chunk every markdown file that happens to hold a
+    # pipe table — a silent boundary move on an already-scored corpus.
+    if suffix != ".txt":
+        return False
+    head = (text or "")[:20000]
+    if any(marker in head for marker in _SHEET_MARKERS):
+        return True
+    # No marker (an extract whose header scrolled past the window): call it a table
+    # only when most lines really are rows.
+    lines = [ln for ln in head.splitlines() if ln.strip()]
+    if len(lines) < 4:
+        return False
+    piped = sum(1 for ln in lines if " | " in ln)
+    return piped >= max(4, int(0.6 * len(lines)))
+
+
 def _ooxml_local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -384,6 +448,8 @@ def read_text_file(path: Path) -> tuple[str, str]:
         text = _pdf_text(path)
     elif suffix in (".xlsx", ".xlsm"):
         text = _xlsx_text(path)
+    elif suffix == ".csv":
+        text = _csv_text(path, _decode(raw)) or _decode(raw)
     elif suffix == ".docx":
         text = _docx_text(path)
     elif suffix == ".pptx":
@@ -586,11 +652,16 @@ def ingest_paths(
                 from rag import authority as authority_mod
 
                 file_authority = authority_mod.classify(str(path), path.name)
+            # Recorded now, while the ORIGINAL suffix is still in hand. On a
+            # rebuild the only file left is the .txt blob, and its name cannot
+            # say it used to be a sheet.
+            table_src = is_table_text(path, text)
             meta_src = {
                 "blob": str(dest),
                 "authority": file_authority,
                 "original_path": orig_resolved,
                 "original_name": orig_name,
+                "table": table_src,
             }
             if docs_path:
                 meta_src["docs_path"] = docs_path
@@ -609,6 +680,10 @@ def ingest_paths(
             merged_meta = {**prev_meta, **meta_src}
             if docs_path:
                 merged_meta["docs_path"] = docs_path
+            # Table-ness only ever latches ON: the prior ingest saw the .xlsx/.csv,
+            # this one may only be seeing its .txt blob.
+            if prev_meta.get("table"):
+                merged_meta["table"] = True
             if merged_meta != prev_meta:
                 store.update_source_status(
                     int(src["id"]),
@@ -627,6 +702,9 @@ def ingest_paths(
                 ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
                 ".c", ".h", ".cpp", ".hpp", ".sql", ".sh", ".ps1",
             }
+            # Provenance first (a rebuild re-ingesting the .txt blob inherits the
+            # flag the original ingest recorded), then this file's own content.
+            is_table = (not is_code) and (bool(merged_meta.get("table")) or table_src)
             import_map = list(getattr(read_text_file, "last_import_map", []) or [])
             cfg = space.get("config") if isinstance(space.get("config"), dict) else {}
             chunk_cfg = cfg.get("chunk") if isinstance(cfg.get("chunk"), dict) else {}
@@ -637,6 +715,7 @@ def ingest_paths(
             parents, children, chunk_metrics = chunking.parent_child_chunk(
                 text,
                 code=is_code,
+                table=is_table,
                 salience_terms=import_map[:40] or None,
                 child_tokens=child_tok,
                 parent_max_tokens=parent_tok,

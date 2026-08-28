@@ -10,7 +10,12 @@ import os
 import re
 from collections import Counter
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_\-./]{1,}")
+# ASCII identifiers stay (code, SKUs, English). Non-Latin scripts used to
+# tokenize to nothing, so coverage returned 1.0 vacuously (P13 / CHUNK-02).
+_ASCII_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_\-./]{1,}")
+# Keep the old name so greps for the P13 root cause still land here.
+_TOKEN_RE = _ASCII_RE
+TOKENIZER_ID = "unicode_v1"
 
 _LLM_SYSTEM = (
     "You extract short index phrases for lexical search. "
@@ -21,8 +26,52 @@ _LLM_SYSTEM = (
 )
 
 
+def _script_kind(ch: str) -> str | None:
+    o = ord(ch)
+    if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF or 0x3040 <= o <= 0x30FF:
+        return "cjk"
+    if 0xAC00 <= o <= 0xD7AF:
+        return "hangul"
+    if 0x0E00 <= o <= 0x0E7F:
+        return "thai"
+    if 0x0400 <= o <= 0x04FF or 0x0600 <= o <= 0x06FF:
+        return "letters"
+    if ch.isalpha() and not ch.isascii():
+        return "letters"
+    return None
+
+
 def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_RE.findall(text or "")]
+    """Lexical tokens for coverage, FTS, and hash embed.
+
+    Latin/digit runs stay identifier-shaped. CJK/Thai (few spaces) become
+    character n-grams. Cyrillic/Arabic/Hangul keep space-delimited letter runs.
+    """
+    text = text or ""
+    out: list[str] = [t.lower() for t in _ASCII_RE.findall(text)]
+    i = 0
+    n = len(text)
+    while i < n:
+        kind = _script_kind(text[i])
+        if not kind:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and _script_kind(text[j]) == kind:
+            j += 1
+        run = text[i:j]
+        if kind in ("cjk", "thai"):
+            gram = 2 if kind == "cjk" else 3
+            if len(run) < gram:
+                if run.strip():
+                    out.append(run.lower())
+            else:
+                for k in range(0, len(run) - gram + 1):
+                    out.append(run[k : k + gram].lower())
+        elif len(run) >= 2:
+            out.append(run.lower())
+        i = j
+    return out
 
 
 def heuristic_index_phrases(text: str, *, max_phrases: int = 24) -> list[str]:
@@ -35,7 +84,7 @@ def heuristic_index_phrases(text: str, *, max_phrases: int = 24) -> list[str]:
             if 2 <= len(h) <= 80:
                 phrases.append(h)
         # identifier-looking tokens
-        for tok in _TOKEN_RE.findall(s):
+        for tok in _ASCII_RE.findall(s):
             if any(c.isupper() for c in tok) and any(c.islower() for c in tok):
                 phrases.append(tok)
             elif "_" in tok or "/" in tok or "." in tok:
@@ -43,7 +92,11 @@ def heuristic_index_phrases(text: str, *, max_phrases: int = 24) -> list[str]:
                     phrases.append(tok)
     # rare unigrams by local frequency (proxy for DF until corpus DF table exists)
     counts = Counter(tokenize(text))
-    rare = [w for w, c in counts.most_common() if c == 1 and 4 <= len(w) <= 40]
+    rare = [
+        w
+        for w, c in counts.most_common()
+        if c == 1 and (4 <= len(w) <= 40 if w.isascii() else 2 <= len(w) <= 40)
+    ]
     phrases.extend(rare[: max_phrases // 2])
     # dedupe preserve order
     seen: set[str] = set()

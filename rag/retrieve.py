@@ -11,11 +11,9 @@ from rag import adaptive, authority, sira, store, vectors
 from rag.fuse import RankedHit, fuse_channels
 from rag.rerank import rerank_hits
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_\-./]{1,}")
-
 
 def _tokens(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_RE.findall(text or "")]
+    return sira.tokenize(text)
 
 
 def _fts_query(query: str) -> str:

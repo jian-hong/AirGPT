@@ -51,12 +51,22 @@ def _embed_identity() -> dict[str, Any]:
     return out
 
 
+def _tokenizer_id() -> str:
+    try:
+        from rag.sira import TOKENIZER_ID
+
+        return str(TOKENIZER_ID)
+    except Exception:
+        return "unknown"
+
+
 def fingerprint(
     *,
     chunker: str = "parent_child",
     child_tokens: int = DEFAULT_CHILD_TOKENS,
     parent_max_tokens: int = DEFAULT_PARENT_MAX_TOKENS,
     child_overlap: int = DEFAULT_CHILD_OVERLAP,
+    table: bool = False,
     extra: dict | None = None,
 ) -> dict[str, Any]:
     """Full, human-readable description of the index a score belongs to."""
@@ -67,8 +77,10 @@ def fingerprint(
             "child_tokens": int(child_tokens),
             "parent_max_tokens": int(parent_max_tokens),
             "child_overlap": int(child_overlap),
+            "table": bool(table),
         },
         "embed": _embed_identity(),
+        "lexical": {"tokenizer": _tokenizer_id()},
     }
     if extra:
         # Namespaced so a caller cannot shadow a field comparability depends on.
@@ -87,6 +99,7 @@ def _hash_fields(fp: dict[str, Any]) -> str:
         "schema_version": fp.get("schema_version"),
         "chunker": fp.get("chunker"),
         "embed": {k: v for k, v in (fp.get("embed") or {}).items() if k != "error"},
+        "lexical": fp.get("lexical") or {},
     }
     blob = json.dumps(core, sort_keys=True, separators=(",", ":"))
     return hashlib.blake2b(blob.encode("utf-8"), digest_size=8).hexdigest()
@@ -111,13 +124,16 @@ def comparable(a: dict | None, b: dict | None) -> tuple[bool, list[str]]:
             f"fingerprint schema {a.get('schema_version')} vs {b.get('schema_version')}"
         )
     ca, cb = a.get("chunker") or {}, b.get("chunker") or {}
-    for key in ("name", "child_tokens", "parent_max_tokens", "child_overlap"):
+    for key in ("name", "child_tokens", "parent_max_tokens", "child_overlap", "table"):
         if ca.get(key) != cb.get(key):
             reasons.append(f"chunker.{key} {ca.get(key)!r} vs {cb.get(key)!r}")
     ea, eb = a.get("embed") or {}, b.get("embed") or {}
     for key in ("backend", "model", "dim"):
         if ea.get(key) != eb.get(key):
             reasons.append(f"embed.{key} {ea.get(key)!r} vs {eb.get(key)!r}")
+    la, lb = a.get("lexical") or {}, b.get("lexical") or {}
+    if la.get("tokenizer") != lb.get("tokenizer"):
+        reasons.append(f"lexical.tokenizer {la.get('tokenizer')!r} vs {lb.get('tokenizer')!r}")
     if not reasons:
         reasons.append(f"ids differ ({a.get('id')} vs {b.get('id')}) with no field diff")
     return False, reasons
@@ -129,9 +145,11 @@ def describe(fp: dict | None) -> str:
         return "index: UNKNOWN (no fingerprint)"
     c = fp.get("chunker") or {}
     e = fp.get("embed") or {}
+    lex = fp.get("lexical") or {}
     return (
         f"index {fp.get('id', '?')}: {c.get('name')}"
         f"(child={c.get('child_tokens')},parent={c.get('parent_max_tokens')},"
         f"overlap={c.get('child_overlap')}) "
-        f"embed={e.get('backend')}/{e.get('model') or 'none'}@{e.get('dim')}d"
+        f"embed={e.get('backend')}/{e.get('model') or 'none'}@{e.get('dim')}d "
+        f"tok={lex.get('tokenizer') or '?'}"
     )

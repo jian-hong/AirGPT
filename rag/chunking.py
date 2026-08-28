@@ -69,6 +69,59 @@ def _split_sections(text: str, *, code: bool = False) -> list[tuple[str, str, in
     return _sections_from(text, matches, code=False)
 
 
+def _window_rows(
+    body: str, base_offset: int, *, target_tokens: int = 200, overlap_tokens: int = 40
+) -> list[tuple[str, int, int]]:
+    """Pack whole lines into child windows. Never split a line (a sheet row).
+
+    Spreadsheet extract (`## Sheet:` + pipe-joined rows) has no blank-line
+    paragraphs, so `_window_children` used to fall into a character-count split
+    and cut mid-row. This is the table half of parent/child: headings still
+    make parents; children are row windows.
+    """
+    if not (body or "").strip():
+        return []
+    target_chars = max(200, target_tokens * 4)
+    overlap_n = 1 if overlap_tokens else 0
+    lines = body.splitlines(keepends=True)
+    windows: list[tuple[str, int, int]] = []
+    buf: list[str] = []
+    buf_len = 0
+    buf_start = base_offset
+    cursor = 0
+
+    def flush() -> None:
+        nonlocal buf, buf_len, buf_start
+        if not buf:
+            return
+        text = "".join(buf)
+        if text.strip():
+            windows.append((text.strip(), buf_start, buf_start + len(text)))
+        if overlap_n and len(buf) > overlap_n:
+            keep = buf[-overlap_n:]
+            keep_len = sum(len(x) for x in keep)
+            buf_start = buf_start + len(text) - keep_len
+            buf = keep
+            buf_len = keep_len
+        else:
+            buf = []
+            buf_len = 0
+            buf_start = base_offset + cursor
+
+    for line in lines:
+        if buf and buf_len + len(line) > target_chars:
+            flush()
+            if not buf:
+                buf_start = base_offset + cursor
+        if not buf:
+            buf_start = base_offset + cursor
+        buf.append(line)
+        buf_len += len(line)
+        cursor += len(line)
+    flush()
+    return [w for w in windows if w[0]]
+
+
 def _window_children(body: str, base_offset: int, *, target_tokens: int = 200, overlap_tokens: int = 40) -> list[tuple[str, int, int]]:
     """Split a section body into overlapping child windows by approx tokens."""
     if not body.strip():
@@ -114,25 +167,29 @@ def parent_child_chunk(
     child_tokens: int = 200,
     parent_max_tokens: int = 900,
     code: bool = False,
+    table: bool = False,
     salience_terms: list[str] | None = None,
 ) -> tuple[list[ChunkDraft], list[ChunkDraft], dict]:
     """
     Build parent sections and child embed windows.
     Returns (parents, children, metrics) where children.parent_index points into parents.
-    code=True aligns parent chunks to function/class boundaries for source files.
+    code=True aligns parent chunks to function/class SYMBOL boundaries.
+    table=True packs whole rows (never mid-row char-split) under heading parents.
+    Prose uses heading parents + paragraph windows. Never "regex the file" as one blob.
     Near-duplicate children (Jaccard >= 0.9) are demoted; salience_terms prefer rare phrases.
     """
     from rag import normalize as norm
 
+    window = _window_rows if table else _window_children
     parents: list[ChunkDraft] = []
     children: list[ChunkDraft] = []
     demoted = 0
     for heading, body, start, end in _split_sections(text, code=code):
-        # Cap oversized parents by further splitting on blank lines
+        # Cap oversized parents by further splitting on blank lines (or whole rows)
         parent_bodies: list[tuple[str, str, int, int]] = [(heading, body, start, end)]
         if estimate_tokens(body) > parent_max_tokens:
             parent_bodies = []
-            for child_text, cs, ce in _window_children(body, start, target_tokens=parent_max_tokens, overlap_tokens=80):
+            for child_text, cs, ce in window(body, start, target_tokens=parent_max_tokens, overlap_tokens=80):
                 parent_bodies.append((heading, child_text, cs, ce))
 
         for ph, pb, ps, pe in parent_bodies:
@@ -145,11 +202,11 @@ def parent_child_chunk(
                     span_start=ps,
                     span_end=pe,
                     token_est=estimate_tokens(pb),
-                    meta={"headings": [ph] if ph else []},
+                    meta={"headings": [ph] if ph else [], "table": bool(table)},
                 )
             )
             prev_text = ""
-            for ct, cs, ce in _window_children(pb, ps, target_tokens=child_tokens):
+            for ct, cs, ce in window(pb, ps, target_tokens=child_tokens):
                 if prev_text and norm.jaccard_tokens(prev_text, ct) >= 0.9:
                     demoted += 1
                     continue
@@ -185,7 +242,13 @@ def parent_child_chunk(
                     parent_index=i,
                 )
             )
-    metrics = {"demoted_children": demoted, "child_count": len(children), "parent_count": len(parents)}
+    metrics = {
+        "demoted_children": demoted,
+        "child_count": len(children),
+        "parent_count": len(parents),
+        "table": bool(table),
+        "code": bool(code),
+    }
     return parents, children, metrics
 
 

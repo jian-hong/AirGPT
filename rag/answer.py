@@ -273,12 +273,32 @@ def _clean_goal(text: str) -> str:
     return g
 
 
+def _lex_tokens(text: str) -> list[str]:
+    """Unicode-aware content tokens for the web-goal lane (P13 / CHUNK-02).
+
+    The `[a-z0-9]{n,}` regexes these paths used tokenized non-Latin text to
+    nothing, so goals were discarded and coverage came back vacuously full.
+    sira.tokenize keeps identifiers whole (sku-00397, foo_bar) where the regex
+    saw the pieces, so emit both forms or URLs and SKUs stop overlapping.
+    """
+    out: list[str] = []
+    for t in sira.tokenize(text):
+        if not t.isascii():
+            out.append(t)
+            continue
+        parts = re.findall(r"[a-z0-9]{2,}", t)
+        out.extend(parts)
+        if len(parts) > 1:
+            out.append(t)
+    return out
+
+
 def _goal_ok(goal: str) -> bool:
     g = (goal or "").strip()
     if len(g) < 8:
         return False
     # Reject junk single-token / symbol goals that DDG interprets as "+" or "hong"
-    toks = re.findall(r"[a-z0-9]{2,}", g.casefold())
+    toks = _lex_tokens(g)
     if len(toks) < 2 and g not in ("JEPA", "Netie", "Cortex"):
         return False
     if g in {"+", "-", "&", "hong", "ad", "hmm", "bro", "next", "then"}:
@@ -360,10 +380,12 @@ def split_web_goals(query: str, *, max_goals: int = 6) -> list[str]:
 
 
 def _tokens_for_match(text: str) -> set[str]:
+    # ASCII floor stays 3; non-Latin runs and CJK bigrams are shorter and must
+    # still count, or the goal filters below fail open on every non-Latin ask.
     return {
         t
-        for t in re.findall(r"[a-z0-9]{3,}", (text or "").casefold())
-        if t not in _STOPWORDS
+        for t in _lex_tokens(text)
+        if t not in _STOPWORDS and (len(t) >= 3 or not t.isascii())
     }
 
 
@@ -399,10 +421,10 @@ def _filter_hits_to_goals(hits: list[dict], goals: list[str], query: str) -> lis
 
 
 def _goal_covered(goal: str, blob: str) -> bool:
-    toks = [t for t in re.findall(r"[a-z0-9]{3,}", goal.casefold()) if t not in _STOPWORDS]
+    toks = sorted(_tokens_for_match(goal))
     if not toks:
         return True
-    hit = sum(1 for t in toks if t in blob)
+    hit = sum(1 for t in toks if _token_in_blob(t, blob))
     return hit >= max(1, (len(toks) + 1) // 2)
 
 
@@ -542,10 +564,45 @@ _STOPWORDS = {
 }
 
 
+def _token_in_blob(t: str, blob: str) -> bool:
+    """Is this coverage token evidenced in the blob?
+
+    Exact substring first. Non-Latin paraphrase is the remaining CHUNK-02 miss:
+    CJK/Thai bigrams of the query often do not appear contiguously (损坏商品 vs
+    损坏的商品), and Hangul/Arabic letter-runs are whole words that inflect
+    (상품의 vs 상품은). Bigrams: both characters present. Longer runs: majority
+    of characters present. Unrelated Latin evidence still scores 0 because those
+    characters are absent.
+    """
+    if not t:
+        return False
+    if t in blob:
+        return True
+    if t.isascii():
+        return False
+    if len(t) == 2:
+        return t[0] in blob and t[1] in blob
+    if len(t) >= 3:
+        hits = sum(1 for ch in t if ch in blob)
+        return hits >= (len(t) + 1) // 2
+    return False
+
+
 def _salient_tokens(query: str) -> list[str]:
     # Question/meta words are not "coverage" terms — counting them made trivial
     # queries ("what is this about") look uncovered and fabricated gap notes.
-    return [t for t in dict.fromkeys(sira.tokenize(query)) if len(t) >= 3 and t not in _STOPWORDS]
+    # ASCII floor stays 3; CJK bigrams are length 2 and must still count or
+    # coverage returns 1.0 vacuously (P13).
+    out: list[str] = []
+    for t in dict.fromkeys(sira.tokenize(query)):
+        if t in _STOPWORDS:
+            continue
+        if t.isascii() and len(t) < 3:
+            continue
+        if not t.isascii() and len(t) < 2:
+            continue
+        out.append(t)
+    return out
 
 
 def _evidence_blob(hits: list[dict]) -> str:
@@ -560,7 +617,7 @@ def _coverage(query: str, hits: list[dict]) -> float:
     if not toks:
         return 1.0
     blob = _evidence_blob(hits)
-    return sum(1 for t in toks if t in blob) / len(toks)
+    return sum(1 for t in toks if _token_in_blob(t, blob)) / len(toks)
 
 
 def _lexical_rerank(query: str, hits: list[dict]) -> list[dict]:

@@ -45,15 +45,77 @@ _spawn_state: dict[str, Any] = {"attempted": False, "ok": False, "error": None, 
 POLL_INTERVAL_SEC = 5.0
 
 
+_LOOPBACK_DEMO_KEY = "dms-demo-viewer-key"
+_ENGINE_FALLBACKS = ("http://127.0.0.1:8011",)
+_engine_seat: dict[str, Any] = {"t": 0.0, "url": "", "key": ""}
+
+
+def _loopback_key(url: str, key: str) -> str:
+    """Local Netie engine demo key. Never attach it to a remote Cortex URL."""
+    if key:
+        return key
+    host = urlparse(url).hostname or ""
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return _LOOPBACK_DEMO_KEY
+    return ""
+
+
 def _cfg() -> tuple[str, str]:
     env = load_env()
     url = (
         os.environ.get("CORTEX_API_URL")
         or env.get("CORTEX_API_URL")
+        or _read_url_hint()
         or DEFAULT_URL
     ).rstrip("/")
     key = os.environ.get("CORTEX_API_KEY") or env.get("CORTEX_API_KEY", "")
-    return url, key
+    return url, _loopback_key(url, key)
+
+
+def _is_engine_specs(data: Any) -> bool:
+    return isinstance(data, dict) and (
+        data.get("ok") is True or "engine" in data or "config" in data or "backends" in data
+    )
+
+
+def _probe_engine(url: str, path: str, key: str, timeout: float = 2.0) -> dict | None:
+    try:
+        req = urllib.request.Request(f"{url}{path}", headers=_headers(key))
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode())
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _engine_cfg() -> tuple[str, str]:
+    """Stay on CORTEX_API_URL unless that URL is proven Constructor.
+
+    Hopping on a failed probe used to schedule against whatever was on :8011
+    while the configured seat was down, still starting, or a test mock. Only a
+    Constructor/DMS health payload (surface=constructor) authorizes the fallback.
+    """
+    now = time.monotonic()
+    base, key = _cfg()
+    cached = str(_engine_seat.get("url") or "")
+    if now - float(_engine_seat["t"]) < 20 and cached and cached == base:
+        return cached, str(_engine_seat["key"])
+    raw = _probe_engine(base, "/health", key, 1.2) or {}
+    surface = str(raw.get("surface") or "")
+    if surface != "constructor":
+        _engine_seat.update(t=now, url=base, key=key)
+        return base, key
+    for alt in _ENGINE_FALLBACKS:
+        alt = alt.rstrip("/")
+        if alt == base.rstrip("/"):
+            continue
+        alt_key = _loopback_key(alt, os.environ.get("CORTEX_API_KEY") or "")
+        if _is_engine_specs(_probe_engine(alt, "/api/engine/specs", alt_key, 3.0)):
+            _engine_seat.update(t=now, url=alt, key=alt_key)
+            return alt, alt_key
+    # Do not cache a Constructor seat for 20s — the engine on :8011 may come up.
+    _engine_seat.update(t=0.0, url=base, key=key)
+    return base, key
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -63,8 +125,10 @@ def _headers(key: str) -> dict[str, str]:
     return h
 
 
-def _post(path: str, body: dict, timeout: float = 1.5) -> dict | None:
-    base, key = _cfg()
+def _post(path: str, body: dict, timeout: float = 1.5, *, base: str | None = None, key: str | None = None) -> dict | None:
+    cfg_base, cfg_key = _engine_cfg()
+    base = (base or cfg_base).rstrip("/")
+    key = cfg_key if key is None else key
     try:
         req = urllib.request.Request(
             f"{base}{path}",
@@ -79,8 +143,10 @@ def _post(path: str, body: dict, timeout: float = 1.5) -> dict | None:
         return None
 
 
-def _get(path: str, timeout: float = 1.5) -> dict | list | None:
-    base, key = _cfg()
+def _get(path: str, timeout: float = 1.5, *, base: str | None = None, key: str | None = None) -> dict | list | None:
+    cfg_base, cfg_key = _engine_cfg()
+    base = (base or cfg_base).rstrip("/")
+    key = cfg_key if key is None else key
     try:
         req = urllib.request.Request(f"{base}{path}", headers=_headers(key))
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -91,7 +157,7 @@ def _get(path: str, timeout: float = 1.5) -> dict | list | None:
 
 
 def health() -> dict[str, Any]:
-    base, key = _cfg()
+    base, key = _engine_cfg()
     # 1.2s: cold Cortex / Windows Defender can miss a 0.45s probe and falsely show offline
     try:
         req = urllib.request.Request(f"{base}/health", headers=_headers(key))
@@ -124,7 +190,13 @@ def _autospawn_enabled() -> bool:
 
 def _cortex_root() -> Path:
     env = load_env()
-    return Path(env.get("CORTEX_ROOT") or os.environ.get("CORTEX_ROOT") or DEFAULT_CORTEX_ROOT)
+    raw = (env.get("CORTEX_ROOT") or os.environ.get("CORTEX_ROOT") or "").strip()
+    if raw:
+        return Path(raw)
+    for cand in (Path(r"E:\Cortex"), Path(r"D:\Cortex"), DEFAULT_CORTEX_ROOT):
+        if (cand / "scripts" / "start_cortex_engine.ps1").is_file():
+            return cand
+    return DEFAULT_CORTEX_ROOT
 
 
 def _port_from_url(url: str) -> int:
@@ -327,6 +399,76 @@ def engine_bakeoff(body: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def _resolve_engine_for_loop() -> tuple[str, str, dict[str, Any]]:
+    """Constructor on :8010 is not the engine. Prefer a live Netie /api/engine/specs."""
+    base, key = _cfg()
+    h = health()
+    raw = h.get("raw") if isinstance(h.get("raw"), dict) else {}
+    specs = _get("/api/engine/specs", timeout=3.0, base=base, key=key)
+    if str(raw.get("surface") or "") != "constructor" and _is_engine_specs(specs):
+        return base, key, raw
+    for alt in _ENGINE_FALLBACKS:
+        alt = alt.rstrip("/")
+        if alt == base.rstrip("/"):
+            continue
+        alt_key = _loopback_key(alt, os.environ.get("CORTEX_API_KEY") or "")
+        alt_specs = _get("/api/engine/specs", timeout=3.0, base=alt, key=alt_key)
+        if _is_engine_specs(alt_specs):
+            return alt, alt_key, {"status": "ok", "pack": "dms"}
+    return base, key, raw
+
+
+def engine_agent_loop(
+    prompt: str,
+    *,
+    session_id: str = "",
+    max_steps: int = 8,
+    tools: list | None = None,
+    quality_criteria: list | None = None,
+) -> dict[str, Any]:
+    """POST /api/engine/run architecture_preset=agent (F20b quality loop)."""
+    ensure_engine(wait_sec=8.0)
+    base, key, raw = _resolve_engine_for_loop()
+    if str(raw.get("surface") or "") == "constructor":
+        return {
+            "ok": False,
+            "reason": "wrong_surface",
+            "error": (
+                f"{base} is Constructor, not the Cortex engine. "
+                "/api/engine/run is 404 here."
+            ),
+        }
+    specs = _get("/api/engine/specs", timeout=3.0, base=base, key=key)
+    if not _is_engine_specs(specs):
+        return {
+            "ok": False,
+            "reason": "wrong_surface",
+            "error": (
+                f"{base} has no /api/engine/specs. "
+                "Point CORTEX_API_URL at CortexOS.api.main, not constructor_app."
+            ),
+        }
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "architecture_preset": "agent",
+        "session_id": session_id or "",
+        "max_steps": max(1, min(int(max_steps), 20)),
+    }
+    if tools:
+        body["tools"] = list(tools)
+    if quality_criteria:
+        body["quality_criteria"] = list(quality_criteria)
+    data = _post("/api/engine/run", body, timeout=120.0, base=base, key=key)
+    if isinstance(data, dict) and data.get("ok"):
+        return data
+    if isinstance(data, dict):
+        return {
+            "ok": False,
+            "error": str(data.get("error") or data.get("detail") or "engine agent loop failed")[:300],
+        }
+    return {"ok": False, "error": "Cortex engine offline"}
+
+
 def engine_config(body: dict[str, Any]) -> dict[str, Any]:
     """POST /api/engine/config — requires live Cortex engine (one autospawn try)."""
     if not available():
@@ -514,17 +656,31 @@ def _post_status(path: str, body: dict, timeout: float = 6.0) -> dict:
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return {"status": r.status, **json.loads(r.read().decode())}
+            raw = r.read().decode() or "{}"
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                return {
+                    "ok": False,
+                    "status": r.status,
+                    "error": f"non-dict body: {str(data)[:160]}",
+                    "verdict": "http_error",
+                }
+            return {"status": r.status, **data}
     except urllib.error.HTTPError as e:
         try:
-            detail = json.loads(e.read().decode()).get("detail", {})
+            parsed = json.loads(e.read().decode() or "{}")
         except Exception:
+            parsed = {}
+        detail = parsed.get("detail", {}) if isinstance(parsed, dict) else {}
+        if isinstance(detail, str):
+            detail = {"error": detail}
+        if not isinstance(detail, dict):
             detail = {}
         return {
             "ok": False,
             "status": e.code,
-            "error": detail.get("error") or str(e),
-            "verdict": detail.get("verdict", "http_error"),
+            "error": str(detail.get("error") or parsed.get("error") or e)[:240],
+            "verdict": str(detail.get("verdict") or "http_error"),
         }
     except Exception as e:
         return {"ok": False, "status": 0, "error": str(e)[:200], "verdict": "offline"}
@@ -578,7 +734,7 @@ def _json_call(
     timeout: float = 8.0,
 ) -> dict[str, Any]:
     """JSON call that keeps FastAPI error bodies (humanize.explain objects)."""
-    base, key = _cfg()
+    base, key = _engine_cfg()
     data = None if body is None else json.dumps(body).encode("utf-8")
     try:
         req = urllib.request.Request(
@@ -605,45 +761,227 @@ def _json_call(
 def _wf_down(detail: str = "Cortex engine offline") -> dict[str, Any]:
     return {
         "ok": False,
+        "reason": "cortex_down",
         "error": detail,
         "hint": "Start Cortex on :8010 (CORTEX_AUTOSPAWN=1) or open Hosting → Netie Engine",
     }
 
 
+def _next_run_at(obj: dict[str, Any] | None) -> Any:
+    """next_run_at wherever Cortex put it — top level or nested under routine."""
+    if not isinstance(obj, dict):
+        return None
+    if obj.get("next_run_at") not in (None, ""):
+        return obj.get("next_run_at")
+    rt = obj.get("routine") if isinstance(obj.get("routine"), dict) else {}
+    return rt.get("next_run_at")
+
+
+def scheduler_status(*, try_spawn: bool = False) -> dict[str, Any]:
+    """Named reason the Cortex scheduler can or cannot fire. Never a silent no-op.
+
+    :8010 answering GET /health is not enough. Constructor/DMS answers /health with
+    {status:ok, pack:dms, surface:constructor} and 404s /api/routines, so a caller
+    that only probes /health believes it scheduled something that will never run.
+    Every non-live outcome carries a `reason` the UI can name at the control.
+    """
+    h = health()
+    if not h.get("ok") and try_spawn:
+        ensure_engine(wait_sec=6.0)
+        h = health()
+    raw = h.get("raw") if isinstance(h.get("raw"), dict) else {}
+    pack = str(raw.get("pack") or "")
+    surface = str(raw.get("surface") or "")
+    url = str(h.get("url") or _cfg()[0])
+    base = {"url": url, "pack": pack, "surface": surface, "scheduler": "cortex"}
+    if not h.get("ok"):
+        err = str(h.get("error") or "Cortex engine offline")
+        return {
+            **base,
+            "ok": False,
+            "reason": "cortex_down",
+            "error": f"Cortex down at {url}: {err}",
+            "hint": r"Start Cortex: .\scripts\start_cortex_engine.ps1 -Port 8010",
+        }
+    # Constructor-only FastAPI sets surface=constructor. The Netie engine also
+    # reports pack=dms -- that is the product pack, not a wrong surface.
+    if surface == "constructor":
+        who = surface or "Constructor/DMS"
+        return {
+            **base,
+            "ok": False,
+            "reason": "wrong_surface",
+            "error": (
+                f"{url} is {who} (pack={pack or 'dms'}), not the Cortex engine. "
+                "/api/routines is 404 here; the scheduler cannot fire."
+            ),
+            "hint": "Point CORTEX_API_URL at Cortex, or stop Constructor/DMS on that port.",
+        }
+    listed = _json_call("GET", "/api/routines", None, timeout=3.0)
+    http = listed.get("_http")
+    if listed.get("ok"):
+        return {**listed, **base, "ok": True, "reason": "live"}
+    if http == 404:
+        return {
+            **base,
+            "ok": False,
+            "reason": "no_scheduler",
+            "error": (
+                f"{url} answered /health but GET /api/routines returned 404. "
+                "Whatever is on that port, it is not a Cortex scheduler."
+            ),
+            "hint": "Point CORTEX_API_URL at the Cortex engine.",
+        }
+    return {
+        **base,
+        "ok": False,
+        "reason": "cortex_down",
+        "error": str(listed.get("error") or listed.get("detail") or "Cortex scheduler unreachable"),
+        "hint": "Start Cortex on :8010.",
+        "_http": http,
+    }
+
+
+def _legacy_host_rows() -> dict[str, Any]:
+    """Rows the retired AirGPT host clock already wrote to disk (SHELL-02).
+
+    The host clock is out of scope for F18 — Cortex owns the scheduler — so nothing
+    creates these any more. They stay listable and deletable, marked `airgpt_host`,
+    so an existing chip is neither silently dropped nor mistaken for a Cortex routine.
+    """
+    try:
+        import host_routines
+
+        return host_routines.list_routines()
+    except Exception as e:  # store unreadable: say so, do not pretend it is empty
+        return {"ok": False, "error": str(e)[:200], "routines": []}
+
+
 def routines_list() -> dict[str, Any]:
-    ensure_engine(wait_sec=6.0)
-    data = _get("/api/routines", timeout=3.0)
-    if isinstance(data, dict) and data.get("ok"):
-        return data
-    return _wf_down((data or {}).get("error") if isinstance(data, dict) else "unreachable")
+    """GET /api/routines. `ok` tracks the Cortex scheduler, never the local store."""
+    st = scheduler_status(try_spawn=True)
+    host = _legacy_host_rows()
+    rows = list(host.get("routines") or [])
+    st["host_routines"] = rows
+    st["host_routine_count"] = len(rows)
+    if host.get("unhealthy"):
+        st["host_unhealthy"] = host["unhealthy"]
+    if not st.get("ok"):
+        st.setdefault("routines", [])
+    return st
 
 
 def routines_draft(goal: str) -> dict[str, Any]:
-    """POST /api/routines/draft — preview only; nothing saved."""
-    ensure_engine(wait_sec=6.0)
-    return _json_call("POST", "/api/routines/draft", {"goal": goal}, timeout=6.0)
+    """POST /api/routines/draft — preview only; nothing saved.
+
+    A draft the UI can render a Create button under must carry the fields that
+    button implies. A 404 from Cortex is a refusal, not a blank preview card.
+    """
+    st = scheduler_status(try_spawn=True)
+    if not st.get("ok"):
+        return st
+    out = _json_call("POST", "/api/routines/draft", {"goal": goal}, timeout=6.0)
+    if not out.get("ok"):
+        return out
+    draft = out.get("draft") if isinstance(out.get("draft"), dict) else out
+    missing = [k for k in ("name", "schedule_text", "prompt") if not draft.get(k)]
+    if missing:
+        return {
+            "ok": False,
+            "reason": "empty_draft",
+            "error": (
+                "Cortex returned a draft with no " + ", ".join(missing) +
+                " — nothing to preview, and nothing worth a Create button."
+            ),
+            "hint": "Rephrase the goal, or check the Cortex draft endpoint.",
+            "url": st.get("url"),
+            "_http": out.get("_http"),
+        }
+    out["reason"] = "live"
+    out["scheduler"] = "cortex"
+    return out
 
 
 def routines_create(goal: str, **extra: Any) -> dict[str, Any]:
-    """POST /api/routines — one sentence is enough; extras optional overrides."""
-    ensure_engine(wait_sec=6.0)
+    """POST /api/routines — one sentence is enough; extras optional overrides.
+
+    Two outcomes only: a real Cortex routine with a real next_run_at, or a named
+    refusal. There is deliberately no AirGPT-owned cron behind this call (issue #60
+    out-of-scope: Cortex owns the scheduler); a host clock here is the third outcome
+    that made a chip look scheduled while nothing ran.
+    """
+    st = scheduler_status(try_spawn=True)
+    if not st.get("ok"):
+        return st
     body = {"goal": goal, **{k: v for k, v in extra.items() if v is not None}}
-    return _json_call("POST", "/api/routines", body, timeout=8.0)
+    out = _json_call("POST", "/api/routines", body, timeout=8.0)
+    nxt = _next_run_at(out)
+    if out.get("ok") and nxt in (None, ""):
+        out["ok"] = False
+        out["reason"] = "no_next_run"
+        out["error"] = "Cortex accepted the goal but returned no next_run_at — not scheduled"
+    elif out.get("ok"):
+        out["reason"] = "live"
+        out["scheduler"] = "cortex"
+        out["next_run_at"] = nxt
+    return out
 
 
 def routines_pause(rid: str, reason: str = "user") -> dict[str, Any]:
+    if str(rid).startswith("hr-"):
+        import host_routines
+
+        return host_routines.pause(rid, reason)
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("POST", f"/api/routines/{rid}/pause", {"reason": reason}, timeout=4.0)
 
 
 def routines_resume(rid: str) -> dict[str, Any]:
+    if str(rid).startswith("hr-"):
+        import host_routines
+
+        return host_routines.resume(rid)
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("POST", f"/api/routines/{rid}/resume", {}, timeout=4.0)
 
 
 def routines_run(rid: str) -> dict[str, Any]:
-    return _json_call("POST", f"/api/routines/{rid}/run", {}, timeout=60.0)
+    """Forced run. `fired` is true only when next_run_at actually advanced."""
+    if str(rid).startswith("hr-"):
+        import host_routines
+
+        return host_routines.run_now(rid)
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
+    before = _next_run_at(_json_call("GET", f"/api/routines/{rid}", None, timeout=4.0))
+    out = _json_call("POST", f"/api/routines/{rid}/run", {}, timeout=60.0)
+    after = _next_run_at(out)
+    if after in (None, ""):
+        after = _next_run_at(_json_call("GET", f"/api/routines/{rid}", None, timeout=4.0))
+    out["next_run_at_before"] = before
+    out["next_run_at_after"] = after
+    if after not in (None, ""):
+        out["next_run_at"] = after
+    out["fired"] = bool(out.get("ok") and after not in (None, "") and after != before)
+    if out.get("ok") and not out["fired"]:
+        out["error"] = "routine did not fire: next_run_at did not advance"
+        out["reason"] = "did_not_fire"
+    return out
 
 
 def routines_delete(rid: str) -> dict[str, Any]:
+    if str(rid).startswith("hr-"):
+        import host_routines
+
+        return host_routines.delete(rid)
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
     return _json_call("DELETE", f"/api/routines/{rid}", timeout=4.0)
 
 
@@ -702,6 +1040,23 @@ def constructor_recommend(nodes: list | None = None, edges: list | None = None) 
         "/cortex/constructor/recommend",
         {"nodes": nodes or [], "edges": edges or []},
         timeout=8.0,
+    )
+
+
+def constructor_generate(
+    prompt: str,
+    nodes: list | None = None,
+    edges: list | None = None,
+) -> dict[str, Any]:
+    """Constructor generate requires `prompt` (422 without it)."""
+    return _post_status(
+        "/cortex/constructor/generate",
+        {
+            "prompt": (prompt or "")[:4000],
+            "nodes": nodes or [],
+            "edges": edges or [],
+        },
+        timeout=45.0,
     )
 
 

@@ -64,6 +64,13 @@ class XlsxOrchHttpGateTest(unittest.TestCase):
         self.orch.mkdir()
         self._orig = xlsx_orch.PACK_DIR
         xlsx_orch.PACK_DIR = self.orch
+        self._orig_post = xlsx_orch.post_pack_to_dms
+        xlsx_orch.post_pack_to_dms = lambda *a, **k: {
+            "ok": False,
+            "reason": "dms_down",
+            "error": "test stub: DMS not on the wire",
+            "url": "http://127.0.0.1:8090/v1/studio/xlsx-orch/crosscheck",
+        }
         self.frtr = _frtr(Path(self._tmp.name))
         self.result = _result(Path(self._tmp.name))
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), clipdrop.Handler)
@@ -73,6 +80,7 @@ class XlsxOrchHttpGateTest(unittest.TestCase):
 
     def tearDown(self):
         xlsx_orch.PACK_DIR = self._orig
+        xlsx_orch.post_pack_to_dms = self._orig_post
         self.srv.shutdown()
         self.srv.server_close()
         self._tmp.cleanup()

@@ -10,14 +10,19 @@ defect reproduced on a real corpus, not a hypothetical. It is deliberately NOT
 wired into CI: a permanently red check trains people to ignore red (R-0002 cuts
 both ways - a test nobody believes is worse than no test).
 
-The root cause under most of these is one line, `rag/sira.py:13`:
+The root cause under most of these used to be one ASCII-only character class,
 
     _TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_\\-./]{1,}")
 
-An ASCII-only character class beneath tokenization, salient terms, coverage and
-index phrases. Fixing it changes what gets indexed, so it is gated behind the
-index fingerprint (rag/index_fingerprint.py) - a score taken before that change
-is not comparable to one taken after.
+sitting beneath tokenization, salient terms, coverage and index phrases.
+CHUNK-02 replaced it with `rag.sira.tokenize` (TOKENIZER_ID "unicode_v1"),
+which keeps the ASCII class for identifiers and adds n-grams for CJK/Thai and
+letter runs for Cyrillic/Arabic/Hangul. That changes what gets indexed, so it is
+gated behind the index fingerprint (rag/index_fingerprint.py) - a score taken
+before that change is not comparable to one taken after.
+
+What stays red is the embedder: the default `bge-small-en-v1.5` is English-only
+and cannot co-locate cross-script paraphrases (F25d-R, opt-in, out of scope).
 """
 from __future__ import annotations
 
@@ -152,8 +157,54 @@ def main() -> int:
         check(cov < 0.6, f"{lang}: unrelated evidence scores below the 0.6 floor",
               f"coverage={cov:.2f} - vacuous full coverage, retrieval loop never fires")
 
+    # POSITIVE CONTROL. Without it every check above passes on a `_coverage` that
+    # returns 0.0 for everything - the same shape as the vacuous 1.0 it replaced,
+    # pointing the other way (R-0007). Measured after CHUNK-02: zh 0.45, ko 0.40,
+    # ar 0.57, ja 0.59 against their OWN source document, all under the 0.6 floor
+    # at rag/answer.py `_COVERAGE_FLOOR`. That is a systematic false negative - the
+    # corrective loop re-fires on documents that do answer the question. Red on
+    # purpose until coverage measures those scripts; do not raise the floor to
+    # pass it, and do not xfail it (R-0002).
+    for lang, spec in CORPUS.items():
+        own = [{"heading": spec["name"], "path": f"{lang}.md", "text": spec["text"]}]
+        cov = answer._coverage(spec["query"], own)
+        check(cov >= 0.6, f"{lang}: its own source document clears the 0.6 floor",
+              f"coverage={cov:.2f} on the document that answers it - false negative")
+
     print()
-    print("--- 3. embedder distinguishes the corpus from unrelated text ---")
+    print("--- 3. the web-goal lane does not fail open on non-Latin ---")
+    # _coverage above is only one of four token paths. These three siblings kept
+    # the ASCII regex and reproduced the same vacuous-success bug where the gate
+    # never looked: a goal that tokenizes to nothing is dropped, matches
+    # everything, and reads as fully evidenced (P13 / CHUNK-02).
+    unrelated_hit = {"title": "Bicycles", "url": "bikes.md",
+                     "snippet": "everything you need to know about bicycle maintenance"}
+    for lang, spec in CORPUS.items():
+        q = spec["query"]
+        check(answer._goal_ok(q), f"{lang}: query survives as a web goal",
+              "_goal_ok -> False; the goal is discarded before any search runs")
+        dist = answer.goal_distance([q], unrelated)["distance"]
+        check(dist > 0.5, f"{lang}: unrelated evidence leaves the goal far",
+              f"distance={dist:.2f} - vacuous full coverage, no second web round")
+        check(not answer._result_matches_goal(unrelated_hit, q),
+              f"{lang}: unrelated hit is not kept for the goal",
+              "_result_matches_goal -> True on zero shared tokens (filter is a no-op)")
+        # POSITIVE CONTROL, same reason as section 2: the two checks above both pass
+        # on a goal_distance hardwired to 1.0 and a _result_matches_goal hardwired
+        # to False. These pin the other direction, so the lane has to discriminate
+        # rather than merely refuse.
+        own_hit = {"title": spec["name"], "url": f"{lang}.md", "snippet": spec["text"]}
+        own_dist = answer.goal_distance([q], [{"heading": spec["name"],
+                                               "path": f"{lang}.md",
+                                               "text": spec["text"]}])["distance"]
+        check(own_dist <= 0.5, f"{lang}: its own document brings the goal close",
+              f"distance={own_dist:.2f} on the document that answers it")
+        check(answer._result_matches_goal(own_hit, q),
+              f"{lang}: its own document is kept for the goal",
+              "_result_matches_goal -> False on the matching document (filter drops everything)")
+
+    print()
+    print("--- 4. embedder distinguishes the corpus from unrelated text ---")
     try:
         base = embed.embed_text(CORPUS["en"]["text"])
         for lang in ("zh", "ja", "ar", "ru"):
@@ -165,18 +216,24 @@ def main() -> int:
                   f"cosine={same:.3f} vs en (model={getattr(embed, 'BGE_MODEL_ID', '?')} is English-only)")
     except Exception as exc:
         check(False, "embedder probe ran", f"{type(exc).__name__}: {exc}")
+    print("  note  ja PASSes on shared ASCII/digit content (\"30\", markdown), not on")
+    print("        Japanese understanding. Read it as noise, not as a passing language.")
 
     print()
-    print("--- 4. whitespace tokenization on scripts without spaces ---")
+    print("--- 5. hash backend spreads spaceless scripts across vector lanes ---")
+    # This used to count whitespace tokens in the fixture string, which no code
+    # path reads - no tokenizer change could ever move it. The property that
+    # matters is what _hash_embed actually does with a spaceless document:
+    # .split() gave it ~3 tokens and ~10 of 64 lanes, sira.tokenize gives 34+.
     for lang in ("zh", "ja", "th"):
-        n = len(CORPUS[lang]["text"].split())
-        # The hash backend splits on whitespace; a spaceless script collapses to
-        # one token, so an entire document hashes to a single lane.
-        check(n >= 5, f"{lang}: text splits into >=5 whitespace tokens",
-              f"splits into {n} - under the hash backend this is ~1 vector lane")
+        vec = embed._hash_embed(CORPUS[lang]["text"])
+        lanes = sum(1 for v in vec if v)
+        floor = len(vec) // 2
+        check(lanes >= floor, f"{lang}: text spreads over >={floor} hash lanes",
+              f"{lanes}/{len(vec)} lanes non-zero - whitespace .split() collapses this to ~10")
 
     print()
-    print("--- 5. mixed-script document keeps its ASCII anchors ---")
+    print("--- 6. mixed-script document keeps its ASCII anchors ---")
     mixed = sira.tokenize(CORPUS["mixed"]["text"])
     check("sku-00397" in mixed, "mixed: SKU code survives tokenization", f"tokens={mixed[:8]}")
     check(any("退款" in t for t in mixed), "mixed: CJK term survives tokenization",
@@ -190,8 +247,15 @@ def main() -> int:
         print(f"\n{len(FAIL)} FAILING - this is the multilingual definition of done:")
         for f in FAIL:
             print(f"  - {f}")
-        print("\nRoot cause for most: rag/sira.py:13 is ASCII-only. Fixing it re-indexes")
-        print("the corpus, so it is gated behind rag/index_fingerprint.py.")
+        print("\nTokenizer (CHUNK-02 unicode_v1) is no longer ASCII-only, and neither")
+        print("is the hash embedder.")
+        print("Two separate reds, and they are not the same problem:")
+        print("  1. English-only default embedder - F25d-R opt-in, expected, out of scope.")
+        print("  2. Coverage and the web-goal lane now UNDER-score their own source")
+        print("     documents (zh/ja/ko/ar under the 0.6 floor). CHUNK-02 replaced a")
+        print("     vacuous 1.0 with a systematic false negative. Only the positive")
+        print("     controls see it - the negative-direction checks pass either way.")
+        print("Do not xfail, skip, or delete this gate (R-0002).")
     return 1 if FAIL else 0
 
 

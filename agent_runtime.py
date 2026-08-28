@@ -447,6 +447,51 @@ def run_agent_events(
     audit.log("agent.run.start", detail=f"agent={agent_id} run={run_id} mode={thinking_mode}", ok=True)
     yield {"type": "status", "text": f"Running {agent['name']} ({thinking_mode})…", "run_id": run_id, "agent_id": agent_id}
 
+    if not require_approval and not is_subagent:
+        try:
+            import cortex_client
+
+            cortex = cortex_client.engine_agent_loop(
+                prompt or "",
+                session_id=f"airgpt-{run_id}",
+                max_steps=max_steps,
+            )
+        except Exception as e:
+            cortex = {"ok": False, "error": str(e)[:200]}
+        if isinstance(cortex, dict) and cortex.get("ok"):
+            yield {
+                "type": "status",
+                "text": "Cortex quality loop",
+                "runner": "agent_task",
+            }
+            for t in ((cortex.get("telemetry") or {}).get("tools") or []):
+                if not isinstance(t, dict):
+                    continue
+                yield {
+                    "type": "tool",
+                    "name": str(t.get("tool") or "tool"),
+                    "result": {"ok": t.get("ok"), "summary": t.get("summary")},
+                }
+            analysis = str(cortex.get("content") or cortex.get("output") or "")
+            yield {"type": "token", "text": analysis}
+            try:
+                agent_store.finish_run(run_id, status="done", result=analysis)
+            except Exception:
+                pass
+            yield {
+                "type": "done",
+                "run_id": run_id,
+                "agent_id": agent_id,
+                "analysis": analysis,
+                "stop_reason": cortex.get("stop_reason"),
+                "quality_passed": cortex.get("quality_passed"),
+                "runner": "agent_task",
+                "steps": (cortex.get("telemetry") or {}).get("tools") or [],
+            }
+            return
+        why = (cortex or {}).get("error") if isinstance(cortex, dict) else "Cortex down"
+        yield {"type": "status", "text": f"Quality loop skipped: {why}"}
+
     tools = [t for t in (agent.get("tools") or []) if t in agent_tools.TOOLS]
     if not tools:
         tools = list(agent_tools.TOOLS.keys())[:6]

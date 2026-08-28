@@ -164,16 +164,41 @@ def read_file(rel: str, *, max_bytes: int = 512_000) -> dict:
         return {"ok": False, "error": str(e)[:200]}
 
 
+def line_delta(old: str, new: str) -> dict[str, int]:
+    """+N / -M line counts for tool-call readout (F20a)."""
+    import difflib
+
+    a = (old or "").splitlines()
+    b = (new or "").splitlines()
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b).get_opcodes():
+        if tag == "insert":
+            added += j2 - j1
+        elif tag == "delete":
+            removed += i2 - i1
+        elif tag == "replace":
+            removed += i2 - i1
+            added += j2 - j1
+    return {"added": added, "removed": removed}
+
+
 def write_file(rel: str, content: str, *, apply: bool = True) -> dict:
     target, err = resolve_rel(rel)
     if err or not target:
         return {"ok": False, "error": err or "invalid"}
+    old = ""
+    if target.is_file():
+        try:
+            old = target.read_text(encoding="utf-8")
+        except OSError:
+            old = ""
+    delta = line_delta(old, content or "")
     if not apply:
-        return {"ok": True, "preview": True, "path": rel, "bytes": len(content or "")}
+        return {"ok": True, "preview": True, "path": rel, "bytes": len(content or ""), **delta}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content or "", encoding="utf-8")
-        return {"ok": True, "path": rel, "bytes": len(content or "")}
+        return {"ok": True, "path": rel, "bytes": len(content or ""), **delta}
     except OSError as e:
         return {"ok": False, "error": str(e)[:200]}
 
@@ -212,9 +237,10 @@ def patch_file(rel: str, old: str, new: str, *, apply: bool = True) -> dict:
         return {"ok": False, "error": "old text not found"}
     updated = content.replace(old, new, 1)
     diff = {"path": rel, "before_len": len(content), "after_len": len(updated)}
+    delta = line_delta(content, updated)
     if not apply:
-        return {"ok": True, "preview": True, "diff": diff, "content": updated}
-    return {**write_file(rel, updated, apply=True), "diff": diff}
+        return {"ok": True, "preview": True, "diff": diff, "content": updated, **delta}
+    return {**write_file(rel, updated, apply=True), "diff": diff, **delta}
 
 
 def search_files(query: str, *, glob_pat: str = "**/*") -> dict:

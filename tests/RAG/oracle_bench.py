@@ -276,6 +276,14 @@ def _spaced(name: str) -> str:
     return "".join(out).lower()
 
 
+# One list, so a family added here cannot quietly skip the mutation gate in
+# tests/test_oracle_schema_link_mutation.py, which iterates this exact tuple.
+FAMILIES = (
+    "row_range_agg", "row_range_nocol", "filter_agg",
+    "filter_count", "combined", "paraphrase", "out_of_range",
+)
+
+
 def generate(path: Path, schema: dict[str, dict], rng: random.Random, n: int) -> list[dict]:
     usable = [
         (s, meta) for s, meta in schema.items()
@@ -284,10 +292,7 @@ def generate(path: Path, schema: dict[str, dict], rng: random.Random, n: int) ->
     if not usable:
         return []
     cases: list[dict] = []
-    families = [
-        "row_range_agg", "row_range_nocol", "filter_agg",
-        "filter_count", "combined", "paraphrase", "out_of_range",
-    ]
+    families = list(FAMILIES)
     while len(cases) < n:
         fam = families[len(cases) % len(families)]
         sheet, meta = rng.choice(usable)
@@ -435,7 +440,10 @@ def required_links(case: dict) -> tuple[str, set[str]]:
     if fam in ("row_range_agg", "paraphrase", "out_of_range"):
         cols = {case["col"]} if case.get("col") else set()
     elif fam == "row_range_nocol":
-        cols = set()  # no column named, so binding the sheet is the whole job
+        # No column is named, but the question is not column-free: expected() grades
+        # a per_column result over every numeric column, so that is the set the lane
+        # has to reach. An empty set here made the check vacuously true (R-0007).
+        cols = set(case.get("numeric") or {})
     elif fam == "filter_count":
         cols = {case["fcol"]}
     elif fam in ("filter_agg", "combined"):
@@ -452,29 +460,54 @@ def link_check(case: dict, exp: dict, got: dict | None) -> tuple[bool, str]:
     """
     want_sheet, want_cols = required_links(case)
     if got is None:
-        return (case["family"] == "out_of_range"), "nothing returned"
+        # Nothing came back, so nothing bound. Refusing by not answering is a value
+        # outcome, not evidence that the schema was ever resolved.
+        return False, "nothing returned"
     linked = got.get("linked") or {}
+    note = ""
     if got.get("abstained"):
         # A refusal that bound the right sheet and columns and then found no rows
         # linked the schema correctly - the empty result is the data's answer, not
-        # a retrieval failure. Only an unbound refusal counts against recall.
-        if case["family"] == "out_of_range":
-            return True, "refused: rows outside the sheet"
-        if exp.get("value") is None and not exp.get("per_column"):
-            if linked.get("sheet") == want_sheet:
-                return True, "refused, bound correctly, no rows matched"
-            return False, f"refused after binding sheet {linked.get('sheet')!r}"
-        return False, "refused although the oracle found rows"
+        # a retrieval failure. Only an unbound refusal counts against recall, so the
+        # refusal takes the same sheet + column check as an answer rather than
+        # passing on the strength of being a refusal (sheet_sql reports `linked` on
+        # the abstain path precisely so this stays checkable).
+        if exp.get("value") is not None or exp.get("per_column"):
+            return False, "refused although the oracle found rows"
+        note = "refused: "
     if linked.get("sheet") != want_sheet:
-        return False, f"sheet {linked.get('sheet')!r} != {want_sheet!r}"
+        return False, f"{note}sheet {linked.get('sheet')!r} != {want_sheet!r}"
     if linked.get("all_numeric"):
-        return (not want_cols), "bound sheet, all numeric columns"
+        # The lane's "I answered every numeric column" plan. Grading it against the
+        # sheet's numeric columns is circular for row_range_nocol, whose required set
+        # IS that column list - the comparison is then always true and the branch
+        # cannot fail (R-0007 again, one branch deeper than the empty set at
+        # required_links). sheet_sql sets all_numeric whenever no column is named,
+        # so this is the branch the family actually takes in production.
+        #
+        # Grade the claim against what came back instead. per_column carries the
+        # columns the lane really delivered, so "I answered every numeric column" is
+        # checkable evidence rather than self-certification.
+        delivered = {c.get("column") for c in (got.get("per_column") or [])}
+        delivered.discard(None)
+        if delivered:
+            missing = want_cols - delivered
+            if missing:
+                return False, f"{note}all-numeric plan did not deliver {sorted(missing)}"
+            return True, f"{note}bound sheet, all numeric columns delivered"
+        # An abstention delivers no columns, so there is nothing to grade the claim
+        # against; fall back to the sheet's numeric set. Answers always populate
+        # per_column, so this path is refusals only.
+        numeric = set(case.get("numeric") or ())
+        if want_cols <= numeric:
+            return True, f"{note}bound sheet, all numeric columns"
+        return False, f"{note}all-numeric plan misses {sorted(want_cols - numeric)}"
     bound = {linked.get("metric")} | set(linked.get("filters") or [])
     bound.discard("")
     missing = want_cols - bound
     if missing:
-        return False, f"unlinked columns {sorted(missing)}"
-    return True, "sheet + columns bound"
+        return False, f"{note}unlinked columns {sorted(missing)}"
+    return True, f"{note}sheet + columns bound"
 
 
 def judge(case: dict, exp: dict, got: dict | None) -> tuple[bool, str]:
@@ -511,6 +544,14 @@ def judge(case: dict, exp: dict, got: dict | None) -> tuple[bool, str]:
 
 
 CROSS_VARIANTS = ("sira_max", "hybrid_max")
+# Bumped whenever link_check changes in a way that moves the numbers. Every
+# artifact this file writes carries the stamp; aggregate_cross_pack withholds the
+# schema-link figures of any artifact that does not carry the current one, so a
+# pre-fix run cannot be quoted by accident.
+#   1  original rule - row_range_nocol required no columns and out_of_range
+#      short-circuited to True, so both families scored 1.000 by construction.
+#   2  RAG-BENCH-16: both families take the same sheet + column check as the rest.
+SCHEMA_LINK_RULE = 2
 FORBIDDEN_F13_KEYS = (
     "precision@k",
     "recall@k",
@@ -682,6 +723,21 @@ def aggregate_cross_pack(payloads: list[dict]) -> dict:
     """
     if not payloads:
         raise ValueError("no payloads to aggregate")
+    # A pooled schema-link number is only meaningful if every source was scored
+    # under the rule this file implements today. Anything older is withheld rather
+    # than pooled - the alternative is a figure nobody can reproduce.
+    stale_rules = sorted(
+        {
+            str(d.get("schema_link_rule") or "pre-fix")
+            for d in payloads
+            if d.get("schema_link_rule") != SCHEMA_LINK_RULE
+        }
+    )
+    withheld = "" if not stale_rules else (
+        f"scored under schema_link_rule {stale_rules}, current rule is "
+        f"{SCHEMA_LINK_RULE}. Re-score the pack - the stored per-family figures "
+        "predate RAG-BENCH-16 and are not quotable."
+    )
     variants: dict[str, dict] = {}
     workbooks = []
     for data in payloads:
@@ -767,6 +823,9 @@ def aggregate_cross_pack(payloads: list[dict]) -> dict:
                 "schema_link_accuracy": round(b["linked"] / fn, 4),
                 "abstention_rate": round(b["abstained"] / fn, 4),
             }
+            if withheld:
+                by_family[fam]["schema_link_accuracy"] = None
+                by_family[fam]["schema_link_withheld"] = withheld
             sla[fam] = by_family[fam]["schema_link_accuracy"]
         out_variants.append(
             {
@@ -788,6 +847,8 @@ def aggregate_cross_pack(payloads: list[dict]) -> dict:
         "n": sum(int(w.get("n") or 0) for w in workbooks),
         "workbooks": workbooks,
         "variants": out_variants,
+        "schema_link_rule": SCHEMA_LINK_RULE,
+        "schema_link_withheld": withheld or None,
         "floors": {
             "pooled_value_accuracy": F13B_POOLED_FLOOR,
             "per_workbook_value_accuracy": F13B_WORKBOOK_FLOOR,
@@ -919,7 +980,10 @@ def main() -> None:
     try:
         from rag import index_fingerprint
 
-        _fp = index_fingerprint.fingerprint(extra={"pack": args.dir, "workbook": src.name})
+        _fp = index_fingerprint.fingerprint(
+            table=src.suffix.lower() in {".xlsx", ".xlsm", ".xls", ".csv"},
+            extra={"pack": args.dir, "workbook": src.name},
+        )
         print(f"  {index_fingerprint.describe(_fp)}", flush=True)
     except Exception as exc:
         _fp = None
@@ -974,6 +1038,7 @@ def main() -> None:
             "questions": questions,
             "header_drift": drift,
             "variants": variants_out,
+            "schema_link_rule": SCHEMA_LINK_RULE,
             "index_fingerprint": _fp,
             "oracle": oracle_note,
             "honesty": (
@@ -1020,6 +1085,7 @@ def main() -> None:
         "ok": True, "workbook": src.name, "seed": seed, "n": len(rows),
         "correct": total_ok, "accuracy": f13["value_accuracy"],
         "schema_link_recall": round(total_linked / max(1, len(rows)), 4),
+        "schema_link_rule": SCHEMA_LINK_RULE,
         "right_value_wrong_binding": len(lucky),
         "by_family": by_family, "header_drift": drift, "rows": rows,
         "malformed_asks": sum(1 for r in rows if r.get("malformed")),
