@@ -1,8 +1,10 @@
-"""OpenVault mesh bridge — connect AirGPT OpenIDE to D:\\OpenVault (:5000).
+"""OpenVault mesh bridge — connect AirGPT OpenIDE to E:\\OpenVault (:5000).
 
 Handshake + connect-pack per OpenVault OpenMW local_mesh protocol.
 Keys SoT is OpenVault (/api/keyvault/*, /api/keys*); this module only talks
 loopback HTTP. See PRODUCT_ROLES.md.
+This laptop's tree is E:\\OpenVault (D:\\OpenVault is absent). Dual-home
+footgun: pin OPENVAULT_HOME to <root>\\.openvault before starting :5000.
 """
 from __future__ import annotations
 
@@ -14,27 +16,72 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from config import DATA_DIR, ROOT
+from config import DATA_DIR, ENV_FILE, ROOT
 
-OPENVAULT_ROOT = Path(os.environ.get("OPENVAULT_ROOT") or r"D:\OpenVault")
 DEFAULT_OV_URL = "http://127.0.0.1:5000"
 PACK_CACHE = DATA_DIR / "openvault_connect_pack.json"
-LOCAL_CFG_CANDIDATES = (
-    OPENVAULT_ROOT / "openvault.local.json",
-    ROOT / "openvault.local.json",
-    DATA_DIR / "openvault.local.json",
-)
+_OV_CANDIDATES = (Path(r"E:\OpenVault"), Path(r"D:\OpenVault"))
 
 
 def _env(key: str, default: str = "") -> str:
     return (os.environ.get(key) or default).strip()
 
 
+def _file_env(key: str) -> str:
+    """Read one key from env.local. Never used to print secrets."""
+    if not ENV_FILE.is_file():
+        return ""
+    try:
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            if k.strip() == key:
+                return v.strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def looks_like_openvault(root: Path) -> bool:
+    return (root / "apps" / "cli" / "openvault_cli.py").is_file() or (root / "OpenMW").is_dir()
+
+
+def resolve_openvault_root() -> Path:
+    """Prefer env, then env.local, then E:\\OpenVault, then D:\\OpenVault."""
+    raw = _env("OPENVAULT_ROOT") or _file_env("OPENVAULT_ROOT")
+    if raw:
+        return Path(raw)
+    for cand in _OV_CANDIDATES:
+        if looks_like_openvault(cand):
+            return cand
+    return _OV_CANDIDATES[0]
+
+
+OPENVAULT_ROOT = resolve_openvault_root()
+
+
+def openvault_home(root: Path | None = None) -> Path:
+    raw = _env("OPENVAULT_HOME")
+    if raw:
+        return Path(raw)
+    return (root or OPENVAULT_ROOT) / ".openvault"
+
+
+def _local_cfg_candidates() -> tuple[Path, ...]:
+    return (
+        OPENVAULT_ROOT / "openvault.local.json",
+        ROOT / "openvault.local.json",
+        DATA_DIR / "openvault.local.json",
+    )
+
+
 def openvault_url() -> str:
-    u = _env("OPENVAULT_URL")
+    u = _env("OPENVAULT_URL") or _file_env("OPENVAULT_URL")
     if u:
         return u.rstrip("/")
-    for p in LOCAL_CFG_CANDIDATES:
+    for p in _local_cfg_candidates():
         if p.is_file():
             try:
                 cfg = json.loads(p.read_text(encoding="utf-8"))
@@ -51,6 +98,7 @@ def openide_public_url() -> str:
     return (
         _env("OPENIDE_URL")
         or _env("AIRGPT_PUBLIC_URL")
+        or _file_env("OPENIDE_URL")
         or "http://127.0.0.1:8765"
     ).rstrip("/")
 
@@ -67,24 +115,143 @@ def _http_json(method: str, url: str, body: dict | None = None, *, timeout: floa
         return json.loads(raw) if raw else {}
 
 
+_PING_CACHE: dict[str, Any] = {"ts": 0.0, "value": None}
+
+
 def ping() -> dict[str, Any]:
+    """Loopback health. Cached -- /api/info used to block ~2s per call when :5000 was down."""
+    now = time.time()
+    hit = _PING_CACHE.get("value")
+    if hit is not None and now - float(_PING_CACHE["ts"]) < 8.0:
+        return dict(hit)
     base = openvault_url()
+    home = openvault_home()
     try:
-        health = _http_json("GET", f"{base}/api/healthz")
-        return {
+        health = _http_json("GET", f"{base}/api/healthz", timeout=0.6)
+        out = {
             "ok": health.get("status") == "ok",
             "openvault_url": base,
             "openvault_root": str(OPENVAULT_ROOT),
+            "openvault_home": str(home),
             "health": health,
         }
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
-        return {
+        cli = OPENVAULT_ROOT / "apps" / "cli" / "openvault_cli.py"
+        out = {
             "ok": False,
             "openvault_url": base,
             "openvault_root": str(OPENVAULT_ROOT),
+            "openvault_home": str(home),
             "error": str(e)[:240],
-            "hint": "Start OpenVault: powershell -File D:\\OpenVault\\scripts\\windows\\Start-LocalMesh.ps1 -OpenIdeUrl http://127.0.0.1:8765",
+            "hint": (
+                f"set OPENVAULT_HOME={home} then python {cli} up"
+            ),
         }
+    _PING_CACHE["ts"] = now
+    _PING_CACHE["value"] = dict(out)
+    return out
+
+
+def chat_ping_loopback(*, timeout: float = 20.0) -> dict[str, Any]:
+    """Loopback /v1/chat/completions with no Bearer. Never prints content."""
+    base = openvault_url()
+    url = f"{base}/v1/chat/completions"
+    payload = {
+        "model": "auto",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 8,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = json.loads(resp.read().decode("utf-8") or "{}")
+            choices = raw.get("choices") or []
+            return {
+                "ok": bool(choices),
+                "status": int(getattr(resp, "status", 200) or 200),
+                "model": str(raw.get("model") or ""),
+                "has_content": bool(choices),
+            }
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        detail = ""
+        try:
+            parsed = json.loads(raw)
+            err = parsed.get("detail") or parsed.get("error") or parsed
+            detail = str(err)[:200]
+        except Exception:
+            detail = (raw.strip() or f"HTTP {e.code}")[:200]
+        return {"ok": False, "status": int(e.code), "error": detail}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+def keyvault_presence() -> dict[str, Any]:
+    """Configured provider ids only. No secrets, no masks."""
+    snap = keyvault_snapshot()
+    configured: list[str] = []
+    missing: list[str] = []
+    for p in snap.get("providers") or []:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("id") or "")
+        if not pid:
+            continue
+        if p.get("configured"):
+            configured.append(pid)
+        else:
+            missing.append(pid)
+    frontier = [pid for pid in ("cursor", "anthropic") if pid in missing]
+    return {
+        "ok": bool(snap.get("ok")),
+        "source": snap.get("source") or "offline",
+        "configured": configured,
+        "missing_frontier": frontier,
+        "error": snap.get("error"),
+    }
+
+
+def mesh_build_check(*, live: bool = True) -> dict[str, Any]:
+    """Build-check row for allcheck: tree + home + optional live health/chat."""
+    root = OPENVAULT_ROOT
+    tree_ok = looks_like_openvault(root)
+    home = openvault_home(root)
+    out: dict[str, Any] = {
+        "tree_ok": tree_ok,
+        "root": str(root),
+        "home": str(home),
+        "home_ok": home.is_dir(),
+        "url": openvault_url(),
+    }
+    if not live:
+        out["ok"] = tree_ok
+        return out
+    health = ping()
+    out["health_ok"] = bool(health.get("ok"))
+    out["health"] = health
+    chat: dict[str, Any] | None = None
+    if health.get("ok"):
+        chat = chat_ping_loopback()
+        out["chat"] = {
+            "ok": bool(chat.get("ok")),
+            "status": chat.get("status"),
+            "model": chat.get("model") or "",
+            "error": chat.get("error"),
+        }
+    keys = keyvault_presence()
+    out["keys"] = {
+        "ok": keys.get("ok"),
+        "configured": keys.get("configured") or [],
+        "missing_frontier": keys.get("missing_frontier") or [],
+    }
+    out["ok"] = bool(tree_ok and health.get("ok"))
+    return out
 
 
 def keyvault_snapshot() -> dict[str, Any]:
@@ -159,7 +326,7 @@ def connect_pack(*, refresh: bool = True) -> dict[str, Any]:
         pack = _http_json("GET", f"{base}/api/local/connect-pack")
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         PACK_CACHE.write_text(json.dumps(pack, indent=2), encoding="utf-8")
-        ov_home = OPENVAULT_ROOT / ".openvault"
+        ov_home = openvault_home()
         try:
             ov_home.mkdir(parents=True, exist_ok=True)
             (ov_home / "connect_pack.json").write_text(json.dumps(pack, indent=2), encoding="utf-8")
@@ -221,7 +388,7 @@ def handshake(*, name: str = "AirGPT OpenIDE", auto_approve: bool = True) -> dic
             "error": str(e)[:240],
             "openvault_url": base,
             "openide_url": ide,
-            "hint": "OpenVault must be running on :5000 (D:\\OpenVault).",
+            "hint": f"OpenVault must be running on :5000 ({OPENVAULT_ROOT}).",
         }
 
     pack_body = hs.get("connect_pack") if isinstance(hs.get("connect_pack"), dict) else None
@@ -232,7 +399,7 @@ def handshake(*, name: str = "AirGPT OpenIDE", auto_approve: bool = True) -> dic
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             PACK_CACHE.write_text(json.dumps(pack_body, indent=2), encoding="utf-8")
-            ov_home = OPENVAULT_ROOT / ".openvault"
+            ov_home = openvault_home()
             ov_home.mkdir(parents=True, exist_ok=True)
             (ov_home / "connect_pack.json").write_text(json.dumps(pack_body, indent=2), encoding="utf-8")
         except OSError:
@@ -279,7 +446,7 @@ def _apps_root() -> Path:
 
 
 def sync_project(project: str, source: str = "") -> dict[str, Any]:
-    """Copy a project folder into D:\\OpenVault\\apps\\<name> for the one-shot ship path."""
+    """Copy a project folder into OpenVault apps/<name> for the one-shot ship path."""
     import shutil
 
     name = (project or "").strip().replace("\\", "/").split("/")[-1][:80]
@@ -292,7 +459,7 @@ def sync_project(project: str, source: str = "") -> dict[str, Any]:
             _apps_root() / name,
             ROOT / "apps" / name,
             ROOT / "fixtures" / name,
-            Path(r"D:\OpenVault") / "apps" / name,
+            OPENVAULT_ROOT / "apps" / name,
         ]
         src = next((p for p in candidates if p.is_dir()), None)
     if src is None or not src.is_dir():
@@ -465,7 +632,7 @@ def ship_project(project: str = "", path: str = "") -> dict[str, Any]:
 def ensure_local_config() -> dict[str, Any]:
     """Write/refresh openvault.local.json so mesh URLs stay aligned."""
     path = next(
-        (p for p in LOCAL_CFG_CANDIDATES if p.parent.is_dir()),
+        (p for p in _local_cfg_candidates() if p.parent.is_dir()),
         DATA_DIR / "openvault.local.json",
     )
     if path == DATA_DIR / "openvault.local.json":
@@ -481,8 +648,8 @@ def ensure_local_config() -> dict[str, Any]:
     ov["url"] = openvault_url()
     ov["root"] = str(OPENVAULT_ROOT)
     ov["console"] = (
-        "cd OpenMW && uv run openmw console --cortex-url http://127.0.0.1:8000 "
-        "--openide-url http://127.0.0.1:8765"
+        f"set OPENVAULT_HOME={openvault_home()} && "
+        f"python {OPENVAULT_ROOT / 'apps' / 'cli' / 'openvault_cli.py'} up"
     )
     services["openvault"] = ov
     ide = dict(services.get("openide") or {})

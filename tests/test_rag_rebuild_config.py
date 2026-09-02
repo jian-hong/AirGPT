@@ -73,7 +73,10 @@ def test_rebuild_stamps_saved_architecture(isolated):
         config={"architecture": "graph"},
     )
     sid = int(space["id"])
-    assert ingest.ingest_paths(sid, [str(src)], force=True).get("ok")
+    out = ingest.ingest_paths(sid, [str(src)], force=True)
+    assert out.get("ok")
+    assert "graph" in str(out.get("revision_profile") or ""), out
+    assert "_hybrid_" not in str(out.get("revision_profile") or "")
     rev = _latest_revision(store, sid)
     assert rev, "ingest must publish a revision"
     assert "graph" in str(rev["profile"])
@@ -118,3 +121,11 @@ def test_backfill_cannot_invent_bytes_when_original_is_gone(isolated):
     assert out["filled"] == 0, out
     assert out["missing"] == 1
     assert not (store.list_sources(sid)[0].get("meta") or {}).get("docs_path")
+
+
+def test_rebuild_toast_names_the_revision_profile():
+    """A Saved+Rebuild that stamps graph but toasts only depth is R-0011."""
+    src = Path(__file__).resolve().parents[1] / "index.html"
+    text = src.read_text(encoding="utf-8", errors="replace")
+    assert "r.revision_profile" in text
+    assert "ragSaveAndRebuild" in text

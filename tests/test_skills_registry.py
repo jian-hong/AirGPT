@@ -1,10 +1,11 @@
-"""GET /api/skills and the snippet-card `Use` contract.
+"""GET /api/skills and the snippet-card arming contract.
 
 Two things must stay true or the cards go back to being decoration:
   * the registry serves real packs with usable titles (committed fixtures when
     gitignored data/skills is empty), and
-  * arming a skill changes what the *model* sees without polluting the transcript
-    the user reads back later.
+  * arming a skill (Force / /skill / skill= on the wire) changes what the
+    *model* sees without polluting the transcript the user reads back later.
+  SHELL-03: gallery Force is optional; /skill always wins. API `skill=` stays.
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ class SkillsEndpointTest(unittest.TestCase):
 
 
 class SkillArmingTest(unittest.TestCase):
-    """`Use` arms the next send — it must not send, and must not rewrite history."""
+    """Wire `skill=` arms the next send — it must not send, and must not rewrite history."""
 
     USER_TEXT = "draw me the pipeline"
 

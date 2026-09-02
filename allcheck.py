@@ -112,6 +112,42 @@ def main() -> int:
     total = len(CHECKS) + 1
     print(f"\n  Local APIs: {passed}/{total}")
 
+    print("\n--- OpenVault mesh ---")
+    try:
+        from OpenIDE.openvault_bridge import mesh_build_check
+
+        mesh = mesh_build_check(live=True)
+        tree_ok = bool(mesh.get("tree_ok"))
+        health_ok = bool(mesh.get("health_ok"))
+        print(f"  [{'OK' if tree_ok else 'FAIL'}] tree {mesh.get('root')}")
+        print(f"  [{'OK' if mesh.get('home_ok') else 'FAIL'}] home {mesh.get('home')}")
+        print(f"  [{'OK' if health_ok else 'FAIL'}] GET {mesh.get('url')}/api/healthz")
+        if not tree_ok or not health_ok:
+            fails += 1
+            hint = (mesh.get("health") or {}).get("hint")
+            if hint:
+                print(f"         {hint}")
+        chat = mesh.get("chat") or {}
+        if health_ok:
+            chat_ok = bool(chat.get("ok"))
+            model = chat.get("model") or ""
+            err = chat.get("error") or ""
+            print(
+                f"  [{'OK' if chat_ok else 'WARN'}] POST /v1/chat/completions "
+                f"model={model or '?'} status={chat.get('status')}"
+            )
+            if not chat_ok:
+                print(f"         hops unhealthy or chat down -- {err}")
+        keys = mesh.get("keys") or {}
+        configured = keys.get("configured") or []
+        frontier = keys.get("missing_frontier") or []
+        print(f"  [OK] vaulted {', '.join(configured) or '(none)'}")
+        if frontier:
+            print(f"  [WARN] paste in OpenVault Providers: {', '.join(frontier)}")
+    except Exception as e:
+        fails += 1
+        print(f"  [ERR] OpenVault mesh: {e}")
+
     # Network / tunnel detail
     print("\n--- Network ---")
     ok, info = _get("/api/info", timeout=20)

@@ -25,7 +25,7 @@ import threading
 import time
 import unittest
 import urllib.request
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("AIRGPT_NO_BROWSER", "1")
@@ -176,6 +176,39 @@ class ProbeBudgetTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("did not pass /api/probe", why)
         self.assertIn("OSError", why, "the specific reason was swallowed")
+
+    def test_probe_ipv4_fallback_when_getaddrinfo_11001(self):
+        """Windows urllib often 11001s names that IPv4 getaddrinfo resolves."""
+
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.rstrip("/") == "/api/probe":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"ok": true}')
+                    return
+                self.send_response(404)
+                self.end_headers()
+
+            def log_message(self, *_a):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        port = srv.server_address[1]
+
+        def boom(*_a, **_k):
+            raise OSError(11001, "getaddrinfo failed")
+
+        urllib.request.urlopen = boom
+        try:
+            ok, why = clipdrop._probe_tunnel_url(
+                f"http://127.0.0.1:{port}", budget=4.0, delay=0.1, timeout=2.0)
+            self.assertTrue(ok, why)
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 class InfoReportsEveryProviderTest(_SweepBase):

@@ -104,10 +104,55 @@ class TunnelRetryTest(unittest.TestCase):
         self._run_loop(ticks=4)
         self.assertEqual(self.calls, [], "restarted while a provider sweep was in flight")
 
+    def test_probe_reject_status_is_not_retried_over(self):
+        """Failed probe stamps 'cloudflared unreachable' before the worker moves on."""
+        clipdrop._tunnel.update(url="", status="cloudflared unreachable", healthy=False)
+        self._run_loop(ticks=4)
+        self.assertEqual(self.calls, [], "restarted over a mid-sweep probe reject")
+
     def test_live_tunnel_is_left_alone(self):
         clipdrop._tunnel.update(url="http://127.0.0.1:1", status="ready", healthy=True)
         self._run_loop(ticks=2)
         self.assertEqual(self.calls, [], "restarted a tunnel that had a URL")
+
+
+class BootKillsOrphansBeforeWorkerTest(unittest.TestCase):
+    """main() used to start tunnel_worker then taskkill cloudflared.exe."""
+
+    def test_orphan_kill_runs_before_tunnel_worker_thread(self):
+        order = []
+        orig_kill = clipdrop._kill_orphan_cloudflared
+        orig_thread = clipdrop.threading.Thread
+
+        def fake_kill():
+            order.append("kill")
+
+        class RecThread:
+            def __init__(self, target=None, daemon=None, **_k):
+                order.append(getattr(target, "__name__", "?"))
+
+            def start(self):
+                pass
+
+        clipdrop._kill_orphan_cloudflared = fake_kill
+        clipdrop.threading.Thread = RecThread
+        try:
+            clipdrop._boot_tunnel_threads()
+        finally:
+            clipdrop._kill_orphan_cloudflared = orig_kill
+            clipdrop.threading.Thread = orig_thread
+        self.assertEqual(order[0], "kill", order)
+        self.assertIn("tunnel_worker", order)
+        self.assertLess(order.index("kill"), order.index("tunnel_worker"), order)
+        self.assertIn("tunnel_health_loop", order)
+
+
+    def test_ready_log_line_is_cp1252_safe(self):
+        """A UnicodeEncodeError after adopt used to kill a working cloudflared."""
+        import inspect
+        src = inspect.getsource(clipdrop._set_tunnel)
+        self.assertNotIn("\u2192", src, "ready log still has a Unicode arrow")
+        self.assertIn("UnicodeEncodeError", src)
 
 
 class _StopLoop(Exception):

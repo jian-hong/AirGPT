@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: accepted
 date: 2026-08-25
+accepted: 2026-09-03
 decision-makers: founder
 supersedes: none
 relates-to: jian-hong/AirGPT#33 (D08 #38); retrieve-time presets in rag/demo_variants.py
@@ -67,3 +68,6 @@ index.
   architecture still stamps `_hybrid_`.
 - The test drives `ingest_paths`, not a helper that forges the profile string
   (R-0001).
+- Live host 2026-09-03: Save Manual+graph then Rebuild returned
+  `revision_profile=local_graph_manual` on the HTTP body and the Rebuild toast
+  names that stamp.

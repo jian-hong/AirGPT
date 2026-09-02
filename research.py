@@ -183,12 +183,20 @@ def seed_agents() -> dict:
         existing = {a.get("name") for a in agent_store.list_agents(50)}
         created = []
         if "OpenResearch" not in existing:
+            pack = "idea-to-paper"
+            try:
+                import invoke_registry
+
+                if not invoke_registry.load_skill("idea-to-paper"):
+                    pack = "research"
+            except Exception:
+                pack = "research"
             a = agent_store.create_agent(
                 "OpenResearch",
                 kind="research",
-                skill_pack="research",
+                skill_pack=pack,
                 tools=["web_search", "vault_read", "vault_write", "audit_append", "session_summarize"],
-                config={"format": "arxiv", "anti_slop": True, "apa_check": True, "surface": "research"},
+                config={"format": "arxiv", "anti_slop": True, "apa_check": True, "surface": "research", "pipeline": "idea_to_paper", "brain": "cortex"},
                 pinned=True,
             )
             created.append(a.get("id"))
