@@ -80,7 +80,7 @@ def test_group_tool_events_kinds_counts_and_delta():
     seg = tool_readout.group_tool_events(
         [
             {"type": "tool_call", "name": "fs_read"},
-            {"type": "tool", "name": "fs_patch", "result": {"ok": True, "added_lines": 5, "deleted_lines": 2}},
+            {"type": "tool", "name": "fs_patch", "result": {"ok": True, "added": 5, "removed": 2}},
             {"type": "tool", "name": "fs_read", "result": {"ok": True}},
         ]
     )
@@ -90,6 +90,31 @@ def test_group_tool_events_kinds_counts_and_delta():
     assert seg["added_lines"] == 5
     assert seg["deleted_lines"] == 2
     assert tool_readout.format_delta(5, 2) == " +5 -2"
+
+
+def test_group_tool_events_reads_a_real_write_result(tmp_path, monkeypatch):
+    """The hand-fed version of the test above passed for two weeks against a
+    readout that could never match a real result: workspace_api emits
+    {"added","removed"} and the grouper gated on added_lines/deleted_lines.
+    Feed it what the tool actually returns, so the contract is pinned to the
+    producer instead of to the test's own assumption.
+    """
+    from OpenIDE import workspace_api
+
+    # Point the workspace root at tmp_path so write_file's own resolve_rel path
+    # runs for real, without touching whatever workspace is actually open.
+    monkeypatch.setattr(workspace_api, "_root", lambda: tmp_path.resolve())
+    (tmp_path / "sample.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    res = workspace_api.write_file("sample.txt", "one\ntwo\nthree\nfour\n")
+
+    assert isinstance(res, dict), res
+    delta_keys = {k for k in ("added", "removed") if k in res}
+    assert delta_keys == {"added", "removed"}, f"write_file stopped emitting deltas: {sorted(res)}"
+
+    seg = tool_readout.group_tool_events([{"type": "tool", "name": "fs_write", "result": res}])
+    assert seg["added_lines"] == res["added"], seg
+    assert seg["deleted_lines"] == res["removed"], seg
+    assert seg["added_lines"] is not None, "a real write result produced no delta"
 
 
 # -- SHELL-02 refusals -------------------------------------------------------
