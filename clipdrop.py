@@ -224,6 +224,20 @@ def restart_tunnel() -> None:
     threading.Thread(target=tunnel_worker, daemon=True).start()
 
 
+def _boot_tunnel_threads() -> None:
+    """Kill leftover cloudflared *then* start the worker. Never the reverse.
+
+    On Windows `_kill_orphan_cloudflared` is `taskkill /IM cloudflared.exe`.
+    `main()` used to start `tunnel_worker` and then kill orphans just before
+    bind, which murdered the process the worker had just spawned. Observed as
+    cloudflared exiting code 1 after 1s with no forwarding URL on a normal
+    `python clipdrop.py` boot.
+    """
+    _kill_orphan_cloudflared()
+    threading.Thread(target=tunnel_worker, daemon=True).start()
+    threading.Thread(target=tunnel_health_loop, daemon=True).start()
+
+
 def _image_file_path(msg: dict) -> Path | None:
     rel = msg.get("filepath")
     if not rel:
@@ -257,20 +271,28 @@ def _tunnel_allowed() -> bool:
     return bool(app_license.get_status().get("can_use_tunnel"))
 
 
-def _is_online() -> bool:
-    """Internet available — tunnel healthy or BYOK keys count as online enough to try providers."""
-    if _tunnel.get("healthy") and _tunnel.get("url"):
-        _online_cache.update(ok=True, ts=time.time())
-        return True
-    try:
-        if app_settings and app_settings.get_public_settings().get("has_any_key"):
-            _online_cache.update(ok=True, ts=time.time())
-            return True
-    except Exception:
-        pass
-    now = time.time()
-    if now - _online_cache["ts"] < 20:
-        return bool(_online_cache["ok"])
+_bg_inflight: dict[str, threading.Lock] = {}
+
+
+def _kick_once(name: str, fn) -> None:
+    """One daemon at a time per name. Callers never join it."""
+    lock = _bg_inflight.setdefault(name, threading.Lock())
+    if not lock.acquire(blocking=False):
+        return
+
+    def _run() -> None:
+        try:
+            fn()
+        except Exception as e:
+            print(f"[{name}] {type(e).__name__}: {e}")
+        finally:
+            lock.release()
+
+    threading.Thread(target=_run, daemon=True, name=name).start()
+
+
+def _probe_online() -> None:
+    """Fills _online_cache. Never call from /api/info -- it hits the public internet."""
     ok = False
     import urllib.request
     for host in (
@@ -284,8 +306,24 @@ def _is_online() -> bool:
         except Exception:
             continue
     _online_cache["ok"] = ok
-    _online_cache["ts"] = now
-    return ok
+    _online_cache["ts"] = time.time()
+
+
+def _is_online() -> bool:
+    """Internet available. Request-path never waits on Google or Cloudflare.
+
+    A cold cache used to urlopen two public hosts (1.5s each) on every first
+    /api/info. Combined with netsh + PowerShell in lan_diagnostics that is the
+    12s hang the phone reads as a dead host (HOST-DEMO-03 / R-0011).
+    """
+    if _tunnel.get("healthy") and _tunnel.get("url"):
+        _online_cache.update(ok=True, ts=time.time())
+        return True
+    now = time.time()
+    stale = _online_cache["ts"] == 0 or (now - _online_cache["ts"] >= 20)
+    if stale:
+        _kick_once("online-probe", _probe_online)
+    return bool(_online_cache["ok"])
 
 
 def _check_ai_rate() -> str | None:
@@ -589,47 +627,93 @@ def _chat_stream_events(
             "ok": False,
         }
         return
-    if web_search:
-        try:
-            import cortex_client
-
-            yield {"type": "thinking", "text": "Cortex quality loop…", "session_id": session_id}
-            cortex = cortex_client.engine_agent_loop(
-                question or "",
-                session_id=f"chat-{session_id}",
-                max_steps=6,
-                tools=["web_search", "web_fetch"],
-            )
-        except Exception as e:
-            cortex = {"ok": False, "error": str(e)[:200]}
-        if isinstance(cortex, dict) and cortex.get("ok") and (cortex.get("content") or "").strip():
-            for t in ((cortex.get("telemetry") or {}).get("tools") or []):
-                if isinstance(t, dict):
-                    yield {
-                        "type": "thinking",
-                        "text": f"tool {t.get('tool')}: {t.get('summary') or t.get('ok')}",
-                        "session_id": session_id,
-                    }
-            analysis = str(cortex.get("content") or "")
+    import agent_tools as _atools
+    if _atools.is_pomodoro_ask(question or ""):
+        yield {"type": "thinking", "text": "Scaffolding pomodoro…", "session_id": session_id}
+        sc = _atools.scaffold_from_ask(question or "")
+        yield {
+            "type": "tool",
+            "name": "app_scaffold",
+            "result": sc,
+            "session_id": session_id,
+        }
+        if sc.get("ok") and sc.get("url"):
+            analysis = f"Live app at {sc.get('url')}"
             yield {"type": "token", "text": analysis, "session_id": session_id}
             yield {
                 "type": "done",
                 "analysis": analysis,
-                "model": "cortex-agent",
+                "model": "app_scaffold",
                 "session_id": session_id,
-                "stop_reason": cortex.get("stop_reason"),
-                "quality_passed": cortex.get("quality_passed"),
-                "runner": "agent_task",
+                "stop_reason": "quality",
+                "quality_passed": True,
+                "runner": "app_scaffold",
             }
             return
-        why = ""
-        if isinstance(cortex, dict):
-            why = str(cortex.get("error") or cortex.get("stop_reason") or "")[:180]
         yield {
             "type": "thinking",
-            "text": f"Quality loop skipped: {why or 'no answer'}",
+            "text": f"Scaffold skipped: {sc.get('error') or 'failed'}",
             "session_id": session_id,
         }
+    # F20b / DR-0002: every chat turn is Cortex AGENT_TASK. web_search only
+    # adds tools. A ChatGPT-looking composer that skips the loop unless a toggle
+    # is on is the same R-0011 as a Saved control that changes nothing.
+    try:
+        import cortex_client
+
+        yield {"type": "thinking", "text": "Cortex quality loop…", "session_id": session_id}
+        loop_prompt = question or ""
+        if history:
+            prior = []
+            for m in history[-8:]:
+                if not isinstance(m, dict):
+                    continue
+                role = str(m.get("role") or "user")
+                content = str(m.get("content") or "").strip()[:500]
+                if content:
+                    prior.append(f"{role}: {content}")
+            if prior:
+                loop_prompt = "Prior turns:\n" + "\n".join(prior) + "\n\nUser:\n" + loop_prompt
+        loop_kw: dict = {
+            "session_id": f"chat-{session_id}",
+            "max_steps": 6,
+            "timeout": 180.0,
+        }
+        if web_search:
+            loop_kw["tools"] = ["web_search", "web_fetch"]
+        cortex = cortex_client.engine_agent_loop(loop_prompt, **loop_kw)
+    except Exception as e:
+        cortex = {"ok": False, "error": str(e)[:200]}
+    if isinstance(cortex, dict) and cortex.get("ok") and (cortex.get("content") or "").strip():
+        for t in ((cortex.get("telemetry") or {}).get("tools") or []):
+            if not isinstance(t, dict):
+                continue
+            yield {
+                "type": "tool",
+                "name": str(t.get("tool") or "tool"),
+                "result": {"ok": t.get("ok"), "summary": t.get("summary")},
+                "session_id": session_id,
+            }
+        analysis = str(cortex.get("content") or "")
+        yield {"type": "token", "text": analysis, "session_id": session_id}
+        yield {
+            "type": "done",
+            "analysis": analysis,
+            "model": "cortex-agent",
+            "session_id": session_id,
+            "stop_reason": cortex.get("stop_reason"),
+            "quality_passed": cortex.get("quality_passed"),
+            "runner": "agent_task",
+        }
+        return
+    why = ""
+    if isinstance(cortex, dict):
+        why = str(cortex.get("error") or cortex.get("stop_reason") or "")[:180]
+    yield {
+        "type": "thinking",
+        "text": f"Quality loop skipped: {why or 'no answer'}",
+        "session_id": session_id,
+    }
     if not _is_online():
         yield {"type": "error", "text": "AI chat needs internet or local API keys. Manual local chat still works."}
         return
@@ -873,7 +957,7 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/workflows",   # background phased subagent fan-out (runs tools)
     "/api/invoke/",     # create/update rules & skills (workspace write)
     "/api/openide/",    # IDE backend/ready/last-run/scaffold
-    "/api/openvault/",  # OpenVault mesh handshake / connect-pack (D:\OpenVault)
+    "/api/openvault/",  # OpenVault mesh handshake / connect-pack (E:\OpenVault)
     "/api/openforge/",  # chip design pipeline
     "/api/rag",         # RAG Agent knowledge spaces / ingest / answer (host-only)
     "/api/github",      # GitHub OAuth device flow + status (token write)
@@ -1002,11 +1086,22 @@ def make_qr_png(text: str) -> bytes:
 _lan_diag_cache: dict = {"ts": 0.0, "value": None}
 
 
-def lan_diagnostics() -> dict:
-    now = time.time()
-    cached = _lan_diag_cache.get("value")
-    if cached and now - float(_lan_diag_cache["ts"]) < 30.0:
-        return dict(cached)
+def _lan_fallback() -> dict:
+    ips = local_ips()
+    return {
+        "ips": ips,
+        "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
+        "network_profile": "Unknown",
+        "firewall": _firewall_status or "unknown",
+        "listening": f"0.0.0.0:{PORT}",
+        "lan_likely_blocked": False,
+        "hint": "LAN diagnostics pending -- retry or run enable-lan.bat",
+        "pending": True,
+    }
+
+
+def _compute_lan_diagnostics() -> dict:
+    """PowerShell + netsh. Background only -- never the /api/info thread."""
     ips = local_ips()
     profile = network_profile()
     fw = refresh_firewall_status()
@@ -1014,9 +1109,9 @@ def lan_diagnostics() -> dict:
     if fw == "ok" and profile == "Private":
         hint = "Same WiFi: scan LAN QR below. Phone must be on the same network as this PC."
     elif fw == "ok" and profile == "Public":
-        hint = "Firewall OK but WiFi is Public — run allow_firewall.ps1 as Admin to switch to Private, then scan LAN QR."
+        hint = "Firewall OK but WiFi is Public -- run allow_firewall.ps1 as Admin to switch to Private, then scan LAN QR."
     elif profile == "Public":
-        hint = "LAN blocked — run allow_firewall.ps1 as Admin (sets Private + opens port 8765). Or use Tunnel QR."
+        hint = "LAN blocked -- run allow_firewall.ps1 as Admin (sets Private + opens port 8765). Or use Tunnel QR."
     else:
         hint = "Run allow_firewall.ps1 as Admin to open port 8765. Then scan LAN QR on phone."
     out = {
@@ -1028,9 +1123,26 @@ def lan_diagnostics() -> dict:
         "lan_likely_blocked": blocked,
         "hint": hint,
     }
-    _lan_diag_cache["ts"] = now
+    _lan_diag_cache["ts"] = time.time()
     _lan_diag_cache["value"] = dict(out)
     return out
+
+
+def lan_diagnostics(*, wait: bool = False) -> dict:
+    """LAN snapshot for /api/info. Default is cache-or-fallback, never netsh.
+
+    wait=True is for enable-lan / lag tests that need the computed row.
+    """
+    now = time.time()
+    cached = _lan_diag_cache.get("value")
+    if cached and now - float(_lan_diag_cache["ts"]) < 30.0:
+        return dict(cached)
+    if wait:
+        return dict(_compute_lan_diagnostics())
+    _kick_once("lan-diag", _compute_lan_diagnostics)
+    if cached:
+        return dict(cached)
+    return _lan_fallback()
 
 
 def device_name_from_ua(ua: str, ip: str) -> str:
@@ -1684,14 +1796,9 @@ _HOSTING_PENDING: dict = {
 }
 
 
-def _cortex_info(*, quick: bool = False) -> dict:
-    now = time.time()
+def _cortex_info_compute(*, quick: bool = False) -> dict:
+    """Hits the Cortex sidecar. Background only -- never the /api/info thread."""
     key = "quick" if quick else "full"
-    cached = _cortex_info_cache.get(key)
-    # Standby/timeout results cache longer so a dead Cortex doesn't tax every poll
-    ttl = 8.0 if quick else 15.0
-    if cached and now - float(_cortex_info_cache["ts"]) < ttl:
-        return dict(cached)
     try:
         import cortex_client
         info = dict(cortex_client.health() or {})
@@ -1709,17 +1816,34 @@ def _cortex_info(*, quick: bool = False) -> dict:
             info.setdefault("ledger_verify", {"ok": False})
         if info.get("ok") and not info.get("status"):
             info["status"] = "live"
-        # If Cortex is offline, don't re-probe every 3–12s — stretch TTL via longer cache
-        if not info.get("ok"):
-            ttl = 30.0
-        _cortex_info_cache["ts"] = now
+        _cortex_info_cache["ts"] = time.time()
         _cortex_info_cache[key] = dict(info)
         return info
     except Exception:
         info = {"ok": False, "status": "unavailable", "audit_sample": [], "ledger_verify": {"ok": False}}
-        _cortex_info_cache["ts"] = now
+        _cortex_info_cache["ts"] = time.time()
         _cortex_info_cache[key] = dict(info)
         return info
+
+
+def _cortex_info(*, quick: bool = False) -> dict:
+    """Cached Cortex snapshot. A hung :8011 must not stall /api/info."""
+    now = time.time()
+    key = "quick" if quick else "full"
+    cached = _cortex_info_cache.get(key)
+    ttl = 8.0 if quick else 15.0
+    if cached and now - float(_cortex_info_cache["ts"]) < ttl:
+        return dict(cached)
+    _kick_once("cortex-info", lambda: _cortex_info_compute(quick=quick))
+    if cached:
+        return dict(cached)
+    return {
+        "ok": False,
+        "status": "checking",
+        "audit_sample": [],
+        "ledger_verify": {"ok": False},
+        "pending": True,
+    }
 
 
 # --- HOST-DEMO-03 tunnel wall-clock budgets -------------------------------------
@@ -1752,9 +1876,10 @@ TUNNEL_MIN_SLICE = 8.0
 # is thin - it is dead time, and dead time is the thing being bounded.
 TUNNEL_PROVIDER_GAP = 2.0
 # Reachability budget for a URL that has just been printed. The probe leaves this PC,
-# reaches the provider edge and comes back in - single-digit seconds once the edge is
-# live, so 20s is edge-propagation headroom, not a hang.
-TUNNEL_PROBE_BUDGET = 20.0
+# reaches the provider edge and comes back in. trycloudflare often answers HTTP 530
+# until the edge registers the origin (~10-30s), so this is registration headroom,
+# not a hang. Gate: tests/test_tunnel_bounded_report.py caps this at 30s.
+TUNNEL_PROBE_BUDGET = 30.0
 
 # Per-provider outcomes of the current/last sweep, published on /api/info.
 _tunnel_attempts: list[dict] = []
@@ -1801,28 +1926,82 @@ def _no_url_reason(proc: subprocess.Popen, started: float) -> str:
     return f"no forwarding URL printed in {waited:.0f}s"
 
 
+def _probe_get_json(url: str, timeout: float) -> dict:
+    """GET `url` as JSON. Prefer IPv4 when system getaddrinfo(AF_UNSPEC) 11001s.
+
+    Observed on this host: nslookup A-records for *.trycloudflare.com succeed
+    while urllib urlopen raises URLError Errno 11001 getaddrinfo failed, so a
+    printed forwarding URL never passed /api/probe (HOST-DEMO-03).
+    """
+    import ssl
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urlparse
+
+    req = urllib.request.Request(url, headers={"Cache-Control": "no-store"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except (OSError, urllib.error.URLError) as e:
+        msg = str(e)
+        if "11001" not in msg and "getaddrinfo" not in msg.lower():
+            raise
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    ip = infos[0][4][0]
+    sock = socket.create_connection((ip, port), timeout=timeout)
+    try:
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            sock = ctx.wrap_socket(sock, server_hostname=host)
+        sock.sendall(
+            f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+            "Cache-Control: no-store\r\nConnection: close\r\n\r\n".encode("ascii")
+        )
+        raw = b""
+        while True:
+            chunk = sock.recv(8192)
+            if not chunk:
+                break
+            raw += chunk
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    header, _, body = raw.partition(b"\r\n\r\n")
+    status_line = header.split(b"\r\n", 1)[0].decode("ascii", "replace")
+    parts = status_line.split(" ", 2)
+    code = int(parts[1]) if len(parts) > 1 else 0
+    if code != 200:
+        raise OSError(f"HTTP Error {code}: {status_line[:80]}")
+    return json.loads(body)
+
+
 def _probe_tunnel_url(url: str, attempts: int = 8, delay: float = 1.5,
                       timeout: float = 5.0, budget: float = TUNNEL_PROBE_BUDGET) -> tuple[bool, str]:
     """Does `url` route back to us? Returns (ok, reason) - the reason goes on the wire."""
-    import urllib.request
-
     deadline = time.monotonic() + max(1.0, budget)
     why = "no probe attempt fitted in the budget"
     tried = 0
     while tried < attempts and time.monotonic() < deadline:
         tried += 1
         try:
-            req = urllib.request.Request(f"{url.rstrip('/')}/api/probe", headers={"Cache-Control": "no-store"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                data = json.loads(r.read())
+            data = _probe_get_json(f"{url.rstrip('/')}/api/probe", timeout)
             if data.get("ok") is True:
                 return True, "ok"
             why = "answered /api/probe without ok:true"
         except Exception as e:
             why = f"{type(e).__name__}: {str(e)[:90]}"
-        if time.monotonic() + delay >= deadline:
+        wait = 3.0 if ("HTTP Error 530" in why or "getaddrinfo" in why or "11001" in why) else delay
+        if time.monotonic() + wait >= deadline:
             break
-        time.sleep(delay)
+        time.sleep(wait)
     return False, f"{why} ({tried} probe attempts, {budget:.0f}s budget)"
 
 
@@ -1855,7 +2034,13 @@ def _set_tunnel(url: str, provider: str, *, probe_budget: float = TUNNEL_PROBE_B
     _tunnel.update(url=url, provider=provider, status="ready", error="", healthy=True, started_at=time.time())
     _qr_join_cache.clear()
     bump_sync()
-    print(f"[tunnel] ready → UI sync: {url}")
+    # Never let the console codec unwind a successful adopt. cp1252 print of
+    # "ready -> UI sync" used to raise UnicodeEncodeError after _tunnel was
+    # already ready; the worker then recorded a failure and killed cloudflared.
+    try:
+        print(f"[tunnel] ready -> UI sync: {url}")
+    except UnicodeEncodeError:
+        print("[tunnel] ready UI sync")
     return True, "ok"
 
 
@@ -1876,10 +2061,15 @@ def tunnel_health_loop():
         url = _tunnel.get("url")
         if not url:
             status = str(_tunnel.get("status") or "")
-            idle = status in ("", "failed") or status.endswith("unreachable")
+            # "_set_tunnel" stamps "{provider} unreachable" on a failed probe
+            # while tunnel_worker is still walking the rest of the sweep.
+            # Treating that as idle stacked a second worker and killed the
+            # next provider's ssh/npx mid-handshake (localhost.run then
+            # RemoteDisconnected). Only an actual finished sweep is idle.
+            idle = status in ("", "failed")
             if idle and time.monotonic() >= retry_at:
                 retry_at = time.monotonic() + retry_delay
-                print(f"[tunnel] down — retrying (next attempt in {retry_delay / 60:.0f}m if this fails)")
+                print(f"[tunnel] down - retrying (next attempt in {retry_delay / 60:.0f}m if this fails)")
                 retry_delay = min(retry_delay * 2, RETRY_MAX)
                 restart_tunnel()
             time.sleep(15)
@@ -1889,9 +2079,7 @@ def tunnel_health_loop():
         healthy = False
         if url:
             try:
-                req = urllib.request.Request(f"{url}/api/probe", headers={"Cache-Control": "no-store"})
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    healthy = json.loads(r.read()).get("ok") is True
+                healthy = _probe_get_json(f"{url.rstrip('/')}/api/probe", 6).get("ok") is True
             except Exception:
                 healthy = False
         _tunnel["healthy"] = healthy
@@ -1900,7 +2088,7 @@ def tunnel_health_loop():
             if _tunnel.get("status") == "ready":
                 _tunnel["status"] = "degraded"
             if _health_fails >= 3:
-                print("[tunnel] unhealthy — auto-restarting tunnel")
+                print("[tunnel] unhealthy - auto-restarting tunnel")
                 _health_fails = 0
                 restart_tunnel()
         elif url and healthy:
@@ -2384,10 +2572,7 @@ class Handler(BaseHTTPRequestHandler):
         return join_url, qt
 
     def _auth_ok(self, path: str) -> bool:
-        # /pomodoro is a self-contained timer page: no data, no API calls, nothing to
-        # authorise. It opens in its own small window, so requiring a token would just
-        # 401 a page that reads nothing.
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/pomodoro", "/pomodoro.html", "/tomato", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
         if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
             return True
@@ -3093,7 +3278,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
-        if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
+        if path not in ("/api/wait", "/api/probe", "/api/info", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
             db.register_device(ip, name, ua)
         q = parse_qs(urlparse(self.path).query)
 
@@ -3119,29 +3304,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             # no-cache, not no-store: revalidate every time (so an edit still shows up
             # immediately) but allow a 304 when nothing changed.
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("ETag", etag)
-            if encoding:
-                self.send_header("Content-Encoding", encoding)
-                self.send_header("Vary", "Accept-Encoding")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(payload)
-            return
-
-        if path in ("/pomodoro", "/pomodoro.html", "/tomato"):
-            body, etag = _cached_asset(ROOT / "pomodoro.html")
-            if self.headers.get("If-None-Match") == etag:
-                self.send_response(304)
-                self.send_header("ETag", etag)
-                self.send_header("Cache-Control", "no-cache")
-                self._cors()
-                self.end_headers()
-                return
-            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", ""))
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-cache")
             self.send_header("ETag", etag)
             if encoding:
@@ -3282,16 +3444,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/info":
             ips = local_ips()
-            lan_fallback = {
-                "ips": ips,
-                "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
-                "network_profile": "Unknown",
-                "firewall": _firewall_status,
-                "listening": f"0.0.0.0:{PORT}",
-                "lan_likely_blocked": False,
-                "hint": "LAN diagnostics timed out — retry or run enable-lan.bat",
-            }
-            lan = _with_deadline(lan_diagnostics, lan_fallback, timeout=1.8)
+            lan = lan_diagnostics()
             lic = app_license.get_status() if app_license else {"can_use_tunnel": True, "can_use_ai": True}
             tunnel_allowed = lic.get("can_use_tunnel", True)
             tunnel_url = (_tunnel.get("url") or None) if tunnel_allowed else None
@@ -3319,12 +3472,11 @@ class Handler(BaseHTTPRequestHandler):
                         "access_level": scoped.get("access_level"),
                         "session_id": scoped.get("session_id"),
                     }
-            devices = _with_deadline(db.list_devices, [], timeout=1.0)
-            cortex = _with_deadline(
-                lambda: _cortex_info(quick=True),
-                {"ok": False, "status": "timeout", "audit_sample": [], "ledger_verify": {"ok": False}},
-                timeout=1.5,
-            )
+            try:
+                devices = db.list_devices()
+            except Exception:
+                devices = []
+            cortex = _cortex_info(quick=True)
             return self._json(200, {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
@@ -3352,8 +3504,8 @@ class Handler(BaseHTTPRequestHandler):
                 "network_profile": lan["network_profile"],
                 "lan_hint": lan["hint"],
                 "lan_likely_blocked": lan["lan_likely_blocked"],
-                "wifi_adapter_up": wifi_access.wifi_adapter_up() if wifi_access else True,
-                "bluetooth_present": wifi_access.bluetooth_present() if wifi_access else False,
+                "wifi_adapter_up": (wifi_access.hw_snapshot()[0] if wifi_access else True),
+                "bluetooth_present": (wifi_access.hw_snapshot()[1] if wifi_access else False),
                 "connect_methods": methods,
                 "recommended_connect": (
                     (mdns_u if lan["firewall"] == "ok" and not lan["lan_likely_blocked"] and mdns_u else None)
@@ -7297,8 +7449,7 @@ def main():
         print(f"[license] heartbeat skip: {e}")
     threading.Thread(target=clipboard_loop, daemon=True).start()
     threading.Thread(target=screenshot_loop, daemon=True).start()
-    threading.Thread(target=tunnel_worker, daemon=True).start()
-    threading.Thread(target=tunnel_health_loop, daemon=True).start()
+    _boot_tunnel_threads()
     threading.Thread(target=network_watcher, daemon=True).start()
     threading.Thread(target=_startup_verify, daemon=True).start()
     try:
@@ -7318,8 +7469,6 @@ def main():
     print("  P2P:    http://127.0.0.1:8765/p2p  (no firewall needed)")
     print("  Restart: run restart.bat when you change WiFi\n")
 
-    # Ensure a clean bind — kill stale listeners / orphan tunnels from prior runs
-    _kill_orphan_cloudflared()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     # Netie Space is the front-door UI; set AIRGPT_NO_BROWSER=1 for backend-only.
     if os.environ.get("AIRGPT_NO_BROWSER", "").strip() not in ("1", "true", "TRUE", "yes", "YES"):

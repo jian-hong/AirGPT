@@ -19,6 +19,21 @@ WRITE_TOOLS = frozenset({
     "desktop_click", "desktop_type", "desktop_scroll", "desktop_drag",
 })
 FILE_MENTION_RE = re.compile(r"@([\w.\-/\\]+(?:\.\w+)?)")
+CORTEX_RESEARCH_PROMPT_ID = "research.idea_to_paper"
+
+
+def _cortex_owns_brain(agent: dict) -> bool:
+    """Research agents: Cortex owns prompts. AirGPT is shell only."""
+    if not isinstance(agent, dict):
+        return False
+    cfg = agent.get("config") if isinstance(agent.get("config"), dict) else {}
+    kind = str(agent.get("kind") or "").lower()
+    name = str(agent.get("name") or "")
+    return (
+        kind == "research"
+        or str(cfg.get("pipeline") or "") == "idea_to_paper"
+        or name == "OpenResearch"
+    )
 
 
 def _load_skill(skill_pack: str) -> str:
@@ -447,22 +462,62 @@ def run_agent_events(
     audit.log("agent.run.start", detail=f"agent={agent_id} run={run_id} mode={thinking_mode}", ok=True)
     yield {"type": "status", "text": f"Running {agent['name']} ({thinking_mode})…", "run_id": run_id, "agent_id": agent_id}
 
+    if agent_tools.is_pomodoro_ask(prompt or "") and not is_subagent:
+        yield {"type": "thinking", "text": "Scaffolding pomodoro…\n"}
+        sc = agent_tools.scaffold_from_ask(prompt or "", run_id=run_id, agent_id=agent_id)
+        yield _safe_tool_event("app_scaffold", sc)
+        if sc.get("ok"):
+            analysis = f"Live app at {sc.get('url')}"
+            try:
+                agent_store.finish_run(run_id, status="done", result=analysis)
+            except Exception:
+                pass
+            yield {
+                "type": "done",
+                "run_id": run_id,
+                "agent_id": agent_id,
+                "analysis": analysis,
+                "stop_reason": "quality",
+                "quality_passed": True,
+                "runner": "app_scaffold",
+                "steps": [{"tool": "app_scaffold", "ok": True}],
+            }
+            return
+
     if not require_approval and not is_subagent:
+        owns = _cortex_owns_brain(agent)
         try:
             import cortex_client
 
-            cortex = cortex_client.engine_agent_loop(
-                prompt or "",
-                session_id=f"airgpt-{run_id}",
-                max_steps=max_steps,
-            )
+            loop_kw: dict = {
+                "session_id": f"airgpt-{run_id}",
+                "max_steps": max_steps,
+            }
+            if owns:
+                agent_tools_list = [
+                    t
+                    for t in (agent.get("tools") or [])
+                    if t in ("web_search", "web_fetch")
+                ]
+                loop_kw.update(
+                    prompt_id=CORTEX_RESEARCH_PROMPT_ID,
+                    params={"stage": "research", "topic": (prompt or "")[:800]},
+                    tools=agent_tools_list or ["web_search", "web_fetch"],
+                    max_tokens=4096,
+                    quality_criteria=[
+                        "does not invent metrics, DOIs, hostnames, or pytest scores",
+                    ],
+                    timeout=180.0,
+                )
+            cortex = cortex_client.engine_agent_loop(prompt or "", **loop_kw)
         except Exception as e:
             cortex = {"ok": False, "error": str(e)[:200]}
         if isinstance(cortex, dict) and cortex.get("ok"):
             yield {
                 "type": "status",
-                "text": "Cortex quality loop",
+                "text": "Cortex quality loop" if not owns else "Cortex research brain",
                 "runner": "agent_task",
+                "prompt_id": CORTEX_RESEARCH_PROMPT_ID if owns else "",
             }
             for t in ((cortex.get("telemetry") or {}).get("tools") or []):
                 if not isinstance(t, dict):
@@ -486,10 +541,21 @@ def run_agent_events(
                 "stop_reason": cortex.get("stop_reason"),
                 "quality_passed": cortex.get("quality_passed"),
                 "runner": "agent_task",
+                "prompt_id": CORTEX_RESEARCH_PROMPT_ID if owns else "",
                 "steps": (cortex.get("telemetry") or {}).get("tools") or [],
             }
             return
         why = (cortex or {}).get("error") if isinstance(cortex, dict) else "Cortex down"
+        if owns:
+            try:
+                agent_store.finish_run(run_id, status="error", error=str(why)[:500])
+            except Exception:
+                pass
+            yield {
+                "type": "error",
+                "text": f"Cortex owns this research agent. Engine refused: {why}",
+            }
+            return
         yield {"type": "status", "text": f"Quality loop skipped: {why}"}
 
     tools = [t for t in (agent.get("tools") or []) if t in agent_tools.TOOLS]

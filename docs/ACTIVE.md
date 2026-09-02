@@ -28,6 +28,9 @@ What exists in this repo and where. Update when structure changes, not when stat
   generated question set; CI smoke `tests/RAG/results/oracle_cross_latest.json`
   (frtr_0001 n=7). Pack: `oracle_cross_primary50_{1..4}.json` + pooled
   `oracle_cross_primary50.json` (n=320, F13b floors on hybrid_max).
-- `idea_to_paper.py` — OpenVault `/v1/chat/completions` + Cortex constructor
-  recommend/generate + pytest gate 80. HTTP `POST /api/research/idea-to-paper`,
-  skill `.cursor/skills/idea-to-paper/`. Cursor is not the generator.
+- `idea_to_paper.py` — Cortex `prompt_id=research.idea_to_paper` owns
+  generation. AirGPT is pytest + facts inject + pdflatex. Keys stay
+  OpenVault. HTTP `POST /api/research/idea-to-paper`. Cursor is not
+  the generator.
+- `allcheck.py` plus `OpenIDE/openvault_bridge.py` -- OpenVault mesh
+  (`E:\OpenVault`, `:5000` health, loopback chat). Keys SoT is OV.

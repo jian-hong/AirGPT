@@ -9,9 +9,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from config import DATA_DIR
+from config import DATA_DIR, ROOT
 
-SKILLS_DIR = DATA_DIR / "skills"
+_PRODUCT_SKILLS_DIR = DATA_DIR / "skills"
+SKILLS_DIR = _PRODUCT_SKILLS_DIR
+CURSOR_SKILLS_ROOT = ROOT / ".cursor" / "skills"
 RULES_CAP = 4000
 SKILL_CAP = 6000
 
@@ -21,50 +23,88 @@ def skills_dir() -> Path:
     return SKILLS_DIR
 
 
-def list_skills() -> list[dict[str, Any]]:
-    """Scan data/skills/*.md → id, name, description + enable scope."""
-    root = skills_dir()
-    out: list[dict[str, Any]] = []
-    if not root.is_dir():
-        return out
-    state = _skill_state()
-    for p in sorted(root.glob("*.md")):
-        if p.name.startswith("_"):
-            continue
-        sid = p.stem.strip().lower()
-        if not sid:
-            continue
-        desc = ""
-        name = sid.replace("-", " ").replace("_", " ").title()
-        try:
-            # utf-8-sig: several packs are BOM-prefixed, and a leading ﻿ stops the
-            # "# heading" test from matching — the title silently fell back to the
-            # filename ("Ml") and the heading was served as the description.
-            text = p.read_text(encoding="utf-8-sig", errors="ignore")
-            for line in text.splitlines():
+def _parse_skill_md(path: Path, sid: str) -> tuple[str, str]:
+    name = sid.replace("-", " ").replace("_", " ").title()
+    desc = ""
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="ignore")
+    except OSError:
+        return name, desc
+    body = text
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            fm, body = parts[1], parts[2]
+            for line in fm.splitlines():
                 s = line.strip()
-                if not s:
-                    continue
-                if s.startswith("#"):
-                    name = s.lstrip("#").strip() or name
-                    continue
-                desc = s[:160]
-                break
-        except OSError:
-            pass
-        scope = str(state.get(sid) or "off")
-        if scope not in ("off", "global", "project"):
-            scope = "off"
-        out.append(
-            {
-                "id": sid,
-                "name": name,
-                "description": desc or f"Skill pack: {sid}",
-                "path": str(p),
-                "enabled": scope != "off",
-                "scope": scope,
-            }
-        )
+                if s.startswith("name:"):
+                    name = s.split(":", 1)[1].strip().strip("\"'") or name
+            if "description:" in fm:
+                after = fm.split("description:", 1)[1]
+                chunk: list[str] = []
+                for ln in after.splitlines():
+                    st = ln.strip()
+                    if st.endswith(":") and not st.startswith("-") and chunk:
+                        break
+                    st = st.lstrip(">").lstrip("-").strip().strip("\"'")
+                    if st:
+                        chunk.append(st)
+                if chunk:
+                    desc = " ".join(chunk)[:160]
+    for line in body.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("#"):
+            name = s.lstrip("#").strip() or name
+            continue
+        if not desc:
+            desc = s[:160]
+        break
+    return name, desc
+
+
+def _skill_entry(sid: str, path: Path, state: dict[str, str]) -> dict[str, Any]:
+    name, desc = _parse_skill_md(path, sid)
+    scope = str(state.get(sid) or "off")
+    if scope not in ("off", "global", "project"):
+        scope = "off"
+    return {
+        "id": sid,
+        "name": name,
+        "description": desc or f"Skill pack: {sid}",
+        "path": str(path),
+        "enabled": scope != "off",
+        "scope": scope,
+    }
+
+
+def list_skills() -> list[dict[str, Any]]:
+    """Scan data/skills/*.md plus committed .cursor/skills/<id>/SKILL.md in product mode."""
+    state = _skill_state()
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    root = skills_dir()
+    if root.is_dir():
+        for p in sorted(root.glob("*.md")):
+            if p.name.startswith("_"):
+                continue
+            sid = p.stem.strip().lower()
+            if not sid:
+                continue
+            seen.add(sid)
+            out.append(_skill_entry(sid, p, state))
+    # Fixtures pin SKILLS_DIR away from the product dir; do not leak laptop packs into those tests.
+    if skills_dir() == _PRODUCT_SKILLS_DIR and CURSOR_SKILLS_ROOT.is_dir():
+        for d in sorted(CURSOR_SKILLS_ROOT.iterdir()):
+            skill_md = d / "SKILL.md"
+            if not d.is_dir() or not skill_md.is_file():
+                continue
+            sid = d.name.strip().lower()
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            out.append(_skill_entry(sid, skill_md, state))
     return out
 
 
@@ -186,6 +226,8 @@ def load_skill(skill_id: str, *, max_chars: int = SKILL_CAP) -> str:
     if not sid or "/" in sid or "\\" in sid or ".." in sid:
         return ""
     p = skills_dir() / f"{sid}.md"
+    if not p.is_file() and skills_dir() == _PRODUCT_SKILLS_DIR:
+        p = CURSOR_SKILLS_ROOT / sid / "SKILL.md"
     if not p.is_file():
         return ""
     try:
@@ -230,7 +272,8 @@ def rules_context(workspace_root: str | Path | None = None, *, max_chars: int = 
 def skill_slash_commands() -> list[dict[str, Any]]:
     """Dynamic slash entries for each skill pack + meta /skill /rules /subagent."""
     cmds: list[dict[str, Any]] = [
-        {"name": "skill", "description": "Enable a skill pack (next turn + optional persist)", "args": "<pack> [global|project|off]"},
+        {"name": "skill", "description": "Force a skill pack (always wins over auto-wire)", "args": "<pack> [global|project|off] [job]"},
+        {"name": "anthropic-skills", "description": "Force a skill pack (colon form)", "args": ":<pack> [job]"},
         {"name": "rules", "description": "Show or open workspace rules", "args": "[edit]"},
         {"name": "subagent", "description": "Queue a helper subagent with a prompt", "args": "<prompt>"},
         {"name": "create-subagent", "description": "Create a focused subagent and open Cortex", "args": "<name> [prompt]"},

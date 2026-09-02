@@ -66,10 +66,16 @@ class InvokeRegistryTests(unittest.TestCase):
         self.assertIsNotNone(parsed2)
         self.assertEqual(parsed2["command"], "skill-general")
 
+        parsed3 = commands.parse_slash("/anthropic-skills:research now")
+        self.assertEqual(parsed3["command"], "anthropic-skills")
+        self.assertEqual(parsed3["pack"], "research")
+        self.assertEqual(parsed3["rest"], "now")
+
         cmds = commands.list_commands("skill")
         names = {c["name"] for c in cmds}
         self.assertIn("skill", names)
         self.assertTrue(any(n.startswith("skill-") for n in names))
+        self.assertIn("anthropic-skills", {c["name"] for c in commands.list_commands("anthropic")})
 
     def test_catalog_shape(self):
         cat = invoke_registry.catalog()

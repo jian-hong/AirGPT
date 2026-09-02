@@ -245,9 +245,63 @@ def _slugify(name: str) -> str:
     return (s or "app")[:48]
 
 
+def is_pomodoro_ask(text: str) -> bool:
+    """One-line app ask DR-0002 names: pomodoro / tomato timer."""
+    blob = (text or "").lower()
+    return any(w in blob for w in ("pomodoro", "tomato timer", "focus timer"))
+
+
+def _infer_scaffold_kind(name: str, kind: str) -> str:
+    blob = f"{name} {kind}".lower()
+    if is_pomodoro_ask(blob) or "timer" in blob:
+        return "timer"
+    k = (kind or "").strip().lower()
+    return k or "table"
+
+
+def scaffold_from_ask(prompt: str, **kw) -> dict:
+    """Turn a one-line ask into app_scaffold. Used by chat and the agent loop."""
+    text = (prompt or "").strip()
+    kind = _infer_scaffold_kind(text, "")
+    name = "Pomodoro" if kind == "timer" else (text[:40] or "Live app")
+    return app_scaffold(name, kind=kind, **kw)
+
+
 def _default_scaffold_files(name: str, kind: str) -> dict[str, str]:
     """Minimal shared table tool — VDML-shaped sheet for the Small Software beat."""
     title = name or "Live sheet"
+    if kind == "timer":
+        return {
+            "index.html": (
+                "<!DOCTYPE html>\n<html lang=\"en\"><head>\n"
+                "<meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n"
+                f"<title>{title}</title>\n"
+                "<style>body{margin:0;display:grid;place-items:center;min-height:100vh;"
+                "font-family:Segoe UI,system-ui,sans-serif;background:#1a1214;color:#f6e9e6}"
+                "h1{font-size:16px;opacity:.7}#t{font:700 48px/1 ui-monospace,monospace}"
+                "button{margin:6px;padding:8px 14px;border-radius:8px;border:1px solid #fff3;"
+                "background:#fff1;color:inherit;cursor:pointer}</style>\n"
+                "</head><body>\n"
+                f"<main><h1>{title}</h1><p id=\"t\">25:00</p>"
+                "<p><button id=\"go\" type=\"button\">Start</button>"
+                "<button id=\"reset\" type=\"button\">Reset</button></p></main>\n"
+                "<script src=\"app.js\"></script>\n</body></html>\n"
+            ),
+            "app.js": (
+                "(function(){\n"
+                "var left=25*60,t=null,el=document.getElementById('t'),go=document.getElementById('go');\n"
+                "function paint(){el.textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+"
+                "String(left%60).padStart(2,'0')}\n"
+                "function tick(){if(left<=0){clearInterval(t);t=null;go.textContent='Start';return}"
+                "left--;paint()}\n"
+                "go.onclick=function(){if(t){clearInterval(t);t=null;go.textContent='Start';return}"
+                "t=setInterval(tick,1000);go.textContent='Pause'};\n"
+                "document.getElementById('reset').onclick=function(){"
+                "clearInterval(t);t=null;left=25*60;go.textContent='Start';paint()};\n"
+                "paint();\n"
+                "})();\n"
+            ),
+        }
     if kind in ("table", "vdml", "sheet", "static", ""):
         return {
             "index.html": (
@@ -333,6 +387,7 @@ def app_scaffold(
         import apps_hub
         from config import ROOT
 
+        kind = _infer_scaffold_kind(name, kind)
         slug = _slugify(name)
         app_id = slug
         base = app_id
@@ -382,10 +437,11 @@ def app_scaffold(
             out = {"ok": False, "error": reg.get("error") or "register failed"}
             _audit("app_scaffold", args, out, ok=False, run_id=run_id, agent_id=agent_id)
             return out
-        apps_hub.set_app_state(app_id, {"rows": [
-            {"part": "NMD-PHY-44G", "qty": "120", "unit": "18.40", "lead": "6"},
-            {"part": "NMD-PLL-22", "qty": "80", "unit": "12.75", "lead": "4"},
-        ]})
+        if kind != "timer":
+            apps_hub.set_app_state(app_id, {"rows": [
+                {"part": "NMD-PHY-44G", "qty": "120", "unit": "18.40", "lead": "6"},
+                {"part": "NMD-PLL-22", "qty": "80", "unit": "12.75", "lead": "4"},
+            ]})
         out = {
             "ok": True,
             "app_id": app_id,

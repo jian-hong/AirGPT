@@ -858,6 +858,7 @@ def ingest_paths(
             "ok": True,
             "job_id": job_id,
             "revision_id": rev_id,
+            "revision_profile": rev_profile,
             "sources": len(source_ids),
             "chunks": chunk_count,
             "metrics": metrics,

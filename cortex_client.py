@@ -425,6 +425,10 @@ def engine_agent_loop(
     max_steps: int = 8,
     tools: list | None = None,
     quality_criteria: list | None = None,
+    prompt_id: str = "",
+    params: dict | None = None,
+    max_tokens: int = 0,
+    timeout: float = 120.0,
 ) -> dict[str, Any]:
     """POST /api/engine/run architecture_preset=agent (F20b quality loop)."""
     ensure_engine(wait_sec=8.0)
@@ -458,7 +462,13 @@ def engine_agent_loop(
         body["tools"] = list(tools)
     if quality_criteria:
         body["quality_criteria"] = list(quality_criteria)
-    data = _post("/api/engine/run", body, timeout=120.0, base=base, key=key)
+    if prompt_id:
+        body["prompt_id"] = str(prompt_id)
+    if params:
+        body["params"] = dict(params)
+    if max_tokens:
+        body["max_tokens"] = max(256, min(int(max_tokens), 8192))
+    data = _post("/api/engine/run", body, timeout=float(timeout), base=base, key=key)
     if isinstance(data, dict) and data.get("ok"):
         return data
     if isinstance(data, dict):

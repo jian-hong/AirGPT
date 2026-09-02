@@ -24,7 +24,7 @@ def main() -> None:
     import workspace_api
     from clipdrop import _lan_diag_cache, lan_diagnostics
 
-    lan_diagnostics()
+    lan_diagnostics(wait=True)
     assert _lan_diag_cache.get("value")
 
     def cheap_wait_sim():

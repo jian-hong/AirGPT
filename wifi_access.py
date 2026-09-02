@@ -14,6 +14,30 @@ MDNS_NAME = "airgpt"
 _mdns: object | None = None
 _mdns_url = ""
 _hw_cache: dict[str, tuple[float, bool]] = {}
+_hw_lock = threading.Lock()
+
+
+def hw_snapshot() -> tuple[bool, bool]:
+    """Cached wifi/bt flags. Never PowerShell -- /api/info must stay instant."""
+    wifi = _hw_cache.get("wifi")
+    bt = _hw_cache.get("bt")
+    # Unknown wifi is not "down" (R-0005): hide a working LAN QR and the phone
+    # has no path. Unknown bluetooth stays off so we do not invent a BT path.
+    return (True if wifi is None else wifi[1], False if bt is None else bt[1])
+
+
+def refresh_hw_bg() -> None:
+    if not _hw_lock.acquire(blocking=False):
+        return
+
+    def _run() -> None:
+        try:
+            wifi_adapter_up()
+            bluetooth_present()
+        finally:
+            _hw_lock.release()
+
+    threading.Thread(target=_run, daemon=True, name="wifi-hw").start()
 
 
 def wifi_adapter_up() -> bool:
@@ -140,8 +164,8 @@ def connect_methods(
 ) -> list[dict]:
     """Ranked ways to reach AirGPT from phone — WiFi first, no cable needed."""
     methods: list[dict] = []
-    wifi_up = wifi_adapter_up()
-    bt = bluetooth_present()
+    wifi_up, bt = hw_snapshot()
+    refresh_hw_bg()
     mdns = mdns_url() if _mdns_url else None
 
     if lan_url and firewall == "ok" and not lan_blocked:

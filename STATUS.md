@@ -4,24 +4,23 @@
 
 ## Now
 
-0. **Landed on local master** - D05/D09/D07/D04-wire + D06 already on
-   origin via PR #66. Gates 125 passed + 16 subtests this verify.
-1. **CHUNK-02** unicode_v1 + own-doc positives. Gate stays red on
-   English-only embedder (F25d-R). Do not xfail.
-2. **SHELL-02** Cortex owns scheduler. `_engine_cfg` hops only for
-   `surface=constructor`.
-3. **D04** pack POSTs to DMS crosscheck. Live Demo-2 waits on Pointer.
-4. **F53** Cortex F20b + SEC-01 closed. Jailbreak/leaks refused.
+0. **This tree is on `:8765`.** `/api/info` ~0.12s. Live tunnel
+   `https://kevin-story-multiple-companion.trycloudflare.com` -- GET /
+   200 and `/api/probe` 200 `via=tunnel`.
+1. **D08 #38 closed.** Save+Rebuild stamped `local_graph_manual`.
+   DR-0006 accepted.
+2. **D03 #26 / #69 closed.** Dummy `http.server` and stale `:8766`
+   gone. OV `:5000` down. Groq 429 still blocks Cortex paper.
 
 ## Next
 
-0. Close #57 #58 #59 #60 #61 #65 #67 on GitHub (code is on master).
-1. Founder OK to restart `:8765` so the tunnel seat matches this tree.
-2. P11 #9/#10 parked. D04 epic waits on Pointer paste + DMS #32.
+0. D04 #22 Pointer paste (P-DMS-36). Do not build Pointer in AirGPT.
+1. Vault OpenAI or Anthropic, or wait Groq 429. Do not unpark OpenHBM.
 
 ## WIP
 
-In flight: D05 #55, D09 #56. Queued: D07 #36, D03 #26, D06 #37, D08 #38, D04 #22.
+Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56.
+Open parked: D04 #22 (Pointer), P11 #9/#10, D01 #6 leftover.
 
 ## Later
 

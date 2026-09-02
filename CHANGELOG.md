@@ -1,3 +1,83 @@
+# CHANGELOG
+
+Append-only. Never edited, only added to. Newest first.
+
+## 2026-09-03 -- /api/info no longer hangs the phone
+
+- Cold `/api/info` was 12s on live `:8766` (probe 0.3s). The request
+  thread ran netsh, PowerShell WiFi/BT, Google generate_204, OpenVault
+  `:5000` ping, and a SQLite device write. Phone never got
+  `tunnel_attempts` (HOST-DEMO-03).
+- Cache-first LAN/online/Cortex snapshots; OV `ping()` 0.6s + 8s cache;
+  skip `register_device` on `/api/info`. Gate: `tests/test_info_bounded.py`.
+- Rebuild HTTP now returns `revision_profile`; Save+Rebuild toast names
+  the stamp (D08 / DR-0006). D07 primary50 floors still 320/320.
+- Boot no longer `taskkill`s the cloudflared it just started. Health loop
+  no longer restacks a sweep on `* unreachable`. Probe falls back to IPv4
+  when urllib 11001s. Ready-log is cp1252-safe so a working URL is not
+  thrown away. Live `:8765` published
+  `https://kevin-story-multiple-companion.trycloudflare.com` (GET / 200,
+  `/api/probe` 200 `via=tunnel`). Closed #69 and EPIC-D03 #26.
+
+
+## 2026-08-28 -- Cortex owns Idea-to-Paper; OV auto chat restored
+
+- Research agent + pipeline hops send `prompt_id=research.idea_to_paper`
+  to Cortex `POST /api/engine/run`. AirGPT is pytest + pdflatex only.
+  Fail closed if Cortex is down. Keys stay OpenVault.
+- Live `:5000` restarted onto `json_safe` tree. `model=auto` chat 200
+  (`openai/gpt-oss-120b`). Cortex AGENT_TASK research hop ok.
+
+## 2026-08-28 -- DR-0002 pomodoro is scaffolded, not a host page
+
+- `app_scaffold` / `scaffold_from_ask` turns "make a pomodoro timer" into
+  a 25:00 Start/Pause live app. Hand-written `pomodoro.html` and
+  `/pomodoro` `/tomato` routes deleted.
+- Gates: 32 passed (`test_app_scaffold_pomodoro` + agent loop + chat tools).
+
+## 2026-08-28 -- OpenVault E: mesh + laptop MCP arming
+
+- `allcheck.py` probes `E:\OpenVault` tree, `:5000 /api/healthz`, and
+  loopback chat (no Bearer). Dead health fails the check; unhealthy hops
+  warn. Bridge prefers E: then D:. `OPENVAULT_HOME` pin documented.
+- Vault already has Groq/OpenRouter/Google. Cursor and Anthropic are
+  missing on disk -- paste in OpenVault Providers. Do not invent keys.
+- Crew start scripts set `CORTEX_COMPUTER_CONTROL=1` and engine `:8011`.
+  UACC/windows-mcp stay Confirm on mutate. Tests: OpenIDE mesh + policy.
+
+## 2026-08-28 -- OpenVault auto 500 is encode crash (fix in OV tree)
+
+- Live `:5000` PID 62048. `model=auto` (Cortex AGENT_TASK) returns
+  uvicorn text/plain 500. Groq llama ids return typed JSON 400.
+- OpenVault `json_safe` + hop continue landed; 33 passed. Live OV not
+  restarted from this agent.
+
+## 2026-08-28 -- Chat composer uses Cortex AGENT_TASK by default
+
+- `_chat_stream_events` always posts `architecture_preset=agent`.
+  `web_search` only adds tools. Prior turns ride in the prompt.
+  Tool events are `type=tool`; `sendStream` paints them.
+- Gates: 26 passed (`test_cortex_agent_loop` + `test_shell_d09_readout`).
+- Live `:8011` loop still dies on OpenVault HTTP 500. Host restart owed.
+
+## 2026-08-28 -- D06 closed; D03 children filed
+
+- Closed EPIC-D06 #37: #17/#18/#19/#32/#35/#67 already closed; HTTP
+  confirm + rebuild stamp 12 passed + 16 subtests this run.
+- Filed HOST-DEMO-01 #68 (closed; throttle+banner 14 passed) and
+  HOST-DEMO-03 #69 (open; live tunnel_url still owed).
+- Remaining open children parked with unlock: #69 network, #9/#10 P11,
+  D07 primary50, D08 live host + DR-0006, D04 Pointer paste.
+
+## 2026-08-28 -- Idea-to-Paper one-shot 183237 PDF
+
+- 8m scale loop aborted. OV `:5000` was down; restarted without
+  `OPENVAULT_HOME=E:\OpenVault\.openvault`. Live POST `:8766`
+  `20260828_183237-...` one-shot (no continue) landed paper.pdf + zip.
+  Pytest 100/100 (8 passed), constructor generate 200 via `:8012`,
+  7 OV/cascade calls, usd_est ~$0.011, `cursor_generation` false.
+  Venue cs.SE. Human arXiv upload still pending.
+
 ## 2026-08-28 -- D04 pack POSTs to DMS crosscheck
 
 - `rag/xlsx_orch.post_pack_to_dms` hits `POST /v1/studio/xlsx-orch/crosscheck`.

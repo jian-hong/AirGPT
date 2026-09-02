@@ -9855,7 +9855,7 @@ async function ragRebuildSpace(id){
   toast('Rebuilding index…');
   try{
     const r=await api('/api/rag/spaces/'+sid+'/build',{method:'POST',body:JSON.stringify({})}).then(x=>x.json());
-    if(r&&r.ok){toast('Rebuilt · '+(r.chunks||0)+' chunks from '+(r.sources||0)+' sources');if(typeof showRagPage==='function')showRagPage();}
+    if(r&&r.ok){toast('Rebuilt · '+(r.chunks||0)+' chunks from '+(r.sources||0)+' sources'+(r.revision_profile?(' · '+r.revision_profile):''));if(typeof showRagPage==='function')showRagPage();}
     else{toast('Rebuild failed: '+((r&&r.error)||'unknown'));}
   }catch(e){toast('Rebuild failed')}
 }
@@ -10936,7 +10936,7 @@ async function ragSaveAndRebuild(){
     const depth=space.depth_default||'high';
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/build',{method:'POST',body:JSON.stringify({depth})}).then(x=>x.json());
     if(r&&r.ok){
-      toast('Rebuilt '+(r.chunks||0)+' chunk(s) from '+(r.sources||r.files||0)+' source(s) at '+depth+' depth');
+      toast('Rebuilt '+(r.chunks||0)+' chunk(s) from '+(r.sources||r.files||0)+' source(s) at '+depth+' depth'+(r.revision_profile?(' · '+r.revision_profile):''));
       ragState.summary='';await ragRefreshSpace();
     }else toast((r&&r.error)||'Rebuild failed');
   }catch(e){toast('Rebuild failed')}
@@ -13775,6 +13775,14 @@ async function sendStream(text,extra={}){
             const step=String(j.text||'').trim();
             if(step&&thinkSteps[thinkSteps.length-1]!==step)thinkSteps.push(step);
           }
+          thinking=composeThinking(thinkSteps,reasonBuf);
+          updateStreamUi(thinking,tokens);
+        }
+        else if(ev==='tool'||j.type==='tool'){
+          const name=String(j.name||'tool');
+          const sum=(j.result&&j.result.summary)?String(j.result.summary):'';
+          const step=sum? (name+' · '+sum):name;
+          if(step&&thinkSteps[thinkSteps.length-1]!==step)thinkSteps.push(step);
           thinking=composeThinking(thinkSteps,reasonBuf);
           updateStreamUi(thinking,tokens);
         }

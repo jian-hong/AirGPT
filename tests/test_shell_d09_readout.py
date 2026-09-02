@@ -124,6 +124,15 @@ class PerKindMarkerTests(_SourceCase):
         self.present("marks.length===1", mark)
 
 
+class ChatComposerToolRowsTests(_SourceCase):
+    """Main chat (not the Cortex tab) must paint AGENT_TASK tool events."""
+
+    def test_send_stream_renders_tool_events(self):
+        stream = _slice(_src(), "async function sendStream", "window.openItem=")
+        self.present("j.type==='tool'", stream)
+        self.present("thinkSteps.push(step)", stream)
+
+
 class CrossTestPinTests(_SourceCase):
     """`tests/test_shell_d09_http.py::test_index_is_not_a_use_shop` greps index.html for
     these tokens. They are pinned here too so the file that changes index.html is the one
