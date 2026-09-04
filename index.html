@@ -3497,6 +3497,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 const $=id=>document.getElementById(id);
 const API=()=>location.protocol==='file:'?'http://127.0.0.1:8765':location.origin;
 let authToken=localStorage.getItem('airgpt_token')||'';
+let sessionNonce='';
+let securityVersion='';
 let appReady=false;
 function getDeviceId(){
   let id=localStorage.getItem('airgpt_device_id')||'';
@@ -3513,6 +3515,10 @@ async function api(path,opts={}){
     'X-Device-Id':getDeviceId(),
     'X-Device-Name':(typeof myName!=='undefined'&&myName)?myName:(localStorage.getItem('clipdrop_name')||''),
   };
+  if(sessionNonce){
+    headers['X-AirGPT-Session-Nonce']=sessionNonce;
+    if(securityVersion)headers['X-AirGPT-Security-Version']=securityVersion;
+  }
   if(opts.body&&typeof opts.body==='string')headers['Content-Type']='application/json';
   const url=API()+path;
   const r=await fetch(url,{...opts,headers});
@@ -3520,11 +3526,28 @@ async function api(path,opts={}){
     const host=location.hostname;
     const isLocal=host==='127.0.0.1'||host==='localhost'||/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(host);
     if(isLocal&&path!=='/api/auth/join'&&path!=='/api/auth/init'){
-      return fetch(url,{...opts,headers:{...(opts.headers||{}),'X-Device-Id':getDeviceId(),...(opts.body&&typeof opts.body==='string'?{'Content-Type':'application/json'}:{})}});
+      return fetch(url,{...opts,headers:{...(opts.headers||{}),'X-Device-Id':getDeviceId(),...(sessionNonce?{'X-AirGPT-Session-Nonce':sessionNonce}:{}),...(opts.body&&typeof opts.body==='string'?{'Content-Type':'application/json'}:{})}});
     }
     showLogin();throw new Error('auth');
   }
   return r;
+}
+async function establishSession(){
+  try{
+    const r=await fetch(API()+'/api/establish',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-AirGPT-Token':authToken||'',
+        'X-Device-Id':getDeviceId()
+      }
+    });
+    if(!r.ok){sessionNonce='';securityVersion='';return false}
+    const d=await r.json().catch(()=>({}));
+    sessionNonce=d.nonce||r.headers.get('X-AirGPT-Session-Nonce')||'';
+    securityVersion=r.headers.get('X-AirGPT-Security-Version')||d.security_version||'';
+    return !!sessionNonce;
+  }catch(e){sessionNonce='';securityVersion='';return false}
 }
 function isLocalHost(){
   const h=location.hostname;
@@ -3904,7 +3927,9 @@ async function doHostLogin(){
   if(!r.ok)return toast(r.error||'Failed — workspace may already exist. Use Join with your passcode.');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
   $('setWsPass').value='';$('setWsPass2').value='';
-  toast('Workspace created');closeSettings();bootApp(true);
+  toast('Workspace created');closeSettings();
+  await establishSession();
+  bootApp(true);
 }
 async function doJoinLogin(id){
   const el=$(id||'setWsJoinPass');
@@ -3915,7 +3940,9 @@ async function doJoinLogin(id){
   if(!r.ok)return toast(r.error||'Wrong passcode');
   authToken=r.token;localStorage.setItem('airgpt_token',authToken);
   if(el)el.value='';
-  toast('Joined');hideLogin();closeSettings();bootApp(true);
+  toast('Joined');hideLogin();closeSettings();
+  await establishSession();
+  bootApp(true);
 }
 const _savedKeys={};
 function toggleKeyVis(id,btn){
@@ -13269,7 +13296,13 @@ async function sendStream(text,extra={}){
   try{
     const r=await fetch(API()+'/api/chat/stream',{
       method:'POST',
-      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'Accept':'text/event-stream'},
+      headers:{
+        'Content-Type':'application/json',
+        'X-AirGPT-Token':authToken,
+        'Accept':'text/event-stream',
+        ...(sessionNonce?{'X-AirGPT-Session-Nonce':sessionNonce}:{}),
+        ...(securityVersion?{'X-AirGPT-Security-Version':securityVersion}:{})
+      },
       body:JSON.stringify({
         text,device_name:myName,session_id:currentSession||0,mode:currentMode(),
         context_ids:contextIds.slice(0,3),
@@ -13809,7 +13842,7 @@ async function saveSettings(silent){
   const email=$('setEmail')?.value?.trim()||'';
   if(email)await fetch(API()+'/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
   const r=await fetch(API()+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken},body:JSON.stringify(body)}).then(x=>x.json());
-  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
+  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,...(sessionNonce?{'X-AirGPT-Session-Nonce':sessionNonce}:{})},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
   const rec=$('saveReceipt');
   if(r.saved_to){rec.textContent='✓  Saved to '+r.saved_to;rec.classList.add('show')}
   maskSavedKeys();loadAiConfig();
@@ -14673,7 +14706,10 @@ async function tryQrAutoLogin(){
   wireChatScroll();
   await tryQrAutoLogin();
   const ok=await checkAuth();
-  if(ok)await bootApp();
+  if(ok){
+    await establishSession();
+    await bootApp();
+  }
   else layoutComposerChrome();
 })();
 </script>

@@ -8,6 +8,7 @@ import mimetypes
 import os
 import queue
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -842,6 +843,48 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
 
 def _is_host_only_path(path: str) -> bool:
     return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
+
+
+# F8a / HOST-DEMO-02: a LAN or tunnel client must complete POST /api/establish
+# before it may spend AI or write chat. Loopback stays as today. The nonce is
+# in-memory so a leftover token from a previous process cannot skip the handshake.
+SECURITY_VERSION = "1"
+SECURITY_VERSION_HEADER = "X-AirGPT-Security-Version"
+SESSION_NONCE_HEADER = "X-AirGPT-Session-Nonce"
+ESTABLISH_TTL_S = 12 * 3600
+_CORS_ALLOW_HEADERS = (
+    "Content-Type, X-AirGPT-Token, Authorization, "
+    f"{SESSION_NONCE_HEADER}, {SECURITY_VERSION_HEADER}, X-Device-Id, X-Device-Name"
+)
+_establish_lock = threading.Lock()
+_establish_sessions: dict[str, dict] = {}
+
+
+def reset_establish_sessions() -> None:
+    with _establish_lock:
+        _establish_sessions.clear()
+
+
+def _requires_establish(path: str, method: str = "GET") -> bool:
+    """AI and the chat POST paths the phone uses. Probe/auth/static stay open."""
+    if path == "/api/establish" or path.startswith("/api/establish/"):
+        return False
+    if path == "/api/ai" or path.startswith("/api/ai/"):
+        return True
+    if path == "/api/chat" or path.startswith("/api/chat/"):
+        return True
+    if (method or "GET").upper() == "POST" and (
+        path == "/api/messages" or path.startswith("/api/messages/")
+    ):
+        return True
+    return False
+
+
+def _prune_establish_sessions(now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    dead = [k for k, v in _establish_sessions.items() if float(v.get("exp") or 0) < now]
+    for k in dead:
+        _establish_sessions.pop(k, None)
 
 
 def _is_tunnel_host(host: str) -> bool:
@@ -2082,9 +2125,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header("Access-Control-Allow-Headers", _CORS_ALLOW_HEADERS)
+        self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
-    def _send(self, code, body: bytes, ctype):
+    def _send(self, code, body: bytes, ctype, extra_headers=None):
         try:
             self._drain_request_body()
             self.send_response(code)
@@ -2092,13 +2136,88 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self._cors()
             self.send_header("Cache-Control", "no-store")
+            for key, val in (extra_headers or {}).items():
+                self.send_header(key, str(val))
             self.end_headers()
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
             return
 
-    def _json(self, code, data):
-        self._send(code, json.dumps(data).encode(), "application/json; charset=utf-8")
+    def _json(self, code, data, extra_headers=None):
+        self._send(
+            code,
+            json.dumps(data).encode(),
+            "application/json; charset=utf-8",
+            extra_headers=extra_headers,
+        )
+
+    def _establish_extra_headers(self, nonce: str = "") -> dict[str, str]:
+        extra = {SECURITY_VERSION_HEADER: SECURITY_VERSION}
+        if nonce:
+            extra[SESSION_NONCE_HEADER] = nonce
+        return extra
+
+    def _establish_verdict(self) -> tuple[int, dict]:
+        nonce = (self.headers.get(SESSION_NONCE_HEADER) or "").strip()
+        token = self._request_token()
+        client_ver = (self.headers.get(SECURITY_VERSION_HEADER) or "").strip()
+        if not nonce:
+            return 403, {"ok": False, "error": "establish required", "code": "establish_required"}
+        now = time.time()
+        with _establish_lock:
+            _prune_establish_sessions(now)
+            sess = _establish_sessions.get(nonce)
+        if not sess:
+            return 403, {"ok": False, "error": "establish required", "code": "establish_required"}
+        if sess.get("token") != token:
+            return 403, {"ok": False, "error": "establish mismatch", "code": "establish_mismatch"}
+        if sess.get("ver") != SECURITY_VERSION:
+            return 403, {"ok": False, "error": "establish mismatch", "code": "establish_mismatch"}
+        if client_ver and client_ver != SECURITY_VERSION:
+            return 403, {"ok": False, "error": "establish mismatch", "code": "establish_mismatch"}
+        return 200, {"ok": True}
+
+    def _refuse_unestablished(self, path: str) -> bool:
+        """Gate AI/chat for non-host peers. True if a refusal was already sent."""
+        if not _requires_establish(path, getattr(self, "command", "GET")):
+            return False
+        if _is_host_request(self.headers, self.client_address[0]):
+            return False
+        code, body = self._establish_verdict()
+        if code == 200:
+            return False
+        ip = self._client_ip()
+        if app_audit:
+            app_audit.log(
+                "establish_mismatch" if body.get("code") == "establish_mismatch" else "establish_required",
+                ip=ip,
+                detail=f"{path} {body.get('code')}",
+                ok=False,
+            )
+        self._json(code, body, extra_headers=self._establish_extra_headers())
+        return True
+
+    def _handle_establish(self):
+        ip = self._client_ip()
+        token = self._request_token()
+        nonce = secrets.token_urlsafe(32)
+        now = time.time()
+        with _establish_lock:
+            _prune_establish_sessions(now)
+            _establish_sessions[nonce] = {
+                "token": token,
+                "ip": ip,
+                "ts": now,
+                "exp": now + ESTABLISH_TTL_S,
+                "ver": SECURITY_VERSION,
+            }
+        if app_audit:
+            app_audit.log("establish_ok", ip=ip, detail="handshake", ok=True)
+        return self._json(
+            200,
+            {"ok": True, "nonce": nonce, "security_version": SECURITY_VERSION},
+            extra_headers=self._establish_extra_headers(nonce),
+        )
 
     def _sse_begin(self) -> None:
         self._drain_request_body()
@@ -2567,8 +2686,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET,HEAD,POST,DELETE,PATCH,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AirGPT-Token, Authorization")
+        self.send_header("Access-Control-Allow-Headers", _CORS_ALLOW_HEADERS)
         self.end_headers()
 
     def do_HEAD(self):
@@ -2640,6 +2758,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if self._refuse_unestablished(path):
+            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -4120,6 +4240,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
             return self._json(403, {"error": "host only"})
+        if self._refuse_unestablished(path):
+            return
+
+        if path == "/api/establish":
+            return self._handle_establish()
 
         if path == "/api/presence/typing":
             try:
