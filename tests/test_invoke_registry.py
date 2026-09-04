@@ -4,12 +4,22 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import invoke_registry
+
+# Product packs live under gitignored data/skills. Pin to committed fixtures so
+# a clean CI clone and a laptop with extra packs see the same catalog.
+_FIXTURE_SKILLS = Path(__file__).resolve().parent / "fixtures" / "skills"
 
 
 class InvokeRegistryTests(unittest.TestCase):
-    def test_list_and_load_skills(self):
-        import invoke_registry
+    def setUp(self):
+        self._skills_dir = mock.patch.object(invoke_registry, "SKILLS_DIR", _FIXTURE_SKILLS)
+        self._skills_dir.start()
+        self.addCleanup(self._skills_dir.stop)
 
+    def test_list_and_load_skills(self):
         skills = invoke_registry.list_skills()
         ids = {s["id"] for s in skills}
         self.assertIn("general", ids)
@@ -20,8 +30,6 @@ class InvokeRegistryTests(unittest.TestCase):
         self.assertEqual(invoke_registry.load_skill(""), "")
 
     def test_rules_context_fallback(self):
-        import invoke_registry
-
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             # Prefer .airgpt/rules.md
@@ -64,8 +72,6 @@ class InvokeRegistryTests(unittest.TestCase):
         self.assertTrue(any(n.startswith("skill-") for n in names))
 
     def test_catalog_shape(self):
-        import invoke_registry
-
         cat = invoke_registry.catalog()
         self.assertTrue(cat.get("ok"))
         self.assertEqual(cat.get("invoke"), ["rules", "skills", "slash", "subagents"])
@@ -77,11 +83,6 @@ class InvokeRegistryTests(unittest.TestCase):
         self.assertTrue(any(s["id"] == "general" for s in cat["skills"]))
 
     def test_save_skill(self):
-        import invoke_registry
-        import tempfile
-        from pathlib import Path
-        from unittest import mock
-
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             with mock.patch.object(invoke_registry, "SKILLS_DIR", root):
