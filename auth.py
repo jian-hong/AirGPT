@@ -85,8 +85,9 @@ def status() -> dict:
     ws = _load()
     required = passcode_required()
     no_passcode = not bool(ws.get("pass_hash"))
+    passcode_set = bool(ws.get("pass_hash"))
     return {
-        "initialized": bool(ws.get("pass_hash")),
+        "initialized": passcode_set,
         "host_email": ws.get("email", ""),
         # Disarming the gate opens LAN access on purpose — the UI shows a standing
         # warning while this is false. An *unset* passcode is not that opt-in:
@@ -94,7 +95,10 @@ def status() -> dict:
         # instead of returning a bare URL (HOST-DEMO-05 / #27).
         "needs_auth": True if no_passcode else required,
         "passcode_required": required,
-        "passcode_set": bool(ws.get("pass_hash")),
+        "passcode_set": passcode_set,
+        # S1 / EPIC-D10: LAN and tunnel stay closed until a passcode exists.
+        # Disarming after that is the existing host-only switch, not this flag.
+        "s1_remote_open": passcode_set,
     }
 
 
@@ -109,12 +113,15 @@ def init_workspace(email: str, passcode: str) -> dict:
     if ws.get("pass_hash"):
         return {"ok": False, "error": "Workspace already initialized on this machine"}
     salt = secrets.token_hex(16)
-    ws = {
+    # Keep OpenIDE root/name if they already share this file. Do not wipe
+    # the bound repo just because the host is creating a passcode.
+    ws = dict(ws)
+    ws.update({
         "email": email,
         "salt": salt,
         "pass_hash": _hash_passcode(passcode, salt),
         "created_at": time.time(),
-    }
+    })
     _save(ws)
     tok = _issue_token()
     return {"ok": True, "token": tok, "role": "host", "email": email}
