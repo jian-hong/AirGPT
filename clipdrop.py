@@ -7397,6 +7397,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
+        # do_GET and do_POST both carry this gate; DELETE did not, so a peer
+        # could delete under a host-only prefix it was not allowed to read.
+        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
+            return self._json(403, {"error": "host only"})
         if path == "/api/messages":
             # Bulk clear wipes every message for everyone — host action only.
             if not _is_local_host(ip):
