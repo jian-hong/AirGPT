@@ -265,7 +265,34 @@ def _ai_allowed() -> bool:
     return bool(app_license.get_status().get("can_use_ai"))
 
 
+def _s1_remote_open() -> bool:
+    """LAN/tunnel may reach chat only after the host has set a passcode (S1 / D10)."""
+    if not app_auth:
+        return False
+    try:
+        return bool(app_auth.status().get("passcode_set"))
+    except Exception:
+        return False
+
+
+_S1_OPEN_PATHS = frozenset({
+    "/api/probe",
+    "/api/health",
+    "/healthz",
+    "/health",
+    "/api/auth/status",
+    "/wasm_gate.js",
+    "/manifest.json",
+})
+
+
+def _s1_path_open(path: str) -> bool:
+    return path in _S1_OPEN_PATHS
+
+
 def _tunnel_allowed() -> bool:
+    if not _s1_remote_open():
+        return False
     if not app_license:
         return True
     return bool(app_license.get_status().get("can_use_tunnel"))
@@ -2286,6 +2313,14 @@ def tunnel_worker():
     """
     global _health_fails
     _health_fails = 0
+    if not _s1_remote_open():
+        _tunnel.update(
+            url="", provider="", status="locked",
+            error="set a host passcode before tunnel", healthy=False,
+        )
+        print("[tunnel] S1 locked — set a host passcode before LAN/tunnel")
+        bump_sync()
+        return
     with _tunnel_lock:
         _tunnel_attempts.clear()
     _tunnel.update(url="", provider="", status="starting", error="", healthy=False, last_provider="")
@@ -2570,6 +2605,30 @@ class Handler(BaseHTTPRequestHandler):
         join_url = key + "/?qr=" + qt
         _qr_join_cache[key] = (join_url, qt, time.time() + 540)
         return join_url, qt
+
+    def _s1_ok(self, path: str) -> bool:
+        """False if a refusal was already sent. Local host always passes.
+
+        S1: a phone on LAN/tunnel must not reach chat, establish, or the app
+        shell until this machine has a passcode. Probe/health/auth-status stay
+        open so the phone can say why it is locked.
+        """
+        if _is_host_request(self.headers, self.client_address[0]):
+            return True
+        if _s1_remote_open():
+            return True
+        if _s1_path_open(path):
+            return True
+        ip = self._client_ip()
+        if app_audit:
+            app_audit.log("s1_passcode_required", ip=ip, detail=path, ok=False)
+        self._json(403, {
+            "ok": False,
+            "error": "set a host passcode before LAN or tunnel access",
+            "code": "s1_passcode_required",
+            "s1": True,
+        })
+        return False
 
     def _auth_ok(self, path: str) -> bool:
         if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
@@ -3206,6 +3265,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         """Fast HEAD for probes — never 501, never hang on full GET."""
         path = urlparse(self.path).path
+        if not self._s1_ok(path):
+            return
         # Cheap probe/health paths — fixed tiny response
         if path in ("/api/probe", "/api/health", "/healthz", "/health", "/", "/index.html", "/manifest.json", "/api/auth/status"):
             if path in ("/", "/index.html"):
@@ -3268,6 +3329,8 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
+        if not self._s1_ok(path):
+            return
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
@@ -3668,6 +3731,33 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(500, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/research/artifact":
+            try:
+                import idea_to_paper
+
+                rid = (q.get("id") or [""])[0]
+                name = (q.get("name") or [""])[0]
+                fp = idea_to_paper.artifact_path(str(rid), str(name))
+                if not fp:
+                    return self._json(404, {"ok": False, "error": "artifact not found"})
+                data = fp.read_bytes()
+                mime = {
+                    ".md": "text/markdown; charset=utf-8",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".pdf": "application/pdf",
+                    ".tex": "text/plain; charset=utf-8",
+                }.get(fp.suffix.lower(), "application/octet-stream")
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Disposition", f'attachment; filename="{fp.name}"')
+                self.send_header("Content-Length", str(len(data)))
+                self._cors()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception as e:
+                return self._json(500, {"ok": False, "error": str(e)[:200]})
+
         if path == "/api/docs":
             try:
                 import docs_lib
@@ -3723,6 +3813,16 @@ class Handler(BaseHTTPRequestHandler):
             if app_license:
                 return self._json(200, app_license.get_status())
             return self._json(200, {"can_use_ai": True, "trial_active": True})
+
+        if path == "/api/update":
+            if app_license and hasattr(app_license, "check_update"):
+                return self._json(200, app_license.check_update())
+            try:
+                import license as _lic
+
+                return self._json(200, _lic.check_update())
+            except Exception as e:
+                return self._json(200, {"ok": False, "update": False, "reason": "unavailable", "error": str(e)[:200]})
 
         if path == "/api/netie/account":
             if not netie_id:
@@ -3949,6 +4049,15 @@ class Handler(BaseHTTPRequestHandler):
                 import cortex_client
                 data = cortex_client.routines_list()
                 return self._json(200 if data.get("ok") else 503, data)
+            except Exception as e:
+                return self._json(503, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/cortex/routines/") and path.endswith("/runs"):
+            try:
+                import cortex_client
+                rid = path.rstrip("/").split("/")[-2]
+                data = cortex_client.routines_runs(rid)
+                return self._json(200 if data.get("ok") else int(data.get("_http") or 503), data)
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
 
@@ -4748,6 +4857,8 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
+        if not self._s1_ok(path):
+            return
         if not self._auth_ok(path) and not path.startswith("/api/auth/"):
             return self._json(401, {"error": "auth required", "auth": True})
         if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
@@ -6510,6 +6621,8 @@ class Handler(BaseHTTPRequestHandler):
 
                 data = json.loads(self._body().decode() or "{}")
                 rid = str(data.get("run_id") or "").strip()
+                if rid and data.get("repackage"):
+                    return self._json(200, idea_to_paper.start_run(repackage_id=rid, sync=True))
                 if rid and data.get("resume"):
                     return self._json(200, idea_to_paper.start_run(resume_id=rid, sync=bool(data.get("sync"))))
                 if rid and (data.get("continue") or data.get("continue_run")):
@@ -7263,6 +7376,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         ip = self._client_ip()
+        if not self._s1_ok(path):
+            return
         if not self._auth_ok(path):
             return self._json(401, {"error": "auth required", "auth": True})
         if path == "/api/messages":
