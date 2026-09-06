@@ -14,6 +14,9 @@ What exists in this repo and where. Update when structure changes, not when stat
   identifiers plus CJK/Thai n-grams and Hangul/Arabic/Cyrillic letter runs.
 - `cortex_client.scheduler_status` -- named refusal (`wrong_surface` /
   `cortex_down` / `no_scheduler`). AirGPT host clock is legacy-only.
+  Real scheduled work is Cortex `scheduled_work` (gh / ship-gate / mail).
+- `GET /api/update` -- `license.check_update`; `no_update_server` until
+  `AIRGPT_API_BASE` names a signed channel. Not download-safe.
 - `clipdrop._rag_check_build_paths` -- `/build` paths must be this space.
 - `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
   (DR-0006 / #33). `table=True` for xlsx/csv. Rebuild prefers Docs original.
