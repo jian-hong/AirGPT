@@ -3415,7 +3415,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <h3>Tools &amp; MCPs</h3>
           <p class="hint">First-party agent tools live in <code>agent_tools.py</code>. MCP client UI is parked — Marketplace Tools install local packs.</p>
           <div id="scToolsList" class="sc-list"><div class="hint">fs_read · fs_patch · run_command · git_* · vault_* · memory_* · rag_* · subagent_dispatch</div></div>
-          <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();showMarketplace?.()">Open Marketplace</button>
+          <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();showMarketplacePage()">Open Marketplace</button>
         </div>
 
         <div class="sc-panel" id="scPanel-hooks" data-panel="hooks">
@@ -4825,6 +4825,8 @@ function showCenterProjects(opts){
   const q=questionOfTheDay(true);
   const invites=[
     {id:'clipboard',kicker:'Clipboard',title:'Paste & go',body:'Drop notes or screenshots — sync to this PC.',ico:'📋'},
+    {id:'research',kicker:'Research',title:'Idea → paper',body:'Long markdown, figures, Word + IEEE PDF.',ico:'📄'},
+    {id:'rag',kicker:'Build',title:'Knowledge spaces',body:'Ingest, rebuild, Copilot pack, ops amend.',ico:'📚'},
     {id:'projects',kicker:'Projects',title:'Open projects',body:'Lanes with their own memory & recents.',ico:'📁'},
     {id:'openide',kicker:'OpenIDE',title:'Chat → code',body:'Monaco workspace with approve-before-write.',ico:'💻'},
     {id:'openforge',kicker:'OpenForge',title:'Chat → chip',body:'NL spec to netlist + honest ngspice gate.',ico:'⬡'},
@@ -4850,6 +4852,8 @@ function showCenterProjects(opts){
     card.onclick=()=>{
       const id=card.dataset.invite;
       if(id==='clipboard')$('input')?.focus();
+      else if(id==='research')showResearchPage();
+      else if(id==='rag')showRagPage();
       else if(id==='projects')showSideView('projects');
       else if(id==='openide')showWorkspace('openide');
       else if(id==='openforge')showWorkspace('openforge');
@@ -6302,7 +6306,8 @@ async function runOpenForgeDesign(){
   const spec=($('forgeSpec')?.value||'').trim();if(!spec)return toast('Enter a spec');
   const out=$('forgeOut');if(out)out.innerHTML='<div class="empty">Building netlist + optional ngspice smoke…</div>';
   try{
-    const d=await api('/api/openforge/design',{method:'POST',body:JSON.stringify({spec})});
+    const d=await api('/api/openforge/design',{method:'POST',body:JSON.stringify({spec})}).then(x=>x.json());
+    if(!d||!d.ok){if(out)out.textContent=(d&&d.error)||'Design failed';toast((d&&d.error)||'Design failed');return}
     forgeShowDesign(d);
     toast(d.simulation_gated?'Sim-gated design':'Template design');
   }catch(e){if(out)out.textContent='Design failed'}
@@ -8528,7 +8533,9 @@ async function engineJustWorks(apply){
   if(btn){btn.disabled=true;btn.textContent=apply?'Applying…':'Checking this computer…';}
   if(state)state.textContent='';
   try{
-    const r=await api('/api/engine/just-works',{method:'POST',body:JSON.stringify({apply:!!apply})}).then(x=>x.json());
+    const r=apply
+      ? await api('/api/engine/just-works',{method:'POST',body:JSON.stringify({apply:true})}).then(x=>x.json())
+      : await api('/api/engine/just-works').then(x=>x.json());
     const lines=(r.human&&r.human.length)?r.human:[r.error||'Could not work that out.'];
     const clean=jwClean;
     if(out){
@@ -8747,6 +8754,7 @@ async function appsHubOpen(id){
 }
 let _videoPoll=null;
 async function showVideoPage(){
+  leaveOverlayWorkspace();
   stashHomeChatIfNeeded();
   sideView='video';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
@@ -9025,6 +9033,7 @@ async function showUsagePage(){
   </div>`;
 }
 async function showResearchPage(){
+  leaveOverlayWorkspace();
   sideView='research';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
   $('chat').innerHTML=`<div class="cortex-page"><div class="empty">Loading research…</div></div>`;
@@ -9039,9 +9048,28 @@ async function showResearchPage(){
     <div class="hint">${esc(x.category||'paper')} · ${esc(String(x.bytes||0))} B · drag to reorder · resize from corner</div>
     <div class="btn-row" style="margin-top:6px"><button type="button" class="btn" style="padding:2px 10px;font-size:12px" title="Index this paper into a RAG knowledge space" onclick="event.stopPropagation();ragAddResearch(decodeURIComponent('${encodeURIComponent(x.path||'')}'),this)">Add to RAG</button></div>
   </div>`).join('')||'<p class="hint">No papers uploaded yet. Upload PDF/MD to build a scalable paper playground.</p>';
-  const runs=(d.runs||[]).slice(0,12).map(x=>`<div class="cortex-card" style="margin-bottom:8px">
+  let packaged=[];
+  try{packaged=(await fetch('/ui/exports/index.json').then(r=>r.json())).runs||[]}catch(e){}
+  const packMap=Object.fromEntries((packaged||[]).filter(x=>x&&x.id).map(x=>[x.id,x]));
+  const merged=[];
+  const seen=new Set();
+  (packaged||[]).forEach(p=>{
+    if(!p||!p.id||seen.has(p.id))return;
+    const src=(d.runs||[]).find(r=>r.id===p.id)||{};
+    merged.push({...src,...p,paper_md_chars:p.md_chars||src.paper_md_chars||0,paper_docx:!!p.docx,paper_pdf:!!p.pdf});
+    seen.add(p.id);
+  });
+  (d.runs||[]).forEach(r=>{if(r&&r.id&&!seen.has(r.id)){merged.push(r);seen.add(r.id)}});
+  const runs=merged.slice(0,24).map(x=>`<div class="cortex-card" style="margin-bottom:8px">
     <h3>${esc(x.id||'')}</h3>
-    <p>${esc(x.stage||'')} · ${esc(x.status||'')} · ${esc(String(((x.cost||{}).usd_est!=null)?x.cost.usd_est:''))}</p>
+    <p>${esc(x.stage||'')} · ${esc(x.status||'')} · ${esc(String(((x.cost||{}).usd_est!=null)?x.cost.usd_est:''))} · md ${esc(String(x.paper_md_chars||0))} chars ${x.paper_docx?'· Word':''} ${x.paper_pdf?'· PDF':''} ${x.paper_tex?'· TeX':''}</p>
+    <div class="btn-row" style="margin-top:6px;flex-wrap:wrap">
+      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.md')">Markdown</button>
+      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.docx')">Word</button>
+      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.pdf')">PDF</button>
+      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.tex')">TeX</button>
+      <button type="button" class="btn" onclick="repackageIdeaToPaper('${esc(x.id||'')}')">Rebuild Word/md</button>
+    </div>
   </div>`).join('')||'<p class="hint">No Idea-to-Paper runs yet.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Research library</h2>
@@ -9070,6 +9098,38 @@ function bindResearchPaperDrag(){
     el.addEventListener('dragend',()=>{el.style.opacity='';dragEl=null});
     el.addEventListener('dragover',e=>{e.preventDefault();if(!dragEl||dragEl===el)return;const rect=el.getBoundingClientRect();const before=(e.clientY-rect.top)<rect.height/2;stack.insertBefore(dragEl,before?el:el.nextSibling)});
   });
+}
+async function downloadResearchArtifact(id,name){
+  if(!id||!name)return;
+  const urls=[
+    API()+'/api/research/artifact?id='+encodeURIComponent(id)+'&name='+encodeURIComponent(name),
+    '/ui/exports/'+encodeURIComponent(id)+'/'+name
+  ];
+  for(const u of urls){
+    try{
+      const r=await fetch(u);
+      if(!r.ok)continue;
+      const ct=r.headers.get('content-type')||'';
+      if(ct.includes('json'))continue;
+      const blob=await r.blob();
+      if(!blob||blob.size<32)continue;
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=name;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+      return;
+    }catch(e){}
+  }
+  toast('File not on this host');
+}
+async function repackageIdeaToPaper(id){
+  if(!id)return;
+  try{
+    const r=await api('/api/research/idea-to-paper',{method:'POST',body:JSON.stringify({run_id:id,repackage:true})}).then(x=>x.json());
+    toast(r.ok?('Packaged '+(r.md_chars||0)+' chars + Word'):(r.error||'Package failed'));
+    showResearchPage();
+  }catch(e){toast('Package failed')}
 }
 async function startIdeaToPaper(){
   const idea=prompt('One-sentence idea the paper must defend', 'A local citation gate should drop any DOI, arXiv id, or URL that does not resolve over HTTP, and a methods preprint may only cite the kept set.');
@@ -9191,6 +9251,9 @@ function routineCardHtml(r){
   // let hr-25660b22 look scheduled while running nothing (SHELL-02 #60).
   const host=String(r.scheduler||'')==='airgpt_host';
   const why=r.unhealthy_why||r.why||'';
+  const last=r.last_run||null;
+  const stepNames=(last&&last.steps||[]).map(s=>s.tool||s.name||'').filter(Boolean).slice(0,5).join(' · ');
+  const lastTxt=last?((stepNames||String(last.text||last.error||'').slice(0,160))):'';
   return `<div class="cortex-card routine-card" style="margin:0;${paused?'opacity:.6;':''}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <strong style="flex:1">${esc(r.name||'Routine')}</strong>
@@ -9199,6 +9262,7 @@ function routineCardHtml(r){
     </div>
     ${why?`<p class="hint" style="margin:0 0 6px;color:#e03131">${esc(why)}</p>`:''}
     <p class="hint" style="margin:0 0 8px">${esc(r.prompt||r.goal||'')}</p>
+    ${lastTxt?`<p class="hint" style="margin:0 0 8px">Last run: ${esc(last.status||'')} · ${esc(lastTxt)}</p>`:''}
     ${err?`<p class="hint" style="margin:0 0 8px;color:#e03131">${esc(typeof err==='string'?err:_explainedToast(err))}</p>`:''}
     <div class="btn-row" style="gap:6px;flex-wrap:wrap">
       <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineRunNow('${esc(r.id)}')">Run now</button>
@@ -9226,7 +9290,8 @@ function routineComposerHtml(){
   const inp='width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;margin-bottom:8px';
   const chips=( _routinePreview&&_routinePreview.suggestions)||[
     'Summarize my open PRs every weekday morning',
-    'Check the site is up every 15 minutes',
+    'Run the AirGPT ship-gate every weekday',
+    'Email me a daily inbox digest every morning',
     'Deep research on our competitors every Monday morning'
   ];
   const chipHtml=chips.slice(0,4).map(s=>`<button type="button" class="btn" style="padding:4px 10px;font-size:11px;border-radius:999px" onclick="document.getElementById('rtGoal').value=${JSON.stringify(s)}">${esc(s)}</button>`).join('');
@@ -9251,13 +9316,10 @@ async function routineDraftPreview(){
 async function routineCreateFromPreview(){
   const goal=(_routinePreview&&(_routinePreview.goal||_routinePreview.prompt))||'';
   if(!goal){toast('Tell me what to do first');return}
-  // Without an agent the routine fires and runs nothing (host_routines fired_no_agent).
-  // Refuse at the control rather than mint a chip that looks scheduled (SHELL-02 #60).
-  const _aa=window._cortexActiveAgent||(typeof getCortexActiveAgent==='function'?getCortexActiveAgent():null);
-  const aid=(_aa&&_aa.id)||0;
-  if(!aid){toast('Pick an agent first - a routine with no agent fires and runs nothing');return}
+  // Cortex owns the clock. An AirGPT agent_id is optional metadata, not a
+  // requirement — requiring one blocked real gh/ship-gate/mail work.
   try{
-    const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal,agent_id:aid})}).then(x=>x.json());
+    const r=await api('/api/cortex/routines',{method:'POST',body:JSON.stringify({goal})}).then(x=>x.json());
     if(!r.ok){toast(_explainedToast(r.detail||r.error));return}
     _routinePreview=null;toast('Routine created');showRoutinesPage();
   }catch(e){toast('Create failed')}
@@ -9268,8 +9330,9 @@ async function routineRunNow(id){
     // HTTP 200 is not "it fired". routines_run reports fired:false when the clock
     // did not advance, and saying "Running..." over that is the #60 defect (R-0011).
     const nxt=routineNextRunLabel(r.next_run_at_after||r.next_run_at);
+    const n=(r.steps||[]).length;
     toast(r.ok&&r.fired!==false
-      ?('Ran'+(nxt?' - next '+nxt:''))
+      ?('Ran'+(n?' · '+n+' steps':'')+(nxt?' - next '+nxt:''))
       :('Did not fire: '+_explainedToast(r.detail||r.error||r.reason||'no reason given')));
     showRoutinesPage();
   }catch(e){toast('Run failed')}
@@ -9377,6 +9440,7 @@ function seekHistoryHtml(rows){
   }).join('');
 }
 async function showSeekPage(){
+  leaveOverlayWorkspace();
   sideView='seek';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
   let goals=[], offline=false;
@@ -9788,6 +9852,7 @@ function layoutRagAskSqueeze(){
 }
 
 async function showRagPage(){
+  leaveOverlayWorkspace();
   sideView='rag';
   document.body.classList.add('rag-mode','view-only-mode');
   document.body.classList.remove('oval-chat');
@@ -13966,7 +14031,7 @@ async function openSettings(panel){
   if($('setLoginJoinPane'))$('setLoginJoinPane').style.display=st.initialized?'block':'none';
   if($('authStatusLine'))$('authStatusLine').textContent=st.initialized
     ?(authToken?'✓ Signed in':'Workspace ready — use passcode to join from phone')
-    :'Create workspace below (one time on this PC)';
+    :'Create workspace below (one time on this PC). LAN and tunnel stay locked until then.';
   renderPasscodeGate(st);
   const lb=$('licenseBanner');
   const sku=$('skuLine');
@@ -15061,6 +15126,10 @@ async function bootApp(force){
   }
   try{await pullInfo()}catch(e){$('subStatus').textContent='Server starting…'}
   if($('subStatus')&&info.app_version)$('subStatus').textContent='v'+info.app_version+' · local';
+  fetchJson('/api/update').then(function(u){
+    if(!$('subStatus')||!info.app_version)return;
+    if(u&&u.update) $('subStatus').textContent='v'+info.app_version+' · update available';
+  }).catch(function(){});
   // Parallel history + vault (was sequential — major boot lag)
   await Promise.all([
     pullHistory().catch(()=>{}),
