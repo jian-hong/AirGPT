@@ -469,6 +469,25 @@ def create_project_under_category(name: str, category: str) -> dict:
     return get_or_create_project(name, category=cat)
 
 
+def list_projects(limit: int = 200) -> list[dict]:
+    """Every project row, newest touched first - what POST /api/projects wrote."""
+    ensure_default_projects()
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT p.*, (SELECT COUNT(*) FROM chat_sessions s WHERE s.project_id=p.id) as session_count "
+            "FROM projects p ORDER BY p.updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_project(project_id: int) -> dict | None:
+    """One project row, or None. Callers use this to refuse an unknown id."""
+    with _lock, _connect() as conn:
+        row = conn.execute("SELECT * FROM projects WHERE id=?", (int(project_id),)).fetchone()
+    return dict(row) if row else None
+
+
 def get_default_project_for_category(category: str) -> dict:
     cat = category if category in dict(FIXED_CATEGORIES) else "general"
     label = dict(FIXED_CATEGORIES)[cat]

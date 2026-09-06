@@ -3912,6 +3912,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/vault":
             return self._json(200, db.list_vault_tree())
 
+        if path == "/api/projects":
+            # POST /api/projects has always written rows; without this nothing
+            # could read them back, so no client could offer a project to pick.
+            lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
+            return self._json(200, {"projects": db.list_projects(lim)})
+
         if path == "/api/summarize/today":
             summary = db.build_day_summary()
             return self._json(200, summary)
@@ -7337,6 +7343,17 @@ class Handler(BaseHTTPRequestHandler):
                 kw["category"] = str(body["category"])[:20]
             if "summary" in body:
                 kw["summary"] = str(body["summary"])[:500]
+            if "project_id" in body:
+                try:
+                    pid = int(body["project_id"])
+                except (TypeError, ValueError):
+                    return self._json(400, {"error": "bad project_id"})
+                # 0 clears the assignment. Any other id must name a real row -
+                # an unknown one would park the chat in a project no listing
+                # can show, and the client would never see it again.
+                if pid and not db.get_project(pid):
+                    return self._json(404, {"error": "project not found"})
+                kw["project_id"] = pid
             if kw:
                 db.update_session_meta(sid, **kw)
             return self._json(200, {"ok": True})
