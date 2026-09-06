@@ -198,3 +198,51 @@ def heartbeat() -> dict:
     if cache.get("grace_until", 0) > time.time():
         return {"ok": True, "sku": "business", "online": False, "grace": True}
     return {"ok": True, "sku": "business", "online": False, "stale": True}
+
+
+def check_update() -> dict:
+    """Honest app update probe. No channel is not 'up to date' or download-safe."""
+    from config import APP_VERSION
+
+    try:
+        from ai_engine import load_env
+
+        base = (load_env().get("AIRGPT_API_BASE") or "").rstrip("/")
+    except Exception:
+        base = ""
+    current = str(APP_VERSION)
+    if not base:
+        return {
+            "ok": True,
+            "update": False,
+            "reason": "no_update_server",
+            "current": current,
+            "hint": "Set AIRGPT_API_BASE when a signed release channel exists. Not download-safe until signed EXE + S1.",
+        }
+    try:
+        req = urllib.request.Request(
+            f"{base}/v1/app/version",
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            payload = json.loads(r.read().decode() or "{}")
+    except Exception as exc:
+        return {
+            "ok": False,
+            "update": False,
+            "reason": "update_server_unreachable",
+            "current": current,
+            "error": str(exc)[:200],
+        }
+    latest = str(payload.get("version") or payload.get("latest") or "").strip()
+    url = str(payload.get("url") or payload.get("download") or "")
+    newer = bool(latest) and latest != current
+    return {
+        "ok": True,
+        "update": newer,
+        "reason": "update_available" if newer else "current",
+        "current": current,
+        "latest": latest or current,
+        "url": url,
+    }
