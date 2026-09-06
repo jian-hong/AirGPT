@@ -35,6 +35,35 @@ def list_workflows() -> list[dict]:
     return list(data.get("workflows") or [])
 
 
+def _tool_detail(run: dict) -> list[dict]:
+    raw = run.get("steps") or "[]"
+    parsed: list = []
+    if isinstance(raw, str):
+        try:
+            import json
+
+            maybe = json.loads(raw)
+            if isinstance(maybe, list):
+                parsed = maybe
+        except Exception:
+            parsed = []
+    elif isinstance(raw, list):
+        parsed = raw
+    out: list[dict] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "tool": str(item.get("tool") or item.get("name") or "?")[:80],
+                "ok": bool(item.get("ok", True)),
+                "ms": int(item.get("ms") or 0),
+                "summary": str(item.get("summary") or "")[:240],
+            }
+        )
+    return out
+
+
 def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
     """Shape one agent_store run for the Background tasks panel."""
     aid = int(run.get("agent_id") or 0)
@@ -76,6 +105,8 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
             excerpt = (run.get("error") or "")[:1200]
     else:
         excerpt = prompt[:400]
+    tools = _tool_detail(run)
+    names = [t["tool"] for t in tools if t.get("tool")]
     return {
         "id": f"agent_run_{run.get('id')}",
         "name": name,
@@ -89,7 +120,7 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
             "agents": 1,
             "agents_done": 1 if panel_st in ("done", "error", "cancelled") else 0,
             "tokens": 0,
-            "tools": 0,
+            "tools": len(tools),
             "phases_done": 1 if panel_st in ("done", "error", "cancelled") else 0,
             "phases_total": 1,
             "cost_myr": 0,
@@ -106,9 +137,9 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
                         "purpose": prompt[:200] or "Agent run",
                         "status": panel_st if panel_st != "queued" else "pending",
                         "tokens": 0,
-                        "tool_count": 0,
-                        "tools": [],
-                        "tool_detail": [],
+                        "tool_count": len(tools),
+                        "tools": names,
+                        "tool_detail": tools,
                         "excerpt": excerpt,
                         "error": (run.get("error") or "")[:500],
                         "elapsed": round(elapsed, 1),

@@ -75,5 +75,65 @@ def test_recognize_proxy():
     assert rec["template_id"] == "deep_research"
 
 
+def test_snapshot_includes_agent_tool_traces():
+    run = {
+        "id": 7,
+        "agent_id": 1,
+        "status": "done",
+        "prompt": "review the PR",
+        "result": "listed one PR",
+        "error": "",
+        "created_at": 1.0,
+        "finished_at": 2.0,
+        "steps": '[{"tool":"think","ok":true,"summary":"Cortex quality loop"},{"tool":"gh_pr_list","ok":true,"summary":"1 open PRs"}]',
+    }
+    card = workflow_engine._agent_card(run, {1: {"name": "Reviewer"}})
+    tools = card["phases"][0]["agents"][0]["tool_detail"]
+    assert tools[0]["tool"] == "think"
+    assert tools[1]["tool"] == "gh_pr_list"
+    assert card["totals"]["tools"] == 2
+
+
 def test_est_tokens_still_available():
     assert workflow_engine.est_tokens("abcd") == 1
+
+
+def test_workflows_tasks_http_includes_think():
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    import clipdrop
+
+    snap = {
+        "ok": True,
+        "running": [],
+        "finished": [
+            {
+                "id": "agent_run_7",
+                "phases": [
+                    {
+                        "agents": [
+                            {
+                                "tool_detail": [
+                                    {"tool": "think", "ok": True, "summary": "step 1"}
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            }
+        ],
+    }
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), clipdrop.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with patch("workflow_engine.snapshot", return_value=snap):
+            url = f"http://127.0.0.1:{srv.server_address[1]}/api/workflows/tasks"
+            data = json.loads(urllib.request.urlopen(url, timeout=15).read().decode())
+        tools = data["finished"][0]["phases"][0]["agents"][0]["tool_detail"]
+        assert tools[0]["tool"] == "think"
+    finally:
+        srv.shutdown()
+        srv.server_close()

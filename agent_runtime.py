@@ -22,6 +22,15 @@ FILE_MENTION_RE = re.compile(r"@([\w.\-/\\]+(?:\.\w+)?)")
 CORTEX_RESEARCH_PROMPT_ID = "research.idea_to_paper"
 
 
+def _think_event(steps: list, text: str) -> dict:
+    """SSE thinking row that also lands on the Background tasks card."""
+    msg = text if str(text).endswith("\n") else f"{text}\n"
+    summary = str(text or "").strip()[:240]
+    if summary:
+        steps.append({"tool": "think", "ok": True, "summary": summary})
+    return {"type": "thinking", "text": msg}
+
+
 def _cortex_owns_brain(agent: dict) -> bool:
     """Research agents: Cortex owns prompts. AirGPT is shell only."""
     if not isinstance(agent, dict):
@@ -165,11 +174,12 @@ def _assemble_agent_prompt(
     instructions = (
         f"You are {agent_name}, a Cortex agent. Use tools when needed.\n"
         'To call a tool respond with ONLY JSON: {"tool":"NAME","params":{...}}\n'
+        'OpenAI/Cursor shape is also accepted: {"name":"NAME","arguments":{...}}\n'
         "Prefer fs_patch over fs_write for edits.\n"
         "When done, respond with plain text (no JSON).\n\n"
         f"{(rules or '').strip()}"
     ).strip()
-    tools = f"Available tools:\n{json.dumps(tool_hint)}"
+    tools = f"Available tools:\n{json.dumps(tool_hint, separators=(',', ':'))}"
     skill_block = (skill or "").strip()
     if skill_block:
         instructions = f"{instructions}\n\nSkill pack:\n{skill_block[:2000]}"
@@ -244,6 +254,16 @@ def _maybe_compact_blocks(context_blocks: list[str], *, soft_limit: int = 5000) 
         return context_blocks[-12:]
 
 
+def _looks_like_tool_json(candidate: str) -> bool:
+    """Accept legacy {"tool"} plus OpenAI/Cursor function-call shapes."""
+    return (
+        '"tool"' in candidate
+        or '"tool_calls"' in candidate
+        or ('"function"' in candidate and '"name"' in candidate)
+        or ('"name"' in candidate and '"arguments"' in candidate)
+    )
+
+
 def _extract_balanced_json(text: str) -> str | None:
     """Find first brace-balanced JSON object that looks like a tool call."""
     start = text.find("{")
@@ -269,26 +289,90 @@ def _extract_balanced_json(text: str) -> str | None:
                 depth -= 1
                 if depth == 0:
                     candidate = text[start : i + 1]
-                    if '"tool"' in candidate:
+                    if _looks_like_tool_json(candidate):
                         return candidate
                     break
         start = text.find("{", start + 1)
     return None
 
 
+def _json_args(raw: object) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _normalize_tool_obj(obj: object) -> dict | None:
+    """Map legacy, OpenAI, and Cursor tool JSON onto {tool, params}."""
+    if not isinstance(obj, dict):
+        return None
+    if obj.get("tool"):
+        params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+        return {"tool": str(obj["tool"]), "params": params}
+    calls = obj.get("tool_calls")
+    if isinstance(calls, list) and calls:
+        first = calls[0]
+        if isinstance(first, dict):
+            nested = _normalize_tool_obj(first)
+            if nested:
+                return nested
+    fn = obj.get("function") if isinstance(obj.get("function"), dict) else obj
+    if not isinstance(fn, dict):
+        return None
+    name = fn.get("name") or obj.get("name")
+    if not name:
+        return None
+    args = fn.get("arguments", obj.get("arguments"))
+    return {"tool": str(name), "params": _json_args(args)}
+
+
 def _parse_tool_call(text: str) -> dict | None:
-    """Parse TOOL_CALL JSON from model output (supports nested params)."""
+    """Parse TOOL_CALL JSON from model output (legacy + OpenAI/Cursor)."""
     raw = _extract_balanced_json(text or "")
     if not raw:
         return None
     try:
         obj = json.loads(raw)
-        if obj.get("tool"):
-            params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
-            return {"tool": str(obj["tool"]), "params": params}
     except json.JSONDecodeError:
-        pass
-    return None
+        return None
+    return _normalize_tool_obj(obj)
+
+
+def _agent_tool_hint(names: list[str] | None) -> list:
+    """OpenAI/Cursor `tools` array. Falls back to the catalog rows."""
+    wanted = list(names or [])
+    try:
+        import chat_tools
+
+        shaped = chat_tools.openai_tools(wanted)
+        have = {row["function"]["name"] for row in shaped}
+        missing = [n for n in wanted if n not in have]
+        if missing:
+            for row in agent_tools.tool_schemas(missing):
+                props = {p: {"type": "string"} for p in (row.get("params") or [])}
+                shaped.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": row["name"],
+                            "description": row.get("description") or row["name"],
+                            "parameters": {
+                                "type": "object",
+                                "properties": props,
+                                "required": list(props),
+                            },
+                        },
+                    }
+                )
+        return shaped
+    except Exception:
+        return agent_tools.tool_schemas(wanted)
 
 
 def _inject_file_mentions(prompt: str, *, active_file: str = "") -> tuple[str, list[str]]:
@@ -463,13 +547,15 @@ def run_agent_events(
     yield {"type": "status", "text": f"Running {agent['name']} ({thinking_mode})…", "run_id": run_id, "agent_id": agent_id}
 
     if agent_tools.is_pomodoro_ask(prompt or "") and not is_subagent:
-        yield {"type": "thinking", "text": "Scaffolding pomodoro…\n"}
+        pomo_steps: list[dict] = []
+        yield _think_event(pomo_steps, "Scaffolding pomodoro…")
         sc = agent_tools.scaffold_from_ask(prompt or "", run_id=run_id, agent_id=agent_id)
+        pomo_steps.append({"tool": "app_scaffold", "ok": bool(sc.get("ok"))})
         yield _safe_tool_event("app_scaffold", sc)
         if sc.get("ok"):
             analysis = f"Live app at {sc.get('url')}"
             try:
-                agent_store.finish_run(run_id, status="done", result=analysis)
+                agent_store.finish_run(run_id, status="done", result=analysis, steps=pomo_steps)
             except Exception:
                 pass
             yield {
@@ -480,7 +566,7 @@ def run_agent_events(
                 "stop_reason": "quality",
                 "quality_passed": True,
                 "runner": "app_scaffold",
-                "steps": [{"tool": "app_scaffold", "ok": True}],
+                "steps": pomo_steps,
             }
             return
 
@@ -513,15 +599,29 @@ def run_agent_events(
         except Exception as e:
             cortex = {"ok": False, "error": str(e)[:200]}
         if isinstance(cortex, dict) and cortex.get("ok"):
+            tel = cortex.get("telemetry") if isinstance(cortex.get("telemetry"), dict) else {}
+            packed: list[dict] = []
             yield {
                 "type": "status",
                 "text": "Cortex quality loop" if not owns else "Cortex research brain",
                 "runner": "agent_task",
                 "prompt_id": CORTEX_RESEARCH_PROMPT_ID if owns else "",
             }
-            for t in ((cortex.get("telemetry") or {}).get("tools") or []):
+            yield _think_event(
+                packed,
+                "Cortex research brain…" if owns else "Cortex quality loop…",
+            )
+            for t in (tel.get("tools") or []):
                 if not isinstance(t, dict):
                     continue
+                packed.append(
+                    {
+                        "tool": str(t.get("tool") or "tool")[:80],
+                        "ok": bool(t.get("ok", True)),
+                        "summary": str(t.get("summary") or "")[:240],
+                        "ms": int(t.get("ms") or 0),
+                    }
+                )
                 yield {
                     "type": "tool",
                     "name": str(t.get("tool") or "tool"),
@@ -530,7 +630,7 @@ def run_agent_events(
             analysis = str(cortex.get("content") or cortex.get("output") or "")
             yield {"type": "token", "text": analysis}
             try:
-                agent_store.finish_run(run_id, status="done", result=analysis)
+                agent_store.finish_run(run_id, status="done", result=analysis, steps=packed)
             except Exception:
                 pass
             yield {
@@ -542,7 +642,7 @@ def run_agent_events(
                 "quality_passed": cortex.get("quality_passed"),
                 "runner": "agent_task",
                 "prompt_id": CORTEX_RESEARCH_PROMPT_ID if owns else "",
-                "steps": (cortex.get("telemetry") or {}).get("tools") or [],
+                "steps": packed,
             }
             return
         why = (cortex or {}).get("error") if isinstance(cortex, dict) else "Cortex down"
@@ -613,7 +713,7 @@ def run_agent_events(
             pass
 
         if "session_summarize" in tools and session_id:
-            yield {"type": "thinking", "text": "Summarizing session…\n"}
+            yield _think_event(steps, "Summarizing session…")
             sm = agent_tools.run_tool("session_summarize", {"session_id": session_id}, run_id=run_id, agent_id=agent_id)
             steps.append({"tool": "session_summarize", "ok": sm.get("ok")})
             if sm.get("summary"):
@@ -621,7 +721,7 @@ def run_agent_events(
             yield _safe_tool_event("session_summarize", sm)
 
         if "vault_read" in tools:
-            yield {"type": "thinking", "text": "Searching vault…\n"}
+            yield _think_event(steps, "Searching vault…")
             vr = agent_tools.run_tool("vault_read", {"query": (prompt or "")[:200]}, run_id=run_id, agent_id=agent_id)
             steps.append({"tool": "vault_read", "ok": vr.get("ok")})
             if vr.get("snippets"):
@@ -630,7 +730,7 @@ def run_agent_events(
 
         goal_driven = bool((agent.get("config") or {}).get("goal_driven")) if isinstance(agent.get("config"), dict) else False
         if thinking_mode == "deep" and "web_search" in tools and len(prompt or "") > 20:
-            yield {"type": "thinking", "text": "Web search…\n"}
+            yield _think_event(steps, "Web search…")
             ws = agent_tools.run_tool("web_search", {"query": prompt[:120]}, run_id=run_id, agent_id=agent_id)
             steps.append({"tool": "web_search", "ok": ws.get("ok")})
             if not ws.get("ok") or not ws.get("snippets"):
@@ -656,8 +756,8 @@ def run_agent_events(
                 analysis = f"Completed {len(steps)} tool step(s). LLM unavailable."
                 break
 
-            yield {"type": "thinking", "text": f"Step {step}…\n"}
-            tool_hint = agent_tools.tool_schemas(tools)
+            yield _think_event(steps, f"Step {step}…")
+            tool_hint = _agent_tool_hint(tools)
             context_blocks = _maybe_compact_blocks(context_blocks)
             try:
                 sys, user, ctx_meta = _assemble_agent_prompt(
@@ -782,7 +882,9 @@ def run_agent_events(
             run_id=run_id,
             agent_id=agent_id,
         )
-        agent_store.finish_run(run_id, status="done", result=analysis, audit_ref=f"run:{run_id}")
+        agent_store.finish_run(
+            run_id, status="done", result=analysis, audit_ref=f"run:{run_id}", steps=steps
+        )
         yield {"type": "done", "run_id": run_id, "agent_id": agent_id, "analysis": analysis, "model": model, "steps": steps}
         audit.log("agent.run.done", detail=f"agent={agent_id} run={run_id}", ok=True)
     except Exception as e:
