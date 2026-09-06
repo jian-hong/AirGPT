@@ -15,6 +15,10 @@ data/
 data-demo-mock/
 drops/
 
+# Live-host copies of research packages (served from /ui/ without clipdrop reload)
+ui/exports/**
+!ui/exports/.gitkeep
+
 # Local editor and agent state
 .claude/settings.local.json
 .vscode/settings.json

@@ -1153,18 +1153,27 @@ def author_ieee_paper(
     )
     pdf_info = _try_pdf(pkg)
     pdf_info["zip"] = str(_arxiv_zip(pkg) or "")
-    md = (
-        f"# {idea[:120]}\n\nIEEE/arXiv draft from facts `{facts.name}`. "
-        f"PDF: `{pdf_info.get('pdf') or 'pending'}`.\n"
-    )
-    _write(run_dir / "paper" / "paper.md", md)
+    try:
+        import paper_export
+
+        packed = paper_export.package_run(run_dir, idea=idea, tex=tex)
+        md = _read(Path(packed.get("md") or (run_dir / "paper" / "paper.md")))
+        pdf_info["docx"] = packed.get("docx") or ""
+        pdf_info["md"] = packed.get("md") or ""
+        pdf_info["md_chars"] = packed.get("md_chars") or len(md)
+    except Exception as e:
+        md = (
+            f"# {idea[:120]}\n\nIEEE/arXiv draft from facts `{facts.name}`. "
+            f"PDF: `{pdf_info.get('pdf') or 'pending'}`. package_error: {e}\n"
+        )
+        _write(run_dir / "paper" / "paper.md", md)
     try:
         import research as research_lib
 
         research_lib.save_draft(idea[:80], md, category="idea-to-paper")
     except Exception:
         pass
-    return {"ok": True, "tex": tex, "pdf": pdf_info, "chars": len(tex)}
+    return {"ok": True, "tex": tex, "pdf": pdf_info, "chars": len(tex), "md_chars": len(md)}
 
 
 def _handoff(run_dir: Path, obj: dict) -> None:
@@ -1550,6 +1559,7 @@ def list_runs(limit: int = 40) -> dict[str, Any]:
         if not p.is_dir():
             continue
         st = _load(p / "status.json") or {}
+        md = p / "paper" / "paper.md"
         rows.append(
             {
                 "id": p.name,
@@ -1558,6 +1568,10 @@ def list_runs(limit: int = 40) -> dict[str, Any]:
                 "stage": st.get("stage"),
                 "mtime": p.stat().st_mtime,
                 "cost": st.get("cost") or _load(p / "cost.json"),
+                "paper_md_chars": md.stat().st_size if md.is_file() else 0,
+                "paper_docx": (p / "paper" / "paper.docx").is_file(),
+                "paper_pdf": (p / "arxiv_package" / "paper.pdf").is_file(),
+                "paper_tex": (p / "arxiv_package" / "paper.tex").is_file(),
             }
         )
         if len(rows) >= limit:
@@ -1572,16 +1586,52 @@ def get_run(run_id: str) -> dict[str, Any]:
     p = RUNS_DIR / rid
     if not p.is_dir():
         return {"ok": False, "error": "run not found"}
+    md = p / "paper" / "paper.md"
+    docx = p / "paper" / "paper.docx"
+    pdf = p / "arxiv_package" / "paper.pdf"
+    st = _load(p / "status.json") or {}
     return {
         "ok": True,
         "run_id": rid,
-        "status": _load(p / "status.json"),
+        "status": st,
+        "stage": st.get("stage"),
         "cost": _load(p / "cost.json"),
         "idea": _read(p / "IDEA.md")[:1500],
         "facts": _read(p / "knowledge" / "00_verified_facts.md")[:4000],
         "paper_tex": (p / "arxiv_package" / "paper.tex").is_file(),
+        "paper_md": str(md.as_posix()) if md.is_file() else "",
+        "paper_md_chars": md.stat().st_size if md.is_file() else 0,
+        "paper_docx": str(docx.as_posix()) if docx.is_file() else "",
+        "paper_pdf": str(pdf.as_posix()) if pdf.is_file() else "",
         "path": str(p.as_posix()),
     }
+
+
+_ARTIFACTS = {
+    "paper.md": ("paper", "paper.md"),
+    "paper.docx": ("paper", "paper.docx"),
+    "paper.pdf": ("arxiv_package", "paper.pdf"),
+    "paper.tex": ("arxiv_package", "paper.tex"),
+}
+
+
+def artifact_path(run_id: str, name: str) -> Path | None:
+    rid = (run_id or "").strip()
+    key = (name or "").strip().lower()
+    if not rid or "/" in rid or "\\" in rid or ".." in rid:
+        return None
+    rel = _ARTIFACTS.get(key)
+    if not rel:
+        return None
+    p = RUNS_DIR / rid
+    if not p.is_dir():
+        return None
+    out = p.joinpath(*rel)
+    try:
+        out.resolve().relative_to(p.resolve())
+    except ValueError:
+        return None
+    return out if out.is_file() else None
 
 
 def resume_paper(run_id: str) -> dict[str, Any]:
@@ -1720,8 +1770,25 @@ def start_run(
     sync: bool = False,
     resume_id: str = "",
     continue_id: str = "",
+    repackage_id: str = "",
 ) -> dict[str, Any]:
     global _OV_DOWN
+    pid = (repackage_id or "").strip()
+    if pid:
+        if "/" in pid or "\\" in pid or ".." in pid:
+            return {"ok": False, "error": "invalid run id"}
+        run_dir = RUNS_DIR / pid
+        if not run_dir.is_dir():
+            return {"ok": False, "error": "run not found", "run_id": pid}
+        try:
+            import paper_export
+
+            packed = paper_export.package_run(run_dir)
+            packed["run_id"] = pid
+            return packed
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:400], "run_id": pid}
+
     cid = (continue_id or "").strip()
     if cid:
         if "/" in cid or "\\" in cid or ".." in cid:
@@ -1798,8 +1865,14 @@ if __name__ == "__main__":
     ap.add_argument("--domain", default="software")
     ap.add_argument("--resume-paper", default="", help="Re-author IEEEtran for an existing run id")
     ap.add_argument("--continue-run", default="", help="Salvage a verify-blocked run then paper")
+    ap.add_argument("--repackage", default="", help="Write long markdown + docx for an existing run (no Cortex)")
     args = ap.parse_args()
-    if args.resume_paper:
+    if args.repackage:
+        import paper_export
+
+        out = paper_export.package_run(RUNS_DIR / args.repackage)
+        out["run_id"] = args.repackage
+    elif args.resume_paper:
         out = resume_paper(args.resume_paper)
     elif args.continue_run:
         out = continue_blocked_run(args.continue_run)
