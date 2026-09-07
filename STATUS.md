@@ -26,9 +26,9 @@
 
 ## WIP
 
-Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56.
-In flight: D10 #71 (S1), D11 #72 (research). Parked leftover:
-D04 #22, P11 #9/#10, D01 #6.
+Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56,
+D10 #71/#74 (S1), D11 #72/#73 (research). Parked leftover:
+D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 
 ## Later
 

@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-09-07 -- D10 and D11 closed after independent verify
+
+- EPIC-D10 #71 / S1-01 #74: phone without passcode is HTTP 403
+  `s1_passcode_required`; probe/health stay 200. After passcode, phone without
+  join token is 401. pytest `test_s1_passcode_posture.py` + research tests:
+  23 passed. Live `:8765` left running.
+- EPIC-D11 #72 / RES-01 #73: artifact HTTP for md/docx/pdf/tex; stages named.
+  Do not unpark D04 #22, benches #9/#10, D01 #6, HOST-DEMO-02 #42.
+
 ## 2026-09-07 -- DR-0007 accepted; Constructor is a hub card
 
 - Marketplace stays catalog + fit + recipe. `bind_serve` still writes `env.local`
