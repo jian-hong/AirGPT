@@ -2,6 +2,20 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-09-07 -- DR-0007 accepted; Constructor is a hub card
+
+- Marketplace stays catalog + fit + recipe. `bind_serve` still writes `env.local`
+  and returns a command; it does not spawn a pid. Constructor blurb no longer
+  says "hosted inside Cortex at /cortex/constructor/". Serving stays OpenVault.
+
+## 2026-09-06 -- marketplace DR-0007 proposed; mesh config stays in data/
+
+- `docs/decisions/DR-0007-marketplace-is-catalog-not-serving.md` proposed.
+  Catalog + fit here; `bind_serve` is a recipe, not a pid. Serving stays
+  OpenVault. Constructor stays `serving=module`.
+- `ensure_local_config` writes `DATA_DIR/openvault.local.json` only. Repo-root
+  `openvault.local.json` is gitignored so CI dirty-checkout cannot fire on it.
+
 ## 2026-09-05 -- live workflow think traces on :8765
 
 - Reloaded Cortex `:8011` only (`:8765` untouched). Stubbed runner tests

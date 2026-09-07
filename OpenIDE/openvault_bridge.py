@@ -630,13 +630,9 @@ def ship_project(project: str = "", path: str = "") -> dict[str, Any]:
 
 
 def ensure_local_config() -> dict[str, Any]:
-    """Write/refresh openvault.local.json so mesh URLs stay aligned."""
-    path = next(
-        (p for p in _local_cfg_candidates() if p.parent.is_dir()),
-        DATA_DIR / "openvault.local.json",
-    )
-    if path == DATA_DIR / "openvault.local.json":
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """Write mesh URLs under DATA_DIR. Never write into a git checkout."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = DATA_DIR / "openvault.local.json"
     cfg: dict[str, Any] = {}
     if path.is_file():
         try:

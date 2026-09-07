@@ -18,7 +18,10 @@ import marketplace  # noqa: E402
 def test_constructor_is_a_marketplace_builtin() -> None:
     item = next(i for i in marketplace.SOFTWARE_MODULES if i.get("builtin") == "constructor")
     assert item["id"] == "mod-constructor"
-    assert "/cortex/constructor/" in item["blurb"]
+    assert item.get("serving") == "module"
+    blurb = item.get("blurb", "").lower()
+    assert "hosted inside cortex" not in blurb
+    assert "/cortex/constructor/" not in blurb
 
 
 def test_airgpt_tool_names_include_constructor_and_auto_caller() -> None:

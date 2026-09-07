@@ -37,3 +37,7 @@ What exists in this repo and where. Update when structure changes, not when stat
   the generator.
 - `allcheck.py` plus `OpenIDE/openvault_bridge.py` -- OpenVault mesh
   (`E:\OpenVault`, `:5000` health, loopback chat). Keys SoT is OV.
+  `ensure_local_config` writes `DATA_DIR/openvault.local.json` only (DR-0007).
+- `marketplace.py` -- catalog + fit. `bind_serve` is a recipe, not a pid
+  (DR-0007 accepted). Constructor blurb is a hub card, not a Cortex-hosted
+  LLM server.

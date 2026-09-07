@@ -289,7 +289,7 @@ SOFTWARE_MODULES: list[dict[str, Any]] = [
         "hf_id": "",
         "name": "Constructor",
         "icon": "CT",
-        "blurb": "Chat-to-workflow canvas hosted inside Cortex at /cortex/constructor/.",
+        "blurb": "Chat-to-workflow canvas. Hub card (serving=module), not a Cortex-hosted LLM server.",
         "serving": "module",
         "effort": "low",
         "approx_vram_gb": 0,

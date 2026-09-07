@@ -23,7 +23,10 @@ def test_ensure_local_config(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OPENVAULT_HOME", raising=False)
     r = openvault_bridge.ensure_local_config()
     assert r["ok"] is True
-    cfg = json.loads(Path(r["path"]).read_text(encoding="utf-8"))
+    written = Path(r["path"])
+    assert written == tmp_path / "data" / "openvault.local.json"
+    assert not (root / "openvault.local.json").exists()
+    cfg = json.loads(written.read_text(encoding="utf-8"))
     assert "8765" in cfg["services"]["openide"]["url"]
     assert cfg["services"]["openvault"]["root"] == str(root)
 

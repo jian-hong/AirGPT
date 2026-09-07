@@ -1,5 +1,6 @@
 ﻿# Local environment and credentials
 env.local
+openvault.local.json
 .env
 .env.*
 !.env.example

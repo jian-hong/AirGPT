@@ -34,6 +34,7 @@ D04 #22, P11 #9/#10, D01 #6.
 
 - P1 50GB / P2 Meta SIRA / P4 vault-first / P7 NVIDIA
 - F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
+- DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
 
 ## Demo open
 

@@ -6,6 +6,7 @@ PREFLIGHT: match keywords before spawning Task/explore.
 
 | Date | File | Keywords | Main idea |
 |---|---|---|---|
+| 2026-09-06 | [2026-09-06_marketplace-dr-home.md](2026-09-06_marketplace-dr-home.md) | marketplace, DR-0007, catalog, serving, plane-1 | DR-0007 accepted 2026-09-07. Catalog+fit here; bind_serve is a recipe; Constructor is a hub card |
 | 2026-09-05 | [2026-09-05_wf-think-live.md](2026-09-05_wf-think-live.md) | workflow, think, tool_detail, :8011, :8765, deep_research | Live Background cards empty until 8011 reload; new run shows think rows |
 | 2026-09-05 | [2026-09-05_research-two-runs-think.md](2026-09-05_research-two-runs-think.md) | research, artifact, stage, think, OpenForge, package_run | Three live packaged runs; think traces persisted; OpenForge ship-gate PASS |
 | 2026-09-05 | [2026-09-05_ov-vault-sealed-brief.md](2026-09-05_ov-vault-sealed-brief.md) | openvault_vault_sealed, ov_brief, FreeRoute, scheduled_work, :5000 | gh facts run; FreeRoute brief 403 until founder unseals; do not kill :8765 |
