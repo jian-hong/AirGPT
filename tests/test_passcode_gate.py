@@ -58,6 +58,35 @@ class PasscodeGateUnitTest(unittest.TestCase):
         self.assertTrue(auth.status()["needs_auth"])
         self.assertTrue(auth.verify_passcode("secret123"))
 
+    def test_init_keeps_openide_root_on_shared_workspace_file(self):
+        auth.WORKSPACE_FILE.write_text(
+            '{"root": "D:\\\\AirGPT", "name": "AirGPT", "opened_at": 1}',
+            encoding="utf-8",
+        )
+        out = auth.init_workspace("host@example.com", "secret123")
+        self.assertTrue(out["ok"], out)
+        saved = json.loads(auth.WORKSPACE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(saved.get("root"), "D:\\AirGPT")
+        self.assertEqual(saved.get("name"), "AirGPT")
+        self.assertTrue(saved.get("pass_hash"))
+        self.assertTrue(auth.status()["passcode_set"])
+
+    def test_open_workspace_does_not_wipe_pass_hash(self):
+        import OpenIDE.workspace_api as wa
+
+        orig = wa.WORKSPACE_FILE
+        try:
+            wa.WORKSPACE_FILE = auth.WORKSPACE_FILE
+            auth.init_workspace("host@example.com", "secret123")
+            out = wa.open_workspace(str(Path(self._tmp.name)), name="tmp")
+            self.assertTrue(out["ok"], out)
+            self.assertNotIn("pass_hash", out)
+            saved = json.loads(auth.WORKSPACE_FILE.read_text(encoding="utf-8"))
+            self.assertTrue(saved.get("pass_hash"))
+            self.assertTrue(auth.verify_passcode("secret123"))
+        finally:
+            wa.WORKSPACE_FILE = orig
+
     def test_disarmed_state_survives_a_reload(self):
         auth.init_workspace("host@example.com", "secret123")
         auth.set_passcode_required(False)

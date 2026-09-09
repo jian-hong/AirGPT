@@ -218,6 +218,109 @@ class IdeaToPaperHttp(unittest.TestCase):
             self.assertTrue(data.get("resume"))
             self.assertEqual(sr.call_args.kwargs.get("resume_id"), "rid1")
 
+    def test_artifact_get_returns_bytes(self):
+        import json
+        import urllib.error
+        import urllib.request
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run = root / "stg1"
+            (run / "paper").mkdir(parents=True)
+            (run / "arxiv_package").mkdir(parents=True)
+            files = {
+                "paper.md": (run / "paper" / "paper.md", b"# md\n", "markdown"),
+                "paper.docx": (run / "paper" / "paper.docx", b"PK\x03\x04docx-fixture", "wordprocessingml"),
+                "paper.pdf": (run / "arxiv_package" / "paper.pdf", b"%PDF-1.4 fixture\n", "pdf"),
+                "paper.tex": (run / "arxiv_package" / "paper.tex", b"\\documentclass{article}\n", "plain"),
+            }
+            for _name, (fp, data, _ct) in files.items():
+                fp.write_bytes(data)
+            (run / "status.json").write_text(
+                json.dumps({"status": "pass", "stage": "paper"}), encoding="utf-8"
+            )
+            with mock.patch.object(idea_to_paper, "RUNS_DIR", root):
+                for name, (_fp, data, needle) in files.items():
+                    url = self.base + "/api/research/artifact?id=stg1&name=" + name
+                    with urllib.request.urlopen(url, timeout=15) as r:
+                        self.assertEqual(r.status, 200, name)
+                        self.assertIn(needle, (r.headers.get("Content-Type") or "").lower(), name)
+                        self.assertEqual(r.read(), data, name)
+                try:
+                    urllib.request.urlopen(
+                        self.base + "/api/research/artifact?id=stg1&name=nope.md",
+                        timeout=15,
+                    )
+                    self.fail("expected 404")
+                except urllib.error.HTTPError as e:
+                    self.assertEqual(e.code, 404)
+                listed = json.loads(
+                    urllib.request.urlopen(self.base + "/api/research/runs", timeout=15).read()
+                )
+                hit = next((x for x in (listed.get("runs") or []) if x.get("id") == "stg1"), None)
+                self.assertTrue(hit, listed)
+                self.assertEqual(hit.get("stage"), "paper", hit)
+                one = json.loads(
+                    urllib.request.urlopen(
+                        self.base + "/api/research/runs?id=stg1", timeout=15
+                    ).read()
+                )
+                self.assertEqual(one.get("stage"), "paper", one)
+                lib = json.loads(
+                    urllib.request.urlopen(self.base + "/api/research", timeout=15).read()
+                )
+                lib_hit = next((x for x in (lib.get("runs") or []) if x.get("id") == "stg1"), None)
+                self.assertTrue(lib_hit, lib)
+                self.assertEqual(lib_hit.get("stage"), "paper", lib_hit)
+
+    def test_artifact_http_two_runs_name_distinct_stages(self):
+        import json
+        import urllib.request
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for rid, stage, body in (
+                ("stgA", "paper", b"# paper A\n"),
+                ("stgB", "method", b"# paper B\n"),
+            ):
+                run = root / rid
+                (run / "paper").mkdir(parents=True)
+                (run / "arxiv_package").mkdir(parents=True)
+                (run / "paper" / "paper.md").write_bytes(body)
+                (run / "paper" / "paper.docx").write_bytes(b"PK\x03\x04" + body)
+                (run / "arxiv_package" / "paper.pdf").write_bytes(b"%PDF-1.4 " + body)
+                (run / "arxiv_package" / "paper.tex").write_bytes(b"\\title{" + body + b"}")
+                (run / "status.json").write_text(
+                    json.dumps({"status": "pass", "stage": stage}), encoding="utf-8"
+                )
+            with mock.patch.object(idea_to_paper, "RUNS_DIR", root):
+                listed = json.loads(
+                    urllib.request.urlopen(self.base + "/api/research/runs", timeout=15).read()
+                )
+                by_id = {x.get("id"): x for x in (listed.get("runs") or [])}
+                self.assertEqual(by_id["stgA"].get("stage"), "paper", listed)
+                self.assertEqual(by_id["stgB"].get("stage"), "method", listed)
+                self.assertGreater(by_id["stgA"].get("paper_md_chars") or 0, 0)
+                self.assertGreater(by_id["stgB"].get("paper_md_chars") or 0, 0)
+                for rid in ("stgA", "stgB"):
+                    for name in ("paper.md", "paper.docx", "paper.pdf", "paper.tex"):
+                        url = (
+                            self.base
+                            + "/api/research/artifact?id="
+                            + rid
+                            + "&name="
+                            + name
+                        )
+                        with urllib.request.urlopen(url, timeout=15) as r:
+                            self.assertEqual(r.status, 200, (rid, name))
+                            self.assertGreater(len(r.read()), 4, (rid, name))
+                lib = json.loads(
+                    urllib.request.urlopen(self.base + "/api/research", timeout=15).read()
+                )
+                lib_ids = {x.get("id"): x.get("stage") for x in (lib.get("runs") or [])}
+                self.assertEqual(lib_ids.get("stgA"), "paper", lib)
+                self.assertEqual(lib_ids.get("stgB"), "method", lib)
+
 
 if __name__ == "__main__":
     unittest.main()

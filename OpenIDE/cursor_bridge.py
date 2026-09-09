@@ -175,15 +175,20 @@ def run_cursor_events(
                 _last_run["cwd"] = cwd or ""
                 yield {"type": "status", "text": "Cursor run started", "run_id": str(run_id_out)}
 
+            from OpenIDE.stream_coalesce import TokenBuffer
+
+            tokens = TokenBuffer(max_chars=400)
             for message in run.messages():
                 mtype = getattr(message, "type", None)
                 if mtype == "thinking" or getattr(message, "thinking", None):
                     text = getattr(message, "text", None) or getattr(message, "thinking", None) or ""
                     if text:
+                        yield from tokens.flush()
                         yield {"type": "thinking", "text": str(text)[:2000]}
                     continue
                 if mtype in ("tool_call", "tool"):
                     name = getattr(message, "name", None) or getattr(message, "tool", None) or "tool"
+                    yield from tokens.flush()
                     yield {"type": "tool_call", "name": str(name)}
                     continue
                 if mtype == "assistant" or True:
@@ -195,7 +200,8 @@ def run_cursor_events(
                         btype = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
                         text = getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else None)
                         if (btype == "text" or text) and text:
-                            yield {"type": "token", "text": text}
+                            yield from tokens.feed({"type": "token", "text": str(text)})
+            yield from tokens.flush()
             result = run.wait()
             status = getattr(result, "status", None) or (result.get("status") if isinstance(result, dict) else None)
             rid2 = getattr(result, "id", None) or run_id_out or ""

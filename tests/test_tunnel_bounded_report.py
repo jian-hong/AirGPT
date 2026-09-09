@@ -26,11 +26,13 @@ import time
 import unittest
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("AIRGPT_NO_BROWSER", "1")
 os.environ.setdefault("AIRGPT_DATA_DIR", os.path.join(tempfile.gettempdir(), "airgpt_test_data"))
 
+import auth  # noqa: E402
 import clipdrop  # noqa: E402
 
 NAMES = ["cloudflared", "localhost.run", "localtunnel", "serveo.net"]
@@ -74,6 +76,18 @@ class _SweepBase(unittest.TestCase):
         clipdrop.TUNNEL_PROVIDER_BUDGET = {n: self.SLICE for n in NAMES}
         clipdrop.TUNNEL_MIN_SLICE = 0.5
         clipdrop.TUNNEL_PROVIDER_GAP = 0.0
+        # S1 locks the worker until a host passcode exists. Isolate the workspace
+        # so this file can open the gate without leaking into other tests.
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self._orig_ws = auth.WORKSPACE_FILE
+        self._orig_toks = auth.TOKENS_FILE
+        self._orig_tokens = dict(auth._tokens)
+        auth.WORKSPACE_FILE = root / "workspace.json"
+        auth.TOKENS_FILE = root / "auth_tokens.json"
+        auth._tokens.clear()
+        opened = auth.init_workspace("host@example.com", "secret123")
+        self.assertTrue(opened.get("ok"), opened)
 
     def tearDown(self):
         for k, v in self._orig.items():
@@ -83,6 +97,11 @@ class _SweepBase(unittest.TestCase):
         clipdrop._tunnel_attempts.clear()
         clipdrop._tunnel_attempts.extend(self._orig_attempts)
         clipdrop._tunnel_deadline["at"] = 0.0
+        auth.WORKSPACE_FILE = self._orig_ws
+        auth.TOKENS_FILE = self._orig_toks
+        auth._tokens.clear()
+        auth._tokens.update(self._orig_tokens)
+        self._tmp.cleanup()
 
     def _install(self, **costs):
         for name, attr in zip(NAMES, ("tunnel_cloudflared", "tunnel_localhost_run",

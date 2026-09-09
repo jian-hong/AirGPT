@@ -37,6 +37,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     )
     # Legacy seed — removed from product (was confusing / unused)
     conn.execute("DELETE FROM agents WHERE lower(name)='vault summarizer'")
+    run_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_runs)").fetchall()}
+    if "steps" not in run_cols:
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN steps TEXT DEFAULT '[]'")
 
 
 def init() -> None:
@@ -70,7 +73,8 @@ def init() -> None:
               error TEXT DEFAULT '',
               audit_ref TEXT DEFAULT '',
               created_at REAL,
-              finished_at REAL
+              finished_at REAL,
+              steps TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS agent_links (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,17 +219,38 @@ def claim_run(run_id: int) -> dict:
         return dict(row) if row else {}
 
 
-def finish_run(run_id: int, *, status: str, result: str = "", error: str = "", audit_ref: str = "") -> dict:
+def finish_run(
+    run_id: int,
+    *,
+    status: str,
+    result: str = "",
+    error: str = "",
+    audit_ref: str = "",
+    steps: list | None = None,
+) -> dict:
     init()
+    packed: list = []
+    for item in steps or []:
+        if not isinstance(item, dict):
+            continue
+        packed.append(
+            {
+                "tool": str(item.get("tool") or item.get("name") or "")[:80],
+                "ok": bool(item.get("ok", True)),
+                "summary": str(item.get("summary") or "")[:240],
+                "ms": int(item.get("ms") or 0),
+            }
+        )
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=? WHERE id=?",
+            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=? WHERE id=?",
             (
                 status[:40],
                 (result or "")[:20000],
                 (error or "")[:2000],
                 (audit_ref or "")[:200],
                 time.time(),
+                json.dumps(packed)[:20000],
                 int(run_id),
             ),
         )

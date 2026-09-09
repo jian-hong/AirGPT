@@ -61,15 +61,15 @@ class HostClockIsMarkedTests(_SourceCase):
         self.present("Host clock (legacy)", body)
 
 
-class CreateBindsAnAgentTests(_SourceCase):
-    def test_create_sends_agent_id(self):
+class CreateDoesNotNeedAirGptAgentTests(_SourceCase):
+    def test_create_posts_the_goal_alone(self):
         body = _body(_src(), "routineCreateFromPreview")
-        self.present("agent_id", body, "- a routine with no agent fires and runs nothing")
-        self.absent(r"JSON\.stringify\(\{goal\}\)", body, "- posts goal alone")
+        self.present("JSON.stringify({goal})", body)
+        self.absent(r"if\(!aid\)\{toast\(", body, "- Cortex routines run without an AirGPT agent")
 
-    def test_create_refuses_rather_than_minting_a_dead_chip(self):
+    def test_create_does_not_block_on_a_local_agent_chip(self):
         body = _body(_src(), "routineCreateFromPreview")
-        self.assertRegex(body, r"if\(!aid\)\{toast\(")
+        self.assertNotIn("Pick an agent first", body)
 
 
 class OfflineBannerNamesTheReasonTests(_SourceCase):

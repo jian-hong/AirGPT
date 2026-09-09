@@ -1,4 +1,8 @@
 /* OpenIDE — extracted from index.html · source of truth: OpenIDE/ui/openide.js */
+async function oideApi(path,opts){
+  const resp=await api(path,opts);
+  try{return await resp.json()}catch(e){return {ok:false,error:'bad json'}}
+}
 /* --- OpenIDE app-launch morph: Netie mark → topbar --- */
 const NETIE_MARK_SVG=`<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="2.2" stroke="currentColor" stroke-width="1.9" fill="rgba(255,255,255,.07)"/>
@@ -295,7 +299,7 @@ async function showOpenIDEPage(){
                   <div id="oideBranchList"><div class="og-empty">No branches available</div></div>
                 </div>
               </div>
-              <textarea id="openidePrompt" class="oide-prompt-inline" placeholder="Describe an app… or Plan / Build · / skills · @ files" oninput="openideMentionPicker(this)" onkeydown="openidePromptKeydown(event)"></textarea>
+              <textarea id="openidePrompt" class="oide-prompt-inline" placeholder="Describe an app… or Plan / Build · / skills · @ files" oninput="openideMentionPicker(this);openideDetectGithubFromComposer()" onkeydown="openidePromptKeydown(event)" onpaste="setTimeout(openideOnComposerPaste,0)"></textarea>
             </div>
             <div class="oide-agent-bar-bot">
               <div class="oide-glass-dd" id="oideModesDd">
@@ -328,6 +332,12 @@ async function showOpenIDEPage(){
             </div>
           </div>
           <div id="openideMentionPick"></div>
+          <div id="openideGithubPaste" class="openide-help" hidden>
+            <strong>GitHub URL</strong>
+            <span id="openideGithubPasteUrl"></span>
+            <button type="button" class="btn" onclick="openideGithubRepoFromPaste()">Clone locally</button>
+            <span class="st-muted">Push: gh auth login then git push. We never type credentials.</span>
+          </div>
         </div>
       </div>
     </section>
@@ -726,7 +736,7 @@ async function checkoutOideBranch(branch){
   closeAllOideGlassMenus();
   openideSetStatus('Checking out '+branch+'…',true);
   try{
-    const r=await api('/api/git/checkout',{method:'POST',body:JSON.stringify({branch})});
+    const r=await oideApi('/api/git/checkout',{method:'POST',body:JSON.stringify({branch})});
     if(r.ok){
       if(r.fingerprint)window._openideFingerprint=r.fingerprint;
       syncOideBranchLabel();
@@ -1004,10 +1014,12 @@ async function openideNewFolder(){
   if(!r.ok){toast((r.stderr||r.error||'mkdir failed').slice(0,120));return}
   await openIDEWorkspace(path);
 }
-async function openideGithubRepo(){
-  const url=prompt('GitHub repository URL (https://github.com/org/repo)\nWe clone locally and can help push under a netie.ai account — we never type your credentials.');
+async function openideGithubRepo(presetUrl){
+  const fromBox=openideDetectGithubPaste(($('openidePrompt')||{}).value||'');
+  const url=presetUrl||fromBox||prompt('GitHub repository URL (https://github.com/org/repo)\nWe clone locally and can help push under a netie.ai account — we never type your credentials.');
   if(!url)return;
-  if(!/github\.com[:/]/i.test(url)){toast('Paste a GitHub URL');return}
+  const canon=openideDetectGithubPaste(url)||url;
+  if(!/github\.com[:/]/i.test(canon)){toast('Paste a GitHub URL');return}
   openideSetStatus('Checking GitHub auth…',true);
   const auth=await runOpenIDECmdRaw('gh auth status');
   if(!auth.ok){
@@ -1022,16 +1034,43 @@ async function openideGithubRepo(){
   }
   const destParent=prompt('Clone into folder',info.workspace_root||'D:\\\\AirGPT');
   if(!destParent)return;
-  const slug=(url.replace(/\.git$/,'').split('/').filter(Boolean).pop()||'repo');
+  const slug=(canon.replace(/\.git$/i,'').split('/').filter(Boolean).pop()||'repo');
+  if(/\.\.|[<>]/.test(slug)){toast('Bad repo name');return}
   const dest=String(destParent).replace(/[\\/]+$/,'')+(String(destParent).includes('/')?'/':'\\\\')+slug;
   openideSetStatus('Cloning…',true);
   openOpenIDERightRail();openideWorkTab('terminal');
-  const clone=await runOpenIDECmdRaw('git clone '+JSON.stringify(url)+' '+JSON.stringify(dest));
+  const clone=await runOpenIDECmdRaw('git clone '+JSON.stringify(canon)+' '+JSON.stringify(dest));
   openideSetStatus(clone.ok?'Cloned':'Clone failed',false);
   if(clone.ok){
-    toast('Cloned · opening workspace');
+    toast('Cloned. Push: gh auth login then git push. We never type credentials.');
     await openIDEWorkspace(dest);
   }else toast((clone.stderr||clone.error||'clone failed').slice(0,120));
+}
+function openideDetectGithubPaste(text){
+  const m=String(text||'').match(/(?:https?:\/\/)?(?:www\.)?github\.com[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i);
+  if(!m) return '';
+  let repo=m[2].replace(/\.git$/i,'');
+  if(/^(issues|pulls|pull|settings|actions|wiki|projects)$/i.test(repo)) return '';
+  return 'https://github.com/'+m[1]+'/'+repo;
+}
+function openideShowGithubPaste(url){
+  const bar=$('openideGithubPaste');
+  if(!bar) return;
+  if(!url){ bar.hidden=true; return; }
+  bar.hidden=false;
+  const span=$('openideGithubPasteUrl');
+  if(span) span.textContent=url;
+  bar.dataset.url=url;
+}
+function openideDetectGithubFromComposer(){
+  openideShowGithubPaste(openideDetectGithubPaste(($('openidePrompt')||{}).value||''));
+}
+function openideOnComposerPaste(){
+  openideDetectGithubFromComposer();
+}
+function openideGithubRepoFromPaste(){
+  const url=$('openideGithubPaste')?.dataset.url||'';
+  if(url) openideGithubRepo(url);
 }
 function openideAutoRepos(){
   renderOpenIDERepos();
@@ -1247,7 +1286,7 @@ async function openideCreatePR(){
 }
 async function runOpenIDECmdRaw(cmd){
   try{
-    return await api('/api/terminal/exec',{method:'POST',body:JSON.stringify({cmd,session_id:terminalSessionId})});
+    return await oideApi('/api/terminal/exec',{method:'POST',body:JSON.stringify({cmd,session_id:terminalSessionId})});
   }catch(e){return{ok:false,error:String(e)}}
 }
 async function refreshOpenIDEGit(){return loadOpenIDEGitBundle()}
@@ -1263,7 +1302,7 @@ async function openIDEWorkspace(presetPath){
   const p=presetPath||prompt('Absolute path to project folder',info.workspace_root||'D:\\\\AirGPT');
   if(!p)return;
   try{
-    const r=await api('/api/workspace/open',{method:'POST',body:JSON.stringify({path:p})});
+    const r=await oideApi('/api/workspace/open',{method:'POST',body:JSON.stringify({path:p})});
     if(r.ok){
       rememberOideWorkspace(r.root||p,r.name||'');
       toast('Workspace opened');
@@ -1391,9 +1430,9 @@ async function approveOpenIDEWrite(){
   try{
     let r;
     if(p.mode==='patch'){
-      r=await api('/api/fs/patch',{method:'POST',body:JSON.stringify({path:p.path,old:p.old||'',new:p.new||'',apply:true})});
+      r=await oideApi('/api/fs/patch',{method:'POST',body:JSON.stringify({path:p.path,old:p.old||'',new:p.new||'',apply:true})});
     }else{
-      r=await api('/api/fs/write',{method:'POST',body:JSON.stringify({path:p.path,content:p.content||'',apply:true})});
+      r=await oideApi('/api/fs/write',{method:'POST',body:JSON.stringify({path:p.path,content:p.content||'',apply:true})});
     }
     toast(r.ok?'Approved & applied':'Apply failed');
     if(r.ok){
@@ -1435,6 +1474,32 @@ async function continueOpenIDEAgent(){
   const prompt=($('openidePrompt')?.value||'').trim()||'Continue from the previous step.';
   return runOpenIDEAgent({resume:true,prompt});
 }
+function OpenideTokenBuf(maxChars){
+  this.max=maxChars||400;this.parts=[];this.n=0;this.raf=0;
+}
+OpenideTokenBuf.prototype.push=function(t,onFlush){
+  if(!t)return;
+  this.parts.push(t);this.n+=t.length;
+  const self=this;
+  const dump=function(){
+    self.raf=0;
+    if(!self.parts.length)return;
+    const s=self.parts.join('');
+    self.parts=[];self.n=0;
+    onFlush(s);
+  };
+  if(this.n>=this.max){
+    if(this.raf)cancelAnimationFrame(this.raf);
+    dump();
+    return;
+  }
+  if(!this.raf)this.raf=requestAnimationFrame(dump);
+};
+OpenideTokenBuf.prototype.flush=function(onFlush){
+  if(this.raf){cancelAnimationFrame(this.raf);this.raf=0}
+  if(!this.parts.length)return;
+  const s=this.parts.join('');this.parts=[];this.n=0;onFlush(s);
+};
 async function runOpenIDEAgent(opts){
   opts=opts||{};
   const prompt=(opts.prompt||($('openidePrompt')?.value||'')).trim();
@@ -1467,7 +1532,9 @@ async function runOpenIDEAgent(opts){
   renderOpenIDERunsList();
   renderOpenIDERepos();
   syncOpenIDEAgentTabs();
-  let toolCount=0,thoughtBuf='',thoughtT0=performance.now();
+  let toolCount=0,thoughtBuf='',thoughtT0=performance.now(),finalText='';
+  const tokBuf=new OpenideTokenBuf(400);
+  const takeTok=s=>{finalText+=s};
   try{
     let aid=window._openideCodeAgentId;
     if(!aid){
@@ -1518,7 +1585,7 @@ async function runOpenIDEAgent(opts){
       method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'Accept':'text/event-stream'},
       body:JSON.stringify(body)
     });
-    let buf='',finalText='';
+    let buf='';
     const reader=r.body.getReader();const dec=new TextDecoder();
     while(true){
       const {done,value}=await reader.read();if(done)break;
@@ -1529,12 +1596,14 @@ async function runOpenIDEAgent(opts){
         if(!line)continue;
         let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
         if(j.run_id){window._openideCursorRunId=j.run_id;const b=$('openideContinueBtn');if(b)b.style.display=''}
-        if(j.type==='write_preview'){renderOpenIDEApproval(j);continue}
+        if(j.type==='write_preview'){tokBuf.flush(takeTok);renderOpenIDEApproval(j);continue}
         if(j.type==='tool_call'||j.type==='tool'){
+          tokBuf.flush(takeTok);
           if(thoughtBuf.trim()){openideAppendThought(thoughtBuf,performance.now()-thoughtT0);thoughtBuf='';thoughtT0=performance.now()}
           toolCount++;
           openideAppendTranscript(`<div class="openide-tool-line"><span class="ot-ico">→</span><span>Used tool · <strong>${esc(j.name||'tool')}</strong></span></div>`);
           openideSetStatus(`Used ${toolCount} tool${toolCount===1?'':'s'}…`,true);
+          continue;
         }
         if(j.type==='thinking'){
           const t=(j.text||'').trim();
@@ -1550,9 +1619,10 @@ async function runOpenIDEAgent(opts){
         if(j.type==='subagent_done'){
           openideAppendTranscript(`<div class="openide-tool-line"><span class="ot-ico">✓</span><span>Subagent · ${esc(String(j.id||''))} ${esc(j.status||'done')}</span></div>`);
         }
-        if(j.type==='token')finalText+=(j.text||'');
-        if(j.type==='done')finalText=j.analysis||finalText;
+        if(j.type==='token'){tokBuf.push(j.text||'',takeTok);continue}
+        if(j.type==='done'){tokBuf.flush(takeTok);finalText=j.analysis||finalText}
         if(j.type==='error'){
+          tokBuf.flush(takeTok);
           $('openideRunningLine')?.remove();
           if(thoughtBuf.trim()){openideAppendThought(thoughtBuf,performance.now()-thoughtT0);thoughtBuf=''}
           openideAppendTranscript(`<div class="openide-msg" style="color:#f87171">${esc(j.text||'Agent error')}</div>`);
@@ -1563,6 +1633,7 @@ async function runOpenIDEAgent(opts){
         }
       }
     }
+    tokBuf.flush(takeTok);
     $('openideRunningLine')?.remove();
     if(thoughtBuf.trim()){openideAppendThought(thoughtBuf,performance.now()-thoughtT0);thoughtBuf=''}
     if(finalText.trim())openideAppendTranscript(`<div class="openide-msg">${esc(finalText.trim().slice(0,6000))}</div>`);
@@ -1572,6 +1643,7 @@ async function runOpenIDEAgent(opts){
     renderOpenIDERunsList();
     refreshOpenIDEDiffStat();refreshOpenIDEFingerprint();
   }catch(e){
+    tokBuf.flush(takeTok);
     $('openideRunningLine')?.remove();
     openideAppendTranscript(`<div class="openide-msg" style="color:#f87171">Agent failed</div>`);
     openideSetStatus('Failed',false);
@@ -1583,7 +1655,7 @@ async function applyOpenIDEPatch(){
   return approveOpenIDEWrite();
 }
 async function openIDECheckpoint(){
-  try{const r=await api('/api/fs/checkpoint',{method:'POST',body:'{}'});toast(r.ok?'Checkpoint saved':r.error)}catch(e){toast('Checkpoint failed')}
+  try{const r=await oideApi('/api/fs/checkpoint',{method:'POST',body:'{}'});toast(r.ok?'Checkpoint saved':r.error)}catch(e){toast('Checkpoint failed')}
 }
 async function setOpenIDEBackend(v){
   try{await api('/api/openide/backend',{method:'POST',body:JSON.stringify({backend:v})});toast('Backend: '+v)}catch(e){}
@@ -1596,7 +1668,7 @@ function openInCursor(){
 async function runOpenIDECmd(solo){
   const cmd=((solo?$('openideCmdSolo'):$('openideCmd'))?.value||'').trim();if(!cmd)return;
   try{
-    const r=await api('/api/terminal/exec',{method:'POST',body:JSON.stringify({cmd,session_id:terminalSessionId})});
+    const r=await oideApi('/api/terminal/exec',{method:'POST',body:JSON.stringify({cmd,session_id:terminalSessionId})});
     const out=(r.stdout||'')+(r.stderr||'')||r.error||'';
     const pre=$('openideTerm');if(pre)pre.textContent=out;
     const soloPre=$('openideTermSolo');if(soloPre)soloPre.textContent=out;

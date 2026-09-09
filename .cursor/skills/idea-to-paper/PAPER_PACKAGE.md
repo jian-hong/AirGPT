@@ -129,7 +129,26 @@ Rules:
 Prompt pattern for arch art: host bus -> controller -> DFI -> memory stack
 + verification layer. No numbers in the image.
 
-## 6. Build PDF
+## 6. Build PDF + Word (AirGPT research agent)
+
+Software-domain package (this repo) also writes:
+
+```
+paper/paper.md     # long markdown (>=2500 chars), figures as relative paths
+paper/paper.docx   # two-column Times, abstract italic/small, images via path
+paper/figures/*.png
+```
+
+```bash
+python -m idea_to_paper --repackage <run_id>
+# or POST /api/research/idea-to-paper {"run_id":"...","repackage":true}
+```
+
+Gemini website art is optional decorative only; local Pillow architecture PNG
+plus matplotlib score chart are the default. Mermaid lives in `paper.md`.
+Do not unpark OpenHBM for this path.
+
+PDF still comes from IEEEtran:
 
 ```bash
 cd arxiv_package

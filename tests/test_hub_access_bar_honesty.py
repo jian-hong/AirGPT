@@ -50,7 +50,9 @@ class HubAccessBarHonestyStaticTest(unittest.TestCase):
         """F22a / DR-0003 is still proposed. Do not make the level load-bearing."""
         self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_only_path))
         self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_request))
-        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST):
+        # do_DELETE joined these two: it had no host-only gate at all, so a
+        # peer could delete under a prefix the same peer could not read.
+        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST, clipdrop.Handler.do_DELETE):
             src = inspect.getsource(meth)
             gate_lines = [
                 line
@@ -141,23 +143,78 @@ class HubAccessBarHonestyHttpTest(unittest.TestCase):
         self.assertEqual(stored.get("access_level"), level)
         return body
 
+    def _assert_refused_not_granted(self, code, body, ctx=""):
+        """An ACL level must not grant access. 403, and by a named gate.
+
+        Two gates cover /api/rag for a peer and both answer 403. S1
+        ("s1_passcode_required") fires while this machine has no host passcode;
+        the host-only gate ("host only") fires once it has one. S1 runs FIRST on
+        purpose: until a passcode exists, a peer should be told the single thing
+        that is globally wrong, not which individual paths are host-only - that
+        would hand an unauthenticated caller the path taxonomy of an
+        unconfigured machine.
+
+        This fixture sets no passcode, so S1 is what answers here. The
+        assertion accepts either refusal because what this test owns is
+        "persist is not a grant", not gate order; the order is pinned on its
+        own in test_s1_refusal_precedes_host_only_while_unconfigured.
+        """
+        self.assertEqual(code, 403, (ctx, body))
+        reason = body.get("code") or body.get("error")
+        self.assertIn(reason, ("s1_passcode_required", "host only"), (ctx, body))
+
+    def test_s1_refusal_precedes_host_only_while_unconfigured(self):
+        """Pin the order, so a later reshuffle has to argue with a test.
+
+        Reversing these two once looked like an improvement - "host only" is the
+        permanent truth and S1 only a not-yet - and it leaks the host-only
+        prefix list to any unauthenticated peer before the machine is set up.
+        """
+        self._set_acl("read_write")
+        code, _, body = self._call("GET", "/api/rag", self._peer_headers())
+        self.assertEqual(code, 403, body)
+        self.assertEqual(body.get("code"), "s1_passcode_required", body)
+        self.assertNotIn("host only", json.dumps(body), body)
+
+    def test_with_a_passcode_the_host_only_gate_is_what_refuses(self):
+        """The other half of the order, and the only way to see the DELETE gate.
+
+        While S1 is closed it answers everything, which means the host-only gate
+        on each verb is never exercised by a peer. Opening S1 with a passcode is
+        what makes it observable - and DELETE is the verb that had no host-only
+        gate at all, so a peer could delete under a prefix it could not read.
+        """
+        auth.init_workspace("host@example.com", "secret123")
+        self.assertTrue(clipdrop._s1_remote_open(), "S1 must be open for this test to mean anything")
+
+        # Opening S1 does not expose the host-only gate: _auth_ok now answers
+        # first with 401. So the host-only gate is only ever REACHED by an
+        # authenticated peer - its real job is "a session is not a grant", not
+        # "an outsider is refused", which S1 and auth already handle. What this
+        # asserts is the property that holds at every layer: never granted.
+        for method, path in (
+            ("GET", "/api/rag"),
+            ("POST", "/api/fs/write"),
+            ("DELETE", "/api/fs/write"),
+        ):
+            code, _, body = self._call(method, path, self._peer_headers(), {} if method != "GET" else None)
+            self.assertIn(code, (401, 403), (method, path, body))
+            self.assertNotEqual(code, 200, (method, path, body))
+
     def test_set_level_then_peer_host_only_path_is_403(self):
         """Persist is not a grant. /api/rag from the peer must stay host-only."""
         for level in ("read_write", "read_only"):
             self._set_acl(level)
             code, _, body = self._call("GET", "/api/rag", self._peer_headers())
-            self.assertEqual(code, 403, (level, body))
-            self.assertEqual(body.get("error"), "host only", (level, body))
+            self._assert_refused_not_granted(code, body, level)
             code, _, body = self._call("GET", "/api/rag/spaces", self._peer_headers())
-            self.assertEqual(code, 403, (level, body))
-            self.assertEqual(body.get("error"), "host only", (level, body))
+            self._assert_refused_not_granted(code, body, level)
 
     def test_operator_html_does_not_contradict_the_403(self):
         """R-0001: the Hub page the host receives must say the bar is decorative."""
         self._set_acl("read_write")
         code, _, rag = self._call("GET", "/api/rag", self._peer_headers())
-        self.assertEqual(code, 403, rag)
-        self.assertEqual(rag.get("error"), "host only", rag)
+        self._assert_refused_not_granted(code, rag)
 
         with urllib.request.urlopen(self.base + "/", timeout=15) as r:
             self.assertEqual(r.status, 200)

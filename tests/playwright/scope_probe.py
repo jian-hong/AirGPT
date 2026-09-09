@@ -1,6 +1,8 @@
+import os
+
 from playwright.sync_api import sync_playwright
 
-BASE = "http://10.1.7.117:8765"
+BASE = (os.environ.get("AIRGPT_BASE") or "http://127.0.0.1:8765").rstrip("/")
 
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True)

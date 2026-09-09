@@ -74,9 +74,13 @@ def open_workspace(path: str, *, name: str = "") -> dict:
     p = Path(path).resolve()
     if not p.is_dir():
         return {"ok": False, "error": "not a directory"}
-    data = {"root": str(p), "name": (name or p.name)[:120], "opened_at": time.time()}
+    data = _load()
+    data["root"] = str(p)
+    data["name"] = (name or p.name)[:120]
+    data["opened_at"] = time.time()
     _save(data)
-    return {"ok": True, **data}
+    # Never echo pass_hash / salt to OpenIDE callers — same file as auth.
+    return {"ok": True, "root": data["root"], "name": data["name"], "opened_at": data["opened_at"]}
 
 
 def _root() -> Path | None:
@@ -243,19 +247,47 @@ def patch_file(rel: str, old: str, new: str, *, apply: bool = True) -> dict:
     return {**write_file(rel, updated, apply=True), "diff": diff, **delta}
 
 
+_TOKEN_RE = re.compile(r"[a-z0-9_]{2,}")
+_SEARCH_SCAN_CAP = 800
+_SEARCH_HIT_CAP = 40
+
+
+def query_tokens(query: str) -> tuple[str, ...]:
+    """Split a search box into tokens. Empty is not a match-everything grep."""
+    seen: list[str] = []
+    for tok in _TOKEN_RE.findall((query or "").lower()):
+        if tok not in seen:
+            seen.append(tok)
+    return tuple(seen)
+
+
+def score_text(tokens: tuple[str, ...], text_l: str) -> int:
+    """Rank by distinct tokens plus capped term frequency. Not a substring grep."""
+    if not tokens or not text_l:
+        return 0
+    score = 0
+    for tok in tokens:
+        n = text_l.count(tok)
+        if n:
+            score += 10 + min(n, 8)
+    return score
+
+
 def search_files(query: str, *, glob_pat: str = "**/*") -> dict:
     root = _root()
     if not root:
         return {"ok": False, "error": "no workspace", "matches": []}
-    q = (query or "").lower()
-    matches: list[dict] = []
+    tokens = query_tokens(query)
+    if not tokens:
+        return {"ok": True, "matches": []}
+    scored: list[tuple[int, str, str]] = []
+    scanned = 0
     try:
         for p in root.glob(glob_pat):
             if not p.is_file() or p.name in DENY_NAMES:
                 continue
             if p.name.startswith("."):
                 continue
-            # Skip heavy / vendor trees (same as find_paths)
             try:
                 parts = set(p.relative_to(root).parts)
             except ValueError:
@@ -266,14 +298,20 @@ def search_files(query: str, *, glob_pat: str = "**/*") -> dict:
                 text = p.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if q in text.lower():
+            scanned += 1
+            text_l = text.lower()
+            score = score_text(tokens, text_l)
+            if score:
                 rel_p = str(p.relative_to(root)).replace("\\", "/")
-                idx = text.lower().find(q)
-                matches.append({"path": rel_p, "excerpt": text[max(0, idx - 40) : idx + 120]})
-            if len(matches) >= 40:
+                idx = min((text_l.find(t) for t in tokens if t in text_l), default=0)
+                excerpt = text[max(0, idx - 40) : idx + 120]
+                scored.append((score, rel_p, excerpt))
+            if scanned >= _SEARCH_SCAN_CAP:
                 break
     except OSError:
         pass
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    matches = [{"path": path, "excerpt": excerpt} for _, path, excerpt in scored[:_SEARCH_HIT_CAP]]
     return {"ok": True, "matches": matches}
 
 
@@ -517,3 +555,63 @@ def checkout_branch(branch: str) -> dict:
         return {"ok": True, "branch": name, "fingerprint": fp}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+
+_GITHUB_REPO_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)",
+    re.I,
+)
+_NOT_REPO_SLUG = frozenset(
+    {
+        "issues",
+        "pulls",
+        "pull",
+        "settings",
+        "actions",
+        "wiki",
+        "projects",
+        "security",
+        "pulse",
+        "graphs",
+        "network",
+        "stargazers",
+        "watchers",
+    }
+)
+
+
+def detect_github_repo_url(text: str) -> str:
+    """First GitHub repo URL in composer paste. Empty if none."""
+    m = _GITHUB_REPO_RE.search(text or "")
+    if not m:
+        return ""
+    owner, repo = m.group(1), m.group(2)
+    if repo.lower().endswith(".git"):
+        repo = repo[:-4]
+    if repo.lower() in _NOT_REPO_SLUG:
+        return ""
+    return f"https://github.com/{owner}/{repo}"
+
+
+def clone_destination(parent: str, repo_url: str) -> dict:
+    """Clone dest is parent/slug. Refuse path escape. Push stays gh auth, never typed creds."""
+    url = detect_github_repo_url(repo_url)
+    if not url:
+        return {"ok": False, "error": "not a github repo url"}
+    slug = url.rstrip("/").rsplit("/", 1)[-1]
+    if not slug or ".." in slug or "/" in slug or "\\" in slug:
+        return {"ok": False, "error": "bad repo slug"}
+    base = Path(parent).expanduser().resolve()
+    dest = (base / slug).resolve()
+    try:
+        dest.relative_to(base)
+    except ValueError:
+        return {"ok": False, "error": "clone dest escaped parent"}
+    return {
+        "ok": True,
+        "url": url,
+        "slug": slug,
+        "dest": str(dest),
+        "clone_url": url + ".git",
+        "push_help": "Push: gh auth login then git push. OpenIDE never types credentials.",
+    }

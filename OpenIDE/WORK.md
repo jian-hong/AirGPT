@@ -18,14 +18,14 @@ Active slices. Prefer landing work in this folder (`ui/` + Python modules).
 ## Next
 
 **S4 — GitHub + netie.ai**
-- [ ] Harden clone destination under netie.ai workspace convention
-- [ ] Push-help after auth (never type credentials — key_vault law)
-- [ ] Detect pasted repo URLs in composer
+- [x] Harden clone destination under netie.ai workspace convention
+- [x] Push-help after auth (never type credentials — key_vault law)
+- [x] Detect pasted repo URLs in composer
 
 **S5 — Research → implement**
-- [ ] Prompt layers doc (Rules → Skill → Git FP → Tools)
-- [ ] Token / tool-loop timing coalescing
-- [ ] Tool-calling schema parity vs Cursor Agents
+- [x] Prompt layers doc (Rules → Skill → Git FP → Tools)
+- [x] Token / tool-loop timing coalescing
+- [x] Tool-calling schema parity vs Cursor Agents
 
 **Create-App follow-ups**
 - [ ] In-shell path modal (replace remaining `prompt()` for Browse/New folder)

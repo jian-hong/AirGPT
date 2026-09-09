@@ -2,6 +2,133 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-09-07 -- D10 and D11 closed after independent verify
+
+- EPIC-D10 #71 / S1-01 #74: phone without passcode is HTTP 403
+  `s1_passcode_required`; probe/health stay 200. After passcode, phone without
+  join token is 401. pytest `test_s1_passcode_posture.py` + research tests:
+  23 passed. Live `:8765` left running.
+- EPIC-D11 #72 / RES-01 #73: artifact HTTP for md/docx/pdf/tex; stages named.
+  Do not unpark D04 #22, benches #9/#10, D01 #6, HOST-DEMO-02 #42.
+
+## 2026-09-07 -- DR-0007 accepted; Constructor is a hub card
+
+- Marketplace stays catalog + fit + recipe. `bind_serve` still writes `env.local`
+  and returns a command; it does not spawn a pid. Constructor blurb no longer
+  says "hosted inside Cortex at /cortex/constructor/". Serving stays OpenVault.
+
+## 2026-09-06 -- marketplace DR-0007 proposed; mesh config stays in data/
+
+- `docs/decisions/DR-0007-marketplace-is-catalog-not-serving.md` proposed.
+  Catalog + fit here; `bind_serve` is a recipe, not a pid. Serving stays
+  OpenVault. Constructor stays `serving=module`.
+- `ensure_local_config` writes `DATA_DIR/openvault.local.json` only. Repo-root
+  `openvault.local.json` is gitignored so CI dirty-checkout cannot fire on it.
+
+## 2026-09-05 -- live workflow think traces on :8765
+
+- Reloaded Cortex `:8011` only (`:8765` untouched). Stubbed runner tests
+  assert `think`+`web_search` on the panel. Live `deep_research`
+  `wf_a563c9a4cb1d` now shows four `think` rows through GET
+  `/api/workflows/tasks`. LLM hops still fail without OV unseal. Not
+  download-safe.
+
+## 2026-09-05 -- two more research packages + think traces
+
+- Live `:8765` serves long md/Word/PDF/TeX for three idea-to-paper ids,
+  not one. HTTP tests name distinct `stage` values. Cortex agent loop
+  now stores `think` + tools on the Background card; OpenForge ship-gate
+  routine `rt-dcb70626` is PASS. Not download-safe.
+
+## 2026-09-05 -- review vs open-a-PR classifier
+
+- "code review open PRs" no longer matches `pr_create`. Live routine
+  `rt-32d4bdaa` is paused with kinds github+review only. Phone without a
+  join token is 401 (tested). Not download-safe.
+
+## 2026-09-05 -- S1 passcode live; Gmail IMAP connector
+
+- Host passcode is set. Phone `/api/ai/config` is 401 `auth required`
+  (join with the passcode). Local UI stays 200.
+- Cortex Gmail connector is IMAP/SMTP via Crew keys (gitignored), not
+  Google OAuth. Google requires a 16-char App Password. Morning digest
+  routine `rt-547f4184` is pinned. IMAP timeout for scheduled fetch is
+  20s. Not download-safe.
+
+## 2026-09-05 -- live artifacts + scheduler FreeRoute brief
+
+- Packaged run `20260828_183237-...` now serves long markdown (7k), Word,
+  PDF, and tex on `GET /api/research/artifact`. Phone still 403 until a
+  host passcode exists.
+- Cortex `scheduled_work` prepends a FreeRoute `model=auto` brief when the
+  vault is unsealed. Live `:5000` is sealed (`openvault_vault_sealed`);
+  gh/ship-gate facts still run. Not download-safe.
+
+## 2026-09-05 -- live S1 host + passcode file merge
+
+- Real `clipdrop.py` is listening on `:8765` (not demo-mock). Phone HTTP
+  without a passcode is 403 `s1_passcode_required`. Research runs list
+  and `/api/update` answer on that host. Creating a passcode no longer
+  wipes the OpenIDE `root` in `data/workspace.json`.
+- Cortex `:8011` draft/create is live (`work_kinds=github`). Scheduled
+  `gh pr list` was timing out at Crew's 1.5s chat budget; operator
+  sweeps now ask for 20s. Not download-safe.
+
+## 2026-09-05 -- Cortex scheduler does gh/ship-gate/mail
+
+- Routines with PR/review/build/email goals no longer echo the prompt
+  on the minimal DAG. Cortex `scheduled_work` lists/diffs/creates PRs
+  via Crew `gh`, runs ship-gate, reads IMAP, and sends SMTP when a
+  Gmail app password is set. AirGPT Routines create no longer blocks
+  on an AirGPT agent chip. Background agent cards show stored tool
+  steps. `GET /api/update` is honest (`no_update_server`). S1 phone
+  tests cover fs/OpenIDE/git/agents/DELETE. Live `:8765` / `:8010`
+  not reloaded (do not kill). Not download-safe.
+
+## 2026-09-05 -- S1 remote lock in tree (EPIC-D10); research artifact HTTP gated
+
+- Founder /goal: scheduler-forever + S1 + perfect research + bg
+  subagents + analog DISTILL + ship ecosystem. PRD F78-F83 named
+  two in-flight epics only. Analog clones stay frozen.
+- S1: phone without a host passcode gets HTTP 403
+  `code=s1_passcode_required`. Probe/health/auth-status stay 200.
+  Tunnel worker will not sweep until `passcode_set`. Tests:
+  `tests/test_s1_passcode_posture.py` + establish suite. Live
+  `:8765` not reloaded (do not kill).
+- Research: `GET /api/research/artifact` proven in
+  `tests/test_idea_to_paper.py`. Live 404 until clipdrop reload.
+- GitHub: D10 #71 / S1-01 #74; D11 #72 / RES-01 #73.
+
+## 2026-09-05 -- F67-F77 analog/WIP dump routed, not built
+
+- Status: scheduler honesty yes / Cursor cron no; S0+establish yes /
+  S1+CORS* no; research not perfect; OpenIDE subagents serial not
+  Cortex-class; not download-safe. Analog `D:\\my*` paths ACK+SKIP
+  per TAS. 9router is OpenVault FreeRoute, not a second AirGPT
+  router. Lift-WIP + parallel-all refused (ESTATE-GAP section 3).
+- Finding: `docs/subagents_findings/2026-09-05_prd-analog-wip-intake.md`
+
+## 2026-09-05 -- F59-F66 EXE/safety dump routed, not built
+
+- Founder ask (audit unbuilt + EXE upload + encoded anti-theft +
+  screenshot + our-server fetch + key guide + OV/Cortex forever)
+  logged as PRD-001 F59-F66. No GitHub tickets. No third epic.
+- D03 never included EXE. PyInstaller onedir is extractable;
+  obfuscation is not OpenVault custody. NEXT_UPDATE still forbids
+  hosted Personal, Stripe, and embedding Cortex in the EXE.
+- Finding: `docs/subagents_findings/2026-09-05_prd-exe-safety-intake.md`
+
+## 2026-09-03 -- Research Word/md package on live :8765
+
+- Idea-to-Paper run `20260828_014649` ships long markdown, path
+  figures, mermaid, IEEE PDF, and stdlib Word. Live downloads use
+  `/ui/exports/` because the running clipdrop process predates
+  `/api/research/artifact`. Cortex still generates; AirGPT packages.
+- Fixed dead Settings Marketplace (`showMarketplace`), OpenForge
+  Design JSON parse, OpenIDE terminal/checkout treating Response as
+  JSON, Hosting plan via GET, Research/Seek/RAG leaving OpenIDE
+  overlay. OpenHBM stays parked.
+
 ## 2026-09-03 -- /api/info no longer hangs the phone
 
 - Cold `/api/info` was 12s on live `:8766` (probe 0.3s). The request

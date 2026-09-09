@@ -40,6 +40,9 @@ class EstablishHandshakeTest(unittest.TestCase):
         auth._tokens.clear()
         clipdrop._establish.clear()
         clipdrop._establish_token.clear()
+        # S1: handshake tests assume a passcode already exists so they
+        # measure establish, not the first-run lock.
+        auth.init_workspace("host@example.com", "secret123")
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), clipdrop.Handler)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
@@ -64,6 +67,13 @@ class EstablishHandshakeTest(unittest.TestCase):
         if extra:
             h.update(extra)
         return h
+
+    def _joined_phone(self, extra=None):
+        guest = auth.join_workspace("secret123")
+        h = self._phone({"X-AirGPT-Token": guest["token"]})
+        if extra:
+            h.update(extra)
+        return h, guest["token"]
 
     def _call(self, method, path, headers=None, body=None):
         data = None if body is None else json.dumps(body).encode()
@@ -90,39 +100,44 @@ class EstablishHandshakeTest(unittest.TestCase):
         return None
 
     def test_phone_ai_config_refused_before_establish(self):
-        code, headers, body = self._call("GET", "/api/ai/config", self._phone())
+        phone, _ = self._joined_phone()
+        code, headers, body = self._call("GET", "/api/ai/config", phone)
         self.assertEqual(code, 403, body)
         self.assertTrue(body.get("establish"), body)
-        self.assertEqual(body.get("code"), "establish_required")
-        self.assertIn("establish", (body.get("error") or "").lower())
+        self.assertEqual(body.get("code"), "establish_unbound")
+        self.assertIn("token", (body.get("error") or "").lower())
         self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_phone_chat_stream_refused_before_establish(self):
+        phone, _ = self._joined_phone()
         code, headers, body = self._call(
-            "POST", "/api/chat/stream", self._phone(), {"text": "hi"},
+            "POST", "/api/chat/stream", phone, {"text": "hi"},
         )
         self.assertEqual(code, 403, body)
-        self.assertEqual(body.get("code"), "establish_required")
+        self.assertEqual(body.get("code"), "establish_unbound")
         self.assertTrue(body.get("establish"), body)
         self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_phone_messages_and_project_suggest_refused_before_establish(self):
+        phone, _ = self._joined_phone()
         for path in ("/api/messages", "/api/chat/project-suggest"):
-            code, headers, body = self._call("POST", path, self._phone(), {})
+            code, headers, body = self._call("POST", path, phone, {})
             self.assertEqual(code, 403, (path, body))
-            self.assertEqual(body.get("code"), "establish_required", path)
+            self.assertEqual(body.get("code"), "establish_unbound", path)
             self.assertTrue(body.get("establish"), (path, body))
             self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_phone_ai_post_siblings_refused_before_establish(self):
+        phone, _ = self._joined_phone()
         for path in ("/api/ai/config", "/api/ai/mode"):
-            code, headers, body = self._call("POST", path, self._phone(), {})
+            code, headers, body = self._call("POST", path, phone, {})
             self.assertEqual(code, 403, (path, body))
-            self.assertEqual(body.get("code"), "establish_required", path)
+            self.assertEqual(body.get("code"), "establish_unbound", path)
             self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_establish_returns_nonce_and_security_version(self):
-        code, headers, body = self._call("POST", "/api/establish", self._phone())
+        phone, _ = self._joined_phone()
+        code, headers, body = self._call("POST", "/api/establish", phone)
         self.assertEqual(code, 200, body)
         self.assertTrue(body.get("ok"), body)
         self.assertTrue(body.get("session_nonce"), body)
@@ -131,10 +146,11 @@ class EstablishHandshakeTest(unittest.TestCase):
         self.assertGreaterEqual(len(body["session_nonce"]), 16)
 
     def test_after_establish_ai_config_is_accepted(self):
-        _, _, est = self._call("POST", "/api/establish", self._phone())
+        phone, _ = self._joined_phone()
+        _, _, est = self._call("POST", "/api/establish", phone)
         nonce = est["session_nonce"]
         code, headers, body = self._call(
-            "GET", "/api/ai/config", self._phone({NONCE_HDR: nonce}),
+            "GET", "/api/ai/config", {**phone, NONCE_HDR: nonce},
         )
         self.assertEqual(code, 200, body)
         self.assertIn("auto", body)
@@ -142,10 +158,11 @@ class EstablishHandshakeTest(unittest.TestCase):
 
     def test_after_establish_chat_stream_fails_for_a_later_reason(self):
         """Handshake passed: refusal must not be establish_*."""
-        _, _, est = self._call("POST", "/api/establish", self._phone())
+        phone, _ = self._joined_phone()
+        _, _, est = self._call("POST", "/api/establish", phone)
         nonce = est["session_nonce"]
         code, headers, body = self._call(
-            "POST", "/api/chat/stream", self._phone({NONCE_HDR: nonce}), {},
+            "POST", "/api/chat/stream", {**phone, NONCE_HDR: nonce}, {},
         )
         self.assertNotEqual(body.get("code"), "establish_required", body)
         self.assertFalse(body.get("establish"), body)
@@ -154,17 +171,17 @@ class EstablishHandshakeTest(unittest.TestCase):
         self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_after_establish_ai_mode_is_accepted(self):
-        _, _, est = self._call("POST", "/api/establish", self._phone())
+        phone, _ = self._joined_phone()
+        _, _, est = self._call("POST", "/api/establish", phone)
         nonce = est["session_nonce"]
         code, headers, body = self._call(
-            "POST", "/api/ai/mode", self._phone({NONCE_HDR: nonce}), {"enabled": True},
+            "POST", "/api/ai/mode", {**phone, NONCE_HDR: nonce}, {"enabled": True},
         )
         self.assertEqual(code, 200, body)
         self.assertIn("enabled", body)
         self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_leftover_token_without_nonce_is_refused(self):
-        auth.init_workspace("host@example.com", "secret123")
         guest = auth.join_workspace("secret123")
         token = guest["token"]
         code, headers, body = self._call(
@@ -180,7 +197,6 @@ class EstablishHandshakeTest(unittest.TestCase):
         self.assertEqual(self._hdr(headers, SEC_HDR), clipdrop.AIRGPT_SECURITY_VERSION)
 
     def test_leftover_token_then_establish_then_accepted(self):
-        auth.init_workspace("host@example.com", "secret123")
         guest = auth.join_workspace("secret123")
         token = guest["token"]
         phone = self._phone({"X-AirGPT-Token": token})
@@ -203,7 +219,6 @@ class EstablishHandshakeTest(unittest.TestCase):
         self.assertIn("auto", body)
 
     def test_wrong_nonce_is_mismatch(self):
-        auth.init_workspace("host@example.com", "secret123")
         token = auth.join_workspace("secret123")["token"]
         phone = self._phone({"X-AirGPT-Token": token})
         _, _, est = self._call("POST", "/api/establish", phone)
@@ -221,7 +236,6 @@ class EstablishHandshakeTest(unittest.TestCase):
         self.assertTrue(est.get("session_nonce"))
 
     def test_nonce_cannot_be_stolen_by_another_token(self):
-        auth.init_workspace("host@example.com", "secret123")
         a = auth.join_workspace("secret123")["token"]
         b = auth.join_workspace("secret123")["token"]
         _, _, est = self._call("POST", "/api/establish", self._phone({"X-AirGPT-Token": a}))

@@ -151,17 +151,26 @@ class CortexAgentLoopTests(unittest.TestCase):
             lambda _aid: {"id": 1, "name": "t", "tools": ["web_search"], "config": {}},
         ):
             with mock.patch.object(agent_store, "create_run", lambda *_a, **_k: {"id": 9}):
-                with mock.patch.object(agent_store, "finish_run", lambda *_a, **_k: None):
+                finished = {}
+
+                def _finish(*_a, **k):
+                    finished.update(k)
+
+                with mock.patch.object(agent_store, "finish_run", _finish):
                     with mock.patch.object(cortex_client, "engine_agent_loop", fake_loop):
                         evs = list(
                             agent_runtime.run_agent_events(1, "what is X", thinking_mode="assist")
                         )
         types = [e.get("type") for e in evs]
         self.assertIn("tool", types)
+        self.assertIn("thinking", types)
         done = [e for e in evs if e.get("type") == "done"][0]
         self.assertEqual(done.get("stop_reason"), "quality")
         self.assertEqual(done.get("runner"), "agent_task")
         self.assertEqual(done.get("analysis"), "done from cortex")
+        tools = [s.get("tool") for s in (finished.get("steps") or [])]
+        self.assertIn("think", tools)
+        self.assertIn("web_search", tools)
 
     def test_run_agent_events_names_skip_when_cortex_down(self):
         with mock.patch.object(

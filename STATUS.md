@@ -4,29 +4,37 @@
 
 ## Now
 
-0. **This tree is on `:8765`.** `/api/info` ~0.12s. Live tunnel
-   `https://kevin-story-multiple-companion.trycloudflare.com` -- GET /
-   200 and `/api/probe` 200 `via=tunnel`.
-1. **D08 #38 closed.** Save+Rebuild stamped `local_graph_manual`.
-   DR-0006 accepted.
-2. **D03 #26 / #69 closed.** Dummy `http.server` and stale `:8766`
-   gone. OV `:5000` down. Groq 429 still blocks Cortex paper.
+0. **Do not kill leftover listeners.** Live: AirGPT `:8765`, Cortex
+   constructor `:8010`, engine `:8011` (`PACK=dms`), OpenVault `:5000`.
+1. **S1 passcode is set.** Local host 200. Phone API without a join token
+   is 401 `auth required`. Probe stays 200. Not download-safe.
+2. **Scheduler.** GitHub list + review (`rt-483c184a`), AirGPT ship-gate
+   (`rt-18d64fc7` FAIL-closed unseen), OpenForge 3d (`rt-dcb70626` PASS)
+   run as `scheduled_work`. Digest `rt-547f4184` waits on a Google App
+   Password. FreeRoute brief is `openvault_vault_sealed`. **NO** AirGPT
+   PRD-002.
+3. **Research (D11).** Live artifact GET 200 for three packaged runs
+   (md/docx/pdf/tex; stages named). Background `deep_research`
+   `wf_a563c9a4cb1d` shows 4 `think` rows on `:8765`. Not arXiv.
+   `GET /api/update` = `no_update_server`.
 
 ## Next
 
-0. D04 #22 Pointer paste (P-DMS-36). Do not build Pointer in AirGPT.
-1. Vault OpenAI or Anthropic, or wait Groq 429. Do not unpark OpenHBM.
+0. Do not kill `:8765`. Create a Google App Password (16 chars) and
+   put it in Crew Gmail keys, then re-run `rt-547f4184`.
+1. Unseal OpenVault for FreeRoute briefs.
 
 ## WIP
 
-Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56.
-Open parked: D04 #22 (Pointer), P11 #9/#10, D01 #6 leftover.
+Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56,
+D10 #71/#74 (S1), D11 #72/#73 (research). Parked leftover:
+D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 
 ## Later
 
 - P1 50GB / P2 Meta SIRA / P4 vault-first / P7 NVIDIA
-- F19 connectors = PRD-002. F20b quality loop = Cortex.
-- F25d-R opt-in multilingual embedder (gate section 3)
+- F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
+- DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
 
 ## Demo open
 

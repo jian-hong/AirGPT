@@ -978,10 +978,24 @@ def routines_run(rid: str) -> dict[str, Any]:
     if after not in (None, ""):
         out["next_run_at"] = after
     out["fired"] = bool(out.get("ok") and after not in (None, "") and after != before)
+    run = out.get("run") if isinstance(out.get("run"), dict) else {}
+    if run.get("steps"):
+        out["steps"] = run["steps"]
+    if run.get("output") is not None:
+        out.setdefault("output", run.get("output"))
+    if run.get("work_kinds"):
+        out["work_kinds"] = run["work_kinds"]
     if out.get("ok") and not out["fired"]:
         out["error"] = "routine did not fire: next_run_at did not advance"
         out["reason"] = "did_not_fire"
     return out
+
+
+def routines_runs(rid: str) -> dict[str, Any]:
+    st = scheduler_status()
+    if not st.get("ok"):
+        return st
+    return _json_call("GET", f"/api/routines/{rid}/runs", None, timeout=4.0)
 
 
 def routines_delete(rid: str) -> dict[str, Any]:
