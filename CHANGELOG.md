@@ -2,6 +2,12 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-09-11 -- Connect stays in Settings; LTX2 mock dumps ignored
+
+- Chat grid is two tracks (side + main). Connect is Settings Network only,
+  so a missing right pane cannot keep an empty column. `video-assets/08-ltx2-outputs/`
+  is gitignored (keep `.gitkeep`) and CI runs `tests/test_apps_hub_ltx2.py`.
+
 ## 2026-09-07 -- D10 and D11 closed after independent verify
 
 - EPIC-D10 #71 / S1-01 #74: phone without passcode is HTTP 403

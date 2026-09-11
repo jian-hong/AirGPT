@@ -17,6 +17,8 @@
    (md/docx/pdf/tex; stages named). Background `deep_research`
    `wf_a563c9a4cb1d` shows 4 `think` rows on `:8765`. Not arXiv.
    `GET /api/update` = `no_update_server`.
+4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
+   outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 ## Next
 

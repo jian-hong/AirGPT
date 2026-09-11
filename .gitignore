@@ -41,6 +41,8 @@ bin/cloudflared.exe
 # Finished masters should be distributed separately or through Git LFS.
 video-assets/07-exports/*
 !video-assets/07-exports/DROP_MASTERS_HERE.txt
+video-assets/08-ltx2-outputs/*
+!video-assets/08-ltx2-outputs/.gitkeep
 
 # OpenFree vendored gateway (prebuilt npm, ~739MB) + runtime
 vendor/openfree/node_modules/

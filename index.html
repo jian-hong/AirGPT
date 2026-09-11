@@ -56,69 +56,55 @@ body.theme-light{
 }
 .shell{display:flex;flex-direction:column;height:100%;height:100dvh;min-height:0;overflow:hidden;background:var(--bg)}
 .shell>.topbar{flex:0 0 auto;min-height:var(--topbar-h);z-index:60}
-/* Claude-like push layout: --side animates 0 ↔ --side-w; chat shares the rest */
+/* Wide desktop: --side animates 0 ↔ --side-w and chat shares the row.
+   <=1100px: left rail is an overlay (transform) so a small window never keeps a dead track. */
 .app{--side:var(--side-w)}
 .app.side-collapsed{--side:0px}
-.app,.app.no-connect{grid-template-columns:var(--side) minmax(0,1fr);transition:grid-template-columns var(--morph)}
+.app,.app.no-connect{grid-template-columns:var(--side) minmax(0,1fr);grid-auto-columns:0;transition:grid-template-columns var(--morph)}
 .app.side-collapsed,.app.side-collapsed.no-connect{grid-template-columns:0 minmax(0,1fr)}
-/* Connect never owns a grid track — sheet/overlay only (avoids empty right void) */
+.app>.side{grid-column:1;grid-row:1}
+.app>.main{grid-column:2;grid-row:1;min-width:0}
 .app.side-collapsed .side{
   width:0;min-width:0;max-width:0;padding:0;border:0;overflow:hidden;
   opacity:0;pointer-events:none;visibility:hidden;
-  transition:width var(--morph),max-width var(--morph),opacity .22s,padding var(--morph),border var(--morph),visibility 0s linear var(--morph);
+  transition:width var(--morph),max-width var(--morph),opacity .22s,padding var(--morph),border var(--morph),visibility 0s linear var(--morph),transform var(--morph);
 }
 .side{
   width:var(--side);max-width:var(--side);min-width:0;overflow:hidden;opacity:1;visibility:visible;
-  transition:width var(--morph),max-width var(--morph),opacity .22s ease,visibility 0s;
-  will-change:width;
+  transition:width var(--morph),max-width var(--morph),opacity .22s ease,visibility 0s,transform var(--morph);
 }
-.connect-col{transition:width var(--morph),opacity .22s ease,transform var(--morph);min-width:0;will-change:width,transform}
-.app.no-connect .connect-col{width:0;min-width:0;max-width:0;padding:0;border:0;overflow:hidden;opacity:0;pointer-events:none}
+/* Connect lives in Settings — never a grid track or an edge tab */
+.connect-col,.connect-collapse-btn,.connect-resize-handle,.edge-hotzone.right{display:none!important}
 .edge-hotzone{position:absolute;z-index:37;top:0;bottom:0;width:18px;background:transparent;pointer-events:none}
 .app.side-collapsed .edge-hotzone.left{pointer-events:auto}
 .edge-hotzone.left{left:0}
-.edge-hotzone.right{right:0;pointer-events:auto}
-.side-collapse-btn,.connect-collapse-btn{
+.side-collapse-btn{
   position:absolute;z-index:40;top:50%;transform:translateY(-50%);
   width:18px;height:56px;padding:0;margin:0;cursor:pointer;
   border:1px solid rgba(255,255,255,.12);background:rgba(18,18,18,.94);color:var(--muted);
   display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   opacity:.38;pointer-events:auto;
-  transition:left var(--morph),right var(--morph),background .2s,color .2s,border-color .2s,opacity .18s ease;
-}
-.app.show-side-edge .side-collapse-btn,
-.app.show-connect-edge .connect-collapse-btn,
-.side-collapse-btn:focus-visible,.connect-collapse-btn:focus-visible,
-.side-collapse-btn:hover,.connect-collapse-btn:hover{opacity:1;pointer-events:auto}
-/* Abspos chrome spans the full grid so left/right anchors use the app box, not a single track */
-.app>.edge-hotzone,.app>.side-collapse-btn,.app>.connect-collapse-btn,
-.app>.side-resize-handle,.app>.connect-resize-handle{grid-column:1/-1;grid-row:1/-1}
-.side-collapse-btn{
+  transition:left var(--morph),background .2s,color .2s,border-color .2s,opacity .18s ease;
   left:calc(var(--side) - 1px);border-radius:0 10px 10px 0;border-left:0;
   box-shadow:4px 0 16px rgba(0,0,0,.2);
 }
+.app.show-side-edge .side-collapse-btn,
+.side-collapse-btn:focus-visible,
+.side-collapse-btn:hover{opacity:1;pointer-events:auto}
+.app>.edge-hotzone,.app>.side-collapse-btn,.app>.side-resize-handle{grid-column:1/-1;grid-row:1}
 .app.side-collapsed .side-collapse-btn{
   left:0;border-left:1px solid rgba(255,255,255,.12);border-radius:0 10px 10px 0;
 }
-.connect-collapse-btn{
-  right:calc(var(--connect) - 1px);border-radius:10px 0 0 10px;border-right:0;
-  box-shadow:-4px 0 16px rgba(0,0,0,.2);
+.side-collapse-btn:hover{background:rgba(32,32,32,.98);color:#fff;border-color:rgba(255,255,255,.22)}
+.side-resize-handle{
+  position:absolute;z-index:39;top:0;bottom:0;width:5px;cursor:col-resize;background:transparent;touch-action:none;
+  left:calc(var(--side) - 2px)
 }
-.app.no-connect .connect-collapse-btn{
-  right:0;border-right:1px solid rgba(255,255,255,.12);border-radius:10px 0 0 10px;
-}
-.side-collapse-btn:hover,.connect-collapse-btn:hover{background:rgba(32,32,32,.98);color:#fff;border-color:rgba(255,255,255,.22)}
-.side-resize-handle,.connect-resize-handle{
-  position:absolute;z-index:39;top:0;bottom:0;width:5px;cursor:col-resize;background:transparent;touch-action:none
-}
-.side-resize-handle{left:calc(var(--side) - 2px)}
-.connect-resize-handle{right:calc(var(--connect) - 2px)}
-.side-resize-handle:hover,.connect-resize-handle:hover,
-.side-resize-handle.dragging,.connect-resize-handle.dragging{background:rgba(141,180,255,.35)}
-.app.side-collapsed .side-resize-handle,.app.no-connect .connect-resize-handle{display:none}
-@media(max-width:960px){.side-resize-handle,.connect-resize-handle{display:none}}
-@media(max-width:760px){.side-collapse-btn,.connect-collapse-btn,.edge-hotzone{display:none}}
+.side-resize-handle:hover,.side-resize-handle.dragging{background:rgba(141,180,255,.35)}
+.app.side-collapsed .side-resize-handle{display:none}
+@media(max-width:960px){.side-resize-handle{display:none}}
+@media(max-width:760px){.side-collapse-btn,.edge-hotzone{display:none}}
 .chat-page-enter{animation:pageIn .32s cubic-bezier(.22,1,.36,1)}
 @keyframes pageIn{from{opacity:0;transform:translateY(8px) scale(.995)}to{opacity:1;transform:none}}
 .nav-item,.nav-label,.icon-btn,.btn,.qr-btn,.project-card,.invite-card,.proj-page-card,.search-result{
@@ -406,10 +392,10 @@ textarea.side-search{height:auto;min-height:64px;padding:10px 12px;line-height:1
 @media(max-width:760px) and (min-width:481px){
   .side-collapse-btn{display:flex!important;left:0;z-index:96}
   .app:not(.side-collapsed) .side-collapse-btn{left:min(88vw,300px)}
-  .connect-collapse-btn{display:flex!important;right:0;z-index:96;border-radius:10px 0 0 10px;border-right:1px solid rgba(255,255,255,.12);border-left:0}
 }
-/* Keep connect edge control above node rail */
-.connect-collapse-btn,.side-collapse-btn{z-index:50}
+/* Connect stays Settings-only; later media queries must not revive an edge tab. */
+.connect-col,.connect-collapse-btn,.connect-resize-handle,.edge-hotzone.right{display:none!important}
+.side-collapse-btn{z-index:50}
 .msg-jump-bar{z-index:22;pointer-events:none;right:14px}
 .msg-jump-track{pointer-events:auto}
 .hub-mini-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 2px;font-size:12px;min-width:0}

@@ -11,7 +11,7 @@
 #
 # A 396-pass local count on 2026-08-07 was a laptop number (R-0007): gitignored
 # data/skills packs, optional sqlite-vec, sentence-transformers + cached BGE
-# weights, and modules this job deliberately ignores (playwright, ltx2).
+# weights, and the module this job deliberately ignores (playwright).
 # Skill-catalog tests pin to tests/fixtures/skills so a clean clone serves the
 # same packs. openpyxl and pandas are product xlsx deps and belong here. sqlite-vec stays
 # opt-in (Windows extension load is not a stranger-clone guarantee). Floor is
@@ -72,14 +72,12 @@ jobs:
           #                               running server and a base URL; with neither
           #                               it fails on navigating to "". Bring it back
           #                               when CI starts the app.
-          #   tests/test_apps_hub_ltx2  - ltx2_video.submit(mode="mock") writes a job
-          #                               record and video stubs into the checkout,
-          #                               and video-assets/ is not gitignored, so the
-          #                               run leaves the tree dirty. Bring it back
-          #                               when its output dir is redirectable.
+          #   tests/test_apps_hub_ltx2  - runs again. Its mock stubs land in
+          #                               video-assets/08-ltx2-outputs/, which is now
+          #                               gitignored (only .gitkeep is tracked), so the
+          #                               dirty-checkout step below stays honest.
           $out = python -m pytest tests/ -q -p no:cacheprovider `
-            --ignore=tests/playwright `
-            --ignore=tests/test_apps_hub_ltx2.py 2>&1 | Tee-Object -Variable lines
+            --ignore=tests/playwright 2>&1 | Tee-Object -Variable lines
           $code = $LASTEXITCODE
           $lines | ForEach-Object { Write-Host $_ }
           if ($code -ne 0) { Write-Error "pytest exited $code"; exit 1 }
