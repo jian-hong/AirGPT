@@ -3,6 +3,14 @@
 What exists in this repo and where. Update when structure changes, not when state changes
 - state lives in STATUS.md.
 
+- `prompt_trace.py` -- prompt lens record: what one chat turn sent to the
+  model. Filled where the request is built (`ai_engine._prepare_text_chat`,
+  `chat_text_stream`, `clipdrop._cortex_prompt_trace`), stored per reply in
+  `prompt_traces`. `GET /api/chat/prompt-trace?message_id=|session_id=`;
+  non-host devices get private blocks without text. Tokens are an estimate.
+- `ui/promptlens.js` + `ui/promptlens.css` -- the panel and composer meter.
+  `window.PromptLens.open(messageId)`. Hook in `index.html` is one button in
+  `renderMsg` plus the two asset tags.
 - `commands.py` `peel_skill_slash` — `/skill`, `/skill:`, `/skill-`,
   `/anthropic-skills:` arm a pack; remainder is the job (SHELL-03).
 - `openpyxl` and `pandas` are product xlsx deps (`rag/ingest.py`,

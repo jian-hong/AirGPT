@@ -10,6 +10,8 @@ import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
+import threading
+
 from config import ENV_FILE, ROOT as CONFIG_ROOT
 
 try:
@@ -63,6 +65,8 @@ ROUTER_MAX_TOKENS = 128
 CLASSIFY_MAX_TOKENS = 128
 COMPRESS_MAX_TOKENS = 512
 CHAT_MAX_TOKENS = 1024
+_turn = threading.local()  # per-thread facts about the provider call in flight
+HISTORY_BUDGET_CHARS = 12000  # chat history kept per turn; the prompt lens reports against this
 FOLLOWUP_MAX_TOKENS = 1024
 VISION_MAX_TOKENS = 2048
 REASONER_MAX_TOKENS = 4096
@@ -516,6 +520,23 @@ def _rule_route(question: str, has_image: bool, vision_cache: str) -> dict | Non
     return None
 
 
+def _effective_system(system: str) -> str:
+    """The system prompt as it is actually sent: caller text plus the security block.
+
+    Idempotent on purpose. `_standard_llm_stream` used to append the block and then
+    hand the result to `_standard_llm`, which appended it again, so the fallback path
+    sent it twice. The prompt lens reads this same function, so what it shows is what
+    goes out.
+    """
+    system = system or ""
+    if not _security:
+        return system
+    block = _security.SECURITY_SYSTEM
+    if block and block in system:
+        return system
+    return (system + "\n\n" + block).strip()
+
+
 def _http_post(url: str, headers: dict, body: dict, timeout: int = 12) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"),
@@ -586,8 +607,7 @@ def _cheap_llm(prompt: str, system: str = "", *, max_tokens: int = ROUTER_MAX_TO
     """T1 — Groq 8B → Gemini Flash → SEA-LION for router, classify, compress."""
     if _lockdown_block():
         return ("", "ai_lockdown")
-    if _security:
-        system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
+    system = _effective_system(system)
     env = load_env()
     cloud_prompt = _pii_for_cloud(prompt)  # T1 is always cloud — redact once
     groq_key = env.get("GROQ_API_KEY") or env.get("GROQ_API_KEY_SISWA", "")
@@ -1096,8 +1116,7 @@ def _standard_llm(
     """T2 — vLLM/Colibri (optional local) → SEA-LION → OpenRouter → Google → Groq → DeepSeek."""
     if _lockdown_block():
         return ("", "ai_lockdown")
-    if _security:
-        system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
+    system = _effective_system(system)
     env = load_env()
     tried: list[str] = []
     last_err = ""
@@ -1125,6 +1144,7 @@ def _standard_llm(
             tool_defs = _chat_tool_defs(task)
             if tool_defs:
                 body["tools"] = tool_defs
+                _turn.tools_sent = True  # read by the prompt lens after the call
             data = _http_post(url, headers, body, timeout=timeout)
             if tool_defs:
                 data = _resolve_tool_calls(
@@ -1389,8 +1409,7 @@ def _standard_llm_stream(
     if _lockdown_block():
         return iter(()), ["ai_lockdown"]
     model_ref: list[str] = ["fallback"]
-    if _security:
-        system = (system + "\n\n" + _security.SECURITY_SYSTEM).strip()
+    system = _effective_system(system)
     env = load_env()
     msgs = list(messages) if messages else [{"role": "user", "content": prompt}]
     if system and not any(m.get("role") == "system" for m in msgs):
@@ -1615,8 +1634,12 @@ def _prepare_text_chat(
     history: list[dict] | None = None,
     business_require: bool = False,
     force_web: bool = False,
+    trace: dict | None = None,
 ) -> tuple[str, str, bool, dict]:
-    """Shared prep: guard, cortex, vault, ditch history, prompt. Returns (prompt, mode, has_vault, gate)."""
+    """Shared prep: guard, cortex, vault, ditch history, prompt. Returns (prompt, mode, has_vault, gate).
+
+    `trace` (prompt_trace.new) is filled with the blocks this call really assembled.
+    """
     mode = mode if mode in MODES else "general"
     gate: dict = {"ok": True, "text": question, "classify": {}}
     try:
@@ -1635,6 +1658,7 @@ def _prepare_text_chat(
     history_msgs = list(history or [])
     if not history_msgs and session_id:
         history_msgs = _session_history_messages(session_id, question)
+    hist_available = len(history_msgs)
     if history_msgs:
         try:
             import db as _db
@@ -1643,7 +1667,7 @@ def _prepare_text_chat(
             before = list(history_msgs)
             history_msgs = _db.ditch_context(
                 history_msgs,
-                budget_chars=12000,
+                budget_chars=HISTORY_BUDGET_CHARS,
                 pinned=pinned,
                 query=question or "",
                 sliding=8,
@@ -1698,18 +1722,43 @@ def _prepare_text_chat(
                 "\n## Linked Evidence\n"
                 "Web search returned nothing usable. Say you could not verify; do not invent.\n"
             )
-    prompt = (
-        # NOT .format(): the template teaches Mermaid, so it contains literal braces
-        # (`diamond {"?"}`, `id@{shape: tri, label: "Goal"}`). str.format reads those as
-        # placeholders and raises KeyError, which killed every text chat that reached
-        # this path. Plain substitution is immune to whatever the prompt text contains.
-        TEXT_CHAT_TEMPLATE
-        .replace("{mode_prompt}", MODES[mode])
-        .replace("{question}", question[:6000])
-        + history_block
-        + vault_block
-        + url_block
-    )
+    # NOT .format(): the template teaches Mermaid, so it contains literal braces
+    # (`diamond {"?"}`, `id@{shape: tri, label: "Goal"}`). str.format reads those as
+    # placeholders and raises KeyError, which killed every text chat that reached
+    # this path. Plain substitution is immune to whatever the prompt text contains.
+    head, _, tail = TEXT_CHAT_TEMPLATE.replace("{mode_prompt}", MODES[mode]).partition("{question}")
+    asked = question[:6000]
+    prompt = head + asked + tail + history_block + vault_block + url_block
+    if trace is not None:
+        try:
+            import prompt_trace as _pt
+
+            _pt.add(trace, "instructions", "Instructions", head + tail)
+            _pt.add(
+                trace, "question", "Your message", asked,
+                note="Cut to 6,000 characters before sending." if len(question) > 6000 else "",
+            )
+            sent = len(history_msgs)
+            squeezed = sum(1 for m in history_msgs if m.get("_compressed_for_prompt"))
+            hist_note = f"{sent} of {hist_available} earlier messages sent."
+            if hist_available > sent:
+                hist_note += f" {hist_available - sent} dropped to fit the budget."
+            if squeezed:
+                hist_note += f" {squeezed} shortened."
+            _pt.add(trace, "history", "Chat history", history_block, note=hist_note)
+            trace["history"] = {
+                "available": hist_available,
+                "sent": sent,
+                "dropped": max(0, hist_available - sent),
+                "compressed": squeezed,
+                "budget_chars": HISTORY_BUDGET_CHARS,
+            }
+            _pt.add(trace, "memory", "Memory notes", vault_block, private=True)
+            _pt.add(trace, "evidence", "Web and link evidence", url_block)
+        except Exception as e:
+            # Recording must never break the prompt it describes.
+            trace["notes"].append("Part of this record could not be built.")
+            print(f"[prompt-trace] record failed: {str(e)[:120]}")
     return prompt, mode, bool(vault), gate
 
 
@@ -1976,6 +2025,9 @@ def chat_text_stream(
     if force_web or _wants_web(question or ""):
         if show_thinking:
             yield {"type": "thinking", "text": "Fetching linked pages / web evidence…"}
+    import prompt_trace as _pt
+
+    trace = _pt.new("direct", mode=mode, tier=tier)
     prompt, mode, has_vault, gate = _prepare_text_chat(
         question,
         mode,
@@ -1983,13 +2035,17 @@ def chat_text_stream(
         history=history,
         business_require=business_require,
         force_web=force_web,
+        trace=trace,
     )
     if gate.get("blocked"):
         yield {"type": "done", "analysis": prompt, "model": "cortex-gate", "gate": gate}
         return
+    trace["mode"] = mode
     skill = load_skill_pack(mode)
     if skill:
-        prompt = f"{prompt}\n\n## Skill pack ({mode})\n{skill}\n"
+        skill_block = f"\n\n## Skill pack ({mode})\n{skill}\n"
+        prompt = prompt + skill_block
+        _pt.add(trace, "skill", f"Skill pack ({mode})", skill_block)
         if show_thinking:
             yield {"type": "thinking", "text": f"Loaded {mode} skill pack."}
     if has_vault and show_thinking:
@@ -2008,6 +2064,70 @@ def chat_text_stream(
     elif tier == "high":
         use_dual = (route.get("complexity") == "high") or bool(route.get("needs_sympy"))
     # basic → never dual
+
+    mode_sys = MODES[mode] + (
+        "\nWhen structure helps, include ONE compact Mermaid flowchart with subgraph frames "
+        "(never mindmap / ((circle))). Example:\n"
+        "```mermaid\nflowchart TD\n  root([\"topic\"])\n  subgraph a[\"A\"]\n    a1[\"A1\"]\n  end\n  root --> a\n```"
+    )
+    dual = bool(use_dual and has_reasoner)
+    trace["sections"].insert(
+        0, _pt.section("system", "System prompt", _effective_system(MODES[mode] if dual else mode_sys))
+    )
+    trace["max_output_tokens"] = CHAT_MAX_TOKENS
+    trace["pipeline"] = "dual" if dual else ("reasoner" if (tier == "max" and not has_reasoner) else "single")
+    if dual:
+        trace["notes"].append(
+            "Two calls: a draft, then a verify call that re-sends your message plus the draft "
+            "(up to 6,000 characters) to the reasoner."
+        )
+    try:
+        import pii_guard
+
+        _, masked = pii_guard.redact(prompt)
+    except Exception:
+        masked = None
+    if masked is None:
+        trace["notes"].append("Masking check did not run, so nothing here says what a cloud provider receives.")
+    elif masked:
+        kinds = ", ".join(f"{n} {k.lower()}" for k, n in sorted(masked.items()))
+        trace["notes"].append(
+            f"Masked before any cloud provider sees it: {kinds}. Local engines get the text as shown."
+        )
+        trace["masked"] = masked
+    else:
+        trace["notes"].append("Nothing in this prompt matched the personal-data masks.")
+    _turn.tools_sent = False
+
+    def _trace_event(model_label: str) -> dict:
+        """The finished record. Built after the call so it only lists what went out.
+
+        Tool definitions ride on key-based provider calls but not on a local
+        streaming engine. `_turn.tools_sent` is set at the line that attaches them, so
+        a turn that never attached tools does not get 1,300 phantom tokens.
+
+        Never raises: the answer already exists when this runs. A failure yields an
+        event with no trace, nothing is stored, and the panel reports no record.
+        """
+        try:
+            return _trace_event_unsafe(model_label)
+        except Exception as e:
+            print(f"[prompt-trace] record failed: {str(e)[:120]}")
+            return {"type": "prompt_trace", "trace": None}
+
+    def _trace_event_unsafe(model_label: str) -> dict:
+        if getattr(_turn, "tools_sent", False):
+            defs = _chat_tool_defs("chat")
+            names = [str((t.get("function") or {}).get("name") or t.get("name") or "tool") for t in defs]
+            _pt.add(
+                trace, "tools", f"Tool definitions ({len(defs)})",
+                json.dumps(defs, ensure_ascii=False, indent=1),
+                note="The model may call: " + ", ".join(names) + ".",
+            )
+        else:
+            trace["notes"].append("No tool definitions were sent on this turn.")
+        trace["model"] = model_label
+        return {"type": "prompt_trace", "trace": _pt.finalize(trace)}
 
     # Dual brain: Fast draft (T2) + Reasoner verify (T4) when complexity is high
     if use_dual and has_reasoner:
@@ -2048,17 +2168,13 @@ def chat_text_stream(
         _finish_chat_side_effects(
             question=question, answer=text, mode=mode, model=done["model"], tier=tier, session_id=session_id
         )
+        yield _trace_event(done["model"])
         yield done
         return
 
     if show_thinking:
         yield {"type": "thinking", "text": "Generating response…"}
     prefer_reason = tier == "max" and not has_reasoner
-    mode_sys = MODES[mode] + (
-        "\nWhen structure helps, include ONE compact Mermaid flowchart with subgraph frames "
-        "(never mindmap / ((circle))). Example:\n"
-        "```mermaid\nflowchart TD\n  root([\"topic\"])\n  subgraph a[\"A\"]\n    a1[\"A1\"]\n  end\n  root --> a\n```"
-    )
     if prefer_reason:
         text, model = _text_llm(prompt, mode_sys, prefer_reasoning=True, max_tokens=CHAT_MAX_TOKENS)
         for chunk in _chunk_text(text):
@@ -2070,6 +2186,7 @@ def chat_text_stream(
         _finish_chat_side_effects(
             question=question, answer=text, mode=mode, model=model, tier=tier, session_id=session_id
         )
+        yield _trace_event(done["model"])
         yield done
         return
 
@@ -2106,6 +2223,7 @@ def chat_text_stream(
     _finish_chat_side_effects(
         question=question, answer=full, mode=mode, model=model, tier=tier, session_id=session_id
     )
+    yield _trace_event(model)
     yield done
 
 

@@ -20,6 +20,11 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
+5. **Phone + prompt lens (branch `claude/rag-ui-improvements-qgauwt`).**
+   SHELL-04 #78 fixed: main pane full width at 320/375/760 px. Each text
+   reply has `Prompt`: the blocks that were sent, with sizes. Verified
+   against a recording stand-in model, not a real provider or live Cortex.
+
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and

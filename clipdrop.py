@@ -630,6 +630,55 @@ def _build_chat_history(
     return history[-12:]
 
 
+def _cortex_prompt_trace(
+    question: str,
+    history: list[dict] | None,
+    loop_prompt: str,
+    *,
+    mode: str,
+    tier: str,
+    web_search: bool,
+) -> dict:
+    """What AirGPT handed to the Cortex agent loop for this turn.
+
+    Cortex builds the final model request on its side. Its system prompt and tool
+    schemas never come back here, so the trace names that gap instead of guessing.
+    """
+    import prompt_trace as _pt
+
+    trace = _pt.new("cortex", mode=mode, tier=tier)
+    usable = [
+        m for m in (history or [])
+        if isinstance(m, dict) and str(m.get("content") or "").strip()
+    ]
+    sent = [  # same slice the loop prompt is built from, a few lines below
+        m for m in (history or [])[-8:]
+        if isinstance(m, dict) and str(m.get("content") or "").strip()
+    ]
+    prior = loop_prompt[: max(0, len(loop_prompt) - len(question))] if sent else ""
+    cut = sum(1 for m in sent if len(str(m.get("content") or "").strip()) > 500)
+    note = f"{len(sent)} of {len(usable)} earlier messages sent, each cut to 500 characters."
+    if cut:
+        note += " 1 was longer and lost its tail." if cut == 1 else f" {cut} were longer and lost their tails."
+    _pt.add(trace, "history", "Chat history", prior, note=note)
+    trace["history"] = {
+        "available": len(usable),
+        "sent": len(sent),
+        "dropped": len(usable) - len(sent),
+        "compressed": cut,
+    }
+    _pt.add(trace, "question", "Your message", question)
+    if web_search:
+        trace["notes"].append("Tools requested from Cortex: web_search, web_fetch.")
+    trace["notes"].append(
+        "Sent to the Cortex agent loop (up to 6 steps). Cortex adds its own system "
+        "prompt and tool definitions on its side. AirGPT cannot see those, so they "
+        "are not counted here."
+    )
+    trace["opaque"] = True
+    return _pt.finalize(trace)
+
+
 def _chat_stream_events(
     question: str,
     mode: str,
@@ -712,6 +761,14 @@ def _chat_stream_events(
     except Exception as e:
         cortex = {"ok": False, "error": str(e)[:200]}
     if isinstance(cortex, dict) and cortex.get("ok") and (cortex.get("content") or "").strip():
+        try:
+            yield {"type": "prompt_trace", "trace": _cortex_prompt_trace(
+                question or "", history, loop_prompt, mode=mode, tier=model_tier, web_search=web_search,
+            )}
+        except Exception as e:
+            # The answer is in hand. Without a record the panel says "no prompt
+            # record for this reply", which is true; losing the answer is not ok.
+            print(f"[prompt-trace] cortex record failed: {str(e)[:120]}")
         for t in ((cortex.get("telemetry") or {}).get("tools") or []):
             if not isinstance(t, dict):
                 continue
@@ -2966,7 +3023,7 @@ class Handler(BaseHTTPRequestHandler):
         # with its question sitting there unanswered forever.
         abort = threading.Event()
         event_q: queue.Queue = queue.Queue()
-        done_ev: dict = {"analysis": "", "model": "", "error": ""}
+        done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None}
 
         def _producer() -> None:
             try:
@@ -2979,6 +3036,10 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     if abort.is_set():
                         break
+                    if ev.get("type") == "prompt_trace":
+                        # Kept for the reply row; the client reads it back by message id.
+                        done_ev["trace"] = ev.get("trace")
+                        continue
                     event_q.put(ev)
                     if ev.get("type") == "done":
                         done_ev["analysis"] = ev.get("analysis", "")
@@ -3038,7 +3099,7 @@ class Handler(BaseHTTPRequestHandler):
         # Persist whenever an answer exists. The old condition also required the client
         # to still be attached, so a tunnel hiccup silently discarded a finished reply.
         if done_ev["analysis"] and not done_ev["error"]:
-            db.add_message(
+            ai_row = db.add_message(
                 device_ip="127.0.0.1",
                 device_name="AirGPT",
                 text=done_ev["analysis"],
@@ -3046,6 +3107,15 @@ class Handler(BaseHTTPRequestHandler):
                 source="ai",
                 session_id=session_id,
             )
+            if ai_row and isinstance(done_ev.get("trace"), dict):
+                try:
+                    import prompt_trace
+
+                    done_ev["trace"]["model"] = done_ev.get("model") or ""
+                    prompt_trace.save(int(ai_row["id"]), session_id, done_ev["trace"])
+                except Exception as e:
+                    # The reply is already saved; a lost trace must not lose the answer.
+                    print(f"[prompt-trace] not saved: {str(e)[:120]}")
             db.maybe_set_ai_session_title(
                 session_id,
                 _title_from_ai_text(done_ev["analysis"], fallback=text[:60]),
@@ -3924,6 +3994,38 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/drops":
             return self._json(200, {"items": db.get_media_messages(), "latest_id": db.latest_id()})
+
+        if path == "/api/chat/prompt-trace":
+            # What one reply was actually sent to the model (prompt lens).
+            # message_id names a reply; session_id alone returns that chat's latest.
+            try:
+                import prompt_trace
+
+                mid = int(q.get("message_id", ["0"])[0] or 0)
+                want_sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"error": "message_id or session_id must be a number"})
+            rec = prompt_trace.load(mid) if mid else prompt_trace.latest_for_session(want_sid)
+            is_host = _is_host_request(self.headers, self.client_address[0])
+            if not is_host and app_auth and hasattr(app_auth, "token_session_acl"):
+                # A share guest reads its own shared chat and nothing else. Same
+                # answer for "exists elsewhere" and "does not exist".
+                scoped = app_auth.token_session_acl(self._request_token())
+                if scoped and rec and int(rec["session_id"]) != int(scoped["session_id"]):
+                    rec = None
+            if not rec:
+                return self._json(404, {
+                    "ok": False,
+                    "error": "not_recorded",
+                    "detail": "No prompt record for this reply. Replies made before this "
+                              "feature, or image and agent replies, are not recorded.",
+                })
+            trace = rec["trace"]
+            if not is_host:
+                # Memory notes come from the host's own vault. Other devices see that
+                # the block was sent and how big it was, not what it says.
+                trace = prompt_trace.redact_private(trace)
+            return self._json(200, {"ok": True, **rec, "trace": trace, "host_view": is_host})
 
         if path == "/api/messages":
             since = int(q.get("since", ["0"])[0])

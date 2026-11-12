@@ -2,6 +2,29 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-12 -- Phone layout shows again; prompt lens shows what a reply was sent
+
+- SHELL-04 #78: at 760 px and below `.main` sat in an implicit 0-wide grid track,
+  so a phone saw a blank app. One block after `.app.no-connect` puts it in
+  column 1. Measured at 320, 375 and 760 px with the drawer closed, open and
+  re-closed; 1024 and 1280 px are unchanged.
+- Prompt lens. Each text reply has a `Prompt` button, and the composer shows a
+  small meter. Both open a panel with the blocks that were sent (system prompt,
+  instructions, your message, chat history, memory notes, web evidence, skill
+  pack, tool definitions), each with its size and its text.
+- The record is written at the lines that build the request (`prompt_trace.py`,
+  `ai_engine._prepare_text_chat`, `ai_engine.chat_text_stream`,
+  `clipdrop._cortex_prompt_trace`) and stored against the reply in a new
+  `prompt_traces` table (newest 400). `GET /api/chat/prompt-trace`.
+- Honest limits, stated in the panel: token counts are characters / 4, not a
+  tokenizer. On the Cortex route only the handover is shown; Cortex's own system
+  prompt and tools are not visible to AirGPT. Devices that are not the host get
+  memory-note sizes without the text.
+- Fixed in passing: `_standard_llm_stream` appended the security block and then
+  called `_standard_llm`, which appended it again. `_effective_system` is now
+  the one place that adds it, once.
+- `tests/test_prompt_trace.py`: 17 tests.
+
 ## 2026-09-11 -- Connect stays in Settings; LTX2 mock dumps ignored
 
 - Chat grid is two tracks (side + main). Connect is Settings Network only,

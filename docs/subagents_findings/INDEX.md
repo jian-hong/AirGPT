@@ -6,6 +6,7 @@ PREFLIGHT: match keywords before spawning Task/explore.
 
 | Date | File | Keywords | Main idea |
 |---|---|---|---|
+| 2026-11-12 | [2026-11-12_prompt-lens-artifact-check.md](2026-11-12_prompt-lens-artifact-check.md) | prompt lens, prompt_trace, tools, artifact check, security block, SHELL-04, phone, UI research | Viewer overcounted 1,363 tool tokens until compared with the request a stub provider received; security block was sent twice |
 | 2026-09-06 | [2026-09-06_marketplace-dr-home.md](2026-09-06_marketplace-dr-home.md) | marketplace, DR-0007, catalog, serving, plane-1 | DR-0007 accepted 2026-09-07. Catalog+fit here; bind_serve is a recipe; Constructor is a hub card |
 | 2026-09-05 | [2026-09-05_wf-think-live.md](2026-09-05_wf-think-live.md) | workflow, think, tool_detail, :8011, :8765, deep_research | Live Background cards empty until 8011 reload; new run shows think rows |
 | 2026-09-05 | [2026-09-05_research-two-runs-think.md](2026-09-05_research-two-runs-think.md) | research, artifact, stage, think, OpenForge, package_run | Three live packaged runs; think traces persisted; OpenForge ship-gate PASS |
