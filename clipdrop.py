@@ -5353,7 +5353,21 @@ class Handler(BaseHTTPRequestHandler):
             if bad:
                 return self._json(bad[0], {"error": bad[1]})
             try:
-                return self._json(200, db.fork_session(sid, mid))
+                forked = db.fork_session(sid, mid)
+                # A copy that answers differently is not a copy: carry the chat's own
+                # instructions over. If that fails the fork still exists, and the
+                # response says the instructions did not come with it.
+                try:
+                    import chat_prefs
+
+                    text = chat_prefs.get(sid)
+                    if text:
+                        chat_prefs.set(int(forked["session"]["id"]), text)
+                        forked["instructions_copied"] = True
+                except Exception as e:
+                    forked["instructions_copied"] = False
+                    forked["instructions_error"] = str(e)[:160]
+                return self._json(200, forked)
             except LookupError as e:
                 return self._json(404, {"error": str(e)})
             except ValueError as e:

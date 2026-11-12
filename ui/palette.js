@@ -132,11 +132,11 @@
         add('See what the model saw','prompt lens tokens context latest reply',function(){return window.PromptLens.openLatest()});
       }
       var CT=window.ChatTools,s;
-      if((s=sub(CT,['forkLatest','forkFromLatest','fork'])))add('Fork from latest reply','branch copy split chat',s);
-      if((s=sub(CT,['exportMarkdown','exportMd'])))add('Export chat as Markdown','download save md',s);
-      if((s=sub(CT,['exportJSON','exportJson'])))add('Export chat as JSON','download save data',s);
-      if((s=sub(window.Snippets,['open','show'])))add('Saved prompts','snippets templates reuse',s);
-      if((s=sub(window.ChatPrefs,['open','show'])))add('Instructions for this chat','custom tone rules prefs',s);
+      if((s=sub(CT,['forkLatest'])))add('Fork from latest reply','branch copy split chat',s);
+      if((s=sub(CT,['exportMarkdown'])))add('Export chat as Markdown','download save md',s);
+      if((s=sub(CT,['exportJSON'])))add('Export chat as JSON','download save data',s);
+      if((s=sub(window.Snippets,['open'])))add('Saved prompts','snippets templates reuse',s);
+      if((s=sub(window.ChatPrefs,['open'])))add('Instructions for this chat','custom tone rules prefs',s);
       add('Keyboard shortcuts','keys help hotkeys ?',function(){showShortcuts()},'?');
       return out;
     }
@@ -189,7 +189,7 @@
           '<input id="palInput" class="pal-input" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" aria-label="Type a command or a chat name" placeholder="Type a command or a chat name" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">'+
           '<div class="pal-status" id="palStatus" role="status" aria-live="polite"></div>'+
           '<ul class="pal-list" id="palList" role="listbox" aria-label="Commands"></ul>'+
-          '<div class="pal-foot" aria-hidden="true"><span>↑↓ move</span><span>Enter run</span><span>Esc close</span></div>'+
+          '<div class="pal-foot" aria-hidden="true"><span>↑↓ move</span><span class="pal-foot-run">Enter run</span><span>Esc close</span></div>'+
         '</div>';
       doc.body.appendChild(rootEl);
       panel=rootEl.querySelector('.pal-panel');
@@ -236,6 +236,7 @@
       else{input.setAttribute('aria-controls','palList');input.setAttribute('aria-expanded','true')}
       titleEl.textContent=isKeys?'Keyboard shortcuts':'Command box';
       backBtn.hidden=!isKeys;
+      var runHint=rootEl.querySelector('.pal-foot-run');if(runHint)runHint.hidden=isKeys;   // Enter does nothing in the key list
       input.placeholder=isKeys?'Filter shortcuts':'Type a command or a chat name';
       input.setAttribute('aria-label',input.placeholder);
       shown.forEach(function(it,i){
@@ -406,8 +407,24 @@
       b.addEventListener('click',function(){open()});
       anchor.parentNode.insertBefore(b,anchor);
     }
-    if(doc.readyState==='loading')doc.addEventListener('DOMContentLoaded',addHint);
-    else addHint();
+    /* A phone has no Ctrl+K and the top bar has no room for the hint, so the command
+       box would be unreachable there. The composer's + menu is on every screen size. */
+    function addMenuEntry(){
+      var menu=doc.getElementById('plusMenu');
+      if(!menu||menu.querySelector('[data-pal]'))return;
+      var b=doc.createElement('button');
+      b.type='button';b.setAttribute('role','menuitem');b.setAttribute('data-pal','1');
+      var ico=doc.createElement('span');ico.className='pm-ico';ico.textContent='\u2318';
+      b.appendChild(ico);b.appendChild(doc.createTextNode(' Commands'));
+      b.addEventListener('click',function(){
+        if(typeof window.closePlusMenu==='function')window.closePlusMenu();
+        open();
+      });
+      menu.insertBefore(b,menu.children[2]||null);
+    }
+    function addEntryPoints(){addHint();addMenuEntry()}
+    if(doc.readyState==='loading')doc.addEventListener('DOMContentLoaded',addEntryPoints);
+    else addEntryPoints();
 
     window.Palette={open:function(){open()},close:close,toggle:toggle,showShortcuts:showShortcuts,rank:rank};
   }

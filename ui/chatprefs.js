@@ -12,7 +12,7 @@
 
   var LIMIT=4000;
   var btn=null,root,scrim,sheet,box,countEl,msgEl,saveBtn,clearBtn,subEl,lastFocus=null;
-  var saved='',loadedFor=0,busy=false,refreshTimer=0;
+  var saved='',loadedFor=0,loadFailed=false,busy=false,refreshTimer=0;
 
   function sid(){try{return Number(currentSession)||0}catch(e){return 0}}
   function say(m){if(typeof window.toast==='function')window.toast(m)}
@@ -31,10 +31,12 @@
     if(!btn)return;
     var on=!!saved;
     btn.classList.toggle('on',on);
+    btn.classList.toggle('unknown',loadFailed);
     btn.setAttribute('aria-pressed',on?'true':'false');
-    btn.title=on?'This chat has its own instructions. Tap to view or change them.':'Give this chat its own instructions';
+    btn.title=loadFailed?'Could not check this chat\'s instructions. Tap to try again.'
+      :on?'This chat has its own instructions. Tap to view or change them.':'Give this chat its own instructions';
     btn.setAttribute('aria-label',btn.title);
-    btn.querySelector('.cprefs-label').textContent=on?'Instructions on':'Instructions';
+    btn.querySelector('.cprefs-label').textContent=loadFailed?'Instructions ?':on?'Instructions on':'Instructions';
   }
   function ensureButton(){
     if(btn)return btn;
@@ -55,13 +57,17 @@
     var id=sid();
     if(id===loadedFor)return;
     loadedFor=id;
-    saved='';paint();
+    saved='';loadFailed=false;paint();
     if(!id)return;
     try{
       var res=await call('GET');
       if(id!==sid())return;                      // the chat changed while this was loading
       if(res.ok){saved=String(res.body.instructions||'');LIMIT=res.body.limit||LIMIT}
-    }catch(e){}
+      else loadFailed=true;
+    }catch(e){loadFailed=true}
+    // "Off" and "could not find out" are different answers. Forget the chat so the
+    // next refresh asks again instead of trusting a failed read.
+    if(loadFailed)loadedFor=null;
     paint();
   }
 

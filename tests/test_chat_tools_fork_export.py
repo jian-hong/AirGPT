@@ -184,6 +184,28 @@ class HttpTest(unittest.TestCase):
         code, body, hdr = self._req("GET", f"/api/sessions/export?session_id={self.sid}&format=json")
         self.assertEqual(len(json.loads(body)["messages"]), 3)
 
+    def test_fork_carries_the_chats_own_instructions(self):
+        import chat_prefs
+
+        chat_prefs.set(self.sid, "Answer in Malay.")
+        code, j = self._fork(self.sid, self.m[1]["id"])
+        self.assertEqual(code, 200)
+        self.assertTrue(j.get("instructions_copied"))
+        self.assertEqual(chat_prefs.get(int(j["session"]["id"])), "Answer in Malay.")
+        # and a chat without instructions forks without inventing any
+        code, j2 = self._fork(self.other, self.om["id"])
+        self.assertEqual(code, 200)
+        self.assertNotIn("instructions_copied", j2)
+        self.assertEqual(chat_prefs.get(int(j2["session"]["id"])), "")
+
+    def test_export_heading_stays_one_line_when_the_title_has_a_line_break(self):
+        sid = int(db.create_session("Line one\nLine two")["id"])
+        self.made.append(sid)
+        _add(sid, "u", "hello")
+        code, body, _ = self._req("GET", f"/api/sessions/export?session_id={sid}&format=md")
+        self.assertEqual(code, 200)
+        self.assertEqual(body.splitlines()[0], "# Line one Line two")
+
     def test_export_survives_titles_with_non_latin_quotes_and_newlines(self):
         # The file name goes into a header, which can only carry ASCII.
         for title in ('\u65e5\u672c\u8a9e', 'a"b/c\\d\r\nX-Evil: 1', '\u00e9\u00e8'):

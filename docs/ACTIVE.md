@@ -3,6 +3,21 @@
 What exists in this repo and where. Update when structure changes, not when state changes
 - state lives in STATUS.md.
 
+- `ui/ext.js` -- `window.AirUI.addMsgAction(fn)`: how add-on modules put a
+  button on a message. New shell features live in their own `ui/<name>.js` +
+  `.css` (already loaded by `index.html`), not in the page.
+- `ui/chattools.*` + `db.fork_session` / `db.export_session` -- Fork a chat from
+  a reply (`POST /api/sessions/fork`), export one chat
+  (`GET /api/sessions/export?format=md|json`). `window.ChatTools`.
+- `chat_prefs.py` + `ui/chatprefs.*` -- instructions for one chat
+  (`GET|POST /api/chat/prefs`), added to the prompt on both routes and traced
+  as `chat_instructions`. `window.ChatPrefs`.
+- `snippets.py` + `ui/snippets.*` -- saved prompts with `{{blanks}}`
+  (`/api/snippets`, `DATA_DIR/snippets.json`). `window.Snippets`.
+- `ui/palette.*` -- command box (Ctrl/Cmd+K, or `Commands` in the + menu).
+  `window.Palette`. Commands are feature-detected, never listed dead.
+- `ui/phone.css` + `ui/phone.js` -- phone-only overrides (760px and below),
+  loaded after the page styles.
 - `prompt_trace.py` -- prompt lens record: what one chat turn sent to the
   model. Filled where the request is built (`ai_engine._prepare_text_chat`,
   `chat_text_stream`, `clipdrop._cortex_prompt_trace`), stored per reply in

@@ -20,10 +20,12 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
-5. **Phone + prompt lens (branch `claude/rag-ui-improvements-qgauwt`).**
-   SHELL-04 #78 fixed: main pane full width at 320/375/760 px. Each text
-   reply has `Prompt`: the blocks that were sent, with sizes. Verified
-   against a recording stand-in model, not a real provider or live Cortex.
+5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
+   Phone layout fixed (SHELL-04 #78). Prompt lens on every reply. Fork and
+   export, instructions per chat, saved prompts, command box, phone tap
+   areas. Verified in a browser against a recording stand-in model on
+   Linux. Not verified: real provider, live Cortex, a real phone, a real
+   share guest. No PRD ledger row yet for the five add-ons.
 
 ## Next
 

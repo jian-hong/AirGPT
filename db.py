@@ -1346,7 +1346,8 @@ def export_session(session_id: int, fmt: str = "md") -> tuple[str, str, str]:
                          for m in msgs],
         }
         return f"airgpt-{slug}.json", "application/json; charset=utf-8", json.dumps(out, indent=2, ensure_ascii=False)
-    lines = [f"# {title}", "", f"{len(msgs)} messages", ""]
+    heading = " ".join(title.split()) or "Chat"   # a line break in a title would split the heading
+    lines = [f"# {heading}", "", f"{len(msgs)} messages", ""]
     for i, m in enumerate(msgs, 1):
         lines += [f"## {i}. {who(m)} - {m['datetime']}", "", body(m), ""]
     return f"airgpt-{slug}.md", "text/markdown; charset=utf-8", "\n".join(lines)

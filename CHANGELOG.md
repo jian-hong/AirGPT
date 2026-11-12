@@ -2,6 +2,36 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-12 -- Five shell features built in parallel, then merged and re-verified
+
+- Add-ons now hook in through `ui/ext.js` (`AirUI.addMsgAction`) and their own
+  files under `ui/`, so a feature adds files instead of editing `index.html`.
+- **Fork and export** (`ui/chattools.*`, `db.fork_session`, `db.export_session`):
+  `Fork` on every reply copies the chat up to that reply into a new chat and
+  carries the chat's own instructions; `Export` in the chat header downloads one
+  chat as Markdown or JSON. `delete_message` no longer deletes a file another
+  row still points at.
+- **Instructions for one chat** (`chat_prefs.py`, `ui/chatprefs.*`): up to 4,000
+  characters, sent on every turn of that chat on both routes, shown in the
+  prompt lens as its own block. Removed when the chat is deleted.
+- **Saved prompts** (`snippets.py`, `ui/snippets.*`): a library in
+  `DATA_DIR/snippets.json` with `{{blanks}}` filled in before the text lands in
+  the message box. Never sent automatically. Share guests cannot write.
+- **Command box** (`ui/palette.*`): Ctrl/Cmd+K on a laptop, `Commands` in the +
+  menu on a phone. Lists only commands whose function exists at run time.
+- **Phone pass** (`ui/phone.css`, `ui/phone.js`): message box hint, report
+  button no longer covers Send or any open sheet, finger-sized tap areas in the
+  top bar, drawer, composer and message rows. Laptop boxes unchanged.
+- Found by the verifiers and fixed: export crashed on non-Latin chat titles
+  (file name went into an HTTP header); deleting a chat left its instructions
+  behind; blanks named `__proto__` were never asked for; four phone tap areas
+  the first audit missed.
+- Found at merge and fixed: the command box called fork and export under names
+  the chat tools did not have, so one command failed and two never appeared;
+  the report button covered Edit in the saved-prompts sheet on a phone.
+- Suite: 759 passed, 1 failed (`test_rag_foundation` research bridge, same on
+  `master`), 9 skipped. JS: 36 passed. Browser: 27 of 27 combined checks.
+
 ## 2026-11-12 -- Phone layout shows again; prompt lens shows what a reply was sent
 
 - SHELL-04 #78: at 760 px and below `.main` sat in an implicit 0-wide grid track,

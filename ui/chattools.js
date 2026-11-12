@@ -61,7 +61,19 @@
       .catch(function(e){if(!e||e.message!=='auth')say('Could not export this chat. Check your connection.');return false});
   }
 
-  window.ChatTools={fork:fork,exportChat:exportChat};
+  /* Fork from the newest reply on screen. Used by the command box. */
+  function forkLatest(){
+    var nodes=document.querySelectorAll('#chat .msg.ai-msg[id^="msg-"]');
+    var mid=nodes.length?Number(nodes[nodes.length-1].id.slice(4)):0;
+    if(!mid){say('There is no reply to fork from yet.');return Promise.resolve(null)}
+    return fork(mid);
+  }
+
+  window.ChatTools={
+    fork:fork,forkLatest:forkLatest,exportChat:exportChat,
+    exportMarkdown:function(){return exportChat('md')},
+    exportJSON:function(){return exportChat('json')}
+  };
 
   if(window.AirUI)window.AirUI.addMsgAction(function(m,isAi){
     if(!isAi||m.kind!=='text')return '';

@@ -73,5 +73,9 @@
    keeps --phone-fab-b just above the message box; hide it while a panel is open. */
 @media(max-width:760px){
   #bugReportBtn{top:auto!important;left:auto!important;right:12px!important;bottom:var(--phone-fab-b,120px)!important}
-  body:has(.side.open) #bugReportBtn,body:has(.plens-sheet.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn{display:none}
+  /* Any open sheet hides it, not a list of the sheets that existed when this was
+     written: it sat on the Edit button in the saved-prompts sheet. Every add-on
+     sheet is a dialog with aria-modal that takes .open; the command box opens on its root. */
+  body:has(.side.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn,
+  body:has([aria-modal="true"].open) #bugReportBtn,body:has(.pal-root.open) #bugReportBtn{display:none}
 }
