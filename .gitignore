@@ -84,3 +84,6 @@ tests/RAG/results/ops/
 
 # Per-seed oracle bench runs - the harness regenerates them; keep only _latest
 tests/RAG/results/oracle_bench_seed*.json
+
+# Agent working copies (git worktrees). Never part of the repo.
+.claude/worktrees/
