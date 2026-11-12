@@ -48,3 +48,10 @@ test("a name like toString does not pull in object internals", () => {
 test("values containing dollar signs are inserted literally", () => {
   assert.equal(fill("{{a}}", { a: "$& $1" }), "$& $1");
 });
+
+test("blanks named like object internals are still asked for and filled", () => {
+  assert.deepEqual(parseBlanks("{{__proto__}} {{constructor}} {{toString}}"), ["__proto__", "constructor", "toString"]);
+  const v = Object.create(null);
+  v["__proto__"] = "P"; v["constructor"] = "C";
+  assert.equal(fill("{{__proto__}}/{{constructor}}", v), "P/C");
+});

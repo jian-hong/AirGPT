@@ -15,7 +15,7 @@
   var BLANK=/\{\{([^{}\n]*)\}\}/g;
 
   function parseBlanks(body){
-    var names=[],seen={},m;
+    var names=[],seen=Object.create(null),m;
     BLANK.lastIndex=0;
     while((m=BLANK.exec(String(body==null?'':body)))){
       var n=m[1].trim();
@@ -198,7 +198,7 @@
       '<button type="button" class="snip-btn primary" id="snipUse">Use</button>');
     footEl.querySelector('#snipBack').addEventListener('click',renderList);
     footEl.querySelector('#snipUse').addEventListener('click',function(){
-      var v={};
+      var v=Object.create(null);
       bodyEl.querySelectorAll('[data-name]').forEach(function(t){v[t.dataset.name]=t.value});
       insert(fill(it.body,v));
     });
