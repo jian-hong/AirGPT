@@ -923,7 +923,10 @@ def read_text_file(path: Path) -> tuple[str, str]:
     elif suffix == ".xml":
         text = _xml_text(raw) or _decode(raw)
     elif suffix == ".log":
-        text = _log_text(_decode(raw)) or _decode(raw)
+        # CRLF folded first: the fallback returned the raw text, so a Windows log
+        # with no recognisable records kept a "\r" on every line.
+        log_raw = _decode(raw).replace("\r\n", "\n")
+        text = _log_text(log_raw) or log_raw
     elif suffix == ".ipynb":
         text = _ipynb_text(_decode(raw)) or _decode(raw)
     elif suffix == ".rtf":

@@ -148,7 +148,9 @@ def test_log_stack_trace_stays_with_its_record_and_dates_head_sections(tmp_path)
 
 def test_log_without_records_is_left_as_text(tmp_path):
     p = tmp_path / "plain.log"
-    p.write_text("just some words\nmore words\n", encoding="utf-8")
+    # Bytes, with CRLF: write_text makes these on Windows and plain "\n" elsewhere,
+    # so the text form of this test only failed on the Windows runner.
+    p.write_bytes(b"just some words\r\nmore words\r\n")
     assert ingest.read_text_file(p)[0] == "just some words\nmore words"
 
 
