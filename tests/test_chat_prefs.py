@@ -37,6 +37,13 @@ class StoreTest(unittest.TestCase):
         chat_prefs.set(self.sid, "")
         self.assertEqual(chat_prefs.get(self.sid), "")
 
+    def test_deleting_a_chat_removes_its_instructions(self):
+        chat_prefs.set(self.sid, TEXT)
+        db.delete_session(self.sid)
+        with db._lock, db._connect() as conn:
+            n = conn.execute("SELECT COUNT(*) FROM session_prefs WHERE session_id=?", (self.sid,)).fetchone()[0]
+        self.assertEqual(n, 0)
+
     def test_too_long_is_refused_not_cut(self):
         chat_prefs.set(self.sid, TEXT)
         with self.assertRaises(ValueError) as cm:
