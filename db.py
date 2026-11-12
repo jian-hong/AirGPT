@@ -652,6 +652,7 @@ def prune_empty_orphan_sessions() -> int:
         ids = [int(r["id"]) for r in rows]
         for sid in ids:
             conn.execute("DELETE FROM chat_sessions WHERE id=?", (sid,))
+            _drop_chat_prefs(conn, sid)
         conn.commit()
     return len(ids)
 
@@ -1091,6 +1092,14 @@ def touch_session(session_id: int) -> None:
         conn.commit()
 
 
+def _drop_chat_prefs(conn, session_id: int) -> None:
+    """A deleted chat takes its custom instructions with it (table is created lazily)."""
+    try:
+        conn.execute("DELETE FROM session_prefs WHERE session_id=?", (int(session_id),))
+    except sqlite3.OperationalError:
+        pass  # table never created: nothing to remove
+
+
 def delete_session(session_id: int) -> bool:
     with _lock, _connect() as conn:
         ids = [int(r[0]) for r in conn.execute("SELECT id FROM messages WHERE session_id=?", (session_id,)).fetchall()]
@@ -1098,6 +1107,7 @@ def delete_session(session_id: int) -> bool:
         delete_message(mid)
     with _lock, _connect() as conn:
         conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))
+        _drop_chat_prefs(conn, session_id)
         conn.commit()
     return True
 
