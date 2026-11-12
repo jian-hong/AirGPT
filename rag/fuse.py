@@ -42,18 +42,24 @@ def fuse_channels(
     *,
     k: int = 60,
     top_n: int = 30,
+    weights: dict[str, float] | None = None,
 ) -> list[FusedHit]:
-    """Fuse named retrieval channels (dense/sparse/file) via RRF."""
+    """Fuse named retrieval channels (dense/sparse/file) via RRF.
+
+    `weights` scales a channel's vote. Plain RRF counts every channel once, so one
+    confident channel always loses to two lukewarm ones.
+    """
     rank_scores: dict[str, float] = defaultdict(float)
     payloads: dict[str, dict[str, Any]] = {}
     channel_scores: dict[str, dict[str, float]] = defaultdict(dict)
 
     for name, hits in channels.items():
+        w = float((weights or {}).get(name, 1.0))
         for idx, hit in enumerate(hits, start=1):
             doc_id = str(hit.doc_id)
             if not doc_id:
                 continue
-            rank_scores[doc_id] += 1.0 / (k + idx)
+            rank_scores[doc_id] += w / (k + idx)
             channel_scores[doc_id][name] = float(hit.score)
             if doc_id not in payloads and hit.payload:
                 payloads[doc_id] = dict(hit.payload)

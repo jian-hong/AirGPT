@@ -67,9 +67,10 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
             ).fetchall()
     hits: list[RankedHit] = []
     for i, r in enumerate(rows):
-        # bm25 in sqlite is lower-is-better; invert for ranking channel
-        raw = float(r["score"] or 0.0)
-        score = 1.0 / (1.0 + max(raw, 0.0)) if raw else max(0.01, 1.0 / (i + 1))
+        # sqlite bm25 is NEGATIVE, more negative = better. Clamping it at zero made
+        # every sparse hit score exactly 1.0, so the trace showed a constant.
+        raw = -float(r["score"] or 0.0)
+        score = raw / (1.0 + raw) if raw > 0 else max(0.01, 1.0 / (i + 1))
         hits.append(
             RankedHit(
                 doc_id=str(r["id"]),
@@ -87,6 +88,81 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
             )
         )
     return hits
+
+
+# A name or a code: has a digit, or is capitalised somewhere other than the start
+# of the question, or was put in quotes. "Halvorsen", "ZQ-4471", "frtr_0001".
+_WORD_RE = re.compile(r"[^\W_]+(?:[-_./][^\W_]+)*")
+_QUOTED_RE = re.compile(r"[\"\u201c]([^\"\u201d]{2,60})[\"\u201d]")
+EXACT_MAX_DF = 5
+EXACT_WEIGHT = 3.0
+
+
+def identifier_terms(query: str) -> list[str]:
+    """The words in a question that name one specific thing."""
+    q = query or ""
+    out = [m.group(1).strip() for m in _QUOTED_RE.finditer(q)]
+    for i, m in enumerate(_WORD_RE.finditer(q)):
+        w = m.group(0)
+        if any(c.isdigit() for c in w) or (i > 0 and w[0].isupper() and len(w) >= 3):
+            out.append(w)
+    return list(dict.fromkeys(out))[:6]
+
+
+def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
+    """Chunks holding a name or code from the question that is RARE in this space.
+
+    Someone who types "Halvorsen" or "ZQ-4471" wants the few places that say it.
+    Rank fusion alone buries that chunk: it wins the keyword channel, but any chunk
+    that is merely similar in two channels outvotes it. Common terms are left to the
+    normal channels - a term in more than EXACT_MAX_DF chunks proves nothing.
+    """
+    store.init()
+    found: dict[int, dict] = {}
+    with store._conn() as conn:
+        for term in identifier_terms(query):
+            parts = re.findall(r"[^\W_]+", term.lower())
+            if not parts:
+                continue
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT c.id, c.text, c.path, c.heading, c.parent_id, c.source_id, c.authority,
+                           bm25(chunks_fts) AS score
+                    FROM chunks_fts
+                    JOIN chunks c ON c.id = chunks_fts.chunk_id
+                    WHERE chunks_fts MATCH ? AND c.space_id=? AND c.kind='child'
+                    ORDER BY score
+                    LIMIT ?
+                    """,
+                    ('"' + " ".join(parts) + '"', int(space_id), EXACT_MAX_DF + 1),
+                ).fetchall()
+            except Exception:
+                continue
+            if not rows or len(rows) > EXACT_MAX_DF:
+                continue
+            for r in rows:
+                slot = found.setdefault(int(r["id"]), {"row": r, "terms": 0, "bm25": 0.0})
+                slot["terms"] += 1
+                slot["bm25"] += -float(r["score"] or 0.0)
+    ranked = sorted(found.values(), key=lambda s: (-s["terms"], -s["bm25"]))
+    return [
+        RankedHit(
+            doc_id=str(s["row"]["id"]),
+            score=float(s["terms"]),
+            payload={
+                "chunk_id": int(s["row"]["id"]),
+                "text": s["row"]["text"],
+                "path": s["row"]["path"],
+                "heading": s["row"]["heading"],
+                "parent_id": int(s["row"]["parent_id"] or 0),
+                "source_id": int(s["row"]["source_id"] or 0),
+                "authority": s["row"]["authority"] or "",
+                "channel": "exact",
+            },
+        )
+        for s in ranked
+    ]
 
 
 def dense_vector_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
@@ -329,10 +405,15 @@ def _search(
     if expanded_q and expanded_q.strip() != (query or "").strip():
         channels["expand"] = sparse_search(space_id, expanded_q, k=sparse_k)
 
+    exact = exact_term_search(space_id, query)
+    if exact:
+        channels["exact"] = exact
+
     fused = fuse_channels(
         channels,
         k=60,
         top_n=50 if base == "max" else (20 if base == "basic" else 30),
+        weights={"exact": EXACT_WEIGHT},
     )
 
     # Keep chunk hits primarily; attach file hits as metadata boosts

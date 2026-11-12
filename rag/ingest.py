@@ -182,6 +182,7 @@ TEXT_SUFFIXES = {
     ".xlsm",
     ".docx",
     ".pptx",
+    ".eml",
 }
 
 
@@ -211,7 +212,10 @@ def _pdf_text(path: Path) -> str:
         except Exception:
             from PyPDF2 import PdfReader  # type: ignore[no-redef]
         reader = PdfReader(str(path))
-        return "\n\n".join((pg.extract_text() or "") for pg in reader.pages[:200])
+        # One heading per page: the chunker carries it into every hit, so an answer
+        # can say "page 7" instead of only naming a 200-page file.
+        pages = [(i, (pg.extract_text() or "").strip()) for i, pg in enumerate(reader.pages[:200], 1)]
+        return "\n\n".join(f"## Page {i}\n{t}" for i, t in pages if t)
     except Exception:
         return ""
 
@@ -361,7 +365,12 @@ def _ooxml_local(tag: str) -> str:
 
 
 def _docx_text(path: Path) -> str:
-    """Paragraph text from <w:t> runs in word/document.xml. Stdlib only."""
+    """Body text in document order. Stdlib only.
+
+    Heading styles become markdown headings (so chunks and citations carry the
+    section) and a table becomes one line per row instead of one line per cell.
+    """
+    import re
     import zipfile
     from xml.etree import ElementTree as ET
 
@@ -370,14 +379,89 @@ def _docx_text(path: Path) -> str:
             root = ET.fromstring(z.read("word/document.xml"))
     except Exception:
         return ""
-    paras: list[str] = []
-    for p in root.iter():
-        if _ooxml_local(p.tag) != "p":
-            continue
-        runs = [t.text for t in p.iter() if _ooxml_local(t.tag) == "t" and t.text]
-        if runs:
-            paras.append("".join(runs))
-    return "\n".join(paras).strip()
+
+    def para_text(p) -> str:
+        return "".join(t.text for t in p.iter() if _ooxml_local(t.tag) == "t" and t.text).strip()
+
+    def heading_level(p) -> int:
+        for el in p.iter():
+            if _ooxml_local(el.tag) == "pStyle":
+                val = next((v for k, v in el.attrib.items() if _ooxml_local(k) == "val"), "")
+                if val.lower() == "title":
+                    return 1
+                m = re.match(r"heading\s*(\d)", val, re.I)
+                return min(6, int(m.group(1))) if m else 0
+        return 0
+
+    out: list[str] = []
+
+    def walk(node) -> None:
+        for el in node:
+            tag = _ooxml_local(el.tag)
+            if tag == "p":
+                text = para_text(el)
+                if text:
+                    level = heading_level(el)
+                    out.append(f"\n{'#' * level} {text}\n" if level else text)
+            elif tag == "tbl":
+                for tr in (r for r in el if _ooxml_local(r.tag) == "tr"):
+                    cells = [
+                        " ".join(filter(None, (para_text(p) for p in tc.iter() if _ooxml_local(p.tag) == "p")))
+                        for tc in tr if _ooxml_local(tc.tag) == "tc"
+                    ]
+                    if any(cells):
+                        out.append(" | ".join(cells))
+            else:
+                walk(el)  # body, sdt content, etc.
+
+    walk(root)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _pptx_notes(z, slide_name: str) -> list[str]:
+    """Speaker-notes text for one slide, found through the slide's relationships.
+
+    Notes files are not numbered like their slides, so the .rels is the only pairing.
+    """
+    import posixpath
+    from xml.etree import ElementTree as ET
+
+    folder, base = posixpath.split(slide_name)
+    try:
+        rels = ET.fromstring(z.read(f"{folder}/_rels/{base}.rels"))
+    except Exception:
+        return []
+    for rel in rels:
+        if str(rel.attrib.get("Type", "")).endswith("/notesSlide"):
+            target = posixpath.normpath(posixpath.join(folder, rel.attrib.get("Target", "")))
+            try:
+                root = ET.fromstring(z.read(target))
+            except Exception:
+                return []
+            # A bare number in the notes pane is the slide-number placeholder.
+            return [t.text.strip() for t in root.iter()
+                    if _ooxml_local(t.tag) == "t" and t.text and t.text.strip() and not t.text.strip().isdigit()]
+    return []
+
+
+def _eml_text(raw: bytes) -> str:
+    """An email as text: subject as the heading, then who/when, body, attachment names."""
+    import email
+    from email import policy
+
+    try:
+        msg = email.message_from_bytes(raw, policy=policy.default)
+        body = msg.get_body(preferencelist=("plain", "html"))
+        text = body.get_content() if body is not None else ""
+        if body is not None and body.get_content_subtype() == "html":
+            text = html_to_text(text)[1]
+    except Exception:
+        return ""
+    head = [f"# {msg.get('Subject') or '(no subject)'}"]
+    head += [f"{k}: {msg[k]}" for k in ("From", "To", "Cc", "Date") if msg.get(k)]
+    names = [a.get_filename() for a in msg.iter_attachments() if a.get_filename()]
+    tail = f"\n\nAttachments (not indexed): {', '.join(names)}" if names else ""
+    return "\n".join(head) + "\n\n" + str(text).strip() + tail
 
 
 def _pptx_text(path: Path) -> str:
@@ -398,6 +482,9 @@ def _pptx_text(path: Path) -> str:
                 except Exception:
                     continue
                 texts = [t.text for t in root.iter() if _ooxml_local(t.tag) == "t" and t.text]
+                notes = _pptx_notes(z, name)
+                if notes:
+                    texts.append("Speaker notes: " + " ".join(notes))
                 if texts:
                     out.append(f"## Slide {i}\n" + "\n".join(texts))
     except Exception:
@@ -420,6 +507,10 @@ def _flatten_json(obj, prefix: str = "") -> list[str]:
             key = f"{prefix}[{i}]"
             if isinstance(v, (dict, list)):
                 lines.extend(_flatten_json(v, key))
+                if isinstance(v, dict):
+                    # Blank line after each record: the chunker cuts on paragraphs,
+                    # so a record's fields are never split across two chunks.
+                    lines.append("")
             else:
                 lines.append(f"{key}: {v}")
     else:
@@ -454,6 +545,8 @@ def read_text_file(path: Path) -> tuple[str, str]:
         text = _docx_text(path)
     elif suffix == ".pptx":
         text = _pptx_text(path)
+    elif suffix == ".eml":
+        text = _eml_text(raw)
     elif suffix in media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES:
         text = media_mod.transcribe_media(path)
     elif suffix in media_mod.IMAGE_SUFFIXES:
@@ -619,7 +712,12 @@ def ingest_paths(
                 continue
             text, digest = read_text_file(path)
             if not text.strip():
-                skipped.append({"path": path.name, "reason": "no extractable text", "lane_unavailable": False})
+                reason = (
+                    "no text layer - this PDF looks scanned and needs OCR"
+                    if path.suffix.lower() == ".pdf"
+                    else "no extractable text"
+                )
+                skipped.append({"path": path.name, "reason": reason, "lane_unavailable": False})
                 continue
             mime = mimetypes.guess_type(str(path))[0] or "text/plain"
             # copy into blob store. The blob is post-extraction TEXT, so store
@@ -1026,11 +1124,14 @@ def ingest_research(space_id: int, research_paths: list[str], *, force: bool = F
     if not indexable:
         return {"ok": False, "error": "no indexable research files", "skipped": skipped}
     out = ingest_paths(space_id, indexable, force=force)
+    # Count what was indexed, not what was tried: a scanned PDF passes the checks
+    # above and is then dropped by ingest for having no text.
+    dropped = len(out.get("skipped") or [])
     # Extend, never assign: ingest_paths reports its own downed lanes and losing
     # those would put the silence back.
     out["skipped"] = skipped + list(out.get("skipped") or [])
     if out.get("ok"):
-        out["research_attached"] = len(indexable)
+        out["research_attached"] = len(indexable) - dropped
     return out
 
 
@@ -1038,7 +1139,8 @@ class _HtmlText(HTMLParser):
     """Minimal readable-text extraction — stdlib only, no external fetch libs."""
 
     _SKIP = {"script", "style", "noscript", "template", "svg", "head", "nav", "footer", "aside", "header"}
-    _BREAK = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "section", "article", "blockquote", "pre", "main"}
+    _HEAD = {"h1", "h2", "h3", "h4", "h5", "h6"}
+    _BREAK = {"p", "div", "br", "li", "tr", "section", "article", "blockquote", "pre", "main"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -1052,6 +1154,9 @@ class _HtmlText(HTMLParser):
             self._skip += 1
         elif tag == "title":
             self._in_title = True
+        elif tag in self._HEAD:
+            # Markdown heading, so the chunker and citations carry the section.
+            self.parts.append("\n\n" + "#" * int(tag[1]) + " ")
         elif tag in self._BREAK:
             self.parts.append("\n")
 
@@ -1060,6 +1165,8 @@ class _HtmlText(HTMLParser):
             self._skip = max(0, self._skip - 1)
         elif tag == "title":
             self._in_title = False
+        elif tag in self._HEAD:
+            self.parts.append("\n\n")
         elif tag in self._BREAK:
             self.parts.append("\n")
 

@@ -122,15 +122,35 @@ def extractive_answer(query: str, hits: list[dict]) -> str:
             "I could not find supporting evidence in this RAG knowledge space. "
             "Try ingesting more sources or rephrasing the question."
         )
-    # Short prose from top hits — not a raw path dump.
-    bits: list[str] = []
-    for h in hits[:4]:
-        excerpt = (h.get("text") or "").strip().replace("\n", " ")
-        if len(excerpt) > 180:
-            excerpt = excerpt[:177] + "…"
-        if excerpt:
-            bits.append(excerpt)
-    body = " ".join(bits) if bits else "Evidence was retrieved but could not be paraphrased offline."
+    # Quote the passage that answers, not the first 180 characters of each chunk.
+    # Clipping the head cut the value off whenever it sat past the first few
+    # sentences, so the offline answer showed everything except the answer.
+    from rag import retrieve, sira
+
+    q_terms = set(sira.tokenize(query))
+    names = {t for term in retrieve.identifier_terms(query) for t in sira.tokenize(term)}
+    picked: list[tuple[float, int, str, bool]] = []
+    for i, h in enumerate(hits[:4], start=1):
+        best, best_score, best_named = "", 0.0, False
+        for passage in re.split(r"\n+|(?<=[.!?])\s+", (h.get("text") or "").strip()):
+            toks = set(sira.tokenize(passage))
+            score = len(q_terms & toks) + 3.0 * len(names & toks)
+            if score > best_score and not passage.lstrip().startswith("#"):
+                best, best_score, best_named = passage.strip(), score, bool(names & toks)
+        if best:
+            picked.append((best_score, i, best[:320] + ("…" if len(best) > 320 else ""), best_named))
+    top = max((sc for sc, _, _, _ in picked), default=0.0)
+    any_named = any(named for _, _, _, named in picked)
+    lines = []
+    for sc, i, passage, named in picked:
+        # Noise: a passage that matches far less than the best one, or, when the
+        # question names something, a look-alike sentence about a different name.
+        if sc < 0.6 * top or (any_named and not named):
+            continue
+        h = hits[i - 1]
+        where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
+        lines.append(f"- {passage} [{i}] ({where})")
+    body = "\n".join(lines) if lines else "Evidence was retrieved but could not be paraphrased offline."
     cites = ", ".join(f"[{i}] {_display_path(h.get('path'))}" for i, h in enumerate(hits[:5], start=1))
     return (
         f"{body}\n\n"
