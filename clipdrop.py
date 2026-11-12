@@ -4106,6 +4106,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "session_id": sid,
                                     "instructions": chat_prefs.get(sid), "limit": chat_prefs.MAX_CHARS})
 
+        if path == "/api/snippets":
+            import snippets
+
+            try:
+                return self._json(200, {"ok": True, "items": snippets.list_all()})
+            except snippets.SnippetError as e:
+                return self._json(e.status, {"ok": False, "error": str(e)})
+
         if path == "/api/chat/prompt-trace":
             # What one reply was actually sent to the model (prompt lens).
             # message_id names a reply; session_id alone returns that chat's latest.
@@ -5107,6 +5115,28 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(403, {"error": "This share is view-only"})
             dname = hostname()
             return self._handle_chat_stream(ip, dname)
+
+        if path in ("/api/snippets", "/api/snippets/delete"):
+            import snippets
+
+            # Share guests (any scoped token) may read but never change the library.
+            if app_auth and hasattr(app_auth, "token_session_acl"):
+                if app_auth.token_session_acl(self._request_token()):
+                    return self._json(403, {"ok": False, "error": "Shared links cannot change saved prompts."})
+            try:
+                data = json.loads(self._body().decode() or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "The request was not valid."})
+            try:
+                if path == "/api/snippets/delete":
+                    snippets.delete(str(data.get("id") or ""))
+                    return self._json(200, {"ok": True})
+                item = snippets.save(data.get("title"), data.get("body"), str(data.get("id") or "") or None)
+                return self._json(200, {"ok": True, "item": item})
+            except snippets.SnippetError as e:
+                return self._json(e.status, {"ok": False, "error": str(e)})
 
         if path == "/api/chat/project-suggest":
             return self._handle_project_suggest()
