@@ -1,1 +1,66 @@
 /* phone.css: overrides for 760px and below. Loaded after the page styles. */
+
+/* Thumb-sized hit areas. The pictured size of each control stays the same; an
+   invisible layer around it makes the tappable area at least 44px. */
+@media(max-width:760px){
+  /* Top bar buttons were 36px (switch 24px tall). */
+  .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.topbar #aiSwitchBtn,
+  /* Composer buttons were 34px tall. */
+  .composer #attachBtn,.composer #modelBtn,.composer #thinkBtn,
+  /* Copy, Reply and Prompt under each message were 20px to 28px tall. */
+  .msg .msg-copy,.msg .msg-reply,.msg .msg-lens{position:relative}
+  .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after{content:"";position:absolute;inset:-6px}
+  .topbar #aiSwitchBtn::after{content:"";position:absolute;inset:-12px -3px}
+  .composer #attachBtn::after,.composer #modelBtn::after,.composer #thinkBtn::after{content:"";position:absolute;inset:-7px}
+  .msg .msg-copy::after,.msg .msg-reply::after,.msg .msg-lens::after{content:"";position:absolute;inset:-14px -3px}
+
+  /* Drawer rows were 30px to 35px tall. */
+  .side .nav-item,.side [id^="navLabel"],.side #navHome,.side #navCortexTop,.side #navChats,.side #navApps{min-height:44px}
+  .side .icon-btn,.side #groupByBtn{position:relative}
+  .side .icon-btn::after,.side #groupByBtn::after{content:"";position:absolute;inset:-7px}
+  /* Pin and Archive on a chat row were 22px. */
+  .side .session-item.on .sess-actions-inline button{min-width:44px;min-height:44px}
+  /* Rename, Share and Delete under the open chat were 19px tall. */
+  .side .session-item .sess-actions button{min-height:44px;padding:3px 12px}
+  .side .session-item.dense,.side .session-item{min-height:44px}
+}
+
+/* Copy IP and Share in Settings were 32px tall. */
+@media(max-width:760px){
+  #settingsModal .btn{min-height:44px}
+}
+
+/* The Prompt panel close button was 36px. */
+@media(max-width:760px){
+  .plens-close{min-width:44px;min-height:44px}
+}
+
+/* The "+" menu was one long row that scrolled sideways with no scrollbar, so
+   Skills and Connectors sat off screen. Let it wrap instead. */
+@media(max-width:760px){
+  .plus-menu{flex-wrap:wrap;overflow:visible;justify-content:center;border-radius:22px}
+  .plus-menu button{min-height:44px!important}
+}
+
+/* Settings was a 220px menu beside a 140px page. Put the menu on top as a
+   sideways strip and give the page the full width. */
+@media(max-width:760px){
+  #settingsModal .settings-cursor .sc-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  #settingsModal .settings-cursor .sc-nav{height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  #settingsModal .settings-cursor .sc-nav-list{flex-direction:row;flex:none;overflow-x:auto;overflow-y:hidden;padding:6px}
+  #settingsModal .settings-cursor .sc-nav-item{white-space:nowrap;min-height:44px;flex:0 0 auto}
+  #settingsModal .settings-cursor .sc-nav-gap{height:auto;width:10px;flex:0 0 auto}
+  #settingsModal .settings-cursor .sc-nav-foot{display:none}
+  #settingsModal .settings-cursor .sc-back{min-width:44px;min-height:44px}
+  #settingsModal .settings-cursor .sc-search{min-height:44px;font-size:16px}
+  #settingsModal .settings-cursor .sc-panel{padding:16px}
+  #settingsModal .settings-cursor .connect-path-row button{min-height:44px;min-width:72px}
+}
+
+/* The floating bug-report button sat on top of Send once the message grew
+   past one line, and over the Prompt panel, Settings and the drawer. phone.js
+   keeps --phone-fab-b just above the message box; hide it while a panel is open. */
+@media(max-width:760px){
+  #bugReportBtn{top:auto!important;left:auto!important;right:12px!important;bottom:var(--phone-fab-b,120px)!important}
+  body:has(.side.open) #bugReportBtn,body:has(.plens-sheet.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn{display:none}
+}
