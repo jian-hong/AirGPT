@@ -20,6 +20,16 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `clipdrop._rag_check_build_paths` -- `/build` paths must be this space.
 - `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
   (DR-0006 / #33). `table=True` for xlsx/csv. Rebuild prefers Docs original.
+- `tests/RAG/filetype_bench.py` -- 11 file types in one space, planted facts,
+  recall at 1/5 and whether the hit names a place. Live gate
+  `tests/test_filetype_bench_gate.py` (n=10). No model call.
+- `rag/retrieve.py` `exact_term_search` -- weighted fusion channel for a rare
+  code or name from the question. A code counts alone; a name needs the chunk
+  to cover half of the rest; a bare number never counts.
+- `rag/ingest.py` extractors emit structure the chunker turns into citations:
+  `## Page N` (pdf), heading styles + table rows (docx), shown slide order +
+  notes (pptx), headings + cells (html), `.eml`, whole json records.
+- `/api/rag/spaces/<id>/upload` adds. It rebuilds only on `force=1`.
 - `rag/ontology.py` -- `ONTOLOGY_VERSION=2`. Induced from cell values: keys
   from uniqueness, relations from value containment, column kind/role/date
   format, table grain. xlsx + csv, cross-workbook. Cache keyed on the source

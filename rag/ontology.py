@@ -41,7 +41,11 @@ _DATE_FORMATS = (
     "%d-%m-%Y",
     "%Y-%m-%d %H:%M:%S",
 )
-_ID_NAME = re.compile(r"(^|_)(id|no|num|number|code|key|ref)$")
+_ID_NAME = re.compile(r"(^|_)(id|no|num|number|code|key|ref|row|seq|index|idx|sn)$")
+# Without matching names, a text column needs this many distinct values before
+# sitting inside another table's key counts as evidence. Grades A-C are "contained"
+# in any unrelated table whose codes happen to be A-F.
+_FK_MIN_DISTINCT_UNNAMED = 8
 _GENERIC_SHEET = re.compile(r"^(sheet|table|data)\s*\d*$", re.I)
 _AGGREGATE = re.compile(
     r"\b(top\s+\d+|bottom\s+\d+|average|avg|mean|total|sum|count|how many|"
@@ -143,13 +147,11 @@ def profile_column(name: str, values: list[Any]) -> tuple[dict[str, Any], set[st
         short = sum(len(str(v)) for v in present) / n <= 40
         role = "key" if prof["is_unique"] and short else "dimension"
     elif kind == "number":
-        # A unique column of whole numbers is a key only when it also looks like an
-        # identifier: named like one, or an unbroken run long enough not to be luck.
-        # Unique revenue is a measure.
-        ints = [int(v) for v in present] if integer_like else []
-        dense = n >= 20 and bool(ints) and (max(ints) - min(ints) + 1) == n
+        # A unique column of whole numbers is a key only when it is also NAMED like
+        # an identifier. Unique revenue is a measure, and so is a quantity column
+        # that happens to hold 1..30 once each.
         id_named = bool(_ID_NAME.search(prof["key"]))
-        role = "key" if prof["is_unique"] and integer_like and (id_named or dense) else "measure"
+        role = "key" if prof["is_unique"] and integer_like and id_named else "measure"
         if integer_like and id_named and role != "key":
             role = "dimension"  # a repeated id is a reference, never a quantity
     else:
@@ -161,11 +163,42 @@ def profile_column(name: str, values: list[Any]) -> tuple[dict[str, Any], set[st
 
 def _load_frames(path: Path) -> dict[str, Any]:
     """Sheet name -> DataFrame, through the product loader (it rejects banner rows)."""
+    from rag import xlsx_sql
+
     if path.suffix.lower() == ".csv":
+        # Same header rule as a sheet: a report banner above the header is common
+        # in exports too. Decoded by the ingest decoder, so a BOM is not a column name.
+        import csv
+        import io
+
         import pandas as pd
 
-        return {path.stem: pd.read_csv(path, sep=None, engine="python", nrows=MAX_ROWS, encoding_errors="replace")}
-    from rag import xlsx_sql
+        from rag import ingest
+
+        text = ingest._decode(path.read_bytes())
+        # Delimiter by the line most lines agree on. csv.Sniffer read a banner
+        # sentence as the pattern and returned the whole header as one column.
+        head = [ln for ln in text.splitlines()[:40] if ln.strip()]
+        delim = max(",;\t|", key=lambda d: sorted(ln.count(d) for ln in head)[len(head) // 2] if head else 0)
+        rows = []
+        for row in csv.reader(io.StringIO(text, newline=""), delimiter=delim):
+            rows.append([c.strip() or None for c in row])
+            if len(rows) > MAX_ROWS + 50:
+                break
+        hi = xlsx_sql.choose_header_row(rows)
+        if hi is None:
+            return {}
+        header = xlsx_sql.unique_headers(
+            [c if c else f"c{j}" for j, c in enumerate(rows[hi])]
+        )
+        data = [r[: len(header)] + [None] * (len(header) - len(r)) for r in rows[hi + 1 :] if any(r)]
+        df = pd.DataFrame(data, columns=header)
+        for i in range(len(header)):
+            col = df.iloc[:, i]
+            num = pd.to_numeric(col, errors="coerce")
+            if col.notna().any() and num.notna().sum() == col.notna().sum():
+                df.isetitem(i, num)
+        return {path.stem: df}
 
     return xlsx_sql.load_sheets(path)
 
@@ -259,6 +292,8 @@ def infer_relations(
                     # numeric containment needs the names to agree as well.
                     if overlap < _FK_MIN_OVERLAP or (ca["kind"] == "number" and not named):
                         continue
+                    if not named and ca["n_distinct"] < _FK_MIN_DISTINCT_UNNAMED:
+                        continue
                     rank = (overlap, int(named))
                     if best is None or rank > best[:2]:
                         best = (overlap, int(named), b, cb)
@@ -312,6 +347,17 @@ def infer_relations(
     return out
 
 
+def _name_entities(tables: list[dict]) -> None:
+    """"Orders" in two workbooks is two tables. Pooling them made one entity whose
+    keys and measures belonged to neither, so a shared name carries its file."""
+    seen: dict[str, set[str]] = {}
+    for t in tables:
+        seen.setdefault(t["entity"], set()).add(t["workbook"])
+    for t in tables:
+        if len(seen[t["entity"]]) > 1:
+            t["entity"] = f"{t['entity']} ({Path(t['workbook']).stem})"
+
+
 def _entities(tables: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     for t in tables:
@@ -347,6 +393,7 @@ def build_ontology(paths: list[str | Path]) -> dict[str, Any]:
         workbooks.append(wb)
         tables.extend(wb["sheets"])
         values.update(vals)
+    _name_entities(tables)
     relations = infer_relations(tables, values)
     entities = _entities(tables)
     return {

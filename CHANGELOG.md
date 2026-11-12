@@ -2,6 +2,27 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-12 -- Every file type is found again and cited to a place
+
+- New `tests/RAG/filetype_bench.py`: 11 types in one space. First run was red:
+  json/csv/xlsx 0 of 30, python 8 of 30, recall at 5 264 of 330, and html, docx,
+  pdf and eml cited no location. Now 330 of 330 with every locator correct.
+  Synthetic facts, hash embedder, no model call.
+- Fusion gained a weighted exact-match channel for a rare code or name. Sparse
+  scores are no longer a constant 1.0.
+- Extractors: pdf pages (all of them, no 200 cap), docx headings/tables/notes,
+  pptx shown order and speaker notes, html headings and cells, `.eml`, json
+  records, BOM and UTF-16, csv empty cells kept in their column.
+- `/upload` defaulted `force` on and a second upload wiped the first. Fixed;
+  found by driving the live server, pinned in `tests/test_rag_upload_keeps_space.py`.
+- Offline answer quotes the matching sentence with its location.
+- `pypdf` declared in `requirements.txt`. A failed PDF says encrypted, corrupt
+  or scanned instead of one generic reason.
+- Five-agent adversary workflow reproduced 25 defects; 17 fixed, 8 open with
+  reasons in `docs/subagents_findings/2026-11-12_filetype-bench-adversary-wave.md`.
+- Suite 743 passed, 0 failed, 9 skipped (Linux, Python 3.13). The old
+  `test_research_bridge_and_urls` failure is fixed at its cause.
+
 ## 2026-11-12 -- Ontology is induced from the data, not a keyword list (#6)
 
 - `rag/ontology.py` rewritten (`ONTOLOGY_VERSION=2`). Keys come from uniqueness

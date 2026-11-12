@@ -206,18 +206,48 @@ def pdf_supported() -> bool:
 
 
 def _pdf_text(path: Path) -> str:
+    """Text per page, each under a `## Page N` heading the chunker carries into hits.
+
+    Why a file gave nothing is left in `_pdf_text.last_error`, so ingest can say
+    "encrypted" or "corrupt" instead of calling every failure a scanned PDF.
+    """
+    _pdf_text.last_error = ""  # type: ignore[attr-defined]
     try:
         try:
             from pypdf import PdfReader
         except Exception:
             from PyPDF2 import PdfReader  # type: ignore[no-redef]
         reader = PdfReader(str(path))
-        # One heading per page: the chunker carries it into every hit, so an answer
-        # can say "page 7" instead of only naming a 200-page file.
-        pages = [(i, (pg.extract_text() or "").strip()) for i, pg in enumerate(reader.pages[:200], 1)]
-        return "\n\n".join(f"## Page {i}\n{t}" for i, t in pages if t)
+        if reader.is_encrypted:
+            try:
+                opened = reader.decrypt("")
+            except Exception:
+                opened = 0
+            if not opened:
+                _pdf_text.last_error = "encrypted PDF - needs a password"  # type: ignore[attr-defined]
+                return ""
+        n_pages = len(reader.pages)
     except Exception:
+        _pdf_text.last_error = "not a readable PDF (corrupt or truncated)"  # type: ignore[attr-defined]
         return ""
+    if not n_pages:
+        _pdf_text.last_error = "PDF has no pages"  # type: ignore[attr-defined]
+        return ""
+    out: list[str] = []
+    # Every page: a cap here dropped page 201 onward without telling anyone.
+    for i in range(n_pages):
+        try:
+            text = (reader.pages[i].extract_text() or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            # A line of page text that starts with '#' would become the heading and
+            # the citation would name it instead of the page.
+            out.append(f"## Page {i + 1}\n" + re.sub(r"(?m)^(\s*)#", r"\1\\#", text))
+    return "\n\n".join(out)
+
+
+_pdf_text.last_error = ""  # type: ignore[attr-defined]
 
 
 def xlsx_supported() -> bool:
@@ -311,7 +341,12 @@ def _csv_text(path: Path, raw_text: str) -> str:
     rows: list[str] = []
     try:
         for row in _csv.reader(io.StringIO(raw_text, newline="")):
-            cells = [str(c).strip() for c in row if c is not None and str(c).strip() != ""]
+            # Keep empty cells in place: dropping them slid "30" under "name" in
+            # "1,,30". A line break inside a cell becomes a space so the chunker
+            # never cuts one record in two.
+            cells = [re.sub(r"\s+", " ", str(c)).strip() for c in row]
+            while cells and not cells[-1]:
+                cells.pop()
             if cells:
                 rows.append(" | ".join(cells))
     except Exception:
@@ -369,29 +404,86 @@ def _docx_text(path: Path) -> str:
 
     Heading styles become markdown headings (so chunks and citations carry the
     section) and a table becomes one line per row instead of one line per cell.
+    Footnotes, headers and footers follow the body.
     """
-    import re
     import zipfile
     from xml.etree import ElementTree as ET
+
+    def attr(el, name: str) -> str:
+        return next((v for k, v in el.attrib.items() if _ooxml_local(k) == name), "")
 
     try:
         with zipfile.ZipFile(str(path)) as z:
             root = ET.fromstring(z.read("word/document.xml"))
+            extras = []
+            for n in sorted(z.namelist()):
+                if re.match(r"word/(footnotes|endnotes|header\d*|footer\d*)\.xml$", n):
+                    try:
+                        extras.append(ET.fromstring(z.read(n)))
+                    except Exception:
+                        pass
+            try:
+                styles = ET.fromstring(z.read("word/styles.xml"))
+            except Exception:
+                styles = None
     except Exception:
         return ""
 
-    def para_text(p) -> str:
-        return "".join(t.text for t in p.iter() if _ooxml_local(t.tag) == "t" and t.text).strip()
+    # style id -> heading level, from the style's name, its outline level, or the
+    # style it is based on. Matching the id alone missed every custom heading style.
+    levels: dict[str, int] = {}
+    based: dict[str, str] = {}
+    for st in (styles.iter() if styles is not None else ()):
+        if _ooxml_local(st.tag) != "style":
+            continue
+        sid = attr(st, "styleId")
+        for child in st.iter():
+            tag = _ooxml_local(child.tag)
+            if tag == "name":
+                name = attr(child, "val")
+                m = re.match(r"heading\s*(\d)", name, re.I)
+                if m:
+                    levels[sid] = int(m.group(1))
+                elif name.lower() == "title":
+                    levels[sid] = 1
+            elif tag == "outlineLvl" and attr(child, "val").isdigit():
+                levels.setdefault(sid, int(attr(child, "val")) + 1)
+            elif tag == "basedOn":
+                based[sid] = attr(child, "val")
 
     def heading_level(p) -> int:
         for el in p.iter():
             if _ooxml_local(el.tag) == "pStyle":
-                val = next((v for k, v in el.attrib.items() if _ooxml_local(k) == "val"), "")
-                if val.lower() == "title":
+                raw = sid = attr(el, "val")
+                for _ in range(6):
+                    if sid in levels:
+                        return min(6, max(1, levels[sid]))
+                    if sid not in based:
+                        break
+                    sid = based[sid]
+                if raw.lower() == "title":
                     return 1
-                m = re.match(r"heading\s*(\d)", val, re.I)
+                m = re.match(r"heading\s*(\d)", raw, re.I)
                 return min(6, int(m.group(1))) if m else 0
         return 0
+
+    def para_text(node) -> str:
+        """Run text, with tabs and line breaks kept as spaces. A text box is stored
+        twice (Choice and Fallback); only the first copy is read."""
+        bits: list[str] = []
+
+        def collect(el) -> None:
+            for child in el:
+                tag = _ooxml_local(child.tag)
+                if tag == "t" and child.text:
+                    bits.append(child.text)
+                elif tag in ("tab", "br", "cr"):
+                    bits.append(" ")
+                elif tag != "Fallback":
+                    collect(child)
+
+        collect(node)
+        return re.sub(r"[ \t]+", " ", "".join(bits)).strip()
 
     out: list[str] = []
 
@@ -405,17 +497,50 @@ def _docx_text(path: Path) -> str:
                     out.append(f"\n{'#' * level} {text}\n" if level else text)
             elif tag == "tbl":
                 for tr in (r for r in el if _ooxml_local(r.tag) == "tr"):
-                    cells = [
-                        " ".join(filter(None, (para_text(p) for p in tc.iter() if _ooxml_local(p.tag) == "p")))
-                        for tc in tr if _ooxml_local(tc.tag) == "tc"
-                    ]
+                    cells = [para_text(tc) for tc in tr if _ooxml_local(tc.tag) == "tc"]
                     if any(cells):
                         out.append(" | ".join(cells))
-            else:
+            elif tag != "Fallback":
                 walk(el)  # body, sdt content, etc.
 
     walk(root)
+    margin: list[str] = []
+    for extra in extras:
+        for p in extra.iter():
+            if _ooxml_local(p.tag) == "p":
+                text = para_text(p)
+                if text and text not in margin:
+                    margin.append(text)
+    if margin:
+        out.append("\n## Footnotes, headers and footers\n\n" + "\n".join(margin))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _pptx_show_order(z, names: list[str]) -> list[str]:
+    """Slide files in the order the deck shows them.
+
+    The file number is the order slides were CREATED. After any reorder, "Slide 3"
+    by file name is not the third slide on screen, and the citation points wrong.
+    """
+    import posixpath
+    from xml.etree import ElementTree as ET
+
+    try:
+        pres = ET.fromstring(z.read("ppt/presentation.xml"))
+        rels = ET.fromstring(z.read("ppt/_rels/presentation.xml.rels"))
+    except Exception:
+        return names
+    target = {}
+    for r in rels:
+        t = str(r.attrib.get("Target", ""))
+        target[r.attrib.get("Id")] = t.lstrip("/") if t.startswith("/") else posixpath.normpath(posixpath.join("ppt", t))
+    ordered = []
+    for el in pres.iter():
+        if _ooxml_local(el.tag) == "sldId":
+            rid = next((v for k, v in el.attrib.items() if k.startswith("{") and _ooxml_local(k) == "id"), None)
+            if target.get(rid) in names:
+                ordered.append(target[rid])
+    return ordered or names
 
 
 def _pptx_notes(z, slide_name: str) -> list[str]:
@@ -438,30 +563,60 @@ def _pptx_notes(z, slide_name: str) -> list[str]:
                 root = ET.fromstring(z.read(target))
             except Exception:
                 return []
-            # A bare number in the notes pane is the slide-number placeholder.
-            return [t.text.strip() for t in root.iter()
-                    if _ooxml_local(t.tag) == "t" and t.text and t.text.strip() and not t.text.strip().isdigit()]
+            # Skip the slide-number placeholder by its type. Filtering on "is it a
+            # number" also threw away a real note that says "2025".
+            shapes = [sp for sp in root.iter() if _ooxml_local(sp.tag) == "sp"] or [root]
+            texts: list[str] = []
+            for sp in shapes:
+                if any(_ooxml_local(e.tag) == "ph" and e.attrib.get("type") == "sldNum" for e in sp.iter()):
+                    continue
+                texts += [t.text.strip() for t in sp.iter()
+                          if _ooxml_local(t.tag) == "t" and t.text and t.text.strip()]
+            return texts
     return []
 
 
 def _eml_text(raw: bytes) -> str:
-    """An email as text: subject as the heading, then who/when, body, attachment names."""
+    """An email as text: subject as the heading, then who/when, body, attachment
+    names, and any forwarded message it carries."""
     import email
     from email import policy
 
+    def part_text(part) -> str:
+        try:
+            text = part.get_content()
+        except Exception:
+            # Unknown or wrong charset: decode what is there rather than lose the mail.
+            text = _decode(part.get_payload(decode=True) or b"")
+        return html_to_text(text)[1] if part.get_content_subtype() == "html" else str(text)
+
+    def render(msg, level: int) -> str:
+        try:
+            body = msg.get_body(preferencelist=("plain", "html"))
+        except Exception:
+            body = None
+        head = [f"{'#' * level} {msg.get('Subject') or '(no subject)'}"]
+        head += [f"{k}: {msg[k]}" for k in ("From", "To", "Cc", "Date") if msg.get(k)]
+        out = "\n".join(head) + "\n\n" + (part_text(body).strip() if body is not None else "")
+        names, forwarded = [], []
+        for att in msg.iter_attachments():
+            if att.get_content_type() == "message/rfc822" and level < 4:
+                try:
+                    forwarded.append(render(att.get_content(), level + 1))
+                except Exception:
+                    names.append(att.get_filename() or "forwarded message (unreadable)")
+            elif att.get_filename():
+                names.append(att.get_filename())
+        if forwarded:
+            out += "\n\n" + "\n\n".join(forwarded)
+        if names:
+            out += f"\n\nAttachments (not indexed): {', '.join(names)}"
+        return out
+
     try:
-        msg = email.message_from_bytes(raw, policy=policy.default)
-        body = msg.get_body(preferencelist=("plain", "html"))
-        text = body.get_content() if body is not None else ""
-        if body is not None and body.get_content_subtype() == "html":
-            text = html_to_text(text)[1]
+        return render(email.message_from_bytes(raw, policy=policy.default), 1).strip()
     except Exception:
         return ""
-    head = [f"# {msg.get('Subject') or '(no subject)'}"]
-    head += [f"{k}: {msg[k]}" for k in ("From", "To", "Cc", "Date") if msg.get(k)]
-    names = [a.get_filename() for a in msg.iter_attachments() if a.get_filename()]
-    tail = f"\n\nAttachments (not indexed): {', '.join(names)}" if names else ""
-    return "\n".join(head) + "\n\n" + str(text).strip() + tail
 
 
 def _pptx_text(path: Path) -> str:
@@ -476,6 +631,7 @@ def _pptx_text(path: Path) -> str:
         with zipfile.ZipFile(str(path)) as z:
             names = [n for n in z.namelist() if fnmatch.fnmatch(n, "ppt/slides/slide*.xml")]
             names.sort(key=lambda n: int((re.search(r"(\d+)", n) or [0, 0])[1]))
+            names = _pptx_show_order(z, names)
             for i, name in enumerate(names, 1):
                 try:
                     root = ET.fromstring(z.read(name))
@@ -486,7 +642,8 @@ def _pptx_text(path: Path) -> str:
                 if notes:
                     texts.append("Speaker notes: " + " ".join(notes))
                 if texts:
-                    out.append(f"## Slide {i}\n" + "\n".join(texts))
+                    hidden = " (hidden)" if root.attrib.get("show") == "0" else ""
+                    out.append(f"## Slide {i}{hidden}\n" + "\n".join(texts))
     except Exception:
         return ""
     return "\n\n".join(out).strip()
@@ -519,7 +676,14 @@ def _flatten_json(obj, prefix: str = "") -> list[str]:
 
 
 def _decode(raw: bytes) -> str:
-    for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
+    # utf-8-sig first: plain utf-8 "succeeds" on a BOM and leaves it glued to the
+    # first header cell or the opening brace of a JSON file.
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:
@@ -712,11 +876,12 @@ def ingest_paths(
                 continue
             text, digest = read_text_file(path)
             if not text.strip():
-                reason = (
-                    "no text layer - this PDF looks scanned and needs OCR"
-                    if path.suffix.lower() == ".pdf"
-                    else "no extractable text"
-                )
+                reason = "no extractable text"
+                if path.suffix.lower() == ".pdf":
+                    reason = (
+                        getattr(_pdf_text, "last_error", "")
+                        or "no text layer - this PDF looks scanned and needs OCR"
+                    )
                 skipped.append({"path": path.name, "reason": reason, "lane_unavailable": False})
                 continue
             mime = mimetypes.guess_type(str(path))[0] or "text/plain"
@@ -1132,6 +1297,12 @@ def ingest_research(space_id: int, research_paths: list[str], *, force: bool = F
     out["skipped"] = skipped + list(out.get("skipped") or [])
     if out.get("ok"):
         out["research_attached"] = len(indexable) - dropped
+        if not out["research_attached"]:
+            # Nothing was attached: that is not a success with a footnote.
+            out["ok"] = False
+            out["error"] = "no research file could be indexed: " + "; ".join(
+                str(x.get("reason")) for x in out["skipped"][:3]
+            )
     return out
 
 
@@ -1140,7 +1311,7 @@ class _HtmlText(HTMLParser):
 
     _SKIP = {"script", "style", "noscript", "template", "svg", "head", "nav", "footer", "aside", "header"}
     _HEAD = {"h1", "h2", "h3", "h4", "h5", "h6"}
-    _BREAK = {"p", "div", "br", "li", "tr", "section", "article", "blockquote", "pre", "main"}
+    _BREAK = {"p", "div", "br", "li", "tr", "dt", "dd", "section", "article", "blockquote", "pre", "main"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -1152,8 +1323,10 @@ class _HtmlText(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag in self._SKIP:
             self._skip += 1
-        elif tag == "title":
+        elif tag == "title":  # lives inside <head>, which is otherwise skipped
             self._in_title = True
+        elif self._skip:
+            return  # a heading inside <nav>/<header> must not leave a bare "#"
         elif tag in self._HEAD:
             # Markdown heading, so the chunker and citations carry the section.
             self.parts.append("\n\n" + "#" * int(tag[1]) + " ")
@@ -1165,8 +1338,12 @@ class _HtmlText(HTMLParser):
             self._skip = max(0, self._skip - 1)
         elif tag == "title":
             self._in_title = False
+        elif self._skip:
+            return
         elif tag in self._HEAD:
             self.parts.append("\n\n")
+        elif tag in ("td", "th"):
+            self.parts.append(" | ")  # cells used to run together: "Bolt5"
         elif tag in self._BREAK:
             self.parts.append("\n")
 
@@ -1188,6 +1365,8 @@ def html_to_text(html: str) -> tuple[str, str]:
         pass
     text = "".join(p.parts)
     text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"(?m) ?\| ?$", "", text)  # trailing cell separator
+    text = re.sub(r"(?m)^#+ *$", "", text)  # heading tag with no text
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     return p.title, text.strip()
 

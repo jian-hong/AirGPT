@@ -232,16 +232,14 @@ def w_pptx(p: Path, facts):
     return {f.entity: f"Slide {f.group + 1}" for f in facts}
 
 
-def w_pdf(p: Path, facts):
-    """A text PDF, one page per group, written by hand (no PDF library)."""
+def pdf_bytes(pages: list[list[str]]) -> bytes:
+    """A text PDF, one list of lines per page, written by hand (no PDF library)."""
     def esc(s):
         return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
-    groups = _groups(facts)
     objs: list[bytes] = [b"", b"", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
     kids = []
-    for g, fs in enumerate(groups):
-        lines = [f"Region {g + 1} accounts"] + [f.sentence for f in fs]
+    for lines in pages:
         stream = "BT /F1 11 Tf 50 760 Td 16 TL " + " ".join(f"({esc(t)}) Tj T*" for t in lines) + " ET"
         data = stream.encode("latin-1")
         objs.append(b"<< /Length %d >>\nstream\n" % len(data) + data + b"\nendstream")
@@ -260,7 +258,14 @@ def w_pdf(p: Path, facts):
     out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
     out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
     out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
-    p.write_bytes(bytes(out))
+    return bytes(out)
+
+
+def w_pdf(p: Path, facts):
+    """One page per group."""
+    p.write_bytes(pdf_bytes(
+        [[f"Region {g + 1} accounts"] + [f.sentence for f in fs] for g, fs in enumerate(_groups(facts))]
+    ))
     return {f.entity: f"Page {f.group + 1}" for f in facts}
 
 

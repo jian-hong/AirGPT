@@ -20,19 +20,25 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
-5. **Ontology (#6).** `rag/ontology.py` v2 is data-derived (keys,
-   value-overlap relations, csv, cache follows sources). Suite 712 pass.
-   n=320 `hybrid_max` NOT re-scored here (no FRTR-bench in the clone).
-   NVIDIA/auto-ontology fork NOT done (session scoped to this repo).
+5. **RAG reliability (PR #90, draft).** Ontology v2 is data-derived (#6).
+   File-type bench: 11 types, recall@5 330/330, every hit cites a place
+   (synthetic, hash embedder, no model). Upload no longer wipes a space.
+   Suite 743 pass / 0 fail on Linux. Windows CI and n=320 `hybrid_max`
+   NOT re-run here. 8 adversary defects left open with reasons.
+6. **Daily task** "AirGPT RAG daily improve" 04:23 MYT, draft PRs only.
+   It was stored with no repo source and no connectors.
+7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
 
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
-2. NEEDS-YOU: authorize a per-file-type RAG reliability epic (bench
-   first)? Routing + ledger rows:
-   `docs/subagents_findings/2026-11-12_rag-survey-auto-ontology.md`.
+2. NEEDS-YOU: confirm the per-file-type reliability epic (built under
+   your "continue build"), `pypdf` as a dependency, and whether xlsx may
+   keep empty cells (re-chunks every workbook). Ledger rows and open list:
+   `docs/subagents_findings/2026-11-12_*.md`.
+3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP
 

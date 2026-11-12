@@ -90,12 +90,20 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
     return hits
 
 
-# A name or a code: has a digit, or is capitalised somewhere other than the start
-# of the question, or was put in quotes. "Halvorsen", "ZQ-4471", "frtr_0001".
+# A code ("ZQ-4471", "frtr_0001", anything in quotes) or a name (capitalised somewhere
+# other than the start of the question: "Halvorsen"). A bare number is neither: "2024"
+# and "5" turn up by accident in chunks that have nothing to do with the question.
 _WORD_RE = re.compile(r"[^\W_]+(?:[-_./][^\W_]+)*")
 _QUOTED_RE = re.compile(r"[\"\u201c]([^\"\u201d]{2,60})[\"\u201d]")
 EXACT_MAX_DF = 5
 EXACT_WEIGHT = 3.0
+_QUESTION_WORDS = frozenset(
+    "what which when where does that this with from have about there their during will".split()
+)
+
+
+def _is_code(term: str) -> bool:
+    return " " in term or (any(c.isdigit() for c in term) and any(c.isalpha() for c in term))
 
 
 def identifier_terms(query: str) -> list[str]:
@@ -104,7 +112,7 @@ def identifier_terms(query: str) -> list[str]:
     out = [m.group(1).strip() for m in _QUOTED_RE.finditer(q)]
     for i, m in enumerate(_WORD_RE.finditer(q)):
         w = m.group(0)
-        if any(c.isdigit() for c in w) or (i > 0 and w[0].isupper() and len(w) >= 3):
+        if _is_code(w) or (i > 0 and w[0].isupper() and len(w) >= 3 and not w.isdigit()):
             out.append(w)
     return list(dict.fromkeys(out))[:6]
 
@@ -116,11 +124,19 @@ def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
     Rank fusion alone buries that chunk: it wins the keyword channel, but any chunk
     that is merely similar in two channels outvotes it. Common terms are left to the
     normal channels - a term in more than EXACT_MAX_DF chunks proves nothing.
+
+    A code is never incidental, so it counts on its own. A capitalised word can be:
+    "reimbursement for meals in Tromso" must not be pulled to a chunk that only
+    says the office is in Tromso. A name therefore counts only where the chunk also
+    covers at least half of what else the question asks about.
     """
     store.init()
     found: dict[int, dict] = {}
+    terms = identifier_terms(query)
+    name_tokens = {t for term in terms for t in sira.tokenize(term)}
+    rest = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in name_tokens and t not in _QUESTION_WORDS}
     with store._conn() as conn:
-        for term in identifier_terms(query):
+        for term in terms:
             parts = re.findall(r"[^\W_]+", term.lower())
             if not parts:
                 continue
@@ -142,6 +158,11 @@ def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
             if not rows or len(rows) > EXACT_MAX_DF:
                 continue
             for r in rows:
+                if rest and not _is_code(term):
+                    # snake_case keys ("discount_band") are one token to the tokenizer
+                    have = set(sira.tokenize(str(r["text"]).replace("_", " ")))
+                    if len(rest & have) < 0.5 * len(rest):
+                        continue
                 slot = found.setdefault(int(r["id"]), {"row": r, "terms": 0, "bm25": 0.0})
                 slot["terms"] += 1
                 slot["bm25"] += -float(r["score"] or 0.0)
