@@ -1,6 +1,7 @@
 """SQLite storage for ClipDrop chat messages."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -1230,8 +1231,15 @@ def delete_message(msg_id: int) -> bool:
             return False
         conn.execute("DELETE FROM messages WHERE id=?", (msg_id,))
         conn.commit()
+        # A forked chat points at the same stored file, so only remove a file
+        # once no other message still uses it.
+        still_used = {
+            rel for rel in (row["filepath"], row["thumb"]) if rel and conn.execute(
+                "SELECT 1 FROM messages WHERE filepath=? OR thumb=? LIMIT 1", (rel, rel)
+            ).fetchone()
+        }
     for rel in (row["filepath"], row["thumb"]):
-        if rel:
+        if rel and rel not in still_used:
             p = DATA_DIR / rel.replace("/", "\\") if "\\" not in rel else DATA_DIR / rel
             if not p.is_file():
                 p = ROOT / rel if (ROOT / rel).is_file() else FILES.parent / rel
@@ -1241,6 +1249,96 @@ def delete_message(msg_id: int) -> bool:
             except OSError:
                 pass
     return True
+
+
+def fork_session(session_id: int, upto_message_id: int) -> dict:
+    """Copy a chat up to and including one message into a new chat.
+
+    Same order, same sender, same text, same project, titled "<title> (fork)".
+    Attachment rows keep pointing at the same stored file (no bytes copied);
+    delete_message leaves a file alone while another row still uses it.
+    The source chat is only read. Raises LookupError (unknown chat or message)
+    or ValueError (message belongs to another chat).
+    """
+    src = get_session(session_id)
+    if not src:
+        raise LookupError("Chat not found.")
+    last = get_message(upto_message_id)
+    if not last:
+        raise LookupError("Message not found.")
+    if int(last.get("session_id") or 0) != int(session_id):
+        raise ValueError("That message is not in this chat.")
+    with _lock, _connect() as conn:
+        rows = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM messages WHERE session_id=? AND id<=? ORDER BY id ASC",
+            (int(session_id), int(upto_message_id)),
+        ).fetchall()]
+    suffix = " (fork)"
+    title = (str(src.get("title") or "New chat")[: 80 - len(suffix)]) + suffix
+    new = create_session(title, src.get("capture_type") or "manual",
+                         category=src.get("category") or "general")
+    nid = int(new["id"])
+    if src.get("project_id"):
+        update_session_meta(nid, project_id=int(src["project_id"]))
+    for m in rows:
+        c = add_message(
+            device_ip=m.get("device_ip") or "", device_name=m.get("device_name") or "",
+            text=m.get("text") or "", kind=m.get("kind") or "text",
+            filename=m.get("filename"), filepath=m.get("filepath"), thumb=m.get("thumb"),
+            mime=m.get("mime"), size=int(m.get("size") or 0), source=m.get("source") or "chat",
+            session_id=nid,
+        )
+        if not c:
+            continue
+        with _lock, _connect() as conn:
+            conn.execute(
+                "UPDATE messages SET created_at=?, ai_status=?, ai_analysis=?, ai_model=?, ai_category=? WHERE id=?",
+                (m["created_at"], m.get("ai_status") or "none", m.get("ai_analysis") or "",
+                 m.get("ai_model") or "", m.get("ai_category") or "", c["id"]),
+            )
+            conn.commit()
+    sess = get_session(nid) or new
+    return {"session": sess, "copied": len(rows)}
+
+
+def export_session(session_id: int, fmt: str = "md") -> tuple[str, str, str]:
+    """Whole chat straight from the database. Returns (filename, content_type, text).
+    Raises LookupError for an unknown chat."""
+    sess = get_session(session_id)
+    if not sess:
+        raise LookupError("Chat not found.")
+    with _lock, _connect() as conn:
+        msgs = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM messages WHERE session_id=? ORDER BY id ASC", (int(session_id),)
+        ).fetchall()]
+    title = str(sess.get("title") or "Chat")
+
+    def who(m):
+        if m.get("source") == "ai":
+            return "AirGPT"
+        return str(m.get("device_name") or "You")
+
+    def body(m):
+        t = m.get("text") or ""
+        if m.get("kind") in ("image", "video", "file") and m.get("filename"):
+            t = (t + "\n\n" if t else "") + "[Attachment: %s]" % m["filename"]
+        return t
+
+    slug = "".join(ch if ch.isalnum() else "-" for ch in title.lower()).strip("-")[:40] or "chat"
+    if fmt == "json":
+        out = {
+            "chat": {"id": sess["id"], "title": title, "created_at": sess.get("created_at"),
+                     "message_count": len(msgs)},
+            "messages": [{"id": m["id"], "who": who(m), "role": "assistant" if m.get("source") == "ai" else "user",
+                          "when": m["datetime"], "created_at": m["created_at"],
+                          "kind": m.get("kind"), "filename": m.get("filename"), "text": m.get("text") or ""}
+                         for m in msgs],
+        }
+        return f"airgpt-{slug}.json", "application/json; charset=utf-8", json.dumps(out, indent=2, ensure_ascii=False)
+    lines = [f"# {title}", "", f"{len(msgs)} messages", ""]
+    for i, m in enumerate(msgs, 1):
+        lines += [f"## {i}. {who(m)} - {m['datetime']}", "", body(m), ""]
+    return f"airgpt-{slug}.md", "text/markdown; charset=utf-8", "\n".join(lines)
 
 
 def session_latest_id(session_id: int) -> int:
