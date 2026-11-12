@@ -1728,7 +1728,18 @@ def _prepare_text_chat(
     # this path. Plain substitution is immune to whatever the prompt text contains.
     head, _, tail = TEXT_CHAT_TEMPLATE.replace("{mode_prompt}", MODES[mode]).partition("{question}")
     asked = question[:6000]
-    prompt = head + asked + tail + history_block + vault_block + url_block
+    chat_block = ""
+    if session_id:
+        try:
+            import chat_prefs as _cp
+
+            chat_block = _cp.block(_cp.get(session_id))
+        except Exception as e:
+            # Visible, not silent: the model answers without them, so the record says so.
+            print(f"[chat-prefs] not loaded: {str(e)[:120]}")
+            if trace is not None:
+                trace["notes"].append("This chat's instructions could not be loaded, so they were not sent.")
+    prompt = head + asked + tail + history_block + vault_block + url_block + chat_block
     if trace is not None:
         try:
             import prompt_trace as _pt
@@ -1755,6 +1766,7 @@ def _prepare_text_chat(
             }
             _pt.add(trace, "memory", "Memory notes", vault_block, private=True)
             _pt.add(trace, "evidence", "Web and link evidence", url_block)
+            _pt.add(trace, "chat_instructions", "Chat instructions", chat_block)
         except Exception as e:
             # Recording must never break the prompt it describes.
             trace["notes"].append("Part of this record could not be built.")

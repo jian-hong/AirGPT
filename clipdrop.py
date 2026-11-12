@@ -638,6 +638,7 @@ def _cortex_prompt_trace(
     mode: str,
     tier: str,
     web_search: bool,
+    chat_block: str = "",
 ) -> dict:
     """What AirGPT handed to the Cortex agent loop for this turn.
 
@@ -655,7 +656,8 @@ def _cortex_prompt_trace(
         m for m in (history or [])[-8:]
         if isinstance(m, dict) and str(m.get("content") or "").strip()
     ]
-    prior = loop_prompt[: max(0, len(loop_prompt) - len(question))] if sent else ""
+    body = loop_prompt[len(chat_block):] if chat_block and loop_prompt.startswith(chat_block) else loop_prompt
+    prior = body[: max(0, len(body) - len(question))] if sent else ""
     cut = sum(1 for m in sent if len(str(m.get("content") or "").strip()) > 500)
     note = f"{len(sent)} of {len(usable)} earlier messages sent, each cut to 500 characters."
     if cut:
@@ -668,6 +670,7 @@ def _cortex_prompt_trace(
         "compressed": cut,
     }
     _pt.add(trace, "question", "Your message", question)
+    _pt.add(trace, "chat_instructions", "Chat instructions", chat_block)
     if web_search:
         trace["notes"].append("Tools requested from Cortex: web_search, web_fetch.")
     trace["notes"].append(
@@ -750,6 +753,17 @@ def _chat_stream_events(
                     prior.append(f"{role}: {content}")
             if prior:
                 loop_prompt = "Prior turns:\n" + "\n".join(prior) + "\n\nUser:\n" + loop_prompt
+        chat_block = ""
+        if session_id:
+            try:
+                import chat_prefs
+
+                chat_block = chat_prefs.block(chat_prefs.get(session_id))
+            except Exception as e:
+                print(f"[chat-prefs] not loaded: {str(e)[:120]}")
+        if chat_block:
+            loop_prompt = chat_block.lstrip("\n") + "\n" + loop_prompt
+            chat_block = chat_block.lstrip("\n") + "\n"
         loop_kw: dict = {
             "session_id": f"chat-{session_id}",
             "max_steps": 6,
@@ -764,6 +778,7 @@ def _chat_stream_events(
         try:
             yield {"type": "prompt_trace", "trace": _cortex_prompt_trace(
                 question or "", history, loop_prompt, mode=mode, tier=model_tier, web_search=web_search,
+                chat_block=chat_block,
             )}
         except Exception as e:
             # The answer is in hand. Without a record the panel says "no prompt
@@ -3321,6 +3336,42 @@ class Handler(BaseHTTPRequestHandler):
         })
         self._sse_end()
 
+    def _chat_prefs_gate(self, sid: int, write: bool):
+        """Return an error (code, body) when this caller may not touch chat `sid`, else None."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        scoped = None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            scoped = app_auth.token_session_acl(self._request_token())
+        if scoped:
+            if int(scoped.get("session_id") or 0) != sid:
+                return 403, {"ok": False, "error": "This share only covers its own chat."}
+            if write and scoped.get("acl") == "view":
+                return 403, {"ok": False, "error": "This share is view-only."}
+        return None
+
+    def _handle_chat_prefs_post(self):
+        try:
+            data = json.loads(self._body().decode() or "{}")
+            sid = int(data.get("session_id") or 0)
+        except (ValueError, TypeError, AttributeError):
+            return self._json(400, {"ok": False, "error": "Send session_id as a number and instructions as text."})
+        denied = self._chat_prefs_gate(sid, write=True)
+        if denied:
+            return self._json(*denied)
+        if sid <= 0 or not db.get_session(sid):
+            return self._json(404, {"ok": False, "error": "This chat has not been created yet. Send a message first."})
+        import chat_prefs
+
+        text = data.get("instructions", "")
+        if text is None:
+            text = ""
+        try:
+            saved = chat_prefs.set(sid, text)
+        except ValueError as e:
+            return self._json(400, {"ok": False, "error": str(e), "limit": chat_prefs.MAX_CHARS})
+        return self._json(200, {"ok": True, "session_id": sid, "instructions": saved, "limit": chat_prefs.MAX_CHARS})
+
     def _body(self):
         self._body_consumed = True
         n = int(self.headers.get("Content-Length", 0))
@@ -3999,6 +4050,21 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/drops":
             return self._json(200, {"items": db.get_media_messages(), "latest_id": db.latest_id()})
+
+        if path == "/api/chat/prefs":
+            import chat_prefs
+
+            try:
+                sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "session_id must be a number"})
+            if sid <= 0:
+                return self._json(400, {"ok": False, "error": "session_id is required"})
+            denied = self._chat_prefs_gate(sid, write=False)
+            if denied:
+                return self._json(*denied)
+            return self._json(200, {"ok": True, "session_id": sid,
+                                    "instructions": chat_prefs.get(sid), "limit": chat_prefs.MAX_CHARS})
 
         if path == "/api/chat/prompt-trace":
             # What one reply was actually sent to the model (prompt lens).
@@ -4990,6 +5056,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, presence.set_typing(sid, ip, bool(data.get("typing"))))
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path == "/api/chat/prefs":
+            return self._handle_chat_prefs_post()
 
         if path == "/api/chat/stream":
             if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):

@@ -11,10 +11,11 @@
   'use strict';
 
   // Fixed slot per block. Order here is also the order of the bar and the rows.
-  var ORDER=['system','instructions','question','history','memory','evidence','skill','tools'];
+  var ORDER=['system','instructions','chat_instructions','question','history','memory','evidence','skill','tools'];
   var HELP={
     system:'Standing rules the model gets before anything else.',
     instructions:'How to answer: tone, honesty rules, diagram style.',
+    chat_instructions:'Your standing instructions for this chat. Sent with every turn here.',
     question:'What you typed this turn.',
     history:'Earlier messages from this chat.',
     memory:'Notes pulled from your vault for this question.',
@@ -28,7 +29,8 @@
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
   function num(n){return Number(n||0).toLocaleString('en-US')}
   function short(n){n=Number(n||0);return n>=10000?Math.round(n/1000)+'k':n>=1000?(n/1000).toFixed(1)+'k':String(n)}
-  function color(key){return 'var(--pl-'+(ORDER.indexOf(key)>=0?key:'tools')+')'}
+  // chat_instructions shares the instructions colour: the palette has eight validated slots.
+  function color(key){if(key==='chat_instructions')key='instructions';return 'var(--pl-'+(ORDER.indexOf(key)>=0?key:'tools')+')'}
   function sorted(secs){
     return (secs||[]).slice().sort(function(a,b){
       var ia=ORDER.indexOf(a.key),ib=ORDER.indexOf(b.key);

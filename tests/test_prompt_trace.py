@@ -194,6 +194,28 @@ class CortexRouteTest(unittest.TestCase):
         self.assertEqual(trace["total_chars"], len("hello"))
 
 
+class ChatInstructionsTraceTest(unittest.TestCase):
+    """The invariant must hold with a chat's instructions present and absent."""
+
+    def test_cortex_sections_add_up_with_instructions(self):
+        import chat_prefs
+        block = chat_prefs.block("Answer in Malay.")
+        question = "What did we decide?"
+        history = [dict(m) for m in HISTORY]
+        prior = "Prior turns:\n" + "\n".join(f"{m['role']}: {m['content']}" for m in history) + "\n\nUser:\n"
+        for blk in (block, ""):
+            loop_prompt = blk + prior + question
+            trace = clipdrop._cortex_prompt_trace(
+                question, history, loop_prompt, mode="general", tier="high", web_search=False, chat_block=blk,
+            )
+            self.assertEqual(trace["total_chars"], len(loop_prompt))
+            keys = [s["key"] for s in trace["sections"]]
+            self.assertEqual("chat_instructions" in keys, bool(blk))
+            if blk:
+                self.assertEqual(next(s for s in trace["sections"] if s["key"] == "chat_instructions")["label"],
+                                 "Chat instructions")
+
+
 class EffectiveSystemTest(unittest.TestCase):
     def test_security_block_is_appended_once(self):
         once = ai_engine._effective_system("Be brief.")
