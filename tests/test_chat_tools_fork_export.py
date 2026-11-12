@@ -184,6 +184,21 @@ class HttpTest(unittest.TestCase):
         code, body, hdr = self._req("GET", f"/api/sessions/export?session_id={self.sid}&format=json")
         self.assertEqual(len(json.loads(body)["messages"]), 3)
 
+    def test_export_survives_titles_with_non_latin_quotes_and_newlines(self):
+        # The file name goes into a header, which can only carry ASCII.
+        for title in ('\u65e5\u672c\u8a9e', 'a"b/c\\d\r\nX-Evil: 1', '\u00e9\u00e8'):
+            sid = int(db.create_session(title)["id"])
+            self.made.append(sid)
+            _add(sid, "u", "hello <script>x</script> </pre>")
+            for fmt in ("md", "json"):
+                code, body, hdr = self._req("GET", f"/api/sessions/export?session_id={sid}&format={fmt}")
+                self.assertEqual(code, 200, title)
+                disp = hdr.get("Content-Disposition", "")
+                self.assertTrue(disp.isascii())
+                self.assertNotIn("X-Evil", hdr)
+                self.assertRegex(disp, r'^attachment; filename="[A-Za-z0-9._-]+"$')
+                self.assertEqual(body.count("<script>x</script>"), 1)
+
     def test_errors_are_plain_404_and_400(self):
         self.assertEqual(self._fork(999999999, 1)[0], 404)
         self.assertEqual(self._fork(self.sid, 999999999)[0], 404)

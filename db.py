@@ -1324,7 +1324,8 @@ def export_session(session_id: int, fmt: str = "md") -> tuple[str, str, str]:
             t = (t + "\n\n" if t else "") + "[Attachment: %s]" % m["filename"]
         return t
 
-    slug = "".join(ch if ch.isalnum() else "-" for ch in title.lower()).strip("-")[:40] or "chat"
+    # ASCII only: the name goes into an HTTP header, which cannot carry other characters.
+    slug = "".join(ch if (ch.isascii() and ch.isalnum()) else "-" for ch in title.lower()).strip("-")[:40].strip("-") or "chat"
     if fmt == "json":
         out = {
             "chat": {"id": sess["id"], "title": title, "created_at": sess.get("created_at"),
