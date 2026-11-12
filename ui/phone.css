@@ -17,10 +17,21 @@
   /* Drawer rows were 30px to 35px tall. */
   .side .nav-item,.side [id^="navLabel"],.side #navHome,.side #navCortexTop,.side #navChats,.side #navApps{min-height:44px}
   .side .icon-btn,.side #groupByBtn{position:relative}
-  .side .icon-btn::after,.side #groupByBtn::after{content:"";position:absolute;inset:-7px}
+  .side .icon-btn::after{content:"";position:absolute;inset:-7px -5px}
+  .side #groupByBtn::after{content:"";position:absolute;inset:-12px -10px}
+  /* The Search and List icons sat 6px apart, so their hit layers shared the gap: 40px wide each. */
+  .side .icon-btn+.icon-btn{margin-left:4px}
+  /* Section headers (Recents, day groups) fold open and shut on tap; they were 28px to 32px tall. */
+  .side .side-section-hdr,.side .hist-day-hdr{min-height:44px}
+  /* The AirGPT logo and name in the top bar goes home on tap; it was 22px tall. The bar clips
+     overflow, so grow it with padding and cancel that with a negative margin. */
+  .topbar #brandHome{padding:11px 0;margin:-11px 0}
   /* Pin and Archive on a chat row were 22px. */
   .side .session-item.on .sess-actions-inline button{min-width:44px;min-height:44px}
   /* Rename, Share and Delete under the open chat were 19px tall. */
+  /* Two 44px buttons did not fit the 72px slot, so Archive was cut to 27px wide. */
+  .side .session-item.dense:hover .sess-actions-inline,.side .session-item.dense.on .sess-actions-inline,
+  .side .session-item.dense:focus-within .sess-actions-inline,.side .session-item.dense.pinned .sess-actions-inline{max-width:96px}
   .side .session-item .sess-actions button{min-height:44px;padding:3px 12px}
   .side .session-item.dense,.side .session-item{min-height:44px}
 }
