@@ -1048,6 +1048,14 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
 .ctx-chip{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:#fff}
 .ctx-chip button{border:0;background:transparent;color:var(--muted);cursor:pointer}
 .app.no-connect{grid-template-columns:var(--side) 1fr}
+/* SHELL-04 (#78): a phone is one column. `.app>.main{grid-column:2}` left the main
+   pane in an implicit 0-wide track, so the app rendered blank at 760px and below.
+   This block has to stay after the `.app.no-connect` rule above, which would
+   otherwise win on source order and bring back a dead left track. */
+@media(max-width:760px){
+  .app,.app.side-collapsed,.app.no-connect,.app.side-collapsed.no-connect{grid-template-columns:minmax(0,1fr)}
+  .app>.main{grid-column:1}
+}
 .connect-col{transition:transform var(--morph),opacity var(--morph),width var(--morph)}
 .connect-col.collapsed{display:none!important}
 .drop-overlay{position:absolute;inset:0;z-index:50;display:none;place-items:center;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.35);pointer-events:none;font-size:14px;color:#fff;font-weight:500}
