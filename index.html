@@ -14,6 +14,10 @@
      everything else here is opt-in via class, so load order does not matter. -->
 <link rel="stylesheet" href="/ui/apple.css"/>
 <link rel="stylesheet" href="/ui/promptlens.css"/>
+<link rel="stylesheet" href="/ui/chattools.css"/>
+<link rel="stylesheet" href="/ui/chatprefs.css"/>
+<link rel="stylesheet" href="/ui/snippets.css"/>
+<link rel="stylesheet" href="/ui/palette.css"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
@@ -2698,6 +2702,7 @@ body.theme-light .hub-mini-hdr h3{color:var(--muted)}
 body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28px;border-radius:999px}
 
 </style>
+<link rel="stylesheet" href="/ui/phone.css"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/>
 </head>
 <body>
@@ -3497,6 +3502,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 <!-- Design foundations: springs/gestures + materials, type and a11y tokens.
      Local, not CDN — the app must stay usable with no internet. -->
 <script src="/ui/motion.js"></script>
+<script src="/ui/ext.js"></script>
 <script src="/ui/multiplayer_demo.js"></script>
 <script>
 const $=id=>document.getElementById(id);
@@ -13298,9 +13304,7 @@ function renderMsg(m){
   return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
     ${author}<div class="meta"><span>${esc(who)} · ${esc(when)}</span>
     <button type="button" class="msg-copy" onclick="event.stopPropagation();copyMessage(${m.id})">Copy</button>
-    <button type="button" class="msg-reply" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${
-      (isAi&&m.kind==='text')?`<button type="button" class="msg-lens" title="See what was sent to the model for this reply" onclick="event.stopPropagation();window.PromptLens&&PromptLens.open(${m.id})">Prompt</button>`:''
-    }</div>
+    <button type="button" class="msg-reply" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${window.AirUI?AirUI.msgActionsHtml(m,isAi):''}</div>
     <div class="body">${inner}</div></div></div>`;
 }
 
@@ -15222,6 +15226,10 @@ async function tryQrAutoLogin(){
 </script>
 <script src="/OpenIDE/ui/openide.js"></script>
 <script src="/ui/promptlens.js"></script>
+<script src="/ui/chattools.js"></script>
+<script src="/ui/chatprefs.js"></script>
+<script src="/ui/snippets.js"></script>
+<script src="/ui/palette.js"></script>
 <script>
 /* ---- BYO Key Vault popup (data: GET /api/keyvault · save: POST /api/settings) ---- */
 let _kvData=null;

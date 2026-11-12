@@ -3067,6 +3067,7 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 event_q.put(None)
 
+        turn_started = time.time()
         threading.Thread(target=_producer, daemon=True).start()
         self._sse_begin()
         # Immediate ack so UI can adopt session before model tokens arrive
@@ -3112,6 +3113,10 @@ class Handler(BaseHTTPRequestHandler):
                     import prompt_trace
 
                     done_ev["trace"]["model"] = done_ev.get("model") or ""
+                    # Wall time from send to finished answer, and the reply's size.
+                    done_ev["trace"]["elapsed_ms"] = int((time.time() - turn_started) * 1000)
+                    done_ev["trace"]["reply_chars"] = len(done_ev["analysis"])
+                    done_ev["trace"]["reply_tokens_est"] = prompt_trace.est_tokens(done_ev["analysis"])
                     prompt_trace.save(int(ai_row["id"]), session_id, done_ev["trace"])
                 except Exception as e:
                     # The reply is already saved; a lost trace must not lose the answer.

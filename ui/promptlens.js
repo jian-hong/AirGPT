@@ -104,6 +104,7 @@
     if(t.model)out.push(t.model);
     if(t.tier)out.push('Effort: '+t.tier);
     if(t.pipeline==='dual')out.push('Draft + verify');
+    if(t.elapsed_ms>=100)out.push((t.elapsed_ms/1000).toFixed(t.elapsed_ms<10000?1:0)+' s');
     if(rec.created_at){
       try{out.push(new Date(rec.created_at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))}catch(e){}
     }
@@ -119,6 +120,7 @@
     html+='<div class="plens-hero"><b>~'+num(total)+'</b><span>tokens sent</span></div>';
     var fine='Estimate from '+num(t.total_chars)+' characters (4 per token). No tokenizer runs here.';
     if(t.max_output_tokens)fine+=' Reply limit: '+num(t.max_output_tokens)+' tokens.';
+    if(t.reply_tokens_est)fine+=' The reply came back at about '+num(t.reply_tokens_est)+' tokens.';
     html+='<p class="plens-fine">'+esc(fine)+'</p>';
 
     if(t.opaque){
@@ -317,4 +319,8 @@
   else start();
 
   window.PromptLens={open:open,openLatest:openLatest,close:close,refreshMeter:function(){return refreshMeter(true)}};
+  if(window.AirUI)window.AirUI.addMsgAction(function(m,isAi){
+    if(!isAi||m.kind!=='text')return '';
+    return '<button type="button" class="msg-lens" title="See what was sent to the model for this reply" onclick="event.stopPropagation();PromptLens.open('+Number(m.id)+')">Prompt</button>';
+  });
 })();

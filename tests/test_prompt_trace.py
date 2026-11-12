@@ -279,6 +279,8 @@ class PromptTraceHttpTest(unittest.TestCase):
         self.assertEqual(got["session_id"], self.sid)
         self.assertTrue(got["host_view"])
         self.assertEqual(got["trace"]["model"], "test-model")
+        self.assertEqual(got["trace"]["reply_chars"], len("Done."))
+        self.assertGreaterEqual(got["trace"]["elapsed_ms"], 0)
         texts = {s["key"]: s.get("text") for s in got["trace"]["sections"]}
         self.assertEqual(texts["question"], "what was sent?")
         self.assertEqual(texts["memory"], NOTE)
