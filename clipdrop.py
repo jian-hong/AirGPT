@@ -2638,6 +2638,20 @@ class Handler(BaseHTTPRequestHandler):
             tok = parse_qs(urlparse(self.path).query).get("token", [""])[0]
         return tok
 
+    def _chat_tools_guard(self, sid: int, write: bool):
+        """None when allowed, else (status, message). Share guests only reach their own chat."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        scoped = None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            scoped = app_auth.token_session_acl(self._request_token())
+        if scoped:
+            if int(scoped["session_id"]) != int(sid):
+                return 404, "Chat not found."
+            if write and scoped.get("acl") == "view":
+                return 403, "This share is view-only."
+        return None
+
     def _client_ip(self) -> str:
         direct = self.client_address[0]
         return _forwarded_client_ip(self.headers, direct) or direct
@@ -3974,6 +3988,32 @@ class Handler(BaseHTTPRequestHandler):
                 "ai_model": msg.get("ai_model", ""),
             })
 
+        if path == "/api/sessions/export":
+            try:
+                sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"error": "session_id must be a number"})
+            fmt = (q.get("format", ["md"])[0] or "md").lower()
+            if fmt not in ("md", "json"):
+                return self._json(400, {"error": "format must be md or json"})
+            bad = self._chat_tools_guard(sid, write=False)
+            if bad:
+                return self._json(bad[0], {"error": bad[1]})
+            try:
+                fname, ctype, text = db.export_session(sid, fmt)
+            except LookupError as e:
+                return self._json(404, {"error": str(e)})
+            body = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
             return self._json(200, {"sessions": db.list_sessions(lim)})
@@ -5202,6 +5242,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "image message required"})
             queue_analysis(mid, question, mode=mode, session_id=sid, depth=depth)
             return self._json(200, {"ok": True, "status": "queued"})
+
+        if path == "/api/sessions/fork":
+            try:
+                data = json.loads(self._body().decode() or "{}")
+                sid = int(data.get("session_id") or 0)
+                mid = int(data.get("upto_message_id") or 0)
+            except (ValueError, TypeError):
+                return self._json(400, {"error": "session_id and upto_message_id must be numbers"})
+            bad = self._chat_tools_guard(sid, write=True)
+            if bad:
+                return self._json(bad[0], {"error": bad[1]})
+            try:
+                return self._json(200, db.fork_session(sid, mid))
+            except LookupError as e:
+                return self._json(404, {"error": str(e)})
+            except ValueError as e:
+                return self._json(400, {"error": str(e)})
 
         if path == "/api/sessions":
             data = json.loads(self._body().decode() or "{}")
