@@ -116,12 +116,104 @@ def build_context_block(hits: list[dict], *, max_chars: int = 6000, neighbors: b
     return "\n".join(parts)
 
 
+_FILE_REF_RE = re.compile(r"\b[\w-]+\.(?:pdf|docx?|pptx?|xlsx?|csv|tsv|txt|md|html?|json)\b", re.I)
+
+
+def abstention(query: str, hits: list[dict]) -> dict | None:
+    """Is the evidence too thin to answer from? None means go ahead and answer.
+
+    Offline there is no model to say "I don't know", and the extractive answer quotes
+    whatever ranked first, so a question about a name the space never mentions got the
+    nearest look-alike sentence presented as the answer. Three checks, most decisive
+    first:
+      1. every code or name in the question (retrieve.identifier_terms) is absent from
+         all retrieved passages: the space does not mention it, whatever else matches.
+      2. a file the question names ("in budget.xlsx") that no hit comes from.
+      3. otherwise the best SINGLE passage must cover at least _COVERAGE_FLOOR of the
+         question's content words (the same _salient_tokens / _token_in_blob measure
+         as _coverage). Pooling words across all hits would let "shipping lane" be
+         satisfied by one chunk and "Halvorsen" by another. With a name in the
+         question this always applies: a passage about that name that lacks the asked
+         attribute is exactly the look-alike that gets quoted as the answer. With no
+         name it applies only when the pooled coverage looks fine; when even the pool
+         falls short, the goal layer already prints "Partial answer only - N% of the
+         asked terms..." and that is an honest disclosure, so it is left to speak.
+    """
+    if not hits:
+        return None
+    from rag import retrieve, sira
+
+    blob = _evidence_blob(hits)
+    blob_tokens = set(sira.tokenize(blob))
+
+    def _present(term: str) -> bool:
+        toks = sira.tokenize(term)
+        return term.lower() in blob or (bool(toks) and all(t in blob_tokens for t in toks))
+
+    terms = retrieve.identifier_terms(query)
+    missing = [t for t in terms if not _present(t)]
+    if terms and len(missing) == len(terms):
+        return {"kind": "term", "missing": missing,
+                "reason": "the space does not mention " + ", ".join(f'"{t}"' for t in missing)}
+    paths = " ".join(str(h.get("path") or "") for h in hits).lower().replace("\\", "/")
+    files = [f for f in dict.fromkeys(m.group(0) for m in _FILE_REF_RE.finditer(query or ""))
+             if f.lower() not in paths]
+    if files:
+        return {"kind": "file", "missing": files,
+                "reason": "no retrieved passage comes from " + ", ".join(f'"{f}"' for f in files)}
+    toks = _salient_tokens(query)
+    blobs = [_evidence_blob([h]) for h in hits]
+
+    def _in(t: str, b: str) -> bool:
+        # "renewal" is evidenced by "renews". Without this a harmless rewording of an
+        # answerable question flipped it from answered to refused.
+        return _token_in_blob(t, b) or (t.isascii() and len(t) >= 6 and t[:5] in b)
+
+    if len(hits) >= 3:
+        # A word every passage holds ("account" in a register of accounts) says nothing
+        # about whether the asked-for thing is there, yet it padded the score of a
+        # question about an attribute the space never records. Judge on the words that
+        # tell passages apart, unless that leaves nothing.
+        toks = [t for t in toks if not all(_in(t, b) for b in blobs)] or toks
+    if toks and (terms or _coverage(query, hits) >= _COVERAGE_FLOOR):
+        best = max(sum(1 for t in toks if _in(t, b)) / len(toks) for b in blobs)
+        if best < _COVERAGE_FLOOR:
+            gone = [t for t in toks if not _in(t, blob)]
+            return {"kind": "coverage", "missing": gone, "coverage": round(best, 3),
+                    "reason": f"no passage covers more than {int(best * 100)}% of what the question asks"
+                              + (f" (nothing mentions {', '.join(gone[:4])})" if gone else "")}
+    return None
+
+
+def _abstention_text(hits: list[dict], why: dict) -> str:
+    """Say plainly that the answer is not there; look-alikes are shown but labelled."""
+    names = ", ".join('"' + t + '"' for t in why["missing"])
+    if why["kind"] == "term":
+        head = f"The space does not mention {names}, so I cannot answer this from it."
+    elif why["kind"] == "file":
+        head = f"The space has no passage from {names}, so I cannot answer this from it."
+    else:
+        head = "The space does not contain enough to answer this: " + why["reason"] + "."
+    lines = []
+    for h in hits[:2]:
+        text = re.sub(r"\s+", " ", re.sub(r"(?m)^#.*$", "", h.get("text") or "")).strip()
+        if text:
+            where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
+            lines.append(f"- {text[:200]}{'…' if len(text) > 200 else ''} ({where})")
+    if lines:
+        head += "\n\nClosest passages (closest, not an answer):\n" + "\n".join(lines)
+    return head
+
+
 def extractive_answer(query: str, hits: list[dict]) -> str:
     if not hits:
         return (
             "I could not find supporting evidence in this RAG knowledge space. "
             "Try ingesting more sources or rephrasing the question."
         )
+    why = abstention(query, hits)
+    if why:
+        return _abstention_text(hits, why)
     # Quote the passage that answers, not the first 180 characters of each chunk.
     # Clipping the head cut the value off whenever it sat past the first few
     # sentences, so the offline answer showed everything except the answer.
@@ -132,11 +224,30 @@ def extractive_answer(query: str, hits: list[dict]) -> str:
     picked: list[tuple[float, int, str, bool]] = []
     for i, h in enumerate(hits[:4], start=1):
         best, best_score, best_named = "", 0.0, False
-        for passage in re.split(r"\n+|(?<=[.!?])\s+", (h.get("text") or "").strip()):
-            toks = set(sira.tokenize(passage))
-            score = len(q_terms & toks) + 3.0 * len(names & toks)
-            if score > best_score and not passage.lstrip().startswith("#"):
-                best, best_score, best_named = passage.strip(), score, bool(names & toks)
+        parts = [
+            x.strip() for x in re.split(r"\n+|(?<=[.!?])\s+", (h.get("text") or "").strip())
+            if x.strip() and not x.lstrip().startswith("#")
+        ]
+        toksets = [set(sira.tokenize(x)) for x in parts]
+        # Prose spreads one fact over sentences: "Globex handles logistics. ... Payment
+        # terms are net 30." The best single sentence for "payment terms for globex"
+        # is the FIRST "Payment terms" line, which belongs to another vendor. So a
+        # run of up to three sentences is scored, and among equal scores the run
+        # that starts at the sentence holding the question's rarest word wins:
+        # the subject comes before what is said about it.
+        matched = [t for t in q_terms if any(t in ts for ts in toksets)]
+        rarest = min(matched, key=lambda t: sum(t in ts for ts in toksets), default=None)
+        best_key = None
+        for a in range(len(parts)):
+            for size in (1, 2, 3):
+                if a + size > len(parts):
+                    break
+                toks = set().union(*toksets[a : a + size])
+                score = len(q_terms & toks) + 3.0 * len(names & toks)
+                key = (score, size == 1 or (rarest is not None and rarest in toksets[a]), -size, -a)
+                if score > 0 and (best_key is None or key > best_key):
+                    best_key = key
+                    best, best_score, best_named = " ".join(parts[a : a + size]), score, bool(names & toks)
         if best:
             picked.append((best_score, i, best[:320] + ("…" if len(best) > 320 else ""), best_named))
     top = max((sc for sc, _, _, _ in picked), default=0.0)
@@ -1619,6 +1730,19 @@ def answer_events(
         context = ""
         evidence_hits = []
         confidence = 0.0  # no bar for an answer we just declined to give
+    # Offline, nothing downstream can say "I don't know", so decide it here: a named
+    # thing the space never mentions, or passages that cover too little of the ask.
+    # The passages stay (shown as "closest, not an answer") but are not cited as proof.
+    # An unsupported verdict above already declined, in its own words.
+    abstained = abstention(query, evidence_hits) if (not use_llm and evidence_hits) else None
+    if abstained:
+        # "gaps_disclosed" already says the answer stops short; only "evidence_ok"
+        # would contradict the abstention.
+        if stop_reason == "evidence_ok":
+            stop_reason = "abstained"
+        citations = [c for c in citations if c.get("web")]
+        context = ""
+        confidence = 0.0
 
     yield {
         "type": "meta",
@@ -1641,10 +1765,10 @@ def answer_events(
             text = "From web search:\n" + web_snippets_ctx[:2000]
         # Lead with the measured gap, then the diagnosis — an honest "here is what is
         # missing and what to do" beats a fluent paragraph built on nothing.
-        lead = goal.summary_line(assessment)
+        lead = "" if abstained else goal.summary_line(assessment)
         if lead:
             text = (lead + "\n\n" + text).strip()
-        if assessment.diagnosis:
+        if assessment.diagnosis and not abstained:
             text += "\n\nTo get a better answer:\n" + "\n".join(
                 f"- {d}" for d in assessment.diagnosis
             )
@@ -1663,6 +1787,8 @@ def answer_events(
             "faithfulness": 1.0,
             "unsupported_claims": [],
             "goal": assessment.as_dict(),
+            "abstained": bool(abstained),
+            "abstain_reason": (abstained or {}).get("reason", ""),
             "model": "extractive",
             "citations": citations,
             "hits": hits,
@@ -1674,10 +1800,16 @@ def answer_events(
                 depth=result.get("depth") or depth,
                 hits=hits,
                 citations=citations,
-                goal=assessment.as_dict(),
+                # The chain reads the verdict, so an abstention must not leave it
+                # saying "the passages cover the ask" beside an answer that declines.
+                goal=(
+                    {**assessment.as_dict(), "verdict": "unsupported",
+                     "diagnosis": ["Abstained, no answer given: " + abstained["reason"]]}
+                    if abstained else assessment.as_dict()
+                ),
                 coverage=coverage,
                 stop_reason=stop_reason,
-                model="extractive",
+                model="extractive (abstained)" if abstained else "extractive",
                 faithfulness=1.0,
                 web_used=bool(web_snippet_rows),
                 ontology_summary=_ontology_summary,

@@ -21,10 +21,12 @@
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 5. **RAG reliability (PR #90, draft).** Ontology v2 is data-derived (#6).
-   File-type bench: 11 types, recall@5 330/330, every hit cites a place
-   (synthetic, hash embedder, no model). Upload no longer wipes a space.
-   Suite 743 pass / 0 fail on Linux. Windows CI and n=320 `hybrid_max`
-   NOT re-run here. 8 adversary defects left open with reasons.
+   File-type bench: 16 types in one space, recall@5 480/480, every hit
+   cites a place. Paraphrase bench (of 64): verbatim 64, synonym 45,
+   lowercase+typo 49, by-another-fact 17 (weak, recorded). Offline answer
+   abstains when the space lacks the name. Upload no longer wipes a
+   space. Suite 796 pass / 0 fail on Linux. All synthetic, hash
+   embedder, no model. n=320 `hybrid_max` NOT re-run here.
 6. **Daily task** "AirGPT RAG daily improve" 04:23 MYT, draft PRs only.
    It was stored with no repo source and no connectors.
 7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.

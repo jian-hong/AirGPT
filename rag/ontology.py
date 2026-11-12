@@ -25,13 +25,20 @@ from typing import Any
 
 from rag import store
 
-ONTOLOGY_VERSION = 2
+ONTOLOGY_VERSION = 3  # 3: relation confidence/sampled, probable_foreign_key, full-table profiling
 
-# Rows profiled per table. Beyond this, uniqueness is a claim about a prefix, so
-# the table is marked `sampled` and nobody downstream reads it as a proof.
-MAX_ROWS = 50_000
+# Rows profiled per table. Profiling costs O(distinct values), not O(rows), so this
+# is a memory ceiling rather than a 50k prefix. Beyond it uniqueness is a claim about
+# a prefix, so the table is marked `sampled` and every relation touching it is
+# downgraded to probable.
+MAX_ROWS = 1_000_000
 _FK_MIN_OVERLAP = 0.9
+# A real foreign key with dirty rows (typos, orphans, a stale lookup) lands here. It is
+# reported as a probable relation carrying its overlap, never as an established one.
+_PROBABLE_MIN_OVERLAP = 0.7
+_PROBABLE_MIN_DISTINCT = 8
 _SHARED_MIN_OVERLAP = 0.5
+_DIGITS = re.compile(r"[0-9]+$")
 _TABLE_SUFFIXES = (".xlsx", ".xlsm", ".xls", ".csv")
 _DATE_FORMATS = (
     "%Y-%m-%d",
@@ -40,6 +47,24 @@ _DATE_FORMATS = (
     "%m/%d/%Y",
     "%d-%m-%Y",
     "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y.%m.%d",
+    "%d.%m.%Y",
+    "%d %b %Y",
+    "%d %B %Y",
+    "%B %d, %Y",
+    "%b %d, %Y",
+    "%d-%b-%Y",
+    "%d-%b-%y",
+)
+# "45%", "RM 1,200.50", "$3,400", "(1,200)". Plain digits are NOT matched on their own:
+# "007" is a code. A value needs a %, a currency or a thousands comma to count.
+_CUR = r"(?:US\$|S\$|RM|MYR|USD|SGD|EUR|GBP|AUD|IDR|THB|CNY|JPY|INR|[$€£¥])"
+_TEXT_NUM = re.compile(
+    rf"^\(?\s*[-+]?\s*(?P<cur>{_CUR})?\s*[-+]?\s*"
+    r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?P<pct>%)?\s*\)?$",
+    re.I,
 )
 _ID_NAME = re.compile(r"(^|_)(id|no|num|number|code|key|ref|row|seq|index|idx|sn)$")
 # Without matching names, a text column needs this many distinct values before
@@ -105,18 +130,41 @@ def _date_format(values: list[str]) -> str | None:
     return None
 
 
+def _text_number(strs: list[str]) -> str | None:
+    """"percent" or "currency" when at least 90% of these strings are numbers written
+    with a unit, else None. Unmarked digit strings never qualify on their own."""
+    head = strs[:200]
+    ok = marked = 0
+    for s in head:
+        m = _TEXT_NUM.match(s.strip())
+        if not m:
+            continue
+        has_mark = bool(m["cur"] or m["pct"] or "," in m["num"])
+        if not has_mark and len(m["num"]) > 1 and m["num"].startswith("0") and "." not in m["num"]:
+            continue  # leading zero without a unit is a code
+        ok += 1
+        marked += has_mark
+    if head and ok >= 0.9 * len(head) and marked >= 0.5 * len(head):
+        return "percent" if any("%" in s for s in head) else "currency"
+    return None
+
+
 def profile_column(name: str, values: list[Any]) -> tuple[dict[str, Any], set[str]]:
     """Profile one column. Returns the serialisable profile and its distinct set."""
     present = [v for v in values if _canon(v) is not None]
+    return _profile(name, present, len(present), len(values))
+
+
+def _profile(name: str, present: list[Any], n: int, n_rows: int) -> tuple[dict[str, Any], set[str]]:
+    """`present` may hold each distinct value once; n and n_rows are the real counts."""
     distinct = {_canon(v) for v in present}
-    n = len(present)
     prof: dict[str, Any] = {
         "name": name,
         "key": _norm(name),
         "n": n,
-        "n_null": len(values) - n,
+        "n_null": n_rows - n,
         "n_distinct": len(distinct),
-        "is_unique": n >= 2 and len(distinct) == n and n == len(values),
+        "is_unique": n >= 2 and len(distinct) == n and n == n_rows,
         "samples": [str(v) for v in list(dict.fromkeys(present))[:3]],
     }
     if not present:
@@ -134,17 +182,24 @@ def profile_column(name: str, values: list[Any]) -> tuple[dict[str, Any], set[st
     else:
         kind = "text"
         strs = [v for v in present if isinstance(v, str)]
-        fmt = _date_format(strs) if len(strs) == n else None
+        all_str = len(strs) == len(present)
+        fmt = _date_format(strs) if all_str else None
+        unit = None if fmt or not all_str else _text_number(strs)
         if fmt:
             kind = "date"
             prof["format"] = fmt
+        elif unit:
+            kind = "number"
+            prof["text_unit"] = unit
     prof["kind"] = kind
 
-    if kind == "date":
+    if prof.get("text_unit"):
+        role = "measure"  # a number kept as text; never a key, never joined on
+    elif kind == "date":
         role = "temporal"
     elif kind == "text":
         # Unique free text (a notes column) identifies nothing a person would join on.
-        short = sum(len(str(v)) for v in present) / n <= 40
+        short = sum(len(str(v)) for v in present) / len(present) <= 40
         role = "key" if prof["is_unique"] and short else "dimension"
     elif kind == "number":
         # A unique column of whole numbers is a key only when it is also NAMED like
@@ -196,7 +251,10 @@ def _load_frames(path: Path) -> dict[str, Any]:
         for i in range(len(header)):
             col = df.iloc[:, i]
             num = pd.to_numeric(col, errors="coerce")
-            if col.notna().any() and num.notna().sum() == col.notna().sum():
+            # "001" is a code. Turning it into the number 1 showed the user a value
+            # the file does not contain.
+            padded = col.dropna().astype(str).str.match(r"0\d+$").any()
+            if col.notna().any() and not padded and num.notna().sum() == col.notna().sum():
                 df.isetitem(i, num)
         return {path.stem: df}
 
@@ -217,7 +275,14 @@ def profile_workbook(path: str | Path) -> tuple[dict[str, Any], dict[tuple[str, 
             label = str(col).strip()
             if not label:
                 continue
-            prof, distinct = profile_column(label, df.iloc[:, i].tolist())
+            # Count each distinct value once (C speed), so profiling every row costs
+            # O(distinct) in Python. Uniqueness is then proven over the whole table.
+            series = df.iloc[:, i]
+            counts = series.value_counts(dropna=True)
+            uniq = [v for v in series.drop_duplicates().tolist() if _canon(v) is not None]
+            n_present = int(sum(c for v, c in counts.items() if _canon(v) is not None))
+            prof, distinct = _profile(label, uniq, n_present, int(len(df)))
+            prof["from_sample"] = sampled
             prof["index"] = i
             cols.append(prof)
             values[(p.name, sheet, label)] = distinct
@@ -253,7 +318,30 @@ def infer_relations(
     def joinable(c: dict) -> bool:
         return c.get("kind") == "text" or (c.get("kind") == "number" and c.get("integer_like"))
 
+    def compatible(x: dict, y: dict) -> bool:
+        # An id kept as text "001" in one sheet and number 1 in another is one id.
+        return x["kind"] == y["kind"] or (
+            {x["kind"], y["kind"]} == {"text", "number"} and joinable(x) and joinable(y)
+        )
+
+    zero_cache: dict[tuple[int, bool], set[str]] = {}
+
+    def nozero(vs: set[str], *, key: bool = False) -> set[str]:
+        """Digit-only codes without leading zeros, so "001" meets 1. "01A" is not
+        digit-only and is never touched. A KEY column that holds both "001" and "1"
+        has proven they are different codes and is left as written. A referencing
+        column that holds both is just inconsistent typing of one id, which is the
+        dirty data this exists for."""
+        hit = zero_cache.get((id(vs), key))
+        if hit is None:
+            hit = {(x.lstrip("0") or "0") if _DIGITS.match(x) else x for x in vs}
+            if key and len(hit) < len(vs):
+                hit = vs
+            zero_cache[(id(vs), key)] = hit
+        return hit
+
     def rel(kind: str, a: dict, ca: dict, b: dict, cb: dict, overlap: float, why: str) -> dict:
+        probable = kind.startswith("probable")
         cross = a["workbook"] != b["workbook"]
         left = f"{a['workbook']}:{a['name']}" if cross else a["name"]
         right = f"{b['workbook']}:{b['name']}" if cross else b["name"]
@@ -270,6 +358,8 @@ def infer_relations(
             "to_column": cb["name"],
             "key": ca["key"],
             "overlap": round(overlap, 4),
+            "confidence": "probable" if probable else "established",
+            "sampled": bool(a.get("sampled") or b.get("sampled")),
             "evidence": why,
         }
 
@@ -279,36 +369,53 @@ def infer_relations(
             if not joinable(ca) or ca["n_distinct"] < 2:
                 continue
             va = vals(a, ca)
+            zva = nozero(va)
             best: tuple[float, int, dict, dict] | None = None
             for b in tables:
                 if b is a:
                     continue
                 for cb in b["columns"]:
-                    if cb["role"] != "key" or cb["kind"] != ca["kind"]:
+                    if cb["role"] != "key" or not compatible(ca, cb):
                         continue
-                    overlap = len(va & vals(b, cb)) / len(va)
+                    vb = vals(b, cb)
+                    raw = len(va & vb) / len(va)
+                    overlap = max(raw, len(zva & nozero(vb, key=True)) / len(zva))
                     named = _name_affinity(ca, cb, b)
                     # Small whole numbers sit inside any row counter by accident, so
                     # numeric containment needs the names to agree as well.
-                    if overlap < _FK_MIN_OVERLAP or (ca["kind"] == "number" and not named):
+                    if overlap < _PROBABLE_MIN_OVERLAP or ("number" in (ca["kind"], cb["kind"]) and not named):
                         continue
                     if not named and ca["n_distinct"] < _FK_MIN_DISTINCT_UNNAMED:
                         continue
+                    # A weaker tier is only safe with enough distinct values behind it.
+                    if overlap < _FK_MIN_OVERLAP and ca["n_distinct"] < _PROBABLE_MIN_DISTINCT:
+                        continue
                     rank = (overlap, int(named))
                     if best is None or rank > best[:2]:
-                        best = (overlap, int(named), b, cb)
+                        best = (overlap, int(named), b, cb, raw)
             if best is None:
                 continue
-            overlap, named, b, cb = best
-            both_keys = ca["role"] == "key" and len(vals(b, cb) & va) / len(vals(b, cb)) >= _FK_MIN_OVERLAP
-            out.append(
-                rel(
-                    "one_to_one" if both_keys else "foreign_key",
-                    a, ca, b, cb, overlap,
-                    f"{overlap:.0%} of {ca['n_distinct']} distinct values found in the unique column"
-                    + (", names agree" if named else ""),
-                )
+            overlap, named, b, cb, raw = best
+            vb = vals(b, cb)
+            sampled = bool(a.get("sampled") or b.get("sampled"))
+            certain = overlap >= _FK_MIN_OVERLAP and not sampled
+            both_keys = (
+                certain and ca["role"] == "key"
+                and max(len(va & vb), len(zva & nozero(vb, key=True))) / len(vb) >= _FK_MIN_OVERLAP
             )
+            if certain:
+                kind = "one_to_one" if both_keys else "foreign_key"
+            else:
+                kind = "probable_foreign_key"
+            why = f"{overlap:.0%} of {ca['n_distinct']} distinct values found in the unique column"
+            if named:
+                why += ", names agree"
+            if overlap > raw:
+                why += ", matched ignoring leading zeros"
+            if kind == "probable_foreign_key":
+                why += (", from a sample of the table, not proven" if sampled
+                        else f", below the {_FK_MIN_OVERLAP:.0%} needed to call it certain")
+            out.append(rel(kind, a, ca, b, cb, overlap, why))
 
     # Same-named dimension on both sides, unique on neither: joinable, many-to-many.
     linked = {(r["from_workbook"], r["from_sheet"], r["from_column"]) for r in out}
@@ -395,6 +502,9 @@ def build_ontology(paths: list[str | Path]) -> dict[str, Any]:
         values.update(vals)
     _name_entities(tables)
     relations = infer_relations(tables, values)
+    # Established relations first, so the 200 cap can never push one out for a guess.
+    relations.sort(key=lambda r: r["confidence"] == "probable")
+    n_probable = sum(1 for r in relations if r["confidence"] == "probable")
     entities = _entities(tables)
     return {
         "version": ONTOLOGY_VERSION,
@@ -406,7 +516,10 @@ def build_ontology(paths: list[str | Path]) -> dict[str, Any]:
             "n_workbooks": len([w for w in workbooks if w.get("ok")]),
             "n_failed": len([w for w in workbooks if not w.get("ok")]),
             "n_entities": len(entities),
-            "n_relations": len(relations),
+            # Counts only what the data proves; guesses are counted apart so a
+            # sentence built from the summary cannot present them as fact.
+            "n_relations": len(relations) - n_probable,
+            "n_probable_relations": n_probable,
             "entity_ids": sorted(e["id"] for e in entities),
         },
     }
@@ -455,6 +568,13 @@ def ontology_for_space(space_id: int, *, force: bool = False) -> dict[str, Any]:
     return {"ok": True, "cached": False, **payload}
 
 
+def _relation_label(r: dict) -> str:
+    rid = str(r.get("id") or "")
+    if r.get("confidence") == "probable":
+        return f"{rid} (probable, {float(r.get('overlap') or 0):.0%} overlap - verify before relying on it)"
+    return rid
+
+
 def logic_for_query(ontology: dict[str, Any], query: str) -> list[dict[str, str]]:
     """Visible reasoning steps. An entity is cited only when the ontology holds it."""
     ents = {e["id"]: e for e in (ontology.get("entities") or []) if isinstance(e, dict)}
@@ -481,7 +601,7 @@ def logic_for_query(ontology: dict[str, Any], query: str) -> list[dict[str, str]
     ]
     steps.append(
         {"step": "3", "op": "use_relations",
-         "detail": "; ".join(str(r.get("id") or "") for r in useful[:5]) or "none required"}
+         "detail": "; ".join(_relation_label(r) for r in useful[:5]) or "none required"}
     )
 
     measures = list(dict.fromkeys(m for eid in bound for m in ents[eid].get("measures") or []))

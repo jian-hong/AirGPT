@@ -117,7 +117,7 @@ def identifier_terms(query: str) -> list[str]:
     return list(dict.fromkeys(out))[:6]
 
 
-def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
+def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> list[RankedHit]:
     """Chunks holding a name or code from the question that is RARE in this space.
 
     Someone who types "Halvorsen" or "ZQ-4471" wants the few places that say it.
@@ -133,8 +133,24 @@ def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
     store.init()
     found: dict[int, dict] = {}
     terms = identifier_terms(query)
-    name_tokens = {t for term in terms for t in sira.tokenize(term)}
-    rest = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in name_tokens and t not in _QUESTION_WORDS}
+    content = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in _QUESTION_WORDS}
+    if lowercase:
+        # A lowercase name is also where typos live ("halvorsn"). Correct words the
+        # space has never seen against its own vocabulary before looking them up.
+        try:
+            from rag import spell
+
+            query = spell.correct_query(query, space_id)
+        except Exception:
+            pass
+        content = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in _QUESTION_WORDS}
+        # People type names in lowercase. Any longer word of the question may be one;
+        # the rarity limit and the coverage rule decide, not the capital letter. Kept
+        # as a separate, ordinary-weight channel: a rare lowercase word is weaker
+        # evidence of a name than a capital or a code, and at full weight it took
+        # rank 1 from the chunk that matched the capitalised name.
+        seen = {t for term in terms for t in sira.tokenize(term)}
+        terms = [t for t in sira.tokenize(query) if len(t) >= 5 and t in content and t not in seen]
     with store._conn() as conn:
         for term in terms:
             parts = re.findall(r"[^\W_]+", term.lower())
@@ -157,6 +173,7 @@ def exact_term_search(space_id: int, query: str) -> list[RankedHit]:
                 continue
             if not rows or len(rows) > EXACT_MAX_DF:
                 continue
+            rest = content - set(parts)
             for r in rows:
                 if rest and not _is_code(term):
                     # snake_case keys ("discount_band") are one token to the tokenizer
@@ -429,6 +446,9 @@ def _search(
     exact = exact_term_search(space_id, query)
     if exact:
         channels["exact"] = exact
+    rare = exact_term_search(space_id, query, lowercase=True)
+    if rare:
+        channels["rare"] = rare
 
     fused = fuse_channels(
         channels,
@@ -462,11 +482,15 @@ def _search(
             chunk_hits = [h for h in chunk_hits if int(h.get("source_id") or 0) in wanted]
             file_hits = [f for f in file_hits if int(f.get("source_id") or 0) in wanted]
 
-    # Prefer files that match: boost sibling chunks with same source_id
-    hot_sources = {int(f.get("source_id") or 0) for f in file_hits[:5]}
+    # Prefer files that match: chunks of a file the file-level search ranked high get
+    # one more rank vote, sized like any other channel's. This was a flat +0.05,
+    # three times a first-place vote, so with more than five files in a space every
+    # chunk of a favoured file outranked the chunk that actually held the answer.
+    hot_rank = {int(f.get("source_id") or 0): i for i, f in enumerate(file_hits[:5], start=1)}
     for h in chunk_hits:
-        if int(h.get("source_id") or 0) in hot_sources:
-            h["score"] = float(h.get("score") or 0) + 0.05
+        rank = hot_rank.get(int(h.get("source_id") or 0))
+        if rank:
+            h["score"] = float(h.get("score") or 0) + 1.0 / (60 + rank)
 
     # Tag and weight by source class. A space that has swallowed 1000+ chat transcripts
     # would otherwise rank the assistant's own past answers above fetched documents —

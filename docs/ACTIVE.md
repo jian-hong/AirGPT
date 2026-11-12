@@ -29,6 +29,15 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `rag/ingest.py` extractors emit structure the chunker turns into citations:
   `## Page N` (pdf), heading styles + table rows (docx), shown slide order +
   notes (pptx), headings + cells (html), `.eml`, whole json records.
+- `tests/RAG/paraphrase_bench.py` -- same facts asked four ways (verbatim,
+  synonym, lowercase+typo, by another fact). Gate pins measured floors; two are
+  deliberately weak and say so. Measure only.
+- `rag/answer.py` `abstention` -- offline answer says the space does not
+  mention a name / file / attribute instead of quoting a look-alike.
+- `rag/ingest.py` -- also `.tsv .xml .log .ipynb .rtf`. Re-ingesting a file
+  replaces its chunks; identical files share a source row with every origin.
+- `rag/ontology.py` -- `probable_foreign_key` (70-90% overlap) is never
+  counted in `n_relations` or stated as fact.
 - `/api/rag/spaces/<id>/upload` adds. It rebuilds only on `force=1`.
 - `rag/ontology.py` -- `ONTOLOGY_VERSION=2`. Induced from cell values: keys
   from uniqueness, relations from value containment, column kind/role/date

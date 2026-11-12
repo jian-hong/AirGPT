@@ -2,6 +2,25 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-12 -- Wave 2: abstention, five more file types, the hot-file bonus
+
+- Retrieval: the flat +0.05 hot-file bonus was three rank votes; with more than
+  five files it buried the answer (log 10 of 30). Resized to one vote. All 16
+  types in one shared space: 480 of 480 in the top 5.
+- Lowercase names and typos get an ordinary-weight exact-match channel that
+  reuses `rag/spell.py`. Paraphrase bench, lowercase+typo: 10 -> 40 of 64 at rank 1.
+- Offline answer abstains when the space does not mention the name, the file or
+  the attribute asked for (20 of 20 unanswerable, 20 of 20 answerable kept).
+  A fact spread over sentences is quoted with its subject.
+- New types: `.tsv .xml .log .ipynb .rtf`. Re-ingesting a file replaces its
+  chunks instead of duplicating them.
+- Ontology: `probable_foreign_key` tier, `001` meets `1`, text dates and
+  amounts, tables profiled in full up to one million rows.
+- New `tests/RAG/paraphrase_bench.py` with a gate whose weak floors are named.
+- Built by four agents in worktrees, each attacked by an independent agent; one
+  slice was refused on a reproduced high defect and fixed before landing.
+- Suite 796 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
 ## 2026-11-12 -- Every file type is found again and cited to a place
 
 - New `tests/RAG/filetype_bench.py`: 11 types in one space. First run was red:

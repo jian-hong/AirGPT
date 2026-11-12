@@ -3,7 +3,7 @@
   "n_per_type": 30,
   "seed": 1,
   "top_k": 5,
-  "n_total": 330,
+  "n_total": 480,
   "index_fingerprint": {
     "schema_version": 1,
     "chunker": {
@@ -52,7 +52,7 @@
       "n": 30,
       "ingested": true,
       "reason": "",
-      "recall_at_1": 30,
+      "recall_at_1": 29,
       "recall_at_5": 30,
       "locator_n": 30,
       "locator_ok": 30,
@@ -62,7 +62,7 @@
       "n": 30,
       "ingested": true,
       "reason": "",
-      "recall_at_1": 30,
+      "recall_at_1": 29,
       "recall_at_5": 30,
       "locator_n": 0,
       "locator_ok": 0,
@@ -72,7 +72,7 @@
       "n": 30,
       "ingested": true,
       "reason": "",
-      "recall_at_1": 29,
+      "recall_at_1": 30,
       "recall_at_5": 30,
       "locator_n": 0,
       "locator_ok": 0,
@@ -82,7 +82,7 @@
       "n": 30,
       "ingested": true,
       "reason": "",
-      "recall_at_1": 27,
+      "recall_at_1": 29,
       "recall_at_5": 30,
       "locator_n": 30,
       "locator_ok": 30,
@@ -136,6 +136,56 @@
       "recall_at_5": 30,
       "locator_n": 30,
       "locator_ok": 30,
+      "misses": []
+    },
+    "tsv": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    },
+    "xml": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "log": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "ipynb": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "rtf": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
       "misses": []
     }
   }

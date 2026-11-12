@@ -232,6 +232,69 @@ def w_pptx(p: Path, facts):
     return {f.entity: f"Slide {f.group + 1}" for f in facts}
 
 
+def w_tsv(p: Path, facts):
+    p.write_text("account\tattribute\tvalue\n" + "\n".join(f"{f.entity}\t{f.attr}\t{f.value}" for f in facts),
+                 encoding="utf-8")
+    return {}
+
+
+def w_xml(p: Path, facts):
+    """Regions of account records. The place is the element path."""
+    regions = "".join(
+        f'<region name="Region {g + 1} accounts">'
+        + "".join(
+            f"<account><name>{f.entity}</name><attribute>{escape(f.attr)}</attribute><value>{f.value}</value></account>"
+            for f in fs
+        )
+        + "</region>"
+        for g, fs in enumerate(_groups(facts))
+    )
+    p.write_text(f'<?xml version="1.0" encoding="utf-8"?><register>{regions}</register>', encoding="utf-8")
+    return {f.entity: f"region[{f.group + 1}]" for f in facts}
+
+
+def w_log(p: Path, facts):
+    """One day per group. Every third fact sits in an ERROR record whose stack trace
+    follows it, so the record has to stay in one piece to be found."""
+    lines = []
+    for i, f in enumerate(facts):
+        day = f"2026-03-{f.group + 1:02d}"
+        stamp = f"{day} 09:{i % 60:02d}:00"
+        if i % 3 == 2:
+            lines += [f"{stamp} ERROR billing.worker {f.sentence}",
+                      "Traceback (most recent call last):",
+                      '  File "worker.py", line 42, in run',
+                      "    raise LookupError(code)",
+                      "LookupError: stale"]
+        else:
+            lines.append(f"{stamp} INFO billing.worker {f.sentence}")
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {f.entity: f"2026-03-{f.group + 1:02d}" for f in facts}
+
+
+def w_ipynb(p: Path, facts):
+    """A markdown heading cell per group; even groups state facts in markdown, odd
+    groups in a code cell (with a comment line) and an output that repeats them."""
+    cells = []
+    for g, fs in enumerate(_groups(facts)):
+        cells.append({"cell_type": "markdown", "metadata": {}, "source": [f"## Region {g + 1} accounts\n"]})
+        if g % 2:
+            src = "# lookup table\n" + "\n".join(f'print("{f.sentence}")' for f in fs)
+            cells.append({"cell_type": "code", "metadata": {}, "execution_count": g, "source": src.splitlines(True),
+                          "outputs": [{"output_type": "stream", "name": "stdout", "text": ["done\n"]}]})
+        else:
+            cells.append({"cell_type": "markdown", "metadata": {}, "source": ["\n\n".join(f.sentence for f in fs)]})
+    p.write_text(json.dumps({"cells": cells, "metadata": {}, "nbformat": 4, "nbformat_minor": 5}), encoding="utf-8")
+    return {f.entity: f"Region {f.group + 1} accounts" for f in facts}
+
+
+def w_rtf(p: Path, facts):
+    paras = "".join("\\pard " + f.sentence + "\\par\n" for f in facts)
+    p.write_text("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Times New Roman;}}{\\colortbl;\\red0\\green0\\blue0;}"
+                 "{\\*\\generator Hand 1.0;}\\f0\\fs24 Account register\\par\n" + paras + "}", encoding="utf-8")
+    return {}
+
+
 def pdf_bytes(pages: list[list[str]]) -> bytes:
     """A text PDF, one list of lines per page, written by hand (no PDF library)."""
     def esc(s):
@@ -272,11 +335,17 @@ def w_pdf(p: Path, facts):
 TYPES = {
     "txt": w_txt, "md": w_md, "html": w_html, "json": w_json, "csv": w_csv, "xlsx": w_xlsx,
     "py": w_py, "docx": w_docx, "pptx": w_pptx, "pdf": w_pdf, "eml": w_eml,
+    "tsv": w_tsv, "xml": w_xml, "log": w_log, "ipynb": w_ipynb, "rtf": w_rtf,
 }
 
 
+def space_groups(kinds: list[str]) -> list[list[str]]:
+    """One shared space, so every type distracts every other."""
+    return [kinds]
+
+
 def run(n: int = 30, seed: int = 1, top_k: int = 5, types: list[str] | None = None) -> dict:
-    """Generate, ingest into one fresh space, ask every fact. Returns the scoreboard."""
+    """Generate, ingest per space group (see CORE_TYPES), ask every fact. Returns the scoreboard."""
     os.environ["AIRGPT_RAG_EMBED"] = "hash"  # deterministic, offline
     import rag.store as store
     from rag import embed, index_fingerprint, ingest, retrieve
@@ -290,41 +359,41 @@ def run(n: int = 30, seed: int = 1, top_k: int = 5, types: list[str] | None = No
         store.DB_PATH = store.RAG_DIR / "rag.db"
         store.BLOB_DIR = store.RAG_DIR
         store.init()
-        sid = int(store.create_space("filetype bench", depth_default="high")["id"])
-
-        corpus = root / "corpus"
-        corpus.mkdir()
-        plan: dict[str, tuple[list[Fact], dict]] = {}
-        for kind in types or list(TYPES):
-            facts = make_facts(kind, n, seed)
-            path = corpus / f"register_{kind}.{kind}"
-            plan[kind] = (facts, TYPES[kind](path, facts))
-
-        out = ingest.ingest_paths(sid, [corpus / f"register_{k}.{k}" for k in plan])
-        skipped = {Path(s["path"]).suffix.lstrip("."): s["reason"] for s in out.get("skipped") or []}
-        indexed = {Path(str(s.get("title") or s.get("path") or "")).suffix.lstrip(".")
-                   for s in store.list_sources(sid)}
-
         board: dict[str, dict] = {}
-        for kind, (facts, locators) in plan.items():
-            row = {"n": len(facts), "ingested": kind not in skipped, "reason": skipped.get(kind, ""),
-                   "recall_at_1": 0, "recall_at_5": 0, "locator_n": 0, "locator_ok": 0, "misses": []}
-            if row["ingested"] and kind not in indexed and not row["reason"]:
-                row["ingested"], row["reason"] = False, "not accepted by ingest (unsupported type)"
-            for f in facts:
-                hits = retrieve.search(sid, f.question, depth="high", top_k=top_k).get("hits") or []
-                rank = next((i for i, h in enumerate(hits) if f.value in str(h.get("text") or "")), None)
-                if rank is None:
-                    row["misses"].append(f.question)
-                    continue
-                row["recall_at_5"] += 1
-                row["recall_at_1"] += int(rank == 0)
-                want = locators.get(f.entity)
-                if want:
-                    row["locator_n"] += 1
-                    row["locator_ok"] += int(want.lower() in str(hits[rank].get("heading") or "").lower())
-            row["misses"] = row["misses"][:3]
-            board[kind] = row
+        for gi, kinds in enumerate(space_groups(types or list(TYPES))):
+            sid = int(store.create_space(f"filetype bench {gi}", depth_default="high")["id"])
+            corpus = root / f"corpus{gi}"
+            corpus.mkdir()
+            plan: dict[str, tuple[list[Fact], dict]] = {}
+            for kind in kinds:
+                facts = make_facts(kind, n, seed)
+                path = corpus / f"register_{kind}.{kind}"
+                plan[kind] = (facts, TYPES[kind](path, facts))
+
+            out = ingest.ingest_paths(sid, [corpus / f"register_{k}.{k}" for k in plan])
+            skipped = {Path(s["path"]).suffix.lstrip("."): s["reason"] for s in out.get("skipped") or []}
+            indexed = {Path(str(s.get("title") or s.get("path") or "")).suffix.lstrip(".")
+                       for s in store.list_sources(sid)}
+
+            for kind, (facts, locators) in plan.items():
+                row = {"n": len(facts), "ingested": kind not in skipped, "reason": skipped.get(kind, ""),
+                       "recall_at_1": 0, "recall_at_5": 0, "locator_n": 0, "locator_ok": 0, "misses": []}
+                if row["ingested"] and kind not in indexed and not row["reason"]:
+                    row["ingested"], row["reason"] = False, "not accepted by ingest (unsupported type)"
+                for f in facts:
+                    hits = retrieve.search(sid, f.question, depth="high", top_k=top_k).get("hits") or []
+                    rank = next((i for i, h in enumerate(hits) if f.value in str(h.get("text") or "")), None)
+                    if rank is None:
+                        row["misses"].append(f.question)
+                        continue
+                    row["recall_at_5"] += 1
+                    row["recall_at_1"] += int(rank == 0)
+                    want = locators.get(f.entity)
+                    if want:
+                        row["locator_n"] += 1
+                        row["locator_ok"] += int(want.lower() in str(hits[rank].get("heading") or "").lower())
+                row["misses"] = row["misses"][:3]
+                board[kind] = row
         return {
             "bench": "filetype_bench",
             "n_per_type": n, "seed": seed, "top_k": top_k,

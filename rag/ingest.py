@@ -166,6 +166,11 @@ TEXT_SUFFIXES = {
     ".yml",
     ".toml",
     ".csv",
+    ".tsv",
+    ".xml",
+    ".log",
+    ".ipynb",
+    ".rtf",
     ".html",
     ".css",
     ".go",
@@ -326,7 +331,7 @@ def _xlsx_text(path: Path) -> str:
     return "\n\n".join(out).strip()
 
 
-def _csv_text(path: Path, raw_text: str) -> str:
+def _csv_text(path: Path, raw_text: str, delimiter: str = ",") -> str:
     """Delimited rows as a sheet extract, same shape as `_xlsx_text`.
 
     Without this a .csv fell through to raw bytes: no `## Sheet:` line, so every
@@ -340,7 +345,10 @@ def _csv_text(path: Path, raw_text: str) -> str:
 
     rows: list[str] = []
     try:
-        for row in _csv.reader(io.StringIO(raw_text, newline="")):
+        # Tab-separated exports do not quote. Treating a leading '"' as a quote made
+        # the reader swallow the following rows into one cell.
+        quoting = _csv.QUOTE_NONE if delimiter == "\t" else _csv.QUOTE_MINIMAL
+        for row in _csv.reader(io.StringIO(raw_text, newline=""), delimiter=delimiter, quoting=quoting):
             # Keep empty cells in place: dropping them slid "30" under "name" in
             # "1,,30". A line break inside a cell becomes a space so the chunker
             # never cuts one record in two.
@@ -361,7 +369,7 @@ def _csv_text(path: Path, raw_text: str) -> str:
 # Suffixes whose extract is sheet rows, so chunking packs whole rows. `.xls` is
 # gone on purpose: it is absent from TEXT_SUFFIXES and has no extractor branch, so
 # naming it here only advertised support that never existed.
-TABLE_SUFFIXES = {".xlsx", ".xlsm", ".csv"}
+TABLE_SUFFIXES = {".xlsx", ".xlsm", ".csv", ".tsv"}
 
 _SHEET_MARKERS = ("## Sheet:", "## Spreadsheet index")
 
@@ -467,7 +475,7 @@ def _docx_text(path: Path) -> str:
                 return min(6, int(m.group(1))) if m else 0
         return 0
 
-    def para_text(node) -> str:
+    def para_text(node, skip_tables: bool = False) -> str:
         """Run text, with tabs and line breaks kept as spaces. A text box is stored
         twice (Choice and Fallback); only the first copy is read."""
         bits: list[str] = []
@@ -479,6 +487,8 @@ def _docx_text(path: Path) -> str:
                     bits.append(child.text)
                 elif tag in ("tab", "br", "cr"):
                     bits.append(" ")
+                elif tag == "tbl" and skip_tables:
+                    continue
                 elif tag != "Fallback":
                     collect(child)
 
@@ -486,6 +496,21 @@ def _docx_text(path: Path) -> str:
         return re.sub(r"[ \t]+", " ", "".join(bits)).strip()
 
     out: list[str] = []
+
+    def table(tbl) -> None:
+        nested: list = []
+        for tr in (r for r in tbl if _ooxml_local(r.tag) == "tr"):
+            cells = []
+            for tc in (c for c in tr if _ooxml_local(c.tag) == "tc"):
+                # para_text would read a table inside the cell as run-together
+                # text; the inner table gets its own rows after this row.
+                cells.append(para_text(tc, skip_tables=True))
+                nested.extend(t for t in tc if _ooxml_local(t.tag) == "tbl")
+            if any(cells):
+                out.append(" | ".join(cells))
+            for inner in nested:
+                table(inner)
+            nested = []
 
     def walk(node) -> None:
         for el in node:
@@ -496,10 +521,7 @@ def _docx_text(path: Path) -> str:
                     level = heading_level(el)
                     out.append(f"\n{'#' * level} {text}\n" if level else text)
             elif tag == "tbl":
-                for tr in (r for r in el if _ooxml_local(r.tag) == "tr"):
-                    cells = [para_text(tc) for tc in tr if _ooxml_local(tc.tag) == "tc"]
-                    if any(cells):
-                        out.append(" | ".join(cells))
+                table(el)
             elif tag != "Fallback":
                 walk(el)  # body, sdt content, etc.
 
@@ -649,6 +671,197 @@ def _pptx_text(path: Path) -> str:
     return "\n\n".join(out).strip()
 
 
+def _xml_text(raw: bytes) -> str:
+    """Element-path lines, one record per paragraph.
+
+    Every leaf and attribute becomes `path/to/leaf: value`, so a hit names where in
+    the document it came from. A tag that repeats under one parent (the records)
+    is indexed `tag[i]`, ends with a blank line so the chunker keeps it whole, and
+    its parent gets a `## path` heading for the citation. Bytes go to the parser so
+    the file's own encoding declaration decides how it is read.
+    """
+    from xml.etree import ElementTree as ET
+
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return ""
+    out: list[str] = []
+
+    def clean(t) -> str:
+        return re.sub(r"\s+", " ", t or "").strip()
+
+    def walk(el, path: str) -> None:
+        for k, v in el.attrib.items():
+            if clean(v):
+                out.append(f"{path}/@{_ooxml_local(k)}: {clean(v)}")
+        kids = list(el)
+        if clean(el.text):
+            out.append(f"{path}: {clean(el.text)}")
+        if not kids:
+            return
+        counts: dict[str, int] = {}
+        for c in kids:
+            counts[_ooxml_local(c.tag)] = counts.get(_ooxml_local(c.tag), 0) + 1
+        if any(n > 1 for n in counts.values()):
+            out.append(f"\n## {path}\n")
+        seen: dict[str, int] = {}
+        for c in kids:
+            tag = _ooxml_local(c.tag)
+            seen[tag] = seen.get(tag, 0) + 1
+            repeated = counts[tag] > 1
+            walk(c, f"{path}/{tag}[{seen[tag]}]" if repeated else f"{path}/{tag}")
+            if clean(c.tail):
+                # Text after a child element ("code is <b>bold</b> 7421") belongs to
+                # this element. ElementTree hangs it on the child's tail.
+                out.append(f"{path}: {clean(c.tail)}")
+            if repeated:
+                out.append("")
+
+    walk(root, _ooxml_local(root.tag))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+# A log record starts at a timestamp or a level word; a stack trace's frames,
+# "Caused by" and wrapped lines do not, so they stay glued to the record above.
+_LOG_START = re.compile(
+    r"^\s*(?:\[?\d{4}[-/]\d{2}[-/]\d{2}|\[?\d{2}:\d{2}:\d{2}|\[?[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}"
+    r"|\[?(?:TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\b)"
+)
+_LOG_DATE = re.compile(r"(\d{4}[-/]\d{2}[-/]\d{2})")
+
+
+def _log_text(raw_text: str) -> str:
+    """One paragraph per record, a `## date` heading when the date changes."""
+    lines = [ln.rstrip() for ln in raw_text.splitlines() if ln.strip()]
+    if not any(_LOG_START.match(ln) for ln in lines):
+        return ""  # no recognisable records: keep the raw text
+    records: list[list[str]] = []
+    for ln in lines:
+        if _LOG_START.match(ln) or not records:
+            records.append([ln])
+        else:
+            records[-1].append(ln)
+    out: list[str] = []
+    date = ""
+    for rec in records:
+        m = _LOG_DATE.search(rec[0][:40])
+        if m and m.group(1) != date:
+            date = m.group(1)
+            out.append(f"## {date}")
+        out.append("\n".join(rec))
+    return "\n\n".join(out).strip()
+
+
+def _ipynb_text(raw_text: str) -> str:
+    """Markdown cells as written (their headings stay headings); code cells indented
+    as a code block, which also keeps a `# comment` from reading as a heading.
+    Outputs are skipped: they are results, often huge base64 images, not the
+    author's words."""
+    import json as _json
+
+    try:
+        nb = _json.loads(raw_text)
+        cells = nb["cells"] if "cells" in nb else nb["worksheets"][0]["cells"]
+    except Exception:
+        return ""
+    out: list[str] = []
+    for cell in cells:
+        src = cell.get("source", cell.get("input", ""))
+        src = "".join(src) if isinstance(src, list) else str(src or "")
+        if not src.strip():
+            continue
+        if cell.get("cell_type") == "heading":  # nbformat 3
+            out.append("#" * max(1, min(6, int(cell.get("level") or 1))) + " " + " ".join(src.split()))
+        elif cell.get("cell_type") == "code":
+            out.append("Code cell:\n" + "\n".join("    " + ln for ln in src.splitlines()))
+        else:
+            out.append(src.strip())
+    return "\n\n".join(out).strip()
+
+
+_RTF_SKIP = {
+    "fonttbl", "colortbl", "stylesheet", "info", "pict", "header", "footer", "headerl",
+    "headerr", "footerl", "footerr", "fldinst", "themedata", "colorschememapping",
+    "datastore", "latentstyles", "listtable", "listoverridetable", "generator", "object",
+}
+_RTF_TOKEN = re.compile(
+    r"\\([a-zA-Z]+)(-?\d+)? ?|\\'([0-9a-fA-F]{2})|\\([^a-zA-Z])|([{}])|([^\\{}]+)"
+)
+
+
+def _rtf_text(raw: bytes) -> str:
+    """Plain text from RTF: control words dropped, \\par kept as a line end,
+    non-text groups (font table, pictures) skipped."""
+    src = raw.decode("latin-1")
+    out: list[str] = []
+    stack: list[tuple[bool, int]] = []  # (skipping, \uc fallback count)
+    skipping, uc, skip_chars = False, 1, 0
+    codepage = "cp1252"  # \ansicpg says otherwise for Cyrillic, Greek, Central European
+    for m in _RTF_TOKEN.finditer(src):
+        word, num, hexv, sym, brace, text = m.groups()
+        if brace == "{":
+            stack.append((skipping, uc))
+        elif brace == "}":
+            if stack:
+                skipping, uc = stack.pop()
+        elif word is not None:
+            if word in _RTF_SKIP:
+                skipping = True
+            elif skipping:
+                continue
+            elif word in ("par", "line", "sect", "page", "row"):
+                out.append("\n")
+            elif word == "tab":
+                out.append("\t")
+            elif word == "cell":
+                out.append(" | ")
+            elif word == "ansicpg" and num:
+                try:
+                    "".encode(f"cp{num}")
+                    codepage = f"cp{num}"
+                except LookupError:
+                    pass
+            elif word == "uc" and num:
+                uc = int(num)
+            elif word == "u" and num:
+                n = int(num)
+                out.append(chr(n + 65536 if n < 0 else n))
+                skip_chars = uc  # the ANSI fallback that follows is not text
+            elif word == "emdash":
+                out.append("\u2014")
+            elif word == "endash":
+                out.append("\u2013")
+            elif word in ("lquote", "rquote"):
+                out.append("'")
+            elif word in ("ldblquote", "rdblquote"):
+                out.append('"')
+        elif hexv is not None:
+            if skip_chars:
+                skip_chars -= 1
+            elif not skipping:
+                out.append(bytes([int(hexv, 16)]).decode(codepage, errors="replace"))
+        elif sym is not None:
+            if sym == "*":
+                skipping = True  # a destination we do not know is not body text
+            elif skipping:
+                continue
+            elif sym in "{}\\":
+                out.append(sym)
+            elif sym == "~":
+                out.append(" ")
+            elif sym in "\r\n":
+                out.append("\n")
+        elif text is not None and not skipping:
+            text = text.replace("\r", "").replace("\n", "")
+            if skip_chars:
+                text, skip_chars = text[skip_chars:], max(0, skip_chars - len(text))
+            out.append(text)
+    body = "".join(out)
+    body = re.sub(r"[ \t]+\n", "\n", body)
+    return re.sub(r"\n{3,}", "\n\n", body).strip()
+
+
 def _flatten_json(obj, prefix: str = "") -> list[str]:
     """Structure-aware JSON → readable 'key path: value' lines for embedding."""
     lines: list[str] = []
@@ -705,6 +918,16 @@ def read_text_file(path: Path) -> tuple[str, str]:
         text = _xlsx_text(path)
     elif suffix == ".csv":
         text = _csv_text(path, _decode(raw)) or _decode(raw)
+    elif suffix == ".tsv":
+        text = _csv_text(path, _decode(raw), "\t") or _decode(raw)
+    elif suffix == ".xml":
+        text = _xml_text(raw) or _decode(raw)
+    elif suffix == ".log":
+        text = _log_text(_decode(raw)) or _decode(raw)
+    elif suffix == ".ipynb":
+        text = _ipynb_text(_decode(raw)) or _decode(raw)
+    elif suffix == ".rtf":
+        text = _rtf_text(raw)
     elif suffix == ".docx":
         text = _docx_text(path)
     elif suffix == ".pptx":
@@ -772,6 +995,40 @@ def iter_files(root: Path, *, max_files: int = 500) -> Iterable[Path]:
         n += 1
         if n >= max_files:
             break
+
+
+def _source_has_chunks(source_id: int) -> bool:
+    with store._conn() as conn:
+        row = conn.execute("SELECT 1 FROM chunks WHERE source_id=? LIMIT 1", (int(source_id),)).fetchone()
+    return row is not None
+
+
+def _drop_replaced_sources(space_id: int, original_path: str, digest: str) -> None:
+    """Delete earlier sources read from this same path whose content has changed."""
+    if not original_path:
+        return
+    for old in store.list_sources(space_id):
+        meta = old.get("meta") if isinstance(old.get("meta"), dict) else {}
+        origins = _origins(meta)
+        if original_path not in origins or old.get("content_hash") == digest:
+            continue
+        if len(origins) == 1:
+            store.delete_source(int(old["id"]))
+            continue
+        # Two files with identical text share one source row. Changing one of them
+        # must not take the other's content out of the index: this path just stops
+        # being one of the row's origins.
+        origins.remove(original_path)
+        meta = {**meta, "original_paths": origins, "original_path": origins[0]}
+        store.update_source_status(int(old["id"]), str(old.get("status") or "ready"), meta=meta)
+
+
+def _origins(meta: dict) -> list[str]:
+    """Every path a source row was read from (identical files share one row)."""
+    paths = list(meta.get("original_paths") or [])
+    if meta.get("original_path") and meta["original_path"] not in paths:
+        paths.insert(0, meta["original_path"])
+    return paths
 
 
 def ingest_paths(
@@ -928,6 +1185,11 @@ def ingest_paths(
             }
             if docs_path:
                 meta_src["docs_path"] = docs_path
+            # A file re-uploaded with new content is the same file, not a second one:
+            # its old source and chunks go, so the answer cannot cite both versions.
+            # Identity is the resolved original path (an upload always lands on the
+            # same path); two folders holding a README.md stay two files.
+            _drop_replaced_sources(space_id, orig_resolved, digest)
             src = store.add_source(
                 space_id,
                 path=str(path),
@@ -941,6 +1203,13 @@ def ingest_paths(
             # Content-hash hit returns prior row — merge Docs/original meta so audit paths stick.
             prev_meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
             merged_meta = {**prev_meta, **meta_src}
+            # A content-hash hit on a row first read from ANOTHER path: both paths are
+            # origins of this row. Overwriting the first one lost it.
+            origins = _origins(prev_meta)
+            if orig_resolved not in origins:
+                origins.append(orig_resolved)
+            if len(origins) > 1:
+                merged_meta["original_paths"] = origins
             if docs_path:
                 merged_meta["docs_path"] = docs_path
             # Table-ness only ever latches ON: the prior ingest saw the .xlsx/.csv,
@@ -955,9 +1224,12 @@ def ingest_paths(
                 )
                 src = {**src, "meta": merged_meta}
             source_id = int(src["id"])
-            if src.get("status") == "ready" and not force and src.get("content_hash") == digest:
-                # already indexed identical content — still ok to skip rebuild pieces
-                pass
+            if src.get("status") == "ready" and _source_has_chunks(source_id):
+                # Identical content already indexed: inserting its chunks again made
+                # every re-upload a duplicate hit and a duplicate citation. After a
+                # force clear the chunks are gone, so a rebuild still re-indexes.
+                source_ids.append(source_id)
+                continue
             source_ids.append(source_id)
 
             store.update_job(job_id, stage="chunk", detail=path.name)
@@ -1319,6 +1591,7 @@ class _HtmlText(HTMLParser):
         self.title = ""
         self._skip = 0
         self._in_title = False
+        self._in_head = False  # inside <hN>: its text must stay on the "#" line
 
     def handle_starttag(self, tag, attrs):
         if tag in self._SKIP:
@@ -1329,9 +1602,12 @@ class _HtmlText(HTMLParser):
             return  # a heading inside <nav>/<header> must not leave a bare "#"
         elif tag in self._HEAD:
             # Markdown heading, so the chunker and citations carry the section.
+            self._in_head = True
             self.parts.append("\n\n" + "#" * int(tag[1]) + " ")
         elif tag in self._BREAK:
-            self.parts.append("\n")
+            # A <br> or source newline inside a heading used to end the "#" line and
+            # leave the rest of the title as body text.
+            self.parts.append(" " if self._in_head else "\n")
 
     def handle_endtag(self, tag):
         if tag in self._SKIP:
@@ -1341,11 +1617,12 @@ class _HtmlText(HTMLParser):
         elif self._skip:
             return
         elif tag in self._HEAD:
+            self._in_head = False
             self.parts.append("\n\n")
         elif tag in ("td", "th"):
             self.parts.append(" | ")  # cells used to run together: "Bolt5"
         elif tag in self._BREAK:
-            self.parts.append("\n")
+            self.parts.append(" " if self._in_head else "\n")
 
     def handle_data(self, data):
         if self._in_title:  # title lives inside <head>, which is otherwise skipped
@@ -1353,7 +1630,7 @@ class _HtmlText(HTMLParser):
             return
         if self._skip:
             return
-        self.parts.append(data)
+        self.parts.append(re.sub(r"\s+", " ", data) if self._in_head else data)
 
 
 def html_to_text(html: str) -> tuple[str, str]:

@@ -38,7 +38,7 @@ def test_type_ingests_retrieves_and_cites(board, kind):
 
 def test_types_with_a_place_are_scored_for_it(board):
     """A locator column that silently scores nobody would pass the test above."""
-    for kind in ("md", "html", "xlsx", "py", "docx", "pptx", "pdf", "eml"):
+    for kind in ("md", "html", "xlsx", "py", "docx", "pptx", "pdf", "eml", "xml", "log", "ipynb"):
         assert board[kind]["locator_n"] == board[kind]["n"], kind
 
 
