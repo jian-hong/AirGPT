@@ -2,6 +2,27 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-12 -- Ontology is induced from the data, not a keyword list (#6)
+
+- `rag/ontology.py` rewritten (`ONTOLOGY_VERSION=2`). Keys come from uniqueness
+  and relations from value containment against another table's unique column.
+  Columns carry kind, role and date format; tables carry a grain. csv and
+  cross-workbook relations are covered. The old version matched 17 English
+  keywords and joined on seven fixed column names, so anything else was
+  "Unknown" with no relations.
+- Three lies removed: the first row was taken as the header (banner rows), the
+  reasoning steps cited `SKU` / `Money` by regex when neither existed, and the
+  cached ontology survived new workbooks until `force`.
+- Design follows NVIDIA/auto-ontology (Apache-2.0), reimplemented clean-room
+  with no model call. Their Postgres + NIM stack is not used (P7).
+- `tests/test_rag_ontology.py` (9). Four guard mutations each turn it red.
+  Suite 712 passed, 9 skipped, 1 failed. The failure predates this change:
+  `test_research_bridge_and_urls` expects 1 attached file and gets 2 on a
+  machine that has `pypdf`.
+- `oracle_bench` stamps `ontology_version` into the fingerprint `extra`. The
+  n=320 `hybrid_max` score was NOT re-run (FRTR-bench is not in the clone).
+- Research survey and routing: `docs/subagents_findings/2026-11-12_rag-survey-auto-ontology.md`.
+
 ## 2026-09-11 -- Connect stays in Settings; LTX2 mock dumps ignored
 
 - Chat grid is two tracks (side + main). Connect is Settings Network only,

@@ -20,6 +20,11 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `clipdrop._rag_check_build_paths` -- `/build` paths must be this space.
 - `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
   (DR-0006 / #33). `table=True` for xlsx/csv. Rebuild prefers Docs original.
+- `rag/ontology.py` -- `ONTOLOGY_VERSION=2`. Induced from cell values: keys
+  from uniqueness, relations from value containment, column kind/role/date
+  format, table grain. xlsx + csv, cross-workbook. Cache keyed on the source
+  files. No keyword list, no model call. Ideas after NVIDIA/auto-ontology
+  (clean-room; running their stack is P7). `tests/test_rag_ontology.py`.
 - `rag/xlsx_sql.py` — production xlsx loader + SQL-ish KPI answers. Product
   must not import this from `tests/`.
 - `rag/xlsx_orch.py` — F15 / EPIC-D04 AirGPT half: identify ingested xlsx +
