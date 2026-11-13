@@ -118,6 +118,14 @@ class AgentRunTest(unittest.TestCase):
         self.assertEqual(self._status(live), "cancelled")
         self.assertFalse(workflow_engine.cancel(f"agent_run_{live}").get("ok"))
 
+    def test_a_long_queued_run_is_not_called_abandoned_when_it_starts(self):
+        rid = agent_store.create_run(self.agent["id"], "waited for approval")["id"]
+        with agent_store._conn() as conn:
+            conn.execute("UPDATE agent_runs SET status='queued', created_at=? WHERE id=?", (time.time() - 7200, rid))
+        agent_store.claim_run(rid)
+        agent_store.expire_stale_runs()
+        self.assertEqual(self._status(rid), "running")
+
 
 class _Canary(BaseHTTPRequestHandler):
     hits: list = []

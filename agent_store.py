@@ -228,8 +228,8 @@ def claim_run(run_id: int) -> dict:
     init()
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=? WHERE id=? AND status IN ('queued','awaiting_human')",
-            ("running", int(run_id)),
+            "UPDATE agent_runs SET status=?, created_at=? WHERE id=? AND status IN ('queued','awaiting_human')",
+            ("running", time.time(), int(run_id)),
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
