@@ -116,14 +116,6 @@ body.theme-light{
   transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s cubic-bezier(.22,1,.36,1),opacity .18s ease,box-shadow .18s ease;
 }
 .nav-item:active,.btn:active,.qr-btn:active,.icon-btn:active,.proj-page-card:active{transform:scale(.97)}
-.side-toggle-top{
-  display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;margin-right:2px;
-  border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);
-  font-size:15px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s cubic-bezier(.22,1,.36,1);
-}
-.side-toggle-top:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2)}
-.side-toggle-top:active{transform:scale(.96)}
-body.theme-light .side-toggle-top:hover{background:rgba(0,0,0,.05)}
 .projects-page{padding:28px 28px 48px;max-width:960px;margin:0 auto;width:100%;box-sizing:border-box}
 .projects-page-hdr{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .projects-page-hdr h2{font-family:var(--display);font-size:clamp(28px,4vw,36px);font-weight:600;letter-spacing:-.03em;color:var(--text);line-height:1.1}
@@ -435,12 +427,12 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
 .menu-btn{display:none;width:36px;height:36px;border:1px solid var(--line);border-radius:var(--radius);background:transparent;color:#fff;font-size:16px;cursor:pointer}
 @media(max-width:760px){
   .menu-btn{display:grid;place-items:center}
-  .side-toggle-top{display:none}
 }
 /* Chat title + share (Claude-style header above messages) */
 .chat-titlebar{
   display:none;align-items:center;gap:10px;flex-shrink:0;min-height:44px;
   padding:8px 16px 6px;border-bottom:1px solid transparent;background:transparent;z-index:5;
+  width:100%;max-width:1100px;margin:0 auto;box-sizing:border-box;
 }
 .chat-titlebar.show{display:flex}
 .main-chat-col:has(.chat-titlebar.show) .chat{padding-top:8px}
@@ -819,7 +811,7 @@ body.theme-light .invite-card .inv-ico{background:var(--surface2)}
 .lan-banner.show{display:block}
 .lan-banner.dismissing{max-height:0!important;opacity:0;transform:translateY(-12px);margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0;border-width:0}
 .lan-banner.dismissed{display:none!important}
-.banner-x{position:absolute;right:6px;top:6px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 6px;color:#fff}
+.banner-x{position:absolute;right:6px;top:6px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 6px}
 .banner-x:hover{opacity:.7}
 .net-banner{border-color:var(--line);background:var(--surface);color:var(--muted)}
 .chat{
@@ -2009,7 +2001,6 @@ body.theme-light .sess-agent-tag{background:rgba(0,0,0,.04)}
 .snippet-card .sn-tool.t-search{color:#d4f5dc;background:rgba(168,223,180,.18);border-color:rgba(168,223,180,.42)}
 .snippet-card .sn-tool.t-desktop{color:#f3e0ff;background:rgba(224,179,240,.2);border-color:rgba(224,179,240,.45)}
 .snippet-card .sn-more{font-size:10px;line-height:1.6;padding:0 6px;color:var(--muted);cursor:default}
-.snippet-card[data-wired="0"] .sn-actions .btn.primary{opacity:.55}
 /* Touch has no hover, so the popover would never open — the count on the card is the
    whole story there rather than a control nobody can reach. */
 @media (hover:none){.snippet-card .sn-tools{display:none}}
@@ -2238,7 +2229,7 @@ body.ai-lockdown .hub-page.lockdown-wash{outline:2px solid rgba(248,113,113,.35)
 .hub-prompt-row:hover{background:rgba(255,255,255,.05)}
 .hub-prompt-row small{color:var(--ok)}
 .ov-ship-log{max-height:220px;overflow:auto;background:#0a0a0a;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:11px;white-space:pre-wrap}
-.project-hdr .proj-share{margin-left:8px;padding:2px 8px;font-size:10px;border-radius:8px}
+.project-hdr .proj-share{margin-left:8px;padding:2px 8px;font-size:10px;border-radius:8px;min-width:0;flex:0 0 auto}
 .usage-bars{display:flex;flex-direction:column;gap:12px;margin:12px 0 18px}
 .usage-row{display:grid;grid-template-columns:120px 1fr 40px;gap:10px;align-items:center;font-size:12px;color:var(--muted)}
 .usage-track{height:8px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden}
@@ -2325,7 +2316,8 @@ body.theme-light .project-ask-cta{background:#111;color:#fff;border-color:#111}
 body.theme-light .project-ask-cta:hover{background:#222;border-color:#222}
 .center-empty.project-focus{max-width:720px;margin:0 auto;width:100%}
 .project-recent-row{color:var(--text)}
-.project-hdr .pc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
+.project-hdr.cat{flex-wrap:wrap;row-gap:4px}
+.project-hdr .pc-name{flex:1 1 calc(100% - 50px);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
 .center-empty.project-ask-ready{max-width:720px;margin:0 auto;width:100%}
 .center-empty.project-ask-ready .hero-title{color:var(--text)}
 .day-sum{
@@ -2709,7 +2701,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 <div class="backdrop" id="backdrop" onclick="closeSide()"></div>
 <div class="shell" id="shell">
   <header class="topbar">
-    <button type="button" class="side-toggle-top" id="sideToggleTop" title="Show / hide left panel" aria-label="Toggle left panel" onclick="toggleSideCollapsed()">☰</button>
     <button class="menu-btn" onclick="openSide()">☰</button>
     <div class="brand brand-exit" id="brandHome" title="AirGPT — vault + Cortex" onclick="onBrandClick(event)">
       <span class="brand-mark" aria-hidden="true">
@@ -2799,10 +2790,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
       </button>
       <div class="nav-sec-body collapsed" id="navSecAgents" data-nav-sec="agents">
         <div class="sec-morph-inner">
-        <button type="button" class="nav-item" id="navAllAgents" title="Cortex agent chat" onclick="showCortexAgentChat()">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v6l4 2-4 2v6"/><circle cx="12" cy="12" r="9"/></svg>
-          Cortex
-        </button>
         <div id="navPinnedAgents"></div>
         <button type="button" class="nav-item" id="navApps" title="Built agents catalog" onclick="showCortexPage()">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z"/></svg>
@@ -2873,7 +2860,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
       <div class="side-section" id="projectsSection" style="display:none" hidden>
         <div class="side-section-hdr" style="cursor:default">
           <span>Projects</span>
-          <button class="icon-btn" style="margin-left:auto;width:auto;padding:2px 8px;font-size:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);cursor:pointer" onclick="event.stopPropagation();addProject()">+ Project</button>
         </div>
         <div class="side-section-body" id="projectsBody">
           <div class="side-list" id="sessList" style="padding-top:0"><div class="empty">Loading vault…</div></div>
@@ -3015,9 +3001,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     <div class="search-filter-row">
       <div class="search-filter-chips" id="searchFilterChips">
         <button type="button" class="search-filter-chip on" data-proj="all" onclick="setSearchProjectFilter('all')">All</button>
-        <button type="button" class="search-filter-chip" data-proj="general" onclick="setSearchProjectFilter('general')">General</button>
-        <button type="button" class="search-filter-chip" data-proj="engineering" onclick="setSearchProjectFilter('engineering')">Engineering</button>
-        <button type="button" class="search-filter-chip" data-proj="ml" onclick="setSearchProjectFilter('ml')">ML</button>
       </div>
       <div class="search-filter-menu" id="searchFilterMenu">
         <button type="button" class="search-filter-menu-btn" title="Filter & sort" aria-label="Filter menu" onclick="toggleSearchFilterMenu(event)">☰</button>
@@ -3902,7 +3885,6 @@ async function api(path,opts={}){
   };
   if(document.body)inject();else document.addEventListener('DOMContentLoaded',inject);
 })();
-function showLogin(){$('loginModal').classList.add('open')}
 function showLogin(){$('loginModal').classList.add('open')}
 function hideLogin(){$('loginModal').classList.remove('open')}
 async function checkAuth(){
@@ -6013,7 +5995,6 @@ function updateSideNav(){
   // Keep Chats/Projects visible — no hover-hide; cortex-focus only marks workspace
   $('sideNav')?.classList.toggle('cortex-focus',onCortexWorkspace);
   $('sideNav')?.classList.toggle('home-focus',onHome);
-  $('navAllAgents')?.classList.toggle('on',sideView==='cortex');
   $('navApps')?.classList.toggle('on',sideView==='cortex-catalog');
   $('navCortexCatalog')?.classList.toggle('on',sideView==='cortex-catalog');
   $('navOpenIDE')?.classList.toggle('on',sideView==='openide');
@@ -11827,7 +11808,21 @@ let _searchSort='relevance';
 let _searchIndex={built:0,buckets:new Map(),items:[]}; // hash buckets for low-latency local match
 let _searchResultCache=new Map(); // query+filter+sort → html/hits
 let _searchLiveTimer=0;
+function buildSearchChips(){
+  const box=$('searchFilterChips');
+  if(!box)return;
+  box.querySelectorAll('.search-filter-chip:not([data-proj="all"])').forEach(b=>b.remove());
+  MODES.forEach(m=>{
+    const b=document.createElement('button');
+    b.type='button';b.className='search-filter-chip';b.dataset.proj=m;
+    b.textContent=MODE_LABELS[m]||m;
+    b.addEventListener('click',()=>setSearchProjectFilter(m));
+    box.appendChild(b);
+  });
+  box.querySelectorAll('.search-filter-chip').forEach(b=>b.classList.toggle('on',b.dataset.proj===_searchProjectFilter));
+}
 function openSearchModal(){
+  buildSearchChips();
   $('searchModal')?.classList.add('open');
   buildSearchIndex(true);
   setTimeout(()=>{
@@ -12014,7 +12009,11 @@ async function runSearch(qOpt,seedLocal,cacheKey){
   apiHits.forEach(h=>{
     const k=h.type+':'+h.id;
     if(seen.has(k))return;
-    if(_searchProjectFilter&&_searchProjectFilter!=='all'&&h.type==='session'&&h.cat!==_searchProjectFilter)return;
+    if(_searchProjectFilter&&_searchProjectFilter!=='all'){
+      const own=h.type==='session'?h:(cachedSessions||[]).find(x=>+x.id===+h.session_id);
+      const cat=h.type==='session'?h.cat:((own&&(own.category||own.mode))||'general').toLowerCase();
+      if(cat!==_searchProjectFilter)return;
+    }
     seen.add(k);merged.push(h);
   });
   if(_searchSort==='recent')merged.sort((a,b)=>(b.updated||0)-(a.updated||0));
@@ -12062,11 +12061,6 @@ function syncCollapseChevrons(){
   if(sc){
     sc.textContent=(isPhoneSideDrawer()?phoneOpen: !sideCollapsed)?'‹':'›';
     sc.title=(isPhoneSideDrawer()?phoneOpen:!sideCollapsed)?'Collapse sidebar':'Expand sidebar';
-  }
-  const top=$('sideToggleTop');
-  if(top){
-    top.title=sideCollapsed?'Expand left panel':'Collapse left panel';
-    top.setAttribute('aria-pressed',sideCollapsed?'false':'true');
   }
   const closeBtn=$('connectCloseBtn');
   if(closeBtn)closeBtn.hidden=true;
@@ -12964,10 +12958,14 @@ function thumbUrl(m){return m.thumb?withAuthQuery(API()+'/data/'+encodeURI(m.thu
 function qrSrc(url){return API()+'/api/qr.png?u='+encodeURIComponent(url)}
 
 function setQR(imgEl,url){
-  if(!url||url==='—'||url.includes('…')){imgEl.style.display='none';return}
+  if(!url||url==='—'||url.includes('…')){imgEl.style.display='none';imgEl.dataset.qr='';return}
+  // Same link as last time: leave the picture alone (the page polls every few seconds).
+  if(imgEl.dataset.qr===url)return;
+  imgEl.dataset.qr=url;
   imgEl.style.display='block';
-  imgEl.src=qrSrc(url)+'&t='+Date.now();
+  imgEl.onerror=()=>{imgEl.alt='QR code unavailable. Use the link instead.';if(imgEl.offsetParent)toast('The QR code could not be made. Use the link instead.')};
   imgEl.alt='QR: '+url;
+  imgEl.src=qrSrc(url)+'&t='+Date.now();
 }
 
 async function restartTunnel(){
@@ -14972,8 +14970,8 @@ $('plusMenu')?.addEventListener('click',e=>{
     const el=$('input');if(el){el.value='/skill ';el.focus();el.dispatchEvent(new Event('input'))}
     toast('Cortex auto-wires. Type /skill <pack> to force.');
   }else if(act==='connectors'){
-    toast('Connectors — open Settings → Integrations');
-    try{$('settingsBtn')?.click()}catch(err){}
+    toast('Connectors are in Settings, under Tools & MCPs');
+    openSettings('tools');
   }
 });
 document.addEventListener('click',e=>{
