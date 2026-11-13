@@ -2,6 +2,39 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-13 -- Independent branch review, failed replies explained, code copy
+
+- Fresh review of the whole branch: four reviewers by area, every finding
+  re-tested by a different agent on a live app. 12 confirmed and fixed:
+  Max tier dropped a chat's instructions and evidence from the final answer
+  (the dual-brain verify call); deleting a reply or chat kept its prompt
+  record; passcode guesses over non-Cloudflare tunnels could rotate a
+  forwarded header for a fresh count (now one shared count; cloudflared
+  phones still counted one by one; IPv6 per /64); share guests saw the
+  host's computer name, licence and engine details, could read saved
+  prompts, and could fork into chats they could not open; the Instructions
+  sheet wiped its own save errors; the p2p page dropped unsupported photos
+  silently; OpenIDE's header ran off a phone screen.
+- A reply that fails stays in the chat as a card: what went wrong, "Add an
+  API key" (opens Settings > API) when no model is set up, "Try again"
+  (removes the unanswered copy first), raw error under Details. Before, a
+  new user with no key saw nothing: a 2.4 s toast that then hung clipped
+  off the top edge. A dropped connection is not a failure and shows no card.
+- Code blocks: language label and a Copy button that stays put while a long
+  line scrolls (`ui/codeblocks.*`).
+- User bubbles lost a blank trailing line; sidebar previews and chat titles
+  show plain words, not Markdown; inside a chat the box says "Message
+  AirGPT"; light-theme jump rail visible; Escape closes Settings.
+- A second independent agent then attacked those commits and found six
+  more, all fixed here (duplicate reply on Try again after a dropped
+  connection, unstyled card, Copy scrolling off screen, Escape over a
+  stacked dialog, Markdown in titles, IPv6 rotation).
+- Parked: P20 (project share links scope to no chat), P21 (removing a
+  device keeps its token working; non-atomic share files; KaTeX lost when
+  only DOMPurify fails).
+- Suite: 862 passed, 1 failed (`test_rag_foundation` research bridge, same
+  on `master`), 9 skipped. JS: 79 passed. Browser: 27 of 27.
+
 ## 2026-11-13 -- Share scopes: safe on Windows, and unreadable means refuse
 
 - Windows CI caught it: `os.replace` cannot swap a file another thread still
