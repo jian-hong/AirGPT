@@ -79,3 +79,51 @@
   body:has(.side.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn,
   body:has([aria-modal="true"].open) #bugReportBtn,body:has(.pal-root.open) #bugReportBtn{display:none}
 }
+
+/* Text fields under 16px make iOS zoom the page when they are tapped. */
+@media(max-width:760px){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=button]):not([type=submit]),
+  textarea,select{font-size:16px!important}
+}
+
+/* Dialog buttons were 30px to 40px tall (the Settings Export/Import/Close rule out-ranked the 44px one above). */
+@media(max-width:760px){
+  .modal .btn,.modal-actions .btn,#settingsModal .modal-actions .btn,#bugDialog .btn{min-height:44px}
+  /* Small buttons keep their look; an invisible layer makes the tap area 44px. */
+  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,.banner-x,
+  #bgTasksPanel .bgHead button,#bgTasksPanel .bgFoot button{position:relative}
+  .modal .kv-group-btn::after,.search-filter-chip::after{content:"";position:absolute;inset:-8px 0}
+  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,.banner-x::after,
+  #bgTasksPanel .bgHead button::after,#bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
+  /* Settings checkbox rows were 17px to 34px tall. */
+  #settingsModal .settings-check{min-height:44px}
+}
+
+/* The report bar sat over the message box and its hint over the top bar. Dock the bar under the
+   top bar and move the mark-step hint and button to the bottom, where the dimmed page has nothing to tap. */
+@media(max-width:760px){
+  body #bugRecBar{top:calc(var(--topbar-h,56px) + 6px);bottom:auto;left:8px;right:8px;transform:none;max-width:none;border-radius:16px}
+  body #bugRecBar button{min-height:44px;padding:6px 14px}
+  body #bugOverlay .hint-bar{top:auto;bottom:72px;max-width:calc(100vw - 24px);border-radius:16px}
+  body #bugOverlay .bug-esc{top:auto;bottom:16px;right:50%;transform:translateX(50%);min-height:44px;padding:8px 18px}
+  /* Keep the last message clear of the report button that floats above the message box. */
+  .chat{padding-bottom:60px}
+  /* The "N running" pill shares the right edge with the report button: put it on the left. */
+  body #bgTasksBtn{right:auto;left:12px}
+}
+
+/* Small phones: with the Thinking button back, one row left the message box under 100px wide.
+   The box takes the whole first row; the buttons sit on a row of their own below it. */
+@media(max-width:760px){
+  @media(max-width:400px){
+    .composer-row{flex-wrap:wrap}
+    .composer-row #input{order:-1;flex:1 1 100%;min-width:0}
+    .composer-row .composer-actions{margin-left:auto}
+  }
+}
+
+/* Pin and Archive on a chat that is not open were 12x22. They keep their size; the layer makes them 20x44. */
+@media(max-width:760px){
+  .side .session-item:not(.on) .sess-actions-inline button{position:relative}
+  .side .session-item:not(.on) .sess-actions-inline button::after{content:"";position:absolute;inset:-11px -4px}
+}
