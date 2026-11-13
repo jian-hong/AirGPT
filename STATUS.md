@@ -21,11 +21,12 @@
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Phone layout fixed (SHELL-04 #78). Prompt lens on every reply. Fork and
-   export, instructions per chat, saved prompts, command box, phone tap
-   areas. Verified in a browser against a recording stand-in model on
-   Linux. Not verified: real provider, live Cortex, a real phone, a real
-   share guest. No PRD ledger row yet for the five add-ons.
+   Prompt lens, fork/export, chat instructions, saved prompts, command
+   box. Whole-app audit 2026-11-13: 156 findings, 9 fix lanes merged.
+   Other web pages cannot act as the host; share guests are default-deny;
+   one gate for GET/POST/PATCH/DELETE. Verified on Linux with a stand-in
+   model and simulated tunnel headers. Not verified: real tunnel, real
+   phone, real provider, live Cortex. Owner decisions: P14-P19.
 
 ## Next
 

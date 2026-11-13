@@ -3,6 +3,17 @@
 What exists in this repo and where. Update when structure changes, not when state changes
 - state lives in STATUS.md.
 
+- Request gates in `clipdrop.py`, in the order they run: `_wrap_dispatch`
+  (cross-site guard `_origin_gate`, bad JSON 400, crash 500) around every
+  `do_*`; then `Handler._gate` (passcode set, token, host-only paths,
+  handshake, share-guest allow-list `_GUEST_GET` / `_GUEST_POST`). Host trust
+  is `_is_host_request` and needs `_is_trusted_host(Host)`. A new route is
+  closed to share guests until it is added to the allow-list. Tests:
+  `tests/test_origin_guard.py`, `tests/test_guest_scope.py`.
+- `ui/sanitize.js` -- allow-list HTML cleaner (`AirSanitize.clean`), used when
+  DOMPurify is missing. Buttons built from data use `data-call="fn"` with
+  `data-arg` / `data-args`, dispatched by one listener in `index.html`
+  (`_dataCall`); never an inline handler built from data.
 - `ui/ext.js` -- `window.AirUI.addMsgAction(fn)`: how add-on modules put a
   button on a message. New shell features live in their own `ui/<name>.js` +
   `.css` (already loaded by `index.html`), not in the page.

@@ -2,6 +2,72 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-13 -- Whole-app audit (156 findings), nine fix lanes, merged and re-verified
+
+Audit: 11 read-only auditors over every control, screen size, route and access
+rule; security findings re-tested by a second agent. 31 findings are owner
+decisions and were not built (PARKING_LOT P14-P19, PR #91 body).
+
+- **Other web pages can no longer act as the host** (`clipdrop.py`). Host trust
+  needs a Host header that names this machine (`_is_trusted_host`; extra names
+  in `AIRGPT_TRUSTED_HOSTS`); any other Host is a remote caller. Cross-site
+  requests to `/api/` and `/data/` get 403, by `Origin` and, for plain GETs, by
+  `Sec-Fetch-Site`. No wildcard CORS (`AIRGPT_ALLOWED_ORIGINS` is the escape
+  hatch). `nosniff` everywhere, no framing by other sites. Bodies over 200 MB
+  are 413 (`AIRGPT_MAX_BODY_MB`), sockets time out after 120 s of silence, bad
+  JSON is 400 and a crash is a logged JSON 500 instead of a dropped connection.
+  Forwarded client addresses must parse as an address. The first passcode can
+  only be set from the host.
+- **Share guests are default-deny** (`Handler._gate`, `auth.py`). GET, POST,
+  PATCH and DELETE run one gate sequence; PATCH and DELETE used to skip it. A
+  share guest reaches the page, its own chat, and nothing else: lists, search
+  and history return only that chat. Join links and QR tokens are handed to
+  the host only. `/data/` serves non-host callers only files a chat they can
+  see points at; anything a browser would run (html, svg, xml, js) is a
+  download. Host-only now also covers `/api/netie/`, `/api/input-notes`,
+  `/api/restart-tunnel`, `/api/optimizers/`, `/api/agents` and licence writes.
+  Found by the verifier: a guest briefly became a full device while others
+  joined (token file race), and the gate checked 3 context ids where the
+  handler read 10.
+- **Untrusted text no longer becomes markup or script** (`index.html`,
+  `admin.html`, `p2p-drop.html`, `ui/sanitize.js`). About 56 inline handlers built
+  from data now use `data-call` and one listener. marked, DOMPurify and KaTeX
+  load as page globals (the editor's loader used to swallow them, so every
+  message went through a weak fallback). The fallback is now an allow-list.
+- **Server defects:** link fetch refuses loopback and private addresses for
+  non-host callers (the host can still fetch localhost); Usage "Export CSV"
+  finishes; a dropped agent run stops counting as running; the schedule-agent
+  link is saved; skill Delete exists and Edit opens the real text.
+- **Chat shell:** header (Export, Share) shows after the first message;
+  search's project filter applies to message hits and lists real projects; the
+  QR image is not re-requested on every poll; + menu no longer clipped.
+- **Settings:** a failed save says so; opening and closing Settings writes
+  nothing; Plan badge opens Plan & Usage; Connected Devices explains a locked
+  tunnel and a QR that could not be drawn; `Clear all history` has a button;
+  search matches text inside panels.
+- **Screen sizes:** OpenIDE works at phone width; sidebar overlays the chat
+  from 761 to 960 px instead of squeezing the message box to 81 px; Thinking
+  and the Manual/AI cue stay at 900 px and below; bug-report region marking
+  works by touch; Background tasks closes on Escape and outside click; phone
+  fields are 16 px (no iOS zoom). Laptop boxes unchanged at 1024, 1280, 1920.
+- **Clarity:** `New chat` button; Effort opens its list on tap, Enter or
+  Space (no hidden long-press); Manual mode says the AI will not reply and
+  hides AI-only controls; web search shows when it is on; Archive has Undo.
+- **Workspaces:** a new project appears at once; Cortex home echoes the message
+  and says when the engine is off; Hub access buttons open their picker;
+  `Retry health` retries; no cut-off suggested agents.
+- **Removed** (no effect, or exact duplicate in the same view): seven Settings
+  checkboxes nothing read (tips, two notification toggles, agent and subagent
+  auto-detect and auto-create), the top-bar `More` menu hidden at every width,
+  the never-shown Memory floating button, the second sidebar `Cortex` entry,
+  the sidebar `+ Project` button, the p2p round `+` button, a second
+  `showLogin`, one dead CSS rule.
+- **Kept on purpose:** the top-bar sidebar button and the edge tab (the
+  sidebar starts closed up to 1400 px; the edge tab is the only route in short
+  windows); both Background tasks buttons (same reason).
+- Suite: 852 passed, 1 failed (`test_rag_foundation` research bridge, same on
+  `master`), 9 skipped. JS: 70 passed. Browser: 27 of 27 combined checks.
+
 ## 2026-11-12 -- Five shell features built in parallel, then merged and re-verified
 
 - Add-ons now hook in through `ui/ext.js` (`AirUI.addMsgAction`) and their own

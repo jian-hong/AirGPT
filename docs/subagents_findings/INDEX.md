@@ -6,6 +6,7 @@ PREFLIGHT: match keywords before spawning Task/explore.
 
 | Date | File | Keywords | Main idea |
 |---|---|---|---|
+| 2026-11-13 | [2026-11-13_full-app-audit-and-fix.md](2026-11-13_full-app-audit-and-fix.md) | audit, security, CORS, Origin, Host header, share guest, default-deny, gate, /data, XSS, data-call, sanitizer, duplicate control, workflow, verifier | Opt-in access checks left unremembered routes open and the host was trusted by socket address; fixed as a class (one gate, default-deny, Host+Origin). Two fixes introduced serious defects only the independent verifier caught |
 | 2026-11-12 | [2026-11-12_shell-features-parallel-build.md](2026-11-12_shell-features-parallel-build.md) | workflow, parallel, worktree, AirUI, ext.js, fork, export, chat instructions, snippets, palette, phone, seam | 5 lanes x (build, verify) passed alone and broke at the seams; foundation hook kept merges clean; combined run is the gate |
 | 2026-11-12 | [2026-11-12_prompt-lens-artifact-check.md](2026-11-12_prompt-lens-artifact-check.md) | prompt lens, prompt_trace, tools, artifact check, security block, SHELL-04, phone, UI research | Viewer overcounted 1,363 tool tokens until compared with the request a stub provider received; security block was sent twice |
 | 2026-09-06 | [2026-09-06_marketplace-dr-home.md](2026-09-06_marketplace-dr-home.md) | marketplace, DR-0007, catalog, serving, plane-1 | DR-0007 accepted 2026-09-07. Catalog+fit here; bind_serve is a recipe; Constructor is a hub card |
