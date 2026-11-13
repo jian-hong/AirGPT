@@ -18,21 +18,30 @@ _tokens: dict[str, float] = {}
 _qr_tokens: dict[str, float] = {}
 
 
+_tokens_lock = threading.RLock()
+
+
 def _load_tokens() -> None:
     global _tokens
     if not TOKENS_FILE.is_file():
         return
-    try:
-        raw = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
-        now = time.time()
-        _tokens = {k: float(v) for k, v in raw.items() if float(v) > now}
-    except Exception:
-        _tokens = {}
+    with _tokens_lock:
+        try:
+            raw = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+            now = time.time()
+            _tokens = {k: float(v) for k, v in raw.items() if float(v) > now}
+        except Exception:
+            _tokens = {}
 
 
 def _save_tokens() -> None:
-    TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKENS_FILE.write_text(json.dumps(_tokens), encoding="utf-8")
+    # Swap the file in one step under the lock. Two phones joining at once used to
+    # leave it half written; the next read then emptied the list and logged everyone out.
+    with _tokens_lock:
+        TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TOKENS_FILE.with_name(TOKENS_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(_tokens), encoding="utf-8")
+        os.replace(tmp, TOKENS_FILE)
 
 
 _acl_lock = threading.Lock()
@@ -166,8 +175,9 @@ def join_workspace(passcode: str) -> dict:
 
 def _issue_token() -> str:
     tok = secrets.token_urlsafe(32)
-    _tokens[tok] = time.time() + TOKEN_TTL
-    _save_tokens()
+    with _tokens_lock:
+        _tokens[tok] = time.time() + TOKEN_TTL
+        _save_tokens()
     return tok
 
 

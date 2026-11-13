@@ -247,6 +247,28 @@ class ShareGuestTests(GuestScopeBase):
             st, _ = self.req("GET", path, self.view)
             self.assertEqual(st, 403, path)
 
+    def test_guest_of_an_old_chat_still_sees_it_when_the_host_has_many_chats(self):
+        # The list was cut to the newest 200 chats before it was narrowed to the guest's,
+        # so a guest of an older chat got an empty sidebar and a blank home screen.
+        old = db.create_session("Old shared chat")["id"]
+        db.add_message(device_ip="1.1.1.1", device_name="d", text="old text", source="chat", session_id=old)
+        newer = []
+        try:
+            for i in range(210):
+                sid = db.create_session("filler %d" % i)["id"]
+                db.add_message(device_ip="1.1.1.1", device_name="d", text="f", source="chat", session_id=sid)
+                newer.append(sid)
+            tok = self._guest(old, "view")
+            st, out = self.req("GET", "/api/sessions", tok)
+            self.assertEqual([x["id"] for x in out["sessions"]], [old])
+            st, out = self.req("GET", "/api/vault", tok)
+            self.assertEqual([x["id"] for x in out["recent"]], [old])
+            st, out = self.req("GET", "/api/search?q=old%20text", tok)
+            self.assertIn("old text", json.dumps(out))
+        finally:
+            for sid in newer + [old]:
+                db.delete_session(sid)
+
     def test_view_guest_sees_its_own_chat(self):
         st, out = self.req("GET", "/api/messages?session_id=%d&full=1" % self.sid_a, self.view)
         self.assertEqual(st, 200)
@@ -324,7 +346,7 @@ class ShareGuestTests(GuestScopeBase):
 
         def watch():
             while not stop.is_set():
-                if not auth.token_session_acl(self.view):
+                if not auth.token_session_acl(self.view) or not auth.verify_token(self.view):
                     lost.append(1)
 
         watchers = [threading.Thread(target=watch) for _ in range(3)]
@@ -339,6 +361,8 @@ class ShareGuestTests(GuestScopeBase):
         self.assertEqual(len(toks), 40)
         self.assertEqual(lost, [], "an existing guest was seen as unscoped")
         self.assertEqual([t for t in toks if not auth.token_session_acl(t)], [], "a new guest lost its scope")
+        # The token list had the same flaw: a half-written file read as empty and logged everyone out.
+        self.assertEqual([t for t in toks + [self.host_tok, self.joined, self.view] if not auth.verify_token(t)], [])
 
     def test_view_guest_cannot_post_even_to_its_own_chat(self):
         for path in ("/api/messages", "/api/chat/stream"):
