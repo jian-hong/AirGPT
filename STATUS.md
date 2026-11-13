@@ -24,9 +24,10 @@
    Prompt lens, fork/export, chat instructions, saved prompts, command
    box. Whole-app audit 2026-11-13: 156 findings, 9 fix lanes merged.
    Other web pages cannot act as the host; share guests are default-deny;
-   one gate for GET/POST/PATCH/DELETE. Verified on Linux with a stand-in
-   model and simulated tunnel headers. Not verified: real tunnel, real
-   phone, real provider, live Cortex. Owner decisions: P14-P19.
+   one gate for GET/POST/PATCH/DELETE. Branch re-reviewed independently:
+   12 confirmed defects fixed. A failed reply now shows a card with the
+   next step. Not verified: real tunnel, real phone, real provider, live
+   Cortex. Owner decisions: P14-P21.
 
 ## Next
 
