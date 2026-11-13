@@ -77,6 +77,16 @@ class SkillRoundTripHttpTest(unittest.TestCase):
         self.assertFalse((self.root / "probe-one.md").exists())
         self.assertNotIn("probe-one", self._list())
 
+    def test_saving_a_skill_with_front_matter_keeps_it_readable(self):
+        # Editing an imported skill re-saves its text; a heading must not be put in front of the
+        # front matter, or its name and description stop being read.
+        body = "---\nname: Fancy\ndescription: does things\n---\nHello"
+        self._post({"id": "fm", "title": "Other", "body": body})
+        entry = self._list()["fm"]
+        self.assertTrue(entry["body"].startswith("---"), entry["body"])
+        self.assertEqual(entry["name"], "Fancy")
+        self.assertEqual(entry["description"], "does things")
+
     def test_delete_also_forgets_its_on_off_state(self):
         self._post({"id": "keepme", "body": "text"})
         self._post({"action": "enable", "id": "keepme", "scope": "global"})

@@ -311,7 +311,7 @@ def save_skill(skill_id: str, body: str, *, title: str = "") -> dict[str, Any]:
     root = skills_dir()
     root.mkdir(parents=True, exist_ok=True)
     heading = (title or sid.replace("-", " ").title()).strip()
-    if not text.lstrip().startswith("#"):
+    if not text.lstrip().startswith(("#", "---")):
         text = f"# {heading}\n{text}\n"
     path = root / f"{sid}.md"
     try:

@@ -14132,7 +14132,11 @@ async function editSkill(id){
     if(!s){toast('Could not open this skill');return}
     if($('scSkillId'))$('scSkillId').value=id;
     if($('scSkillTitle'))$('scSkillTitle').value=s.name||'';
-    if($('scSkillBody'))$('scSkillBody').value=s.body||'';
+    // The saved file starts with the title as a heading; show only the text under it,
+    // so a changed Title is written when the skill is saved (save adds the heading back).
+    let bd=s.body||'';const hm=bd.match(/^\s*#[^\n]*\n?/);
+    if(hm&&hm[0].replace(/^\s*#+\s*/,'').trim()===(s.name||'')&&bd.slice(hm[0].length).trim())bd=bd.slice(hm[0].length).replace(/^\n+/,'');
+    if($('scSkillBody'))$('scSkillBody').value=bd;
     dsToggleEditor('scSkillEditor',true);
   }catch(e){toast('Could not open this skill')}
 }
