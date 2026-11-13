@@ -116,21 +116,230 @@ def build_context_block(hits: list[dict], *, max_chars: int = 6000, neighbors: b
     return "\n".join(parts)
 
 
+_FILE_REF_RE = re.compile(r"\b[\w-]+\.(?:pdf|docx?|pptx?|xlsx?|csv|tsv|txt|md|html?|json)\b", re.I)
+
+
+# A line end, or . ! ? followed by a space (a decimal point is not an end), or the
+# full-width / Arabic marks 。！？؟ which are not followed by a space in Chinese and Japanese.
+_SENTENCE_END = re.compile(r"\n+|(?<=[.!?])\s+|(?<=[\u3002\uff01\uff1f\u061f])\s*")
+
+
+def abstention(query: str, hits: list[dict]) -> dict | None:
+    """Is the evidence too thin to answer from? None means go ahead and answer.
+
+    Offline there is no model to say "I don't know", and the extractive answer quotes
+    whatever ranked first, so a question about a name the space never mentions got the
+    nearest look-alike sentence presented as the answer. Three checks, most decisive
+    first:
+      1. every code or name in the question (retrieve.identifier_terms) is absent from
+         all retrieved passages: the space does not mention it, whatever else matches.
+      2. a file the question names ("in budget.xlsx") that no hit comes from.
+      3. otherwise the best SINGLE passage must cover at least _COVERAGE_FLOOR of the
+         question's content words (the same _salient_tokens / _token_in_blob measure
+         as _coverage). Pooling words across all hits would let "shipping lane" be
+         satisfied by one chunk and "Halvorsen" by another. With a name in the
+         question this always applies: a passage about that name that lacks the asked
+         attribute is exactly the look-alike that gets quoted as the answer. With no
+         name it applies only when the pooled coverage looks fine; when even the pool
+         falls short, the goal layer already prints "Partial answer only - N% of the
+         asked terms..." and that is an honest disclosure, so it is left to speak.
+    """
+    if not hits:
+        return None
+    from rag import retrieve, sira
+
+    blob = _evidence_blob(hits)
+    blob_tokens = set(sira.tokenize(blob))
+
+    def _present(term: str) -> bool:
+        toks = sira.tokenize(_fold(term))
+        return term.lower() in blob or (bool(toks) and all(t in blob_tokens for t in toks))
+
+    terms = retrieve.identifier_terms(query)
+    missing = [t for t in terms if not _present(t)]
+    if terms and len(missing) == len(terms):
+        return {"kind": "term", "missing": missing,
+                "reason": "the space does not mention " + ", ".join(f'"{t}"' for t in missing)}
+    paths = " ".join(str(h.get("path") or "") for h in hits).lower().replace("\\", "/")
+    files = [f for f in dict.fromkeys(m.group(0) for m in _FILE_REF_RE.finditer(query or ""))
+             if f.lower() not in paths]
+    if files:
+        return {"kind": "file", "missing": files,
+                "reason": "no retrieved passage comes from " + ", ".join(f'"{f}"' for f in files)}
+    # Words in a script without capitals that no passage holds are NOT grounds to
+    # refuse. A missing name and a reworded ordinary word look the same there, and
+    # refusing on them turned "请问...大概是多久" into "the space does not mention".
+    # extractive_answer warns about them instead (see unseen_terms_note).
+    toks = _salient_tokens(query)
+    blobs = [_evidence_blob([h]) for h in hits]
+
+    def _in(t: str, b: str) -> bool:
+        # "renewal" is evidenced by "renews". Without this a harmless rewording of an
+        # answerable question flipped it from answered to refused.
+        return _token_in_blob(t, b) or (t.isascii() and len(t) >= 6 and t[:5] in b)
+
+    if len(hits) >= 3:
+        # A word every passage holds ("account" in a register of accounts) says nothing
+        # about whether the asked-for thing is there, yet it padded the score of a
+        # question about an attribute the space never records. Judge on the words that
+        # tell passages apart, unless that leaves nothing.
+        toks = [t for t in toks if not all(_in(t, b) for b in blobs)] or toks
+    if toks and (terms or _coverage(query, hits) >= _COVERAGE_FLOOR):
+        best = max(sum(1 for t in toks if _in(t, b)) / len(toks) for b in blobs)
+        if best < _COVERAGE_FLOOR:
+            gone = [t for t in toks if not _in(t, blob)]
+            return {"kind": "coverage", "missing": gone, "coverage": round(best, 3),
+                    "reason": f"no passage covers more than {int(best * 100)}% of what the question asks"
+                              + (f" (nothing mentions {', '.join(gone[:4])})" if gone else "")}
+    return None
+
+
+def _unseen_script_terms(query: str, blob: str) -> list[str]:
+    """Words of the question, in a script that has no capital letters, that no passage holds.
+
+    identifier_terms finds a name by its capital letter, so for Chinese, Japanese,
+    Korean, Arabic and Thai nothing ever said "this name is not in the space", and a
+    question about a look-alike name was answered with the look-alike's value. The
+    coverage floor cannot do it either: one missing name out of ten question words is
+    still 90% covered. Two rules, both on the whole retrieved pool:
+      - a word written in letters (Hangul, Arabic, Cyrillic) must appear, allowing for
+        its ending ("-의", "-ом") once it is long enough to have one;
+      - Chinese, Japanese and Thai are cut into overlapping 2- or 3-character pieces,
+        and a name that is not there breaks at least two of them in a row, while a
+        reworded attribute usually breaks one. So two or more missing pieces count,
+        and the pieces are joined back into the string the user typed.
+    Words that only ask the question (retrieve.QUESTION_FLUFF) never count.
+    """
+    from rag import retrieve
+
+    # Cut the question without its asking words, so no piece straddles "...について".
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(retrieve.FLUFF_PHRASES, key=len, reverse=True):
+        text = text.replace(w, " ")
+    toks = [
+        t for t in dict.fromkeys(sira.tokenize(text))
+        if not t.isascii() and t not in retrieve.QUESTION_FLUFF and t not in _STOPWORDS
+    ]
+    held = set(sira.tokenize(blob))
+    # Compare words by stem on both sides: "고객에" (to the customer) and "고객의" (of the
+    # customer) are the same word with a different particle.
+    held_stems = held | {w[:-1] for w in held if len(w) >= 3}
+    gone: list[str] = []
+    for t in toks:
+        if retrieve._is_unseg(t):
+            continue
+        stem = t[:-1] if len(t) >= 3 else t
+        if t not in held_stems and stem not in held_stems:
+            gone.append(t)
+    # Chinese, Japanese and Thai are not judged at all: the tokenizer cuts them into
+    # overlapping pieces, and "two missing pieces in a row" refused ordinary rewordings
+    # and printed fragments such as "户目前的" as the missing term.
+    return gone
+
+
+def unseen_terms_note(query: str, hits: list[dict]) -> str:
+    """A warning, not a refusal: words of the question that no passage holds."""
+    if not hits:
+        return ""
+    blob = _evidence_blob(hits)
+    gone = _unseen_script_terms(query, blob)
+    if gone:
+        return ("Not found in this space: " + ", ".join(f'"{t}"' for t in gone[:4])
+                + ". The passages below may be about something else.")
+    # Chinese, Japanese, Thai: two missing pieces in a row usually means a word of the
+    # question is absent, but which word cannot be cut out reliably, so none is named.
+    from rag import retrieve
+
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(retrieve.FLUFF_PHRASES, key=len, reverse=True):
+        text = text.replace(w, " ")
+    pieces = [t for t in sira.tokenize(text) if retrieve._is_unseg(t) and t not in retrieve.QUESTION_FLUFF]
+    missing = [t not in blob for t in pieces]
+    if any(a and b for a, b in zip(missing, missing[1:])):
+        return "Some words of this question were not found in this space. The passages below may be about something else."
+    return ""
+
+
+def _abstention_text(hits: list[dict], why: dict) -> str:
+    """Say plainly that the answer is not there; look-alikes are shown but labelled."""
+    names = ", ".join('"' + t + '"' for t in why["missing"])
+    if why["kind"] == "term":
+        head = f"The space does not mention {names}, so I cannot answer this from it."
+    elif why["kind"] == "file":
+        head = f"The space has no passage from {names}, so I cannot answer this from it."
+    else:
+        head = "The space does not contain enough to answer this: " + why["reason"] + "."
+    lines = []
+    for h in hits[:2]:
+        text = re.sub(r"\s+", " ", re.sub(r"(?m)^#.*$", "", h.get("text") or "")).strip()
+        if text:
+            where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
+            lines.append(f"- {text[:200]}{'…' if len(text) > 200 else ''} ({where})")
+    if lines:
+        head += "\n\nClosest passages (closest, not an answer):\n" + "\n".join(lines)
+    return head
+
+
 def extractive_answer(query: str, hits: list[dict]) -> str:
     if not hits:
         return (
             "I could not find supporting evidence in this RAG knowledge space. "
             "Try ingesting more sources or rephrasing the question."
         )
-    # Short prose from top hits — not a raw path dump.
-    bits: list[str] = []
-    for h in hits[:4]:
-        excerpt = (h.get("text") or "").strip().replace("\n", " ")
-        if len(excerpt) > 180:
-            excerpt = excerpt[:177] + "…"
-        if excerpt:
-            bits.append(excerpt)
-    body = " ".join(bits) if bits else "Evidence was retrieved but could not be paraphrased offline."
+    why = abstention(query, hits)
+    if why:
+        return _abstention_text(hits, why)
+    # Quote the passage that answers, not the first 180 characters of each chunk.
+    # Clipping the head cut the value off whenever it sat past the first few
+    # sentences, so the offline answer showed everything except the answer.
+    from rag import retrieve, sira
+
+    q_terms = set(sira.tokenize(_fold(query)))
+    names = {t for term in retrieve.identifier_terms(query) for t in sira.tokenize(_fold(term))}
+    picked: list[tuple[float, int, str, bool]] = []
+    for i, h in enumerate(hits[:4], start=1):
+        best, best_score, best_named = "", 0.0, False
+        parts = [
+            x.strip() for x in _SENTENCE_END.split((h.get("text") or "").strip())
+            if x.strip() and not x.lstrip().startswith("#")
+        ]
+        toksets = [set(sira.tokenize(_fold(x))) for x in parts]
+        # Prose spreads one fact over sentences: "Globex handles logistics. ... Payment
+        # terms are net 30." The best single sentence for "payment terms for globex"
+        # is the FIRST "Payment terms" line, which belongs to another vendor. So a
+        # run of up to three sentences is scored, and among equal scores the run
+        # that starts at the sentence holding the question's rarest word wins:
+        # the subject comes before what is said about it.
+        matched = [t for t in q_terms if any(t in ts for ts in toksets)]
+        rarest = min(matched, key=lambda t: sum(t in ts for ts in toksets), default=None)
+        best_key = None
+        for a in range(len(parts)):
+            for size in (1, 2, 3):
+                if a + size > len(parts):
+                    break
+                toks = set().union(*toksets[a : a + size])
+                score = len(q_terms & toks) + 3.0 * len(names & toks)
+                key = (score, size == 1 or (rarest is not None and rarest in toksets[a]), -size, -a)
+                if score > 0 and (best_key is None or key > best_key):
+                    best_key = key
+                    best, best_score, best_named = " ".join(parts[a : a + size]), score, bool(names & toks)
+        if best:
+            picked.append((best_score, i, best[:320] + ("…" if len(best) > 320 else ""), best_named))
+    top = max((sc for sc, _, _, _ in picked), default=0.0)
+    any_named = any(named for _, _, _, named in picked)
+    lines = []
+    for sc, i, passage, named in picked:
+        # Noise: a passage that matches far less than the best one, or, when the
+        # question names something, a look-alike sentence about a different name.
+        if sc < 0.6 * top or (any_named and not named):
+            continue
+        h = hits[i - 1]
+        where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
+        lines.append(f"- {passage} [{i}] ({where})")
+    body = "\n".join(lines) if lines else "Evidence was retrieved but could not be paraphrased offline."
+    note = unseen_terms_note(query, hits)
+    if note:
+        body = note + "\n" + body
     cites = ", ".join(f"[{i}] {_display_path(h.get('path'))}" for i, h in enumerate(hits[:5], start=1))
     return (
         f"{body}\n\n"
@@ -588,14 +797,26 @@ def _token_in_blob(t: str, blob: str) -> bool:
     return False
 
 
+def _fold(text: str) -> str:
+    """retrieve.fold_text, imported late (retrieve does not import this module, but keep it cheap)."""
+    from rag import retrieve
+
+    return retrieve.fold_text(text)
+
+
 def _salient_tokens(query: str) -> list[str]:
     # Question/meta words are not "coverage" terms — counting them made trivial
     # queries ("what is this about") look uncovered and fabricated gap notes.
     # ASCII floor stays 3; CJK bigrams are length 2 and must still count or
     # coverage returns 1.0 vacuously (P13).
     out: list[str] = []
-    for t in dict.fromkeys(sira.tokenize(query)):
-        if t in _STOPWORDS:
+    from rag import retrieve
+
+    for t in dict.fromkeys(sira.tokenize(_fold(query))):
+        # "apakah" / "cual" / "是什么" ask the question and say nothing about its subject;
+        # no passage holds them, so counting them made every Malay or Spanish question
+        # look 50% uncovered and the answer refused.
+        if t in _STOPWORDS or t in retrieve.QUESTION_FLUFF:
             continue
         if t.isascii() and len(t) < 3:
             continue
@@ -606,9 +827,9 @@ def _salient_tokens(query: str) -> list[str]:
 
 
 def _evidence_blob(hits: list[dict]) -> str:
-    return " ".join(
+    return _fold(" ".join(
         f"{h.get('heading') or ''} {h.get('path') or ''} {h.get('text') or ''}" for h in hits
-    ).lower()
+    ).lower())
 
 
 def _coverage(query: str, hits: list[dict]) -> float:
@@ -1599,6 +1820,19 @@ def answer_events(
         context = ""
         evidence_hits = []
         confidence = 0.0  # no bar for an answer we just declined to give
+    # Offline, nothing downstream can say "I don't know", so decide it here: a named
+    # thing the space never mentions, or passages that cover too little of the ask.
+    # The passages stay (shown as "closest, not an answer") but are not cited as proof.
+    # An unsupported verdict above already declined, in its own words.
+    abstained = abstention(query, evidence_hits) if (not use_llm and evidence_hits) else None
+    if abstained:
+        # "gaps_disclosed" already says the answer stops short; only "evidence_ok"
+        # would contradict the abstention.
+        if stop_reason == "evidence_ok":
+            stop_reason = "abstained"
+        citations = [c for c in citations if c.get("web")]
+        context = ""
+        confidence = 0.0
 
     yield {
         "type": "meta",
@@ -1621,10 +1855,10 @@ def answer_events(
             text = "From web search:\n" + web_snippets_ctx[:2000]
         # Lead with the measured gap, then the diagnosis — an honest "here is what is
         # missing and what to do" beats a fluent paragraph built on nothing.
-        lead = goal.summary_line(assessment)
+        lead = "" if abstained else goal.summary_line(assessment)
         if lead:
             text = (lead + "\n\n" + text).strip()
-        if assessment.diagnosis:
+        if assessment.diagnosis and not abstained:
             text += "\n\nTo get a better answer:\n" + "\n".join(
                 f"- {d}" for d in assessment.diagnosis
             )
@@ -1643,6 +1877,8 @@ def answer_events(
             "faithfulness": 1.0,
             "unsupported_claims": [],
             "goal": assessment.as_dict(),
+            "abstained": bool(abstained),
+            "abstain_reason": (abstained or {}).get("reason", ""),
             "model": "extractive",
             "citations": citations,
             "hits": hits,
@@ -1654,10 +1890,16 @@ def answer_events(
                 depth=result.get("depth") or depth,
                 hits=hits,
                 citations=citations,
-                goal=assessment.as_dict(),
+                # The chain reads the verdict, so an abstention must not leave it
+                # saying "the passages cover the ask" beside an answer that declines.
+                goal=(
+                    {**assessment.as_dict(), "verdict": "unsupported",
+                     "diagnosis": ["Abstained, no answer given: " + abstained["reason"]]}
+                    if abstained else assessment.as_dict()
+                ),
                 coverage=coverage,
                 stop_reason=stop_reason,
-                model="extractive",
+                model="extractive (abstained)" if abstained else "extractive",
                 faithfulness=1.0,
                 web_used=bool(web_snippet_rows),
                 ontology_summary=_ontology_summary,

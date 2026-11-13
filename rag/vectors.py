@@ -275,12 +275,13 @@ def _local_search(space_id: int, query: str, *, k: int = 40) -> list[tuple[int, 
                     else _np.arange(keep_sims.size)
                 )
                 pairs = [(int(keep_ids[i]), float(keep_sims[i])) for i in sel if keep_sims[i] > 0]
-                pairs.sort(key=lambda x: x[1], reverse=True)
+                # Cosine from a BLAS product differs in its last bits between builds.
+                pairs.sort(key=lambda x: (-round(x[1], 7), x[0]))
                 return pairs[:k]
             except Exception:
                 pass
             rows = conn.execute(
-                "SELECT chunk_id, vec FROM chunk_vectors WHERE space_id=? LIMIT 20000",
+                "SELECT chunk_id, vec FROM chunk_vectors WHERE space_id=? ORDER BY chunk_id LIMIT 20000",
                 (int(space_id),),
             ).fetchall()
         scored: list[tuple[int, float]] = []
@@ -288,7 +289,7 @@ def _local_search(space_id: int, query: str, *, k: int = 40) -> list[tuple[int, 
             s = _cosine(qv, _unpack(bytes(r["vec"])))
             if s > 0:
                 scored.append((int(r["chunk_id"]), s))
-        scored.sort(key=lambda x: x[1], reverse=True)
+        scored.sort(key=lambda x: (-round(x[1], 7), x[0]))
         return scored[:k]
     except Exception:
         return []

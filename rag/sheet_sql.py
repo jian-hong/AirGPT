@@ -264,19 +264,6 @@ def _reverse_candidates(question: str, df: Any, *, numeric_only: bool = True) ->
     return out
 
 
-def _entity_of(column: str) -> str:
-    """Ontology entity for a column name, via the shared hint vocabulary."""
-    try:
-        from rag.ontology import _ENTITY_HINTS
-    except Exception:
-        return "Unknown"
-    key = _norm(column)
-    for tip, kind in _ENTITY_HINTS.items():
-        if tip in key:
-            return kind
-    return "Unknown"
-
-
 def _agg_before(question: str, pos: int, floor: int = 0, *, window: int = 40) -> str | None:
     """Aggregate keyword in the run-up to a column mention ("average OnTimeSLA").
 

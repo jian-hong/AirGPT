@@ -1,0 +1,152 @@
+{
+  "bench": "chunk_bench",
+  "seed": 1,
+  "index_fingerprint": {
+    "schema_version": 2,
+    "chunker": {
+      "name": "parent_child_sentence",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40,
+      "table": false
+    },
+    "embed": {
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
+    },
+    "extra": {
+      "pack": "chunk_bench"
+    },
+    "id": "d89d8a69d7804e6c"
+  },
+  "old_code_baseline": {
+    "commit": "37c6bfc",
+    "sheet": {
+      "facts_whole": 0,
+      "header_share": 0.03,
+      "facts_blank_cell_whole": 0,
+      "max_tokens": 199.8
+    },
+    "pdf": {
+      "facts_whole": 18,
+      "facts_aimed_whole": 8,
+      "sentence_share": 0.0,
+      "max_tokens": 393.8
+    },
+    "zh": {
+      "facts_whole": 30,
+      "sentence_share": 0.05,
+      "max_tokens": 926.2
+    },
+    "ja": {
+      "facts_whole": 30,
+      "sentence_share": 0.08,
+      "max_tokens": 1208.2
+    },
+    "th": {
+      "facts_whole": 26,
+      "sentence_share": 0.0,
+      "max_tokens": 367.0
+    },
+    "ar": {
+      "facts_whole": 30,
+      "sentence_share": 0.03,
+      "max_tokens": 279.1
+    }
+  },
+  "honesty": "synthetic documents, hash embedder, no model. A fact is 'whole' when one child chunk holds it verbatim (table rows: exact row plus the header row). Reference tokens are round per-script assumptions, not a measured tokenizer. n=30 facts per document.",
+  "documents": {
+    "sheet": {
+      "chunks": 38,
+      "header_chunks": 38,
+      "header_share": 1.0,
+      "facts_whole": 30,
+      "facts": 30,
+      "facts_blank_cell_whole": 9,
+      "facts_blank_cell": 9,
+      "tokens": {
+        "p10": 184.0,
+        "median": 194.2,
+        "p90": 198.2,
+        "max": 200.0
+      }
+    },
+    "pdf": {
+      "chunks": 41,
+      "starts_on_boundary": 39,
+      "ends_on_boundary": 38,
+      "sentence_share": 0.878,
+      "facts_whole": 30,
+      "facts": 30,
+      "tokens": {
+        "p10": 99.5,
+        "median": 183.0,
+        "p90": 197.2,
+        "max": 199.0
+      },
+      "facts_aimed_at_old_cut": 15,
+      "facts_aimed_whole": 15
+    },
+    "zh": {
+      "chunks": 63,
+      "starts_on_boundary": 63,
+      "ends_on_boundary": 63,
+      "sentence_share": 1.0,
+      "facts_whole": 30,
+      "facts": 30,
+      "tokens": {
+        "p10": 66.2,
+        "median": 183.0,
+        "p90": 198.5,
+        "max": 200.0
+      }
+    },
+    "ja": {
+      "chunks": 86,
+      "starts_on_boundary": 86,
+      "ends_on_boundary": 86,
+      "sentence_share": 1.0,
+      "facts_whole": 30,
+      "facts": 30,
+      "tokens": {
+        "p10": 114.8,
+        "median": 184.8,
+        "p90": 194.8,
+        "max": 199.8
+      }
+    },
+    "th": {
+      "chunks": 100,
+      "starts_on_boundary": 97,
+      "ends_on_boundary": 97,
+      "sentence_share": 0.94,
+      "facts_whole": 27,
+      "facts": 30,
+      "tokens": {
+        "p10": 100.8,
+        "median": 172.2,
+        "p90": 197.5,
+        "max": 199.2
+      },
+      "note": "Thai: unit = phrase between two spaces; Thai has no sentence mark"
+    },
+    "ar": {
+      "chunks": 58,
+      "starts_on_boundary": 58,
+      "ends_on_boundary": 58,
+      "sentence_share": 1.0,
+      "facts_whole": 30,
+      "facts": 30,
+      "tokens": {
+        "p10": 109.1,
+        "median": 187.2,
+        "p90": 196.1,
+        "max": 199.4
+      }
+    }
+  }
+}
