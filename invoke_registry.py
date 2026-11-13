@@ -74,9 +74,17 @@ def _skill_entry(sid: str, path: Path, state: dict[str, str]) -> dict[str, Any]:
         "name": name,
         "description": desc or f"Skill pack: {sid}",
         "path": str(path),
+        "body": _read_skill_text(path),
         "enabled": scope != "off",
         "scope": scope,
     }
+
+
+def _read_skill_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[:SKILL_CAP]
+    except OSError:
+        return ""
 
 
 def list_skills() -> list[dict[str, Any]]:
@@ -311,6 +319,27 @@ def save_skill(skill_id: str, body: str, *, title: str = "") -> dict[str, Any]:
     except OSError as e:
         return {"ok": False, "error": str(e)[:200]}
     return {"ok": True, "id": sid, "path": str(path), "chars": len(text)}
+
+
+def delete_skill(skill_id: str) -> dict[str, Any]:
+    """Delete data/skills/<id>.md and forget its on/off state. Built-in packs cannot be deleted."""
+    sid = (skill_id or "").strip().lower()
+    sid = "".join(c for c in sid if c.isalnum() or c in "-_")
+    if not sid or len(sid) > 64:
+        return {"ok": False, "error": "invalid skill id"}
+    path = skills_dir() / f"{sid}.md"
+    if not path.is_file():
+        if skills_dir() == _PRODUCT_SKILLS_DIR and (CURSOR_SKILLS_ROOT / sid / "SKILL.md").is_file():
+            return {"ok": False, "error": "This skill ships with AirGPT and cannot be deleted. Turn it off instead."}
+        return {"ok": False, "error": "skill not found"}
+    try:
+        path.unlink()
+        state = _skill_state()
+        if state.pop(sid, None) is not None:
+            _skill_state_path().write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except OSError as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True, "id": sid}
 
 
 def save_rules(text: str, *, workspace_root: str | Path | None = None, prefer: str = "airgpt") -> dict[str, Any]:

@@ -224,13 +224,11 @@ body{background:var(--bg)}
   .backdrop{display:none;position:fixed;inset:0;top:var(--topbar-h);background:rgba(0,0,0,.35);z-index:90}
   .backdrop.show{display:block}
 }
-.topbar-overflow-wrap{display:none}
 .topbar-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:nowrap}
 .composer-rail{display:none!important}
 @media(max-width:960px){
   .topbar{gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));flex-wrap:nowrap}
   .topbar-actions{gap:8px;flex:0 0 auto;margin-left:auto}
-  .topbar-overflow-wrap{display:none}
   .brand{min-width:0;flex:1 1 100px}
   .brand small{display:none}
   body.phone-client #ctxBar{display:none!important}
@@ -2744,10 +2742,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <span class="bgtasks-top-dot" id="bgTasksTopDot" hidden>0</span>
       </button>
       <button class="qr-btn" id="settingsBtn" title="Settings">⚙</button>
-      <div class="topbar-overflow-wrap" id="topbarOverflow">
-        <button class="menu-btn" type="button" onclick="toggleTopbarMenu()" aria-label="More">⋯</button>
-        <div class="topbar-overflow-menu" id="topbarOverflowMenu"></div>
-      </div>
     </div>
   </header>
 <div class="app">
@@ -3102,8 +3096,9 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
       <aside class="sc-nav" id="scNav">
         <div class="sc-nav-top">
           <button type="button" class="sc-back" onclick="closeSettings()" title="Back">←</button>
-          <input class="sc-search" id="scSearch" placeholder="Search Settings" oninput="filterSettingsNav(this.value)"/>
+          <input class="sc-search" id="scSearch" aria-label="Search Settings" placeholder="Search Settings" oninput="filterSettingsNav(this.value)"/>
         </div>
+        <p class="hint" id="scSearchNone" hidden style="padding:8px 12px;margin:0">No matching settings.</p>
         <nav class="sc-nav-list" id="scNavList">
           <button type="button" class="sc-nav-item on" data-panel="network" onclick="showSettingsPanel('network')">Connected Devices</button>
           <button type="button" class="sc-nav-item" data-panel="general" onclick="showSettingsPanel('general')">General</button>
@@ -3129,7 +3124,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
       <main class="sc-main" id="scMain">
         <div class="sc-panel on" id="scPanel-network" data-panel="network">
           <h3>Connected Devices</h3>
-          <p class="hint settings-lead">Phone / tablet reach this PC over Tunnel or LAN. Compute stays local.</p>
+          <p class="hint settings-lead">Step 1: set a passcode (Profile). Step 2: scan a code with your phone. Everything runs on this PC.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
             <h4>Connect path</h4>
             <div class="connect-path-row" id="connectPathRow">
@@ -3143,8 +3138,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <div class="sc-connect-col" id="wifiCard" data-path="lan">
                 <h4>WiFi — same network</h4>
                 <img class="qr-img" id="qrLan" alt="WiFi QR" width="180" height="180"/>
-                <div class="url-box" id="lanUrl" onclick="copyText(this.textContent)">—</div>
-                <div class="url-box" id="mdnsUrl" onclick="copyText(this.textContent)" style="display:none;margin-top:6px;font-size:11px;color:var(--ok)">—</div>
+                <div class="url-box" id="lanUrl" role="button" tabindex="0" title="Click to copy" onclick="copyUrlBox(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyUrlBox(this)}">—</div>
+                <div class="url-box" id="mdnsUrl" role="button" tabindex="0" title="Click to copy" onclick="copyUrlBox(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyUrlBox(this)}" style="display:none;margin-top:6px;font-size:11px;color:var(--ok)">—</div>
                 <div class="sc-connect-actions">
                   <button class="btn primary" onclick="copyText($('lanUrl').textContent)">Copy IP</button>
                   <button class="btn" onclick="shareWifiUrl()">Share</button>
@@ -3154,10 +3149,11 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <div class="sc-connect-col preferred" id="tunnelCard" data-path="tunnel">
                 <h4>Tunnel — any WiFi</h4>
                 <img class="qr-img" id="qrTunnel" alt="Tunnel QR" width="180" height="180"/>
-                <div class="url-box" id="tunnelUrl" onclick="copyText(this.textContent)">Starting tunnel…</div>
+                <div class="url-box" id="tunnelUrl" role="button" tabindex="0" title="Click to copy" onclick="copyUrlBox(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyUrlBox(this)}">Starting tunnel…</div>
                 <div class="sc-connect-actions">
-                  <button class="btn primary" onclick="copyText($('tunnelUrl').textContent)">Copy</button>
-                  <button class="btn" onclick="openTunnel()">Open</button>
+                  <button class="btn primary" id="tunnelPasscodeBtn" style="display:none" onclick="showSettingsPanel('profile')">Set passcode</button>
+                  <button class="btn primary" id="tunnelCopyBtn" onclick="copyText($('tunnelUrl').textContent)">Copy</button>
+                  <button class="btn" id="tunnelOpenBtn" onclick="openTunnel()">Open</button>
                   <button class="btn icon-only" id="restartTunnelBtn" onclick="restartTunnel()" title="Retry tunnel" aria-label="Retry tunnel">↻</button>
                 </div>
                 <p class="hint" id="tunnelHint">Works everywhere — company WiFi, home, hotspot.</p>
@@ -3200,13 +3196,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <div id="licenseBanner" class="hint" style="margin-bottom:12px;padding:10px;border-radius:12px;border:1px solid var(--line)"></div>
           <div class="settings-section">
             <h4>Startup</h4>
-            <label class="settings-check"><input type="checkbox" id="setTips" checked onchange="localStorage.setItem('airgpt_tips',this.checked?'1':'0')"/> Show tips on empty screens</label>
-            <label class="settings-check"><input type="checkbox" id="setAiAuto" checked/> Auto-analyze screenshots when AI mode is on</label>
-          </div>
-          <div class="settings-section">
-            <h4>Notifications</h4>
-            <label class="settings-check"><input type="checkbox" id="setNotifDone" checked onchange="localStorage.setItem('airgpt_notif_done',this.checked?'1':'0')"/> Notify when Agent completes</label>
-            <label class="settings-check"><input type="checkbox" id="setNotifWarn" onchange="localStorage.setItem('airgpt_notif_warn',this.checked?'1':'0')"/> Warning toasts</label>
+            <label class="settings-check"><input type="checkbox" id="setAiAuto" checked onchange="_aiAutoDirty=true"/> Auto-analyze screenshots when AI mode is on</label>
           </div>
           <div class="settings-section">
             <h4>Privacy</h4>
@@ -3220,6 +3210,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <div class="modal-actions">
             <button class="btn" onclick="exportPackage()">Export all</button>
             <button class="btn" onclick="importPackage()">Import</button>
+            <button class="btn" id="clearAllHistoryBtn" onclick="clearAllHistory()">Clear all history</button>
             <button class="btn" onclick="closeSettings()">Close</button>
             <button class="btn primary" onclick="saveSettings()">Save locally</button>
           </div>
@@ -3234,15 +3225,15 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <p class="hint" style="margin-bottom:8px">Required for phone access. Host creates passcode once on this PC.</p>
             <div id="setLoginHostPane">
               <label class="hint">Email</label>
-              <div class="field-row"><input id="setWsEmail" class="side-search" placeholder="your@email.com" type="email"/><span class="field-tick" id="tickWsEmail">✓</span></div>
+              <div class="field-row"><input id="setWsEmail" aria-label="Workspace email" class="side-search" placeholder="your@email.com" type="email"/><span class="field-tick" id="tickWsEmail">✓</span></div>
               <label class="hint">Secret passcode (min 4 chars)</label>
-              <div class="field-row"><input id="setWsPass" class="side-search" placeholder="Passcode" type="password" autocomplete="new-password"/><span class="field-tick" id="tickWsPass">✓</span></div>
+              <div class="field-row"><input id="setWsPass" aria-label="Passcode" class="side-search" placeholder="Passcode" type="password" autocomplete="new-password"/><span class="field-tick" id="tickWsPass">✓</span></div>
               <label class="hint">Confirm passcode</label>
-              <div class="field-row"><input id="setWsPass2" class="side-search" placeholder="Confirm" type="password"/><span class="field-tick" id="tickWsPass2">✓</span></div>
+              <div class="field-row"><input id="setWsPass2" aria-label="Confirm passcode" class="side-search" placeholder="Confirm" type="password"/><span class="field-tick" id="tickWsPass2">✓</span></div>
               <button class="btn primary settings-block" onclick="doHostLogin()">Create workspace</button>
             </div>
             <div id="setLoginJoinPane" style="display:none;margin-top:10px">
-              <div class="field-row"><input id="setWsJoinPass" class="side-search" placeholder="Workspace passcode" type="password"/><span class="field-tick" id="tickWsJoin">✓</span></div>
+              <div class="field-row"><input id="setWsJoinPass" aria-label="Workspace passcode" class="side-search" placeholder="Workspace passcode" type="password"/><span class="field-tick" id="tickWsJoin">✓</span></div>
               <button class="btn primary settings-block" onclick="doJoinLogin('setWsJoinPass')">Join workspace</button>
             </div>
             <p id="authStatusLine" class="hint" style="margin-top:8px"></p>
@@ -3255,11 +3246,11 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           </div>
           <div class="settings-section">
             <h4>Device name</h4>
-            <div class="field-row"><input id="setDeviceName" class="side-search" placeholder="e.g. iPad, Phone, Laptop"/><span class="field-tick" id="tickDeviceName">✓</span></div>
+            <div class="field-row"><input id="setDeviceName" aria-label="Device name" class="side-search" placeholder="e.g. iPad, Phone, Laptop"/><span class="field-tick" id="tickDeviceName">✓</span></div>
           </div>
           <div class="settings-section">
             <h4>Email</h4>
-            <div class="field-row"><input id="setEmail" class="side-search" placeholder="you@email.com"/><span class="field-tick" id="tickSetEmail">✓</span></div>
+            <div class="field-row"><input id="setEmail" aria-label="Email" class="side-search" placeholder="you@email.com"/><span class="field-tick" id="tickSetEmail">✓</span></div>
           </div>
           <div class="modal-actions"><button class="btn primary" onclick="saveSettings()">Save</button><button class="btn" onclick="closeSettings()">Close</button></div>
         </div>
@@ -3268,7 +3259,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <h3>Appearance</h3>
           <div class="settings-section">
             <h4>Theme</h4>
-            <select id="setTheme" class="side-search" style="width:100%;margin:6px 0 0" onchange="applyTheme(this.value)">
+            <select id="setTheme" aria-label="Theme" class="side-search" style="width:100%;margin:6px 0 0" onchange="applyTheme(this.value)">
               <option value="glass" selected>Liquid Glass (default)</option>
               <option value="classyblack">Classy Black</option>
               <option value="light">Light</option>
@@ -3284,7 +3275,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <p class="hint" id="skuLine" style="margin-bottom:8px">AirGPT Personal — free local clipboard &amp; WiFi</p>
             <p class="hint">Personal = free forever (local). Business = paid seats + safety controls.</p>
             <div class="license-row">
-              <input id="setLicenseKey" class="side-search" placeholder="Business license key"/>
+              <input id="setLicenseKey" aria-label="Business license key" class="side-search" placeholder="Business license key"/>
               <button class="btn" style="border-radius:999px" onclick="activateLicense()">Activate Business</button>
             </div>
           </div>
@@ -3292,8 +3283,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <b>Coming soon — Pro cloud</b>
             <p class="hint" style="margin-top:4px">$5/mo · 10 GB cloud · DeepSeek Frontier model</p>
             <div class="wait-row">
-              <input id="waitEmail" class="side-search" placeholder="Email for waitlist"/>
-              <textarea id="waitReason" class="side-search" placeholder="What feature do you wish to add?"></textarea>
+              <input id="waitEmail" aria-label="Email for the waitlist" class="side-search" placeholder="Email for waitlist"/>
+              <textarea id="waitReason" aria-label="What feature do you wish to add?" class="side-search" placeholder="What feature do you wish to add?"></textarea>
               <button class="btn primary" style="border-radius:999px;align-self:flex-start" onclick="joinWaitlist()">I'm interested — add to waitlist</button>
             </div>
           </div>
@@ -3307,12 +3298,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <h3>Agents</h3>
           <p class="hint">Agents are durable and suggested from your trends. Create them from Cortex (suggested chips), not Settings. Subagents spawn on demand for one task.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
-            <h4>Preferences</h4>
-            <label class="settings-check"><input type="checkbox" id="scAgentAutoDetect" onchange="localStorage.setItem('airgpt_agent_autodetect',this.checked?'1':'0')"/> Auto-detect agents from workspace / prompts</label>
-            <label class="settings-check"><input type="checkbox" id="scAgentAutoCreate" onchange="localStorage.setItem('airgpt_agent_autocreate',this.checked?'1':'0')"/> Auto-create when a clear agent need is detected</label>
-            <p class="hint">Detection suggests names; auto-create only runs when both boxes are on.</p>
-          </div>
-          <div class="settings-section">
             <h4>Catalog</h4>
             <div id="scAgentsList" class="sc-list"><div class="hint">Loading…</div></div>
             <button type="button" class="btn" style="margin-top:10px" onclick="closeSettings();if(typeof showCortexAgentChat==='function')showCortexAgentChat()">Open Cortex</button>
@@ -3324,8 +3309,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <p class="hint">Helpers for one task. Spawn with <strong>New subagent</strong> on Cortex (no name prompt). Assist = 0 children · Deep = ≤2. Children never recurse.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
             <h4>Preferences</h4>
-            <label class="settings-check"><input type="checkbox" id="scSubAutoDetect" onchange="localStorage.setItem('airgpt_subagent_autodetect',this.checked?'1':'0')"/> Auto-detect when a task fits a helper</label>
-            <label class="settings-check"><input type="checkbox" id="scSubAutoCreate" onchange="localStorage.setItem('airgpt_subagent_autocreate',this.checked?'1':'0')"/> Auto-create task-specific subagents</label>
             <label class="settings-check"><input type="checkbox" id="scSubDeep" checked disabled/> Cap Deep fan-out at 2 (locked)</label>
           </div>
           <div class="settings-section">
@@ -3338,15 +3321,17 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <div class="sc-panel" id="scPanel-models" data-panel="models">
           <h3>API</h3>
           <p class="hint">BYOK optional — <b>OpenFree</b> (our free gateway) / Netie Engine first. Paid keys fall back through OpenVault.</p>
-          <button type="button" class="btn primary" style="width:100%;margin-bottom:12px;border-radius:999px" onclick="closeSettings();openKeyVault()">OpenVault Key Vault — OpenFree · OpenShip · keys</button>
+          <button type="button" class="btn primary" style="width:100%;margin-bottom:12px;border-radius:999px" onclick="closeSettings();openKeyVault()">Open key manager</button>
           <div class="settings-section">
             <h4>API keys (advanced)</h4>
-            <label class="hint">DeepSeek</label>
-            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show/hide">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
-            <label class="hint">OpenRouter / Groq / Google</label>
-            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
-            <div class="field-row"><input id="setGroq" class="side-search" placeholder="Groq gsk_…" autocomplete="off" type="password" data-key="GROQ_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGroq',this)">👁</button><span class="field-tick" id="tickGroq">✓</span></div>
-            <div class="field-row"><input id="setGoogle" class="side-search" placeholder="Google AI key" autocomplete="off" type="password" data-key="GOOGLE_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGoogle',this)">👁</button><span class="field-tick" id="tickGoogle">✓</span></div>
+            <label class="hint" for="setDeepSeek">DeepSeek key</label>
+            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show or hide the DeepSeek key" aria-label="Show or hide the DeepSeek key">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
+            <label class="hint" for="setOpenRouter">OpenRouter key</label>
+            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)" title="Show or hide the OpenRouter key" aria-label="Show or hide the OpenRouter key">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
+            <label class="hint" for="setGroq">Groq key</label>
+            <div class="field-row"><input id="setGroq" class="side-search" placeholder="Groq gsk_…" autocomplete="off" type="password" data-key="GROQ_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGroq',this)" title="Show or hide the Groq key" aria-label="Show or hide the Groq key">👁</button><span class="field-tick" id="tickGroq">✓</span></div>
+            <label class="hint" for="setGoogle">Google AI key</label>
+            <div class="field-row"><input id="setGoogle" class="side-search" placeholder="Google AI key" autocomplete="off" type="password" data-key="GOOGLE_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGoogle',this)" title="Show or hide the Google AI key" aria-label="Show or hide the Google AI key">👁</button><span class="field-tick" id="tickGoogle">✓</span></div>
             <button class="btn primary" onclick="saveSettings()">Save keys locally</button>
           </div>
         </div>
@@ -3379,7 +3364,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <span class="ds-plus">+</span> New rule
             </button>
             <div class="ds-editor" id="scRulesEditor">
-              <textarea id="scRulesBody" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
+              <textarea id="scRulesBody" aria-label="Rules text" class="side-search" rows="8" placeholder="# Project rules&#10;Always approve writes. Prefer fs_patch."></textarea>
               <div class="btn-row">
                 <button type="button" class="btn primary" onclick="settingsSaveRules('airgpt')">Save .airgpt/rules.md</button>
                 <button type="button" class="btn" onclick="settingsSaveRules('agents')">Save AGENTS.md</button>
@@ -3400,9 +3385,9 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <input type="file" id="scSkillUpload" accept=".md,.markdown,.txt" style="display:none" onchange="settingsUploadSkill(this)"/>
             </div>
             <div class="ds-editor" id="scSkillEditor">
-              <div class="field-row"><input id="scSkillId" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
-              <div class="field-row"><input id="scSkillTitle" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
-              <textarea id="scSkillBody" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
+              <div class="field-row"><input id="scSkillId" aria-label="Skill id" class="side-search" placeholder="skill id (e.g. openide-ui)"/><span class="field-tick">✓</span></div>
+              <div class="field-row"><input id="scSkillTitle" aria-label="Skill title" class="side-search" placeholder="Title"/><span class="field-tick">✓</span></div>
+              <textarea id="scSkillBody" aria-label="Skill steps" class="side-search" rows="6" placeholder="Step-by-step playbook the agent should follow when /skill is invoked."></textarea>
               <div class="btn-row">
                 <button type="button" class="btn primary" onclick="settingsSaveSkill()">Create skill</button>
                 <button type="button" class="btn" onclick="dsToggleEditor('scSkillEditor',false)">Cancel</button>
@@ -3428,20 +3413,21 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <div class="ds-row"><span class="ds-name">Audit → every tool call ledgered</span><span class="ds-sub">always on</span></div>
           </div>
           <h4 style="margin-top:14px">Your hooks</h4>
+          <p class="hint">Your hooks are saved in this browser only and are not applied yet.</p>
           <div id="scHooksList" class="ds-list"></div>
           <button type="button" class="ds-add" onclick="dsToggleEditor('scHookEditor',true)">
             <span class="ds-plus">+</span> New hook
           </button>
           <div class="ds-editor" id="scHookEditor">
-            <div class="field-row"><input id="scHookName" class="side-search" placeholder="hook name (e.g. block-secrets)"/><span class="field-tick">✓</span></div>
+            <div class="field-row"><input id="scHookName" aria-label="Hook name" class="side-search" placeholder="hook name (e.g. block-secrets)"/><span class="field-tick">✓</span></div>
             <div class="field-row">
-              <select id="scHookEvent" class="side-search">
+              <select id="scHookEvent" aria-label="When the hook runs" class="side-search">
                 <option value="pre_tool">Pre tool — runs before a tool call</option>
                 <option value="post_tool">Post tool — runs on the result</option>
                 <option value="pre_write">Pre write — runs before a file write</option>
               </select>
             </div>
-            <textarea id="scHookBody" class="side-search" rows="5" placeholder="What should happen. Plain instructions; the gate is deterministic, this describes intent."></textarea>
+            <textarea id="scHookBody" aria-label="What the hook should do" class="side-search" rows="5" placeholder="What should happen. Plain instructions; the gate is deterministic, this describes intent."></textarea>
             <div class="btn-row">
               <button type="button" class="btn primary" onclick="settingsSaveHook()">Create hook</button>
               <button type="button" class="btn" onclick="dsToggleEditor('scHookEditor',false)">Cancel</button>
@@ -4671,7 +4657,7 @@ function closeProjectPickModal(){
 }
 function ddClose(){$('projectDd')?.classList.remove('open')}
 function openSkuSettings(){
-  openSettings();
+  openSettings('plan');
   setTimeout(()=>{const el=$('setLicenseKey');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},200);
 }
 function dismissBanner(which){
@@ -5601,35 +5587,9 @@ function detectCategoryFromMsgs(msgs){
 }
 
 document.addEventListener('click',e=>{
-  const wrap=$('topbarOverflow');
-  if(wrap&&!wrap.contains(e.target))wrap.classList.remove('open');
   const dd=$('projectDd');
   if(dd&&!dd.contains(e.target))dd.classList.remove('open');
 });
-function toggleTopbarMenu(){
-  const wrap=$('topbarOverflow');
-  if(!wrap)return;
-  wrap.classList.toggle('open');
-  if(wrap.classList.contains('open'))buildTopbarOverflowMenu();
-}
-function buildTopbarOverflowMenu(){
-  const menu=$('topbarOverflowMenu');
-  if(!menu)return;
-  const items=[
-    {id:'connect',label:()=>'Connected Devices',action:()=>openConnectFromMenu()},
-    {id:'notes',label:()=>'Input notes (Settings)',action:()=>{openSkuSettings();setTimeout(()=>openNotesModal(),300)}},
-    {id:'admin',label:()=>'Admin panel',action:()=>openAdminPanel()},
-    {id:'clear',label:()=>'Clear all history…',action:()=>clearAllHistory()},
-  ];
-  menu.innerHTML=items.map(it=>`<button type="button" data-act="${it.id}">${esc(it.label())}</button>`).join('');
-  menu.querySelectorAll('button').forEach(btn=>{
-    btn.onclick=()=>{
-      const it=items.find(x=>x.id===btn.dataset.act);
-      wrapClose();it?.action();
-    };
-  });
-}
-function wrapClose(){$('topbarOverflow')?.classList.remove('open')}
 async function openConnectFromMenu(){
   if(window.innerWidth<=760){
     if(!await unlockQrConnect())return;
@@ -7517,7 +7477,7 @@ async function createCortexAgent(){
     if(inp&&!inp.value.trim()){inp.placeholder='Create an agent that…';inp.focus();}
   },100);
 }
-let _ghPollTimer=null;
+let _ghPollTimer=null,_ghStatusLine='';
 function _ghOut(text){
   const el=$('ghAuthOut');if(!el)return;
   el.style.display='block';
@@ -7529,17 +7489,20 @@ async function githubAuthStatus(){
     const btn=$('ghConnectBtn');
     const disc=$('ghDisconnectBtn');
     if(r&&r.connected&&r.login){
-      _ghOut('Connected as @'+r.login+(r.name?(' · '+r.name):''));
-      if(btn)btn.textContent='Connected';
+      _ghStatusLine='Connected as @'+r.login+(r.name?(' · '+r.name):'');
+      _ghOut(_ghStatusLine);
+      if(btn)btn.textContent='Reconnect';
       if(disc)disc.style.display='';
     }else{
-      _ghOut(r&&r.error?String(r.error):'Not connected');
+      _ghStatusLine=r&&r.error?String(r.error):'Not connected';
+      _ghOut(_ghStatusLine);
       if(btn)btn.textContent='Connect GitHub';
       if(disc)disc.style.display='none';
     }
   }catch(e){_ghOut('Could not check GitHub status')}
 }
 async function githubDisconnect(){
+  if(!confirm('Disconnect GitHub from AirGPT?'))return;
   try{
     const r=await api('/api/github/auth/disconnect',{method:'POST',body:'{}'}).then(x=>x.json());
     if(r&&r.ok){toast('GitHub disconnected');githubAuthStatus()}
@@ -7554,7 +7517,7 @@ async function githubConnect(){
   try{
     const start=await api('/api/github/auth/start',{method:'POST',body:JSON.stringify({broad})}).then(x=>x.json());
     if(!start||!start.ok){
-      _ghOut((start&&start.error)||'Could not start GitHub auth');
+      _ghOut(((start&&start.error)||'Could not start GitHub auth')+(_ghStatusLine?'\n'+_ghStatusLine:''));
       toast((start&&start.error)||'GitHub auth failed');
       return;
     }
@@ -12589,7 +12552,8 @@ window.deleteSession=async id=>{
 };
 async function clearAllHistory(){
   if(!confirm('Delete ALL history, files, and cache?'))return;
-  await api('/api/messages',{method:'DELETE'});
+  const r=await api('/api/messages',{method:'DELETE'}).catch(()=>null);
+  if(!r||!r.ok){toast('Could not clear history');return}
   lastId=0;lastHistId=0;msgById={};
   pullChat();pullHistory();loadVaultTree();toast('History cleared');
 }
@@ -12601,10 +12565,9 @@ function layoutComposerChrome(){
   const rail=$('composerRail');
   const ai=$('aiSwitchWrap');
   const set=$('settingsBtn');
-  const overflow=$('topbarOverflow');
   if(!topActions||!ai||!set)return;
-  if(ai.parentElement!==topActions)topActions.insertBefore(ai,overflow||null);
-  if(set.parentElement!==topActions)topActions.insertBefore(set,overflow||null);
+  if(ai.parentElement!==topActions)topActions.insertBefore(ai,null);
+  if(set.parentElement!==topActions)topActions.insertBefore(set,null);
   if(rail){rail.innerHTML='';rail.style.display='none'}
   syncCollapseChevrons();
   if(typeof layoutRagAskSqueeze==='function')layoutRagAskSqueeze();
@@ -12961,6 +12924,15 @@ function thumbUrl(m){return m.thumb?withAuthQuery(API()+'/data/'+encodeURI(m.thu
 function qrSrc(url){return API()+'/api/qr.png?u='+encodeURIComponent(url)}
 
 function setQR(imgEl,url){
+  let note=imgEl.nextElementSibling;
+  if(note&&!note.classList.contains('qr-fail'))note=null;
+  if(note)note.hidden=true;
+  imgEl.onerror=()=>{
+    imgEl.style.display='none';
+    if(!note){note=document.createElement('p');note.className='hint qr-fail';imgEl.after(note)}
+    note.textContent='The code could not be drawn. Use the address instead.';
+    note.hidden=false;
+  };
   if(!url||url==='—'||url.includes('…')){imgEl.style.display='none';return}
   imgEl.style.display='block';
   imgEl.src=qrSrc(url)+'&t='+Date.now();
@@ -14015,24 +13987,17 @@ async function openSettings(panel){
   $('settingsModal').classList.add('open');
   showSettingsPanel(panel||localStorage.getItem('airgpt_settings_panel')||'network');
   refreshTasteLine();
-  if($('setTips'))$('setTips').checked=localStorage.getItem('airgpt_tips')!=='0';
-  if($('setNotifDone'))$('setNotifDone').checked=localStorage.getItem('airgpt_notif_done')!=='0';
-  if($('setNotifWarn'))$('setNotifWarn').checked=localStorage.getItem('airgpt_notif_warn')==='1';
-  if($('scAgentAutoDetect'))$('scAgentAutoDetect').checked=localStorage.getItem('airgpt_agent_autodetect')==='1';
-  if($('scAgentAutoCreate'))$('scAgentAutoCreate').checked=localStorage.getItem('airgpt_agent_autocreate')==='1';
-  if($('scSubAutoDetect'))$('scSubAutoDetect').checked=localStorage.getItem('airgpt_subagent_autodetect')==='1';
-  if($('scSubAutoCreate'))$('scSubAutoCreate').checked=localStorage.getItem('airgpt_subagent_autocreate')==='1';
   const [s,l,st]=await Promise.all([
     fetchJson('/api/settings').catch(()=>({})),
     fetchJson('/api/license').catch(()=>({})),
     fetchJson('/api/auth/status').catch(()=>({})),
   ]);
-  if($('setAiAuto'))$('setAiAuto').checked=!!s.ai_auto;
+  if($('setAiAuto')){$('setAiAuto').checked=!!s.ai_auto;_aiAutoDirty=false}
   if($('setLoginHostPane'))$('setLoginHostPane').style.display=st.initialized?'none':'block';
   if($('setLoginJoinPane'))$('setLoginJoinPane').style.display=st.initialized?'block':'none';
   if($('authStatusLine'))$('authStatusLine').textContent=st.initialized
     ?(authToken?'✓ Signed in':'Workspace ready — use passcode to join from phone')
-    :'Create workspace below (one time on this PC). LAN and tunnel stay locked until then.';
+    :'Do this once on this PC. Phones cannot connect until you do.';
   renderPasscodeGate(st);
   const lb=$('licenseBanner');
   const sku=$('skuLine');
@@ -14046,6 +14011,7 @@ async function openSettings(panel){
   if($('setDeviceName'))$('setDeviceName').value=myName||ensureDeviceName();
   if(l.email&&$('setEmail'))$('setEmail').value=l.email;
   if(st.host_email&&$('setEmail')&&!$('setEmail').value)$('setEmail').value=st.host_email;
+  _emailLoaded=($('setEmail')&&$('setEmail').value.trim())||'';
   if(s.keys_configured){
     const keyMap={DEEPSEEK_API_KEY:'setDeepSeek',OPENROUTER_API_KEY:'setOpenRouter',GROQ_API_KEY:'setGroq',GOOGLE_API_KEY:'setGoogle'};
     Object.entries(s.keys_configured).forEach(([k,m])=>{
@@ -14071,6 +14037,7 @@ function showSettingsPanel(id){
   localStorage.setItem('airgpt_settings_panel',pid);
   document.querySelectorAll('#scNavList .sc-nav-item').forEach(b=>b.classList.toggle('on',b.dataset.panel===pid));
   document.querySelectorAll('#scMain .sc-panel').forEach(p=>p.classList.toggle('on',p.dataset.panel===pid));
+  try{document.querySelector('#scNavList .sc-nav-item.on')?.scrollIntoView({inline:'center',block:'nearest'})}catch(e){}
   if(pid==='invoke')refreshSettingsInvokePanel();
   if(pid==='agents')refreshSettingsAgentsPanel();
   if(pid==='subagents')refreshSettingsSubagentsPanel();
@@ -14080,10 +14047,22 @@ function showSettingsPanel(id){
 }
 function filterSettingsNav(q){
   const s=(q||'').toLowerCase().trim();
+  let shown=0;
   document.querySelectorAll('#scNavList .sc-nav-item').forEach(b=>{
-    const t=(b.textContent||'').toLowerCase();
-    b.style.display=!s||t.includes(s)?'':'none';
+    let t=(b.textContent||'').toLowerCase();
+    if(s&&!t.includes(s)){
+      // also look inside the panel: its text, field placeholders and labels
+      const pn=document.getElementById('scPanel-'+b.dataset.panel);
+      if(pn){
+        t=(pn.textContent||'').toLowerCase()+' '+[...pn.querySelectorAll('[placeholder],[aria-label],[title]')].map(e=>(e.getAttribute('placeholder')||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.title||'')).join(' ').toLowerCase();
+      }
+    }
+    const hit=!s||t.includes(s);
+    b.style.display=hit?'':'none';
+    if(hit)shown++;
   });
+  const none=$('scSearchNone');
+  if(none)none.hidden=shown>0;
 }
 async function refreshSettingsInvokePanel(){
   try{
@@ -14118,17 +14097,22 @@ async function refreshSettingsInvokePanel(){
         const sc=s.scope||(s.enabled?'global':'off');
         return `<div class="ds-row">
           <span class="ds-name" title="${esc(s.description||s.id)}">${esc(s.id)}</span>
-          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Where this skill is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
+          <select data-skill-scope="${esc(s.id)}" title="Where this skill is active" aria-label="Where skill ${esc(s.id)} is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
             <option value="off"${sc==='off'?' selected':''}>Off</option>
             <option value="global"${sc==='global'?' selected':''}>Global</option>
             <option value="project"${sc==='project'?' selected':''}>Project</option>
           </select>
           <span class="ds-acts">
-            <button type="button" class="ds-ico" title="Edit skill" onclick="editSkill('${esc(s.id)}')">✎</button>
-            <button type="button" class="ds-ico danger" title="Delete skill" onclick="deleteSkill('${esc(s.id)}')">✕</button>
+            <button type="button" class="ds-ico" title="Edit skill" aria-label="Edit skill ${esc(s.id)}" data-skill-edit="${esc(s.id)}">✎</button>
+            <button type="button" class="ds-ico danger" title="Delete skill" aria-label="Delete skill ${esc(s.id)}" data-skill-del="${esc(s.id)}">✕</button>
           </span></div>`;
       }).join('')
         :'<p class="ds-empty">No skills yet.</p>';
+      host.onclick=e=>{
+        const b=e.target.closest('button[data-skill-edit],button[data-skill-del]');if(!b)return;
+        if(b.dataset.skillEdit)editSkill(b.dataset.skillEdit);else deleteSkill(b.dataset.skillDel);
+      };
+      host.onchange=e=>{const sel=e.target.closest('select[data-skill-scope]');if(sel)settingsSetSkillScope(sel.dataset.skillScope,sel.value)};
     }
     renderHooks();
   }catch(e){}
@@ -14143,13 +14127,14 @@ async function settingsClearRules(){
 }
 async function editSkill(id){
   try{
-    const d=await api('/api/cortex/invoke').then(r=>r.json());
+    const d=await api('/api/invoke/skills').then(r=>r.json());
     const s=(d.skills||[]).find(x=>x.id===id);
+    if(!s){toast('Could not open this skill');return}
     if($('scSkillId'))$('scSkillId').value=id;
-    if($('scSkillTitle'))$('scSkillTitle').value=(s&&(s.title||s.description))||'';
-    if($('scSkillBody'))$('scSkillBody').value=(s&&s.body)||'';
+    if($('scSkillTitle'))$('scSkillTitle').value=s.name||'';
+    if($('scSkillBody'))$('scSkillBody').value=s.body||'';
     dsToggleEditor('scSkillEditor',true);
-  }catch(e){dsToggleEditor('scSkillEditor',true)}
+  }catch(e){toast('Could not open this skill')}
 }
 async function deleteSkill(id){
   if(!confirm('Delete skill “'+id+'”?'))return;
@@ -14293,6 +14278,7 @@ async function settingsSaveSkill(){
     if(r&&r.ok){
       toast('Skill “'+r.id+'” created — use /skill '+r.id);
       if($('scSkillId'))$('scSkillId').value='';
+      if($('scSkillTitle'))$('scSkillTitle').value='';
       if($('scSkillBody'))$('scSkillBody').value='';
       refreshSettingsInvokePanel();
     }else toast((r&&r.error)||'Create failed');
@@ -14316,28 +14302,48 @@ window.addEventListener('resize',()=>{
   layoutComposerChrome?.();
   updateScrollBottomBtn?.();
 });
+let _aiAutoDirty=false,_emailLoaded='';
 async function saveSettings(silent){
+  // Only send what the user actually changed: opening and closing Settings writes nothing.
   const dn=($('setDeviceName')&&$('setDeviceName').value.trim())||'';
-  if(dn){myName=dn;localStorage.setItem('clipdrop_name',myName)}
-  const body={
-    ai_auto:($('setAiAuto')?$('setAiAuto').checked:true)&&aiMode,
-    DEEPSEEK_API_KEY:($('setDeepSeek')&&$('setDeepSeek').value.trim())||_savedKeys.setDeepSeek||'',
-    OPENROUTER_API_KEY:($('setOpenRouter')&&$('setOpenRouter').value.trim())||_savedKeys.setOpenRouter||'',
-    GROQ_API_KEY:($('setGroq')&&$('setGroq').value.trim())||_savedKeys.setGroq||'',
-    GOOGLE_API_KEY:($('setGoogle')&&$('setGoogle').value.trim())||_savedKeys.setGoogle||'',
-  };
-  const hasNew=Object.keys(body).some(k=>k.includes('KEY')&&body[k]);
-  if(!silent&&!hasNew&&!$('setEmail')?.value?.trim()){
-    /* allow silent panel switch saves */
-  }
+  let changed=false;
+  if(dn&&dn!==myName){myName=dn;localStorage.setItem('clipdrop_name',myName);changed=true}
+  const body={};
+  if(_aiAutoDirty&&$('setAiAuto'))body.ai_auto=$('setAiAuto').checked;
+  [['DEEPSEEK_API_KEY','setDeepSeek'],['OPENROUTER_API_KEY','setOpenRouter'],['GROQ_API_KEY','setGroq'],['GOOGLE_API_KEY','setGoogle']].forEach(([k,id])=>{
+    const v=($(id)&&$(id).value.trim())||'';
+    if(v&&v!==_savedKeys[id])body[k]=v;
+  });
   const email=$('setEmail')?.value?.trim()||'';
-  if(email)await fetch(API()+'/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-  const r=await fetch(API()+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken},body:JSON.stringify(body)}).then(x=>x.json());
-  await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json',...handshakeHeaders()},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
-  const rec=$('saveReceipt');
-  if(r.saved_to){rec.textContent='✓  Saved to '+r.saved_to;rec.classList.add('show')}
-  maskSavedKeys();loadAiConfig();
-  if(!silent){toast('Saved locally');setTimeout(()=>rec.classList.remove('show'),4000)}
+  const emailNew=!!email&&email!==_emailLoaded;
+  if(!changed&&!emailNew&&!Object.keys(body).length){
+    if(!silent)toast('Nothing new to save');
+    return;
+  }
+  let fail='';
+  try{
+    if(emailNew){
+      const x=await fetch(API()+'/api/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+      if(x.ok)_emailLoaded=email;else fail='The email was not saved.';
+    }
+    if(Object.keys(body).length){
+      const x=await fetch(API()+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken},body:JSON.stringify(body)});
+      const r=await x.json().catch(()=>({}));
+      if(!x.ok||r.error){
+        fail=x.status===403?'Only the PC that runs AirGPT can change these settings.':('The app said: '+(r.error||('error '+x.status)));
+      }else{
+        if('ai_auto' in body){
+          _aiAutoDirty=false;
+          await fetch(API()+'/api/ai/config',{method:'POST',headers:{'Content-Type':'application/json',...handshakeHeaders()},body:JSON.stringify({auto:body.ai_auto,client_ai:aiMode})});
+        }
+        const rec=$('saveReceipt');
+        if(r.saved_to&&rec){rec.textContent='✓  Saved to '+r.saved_to;rec.classList.add('show');if(!silent)setTimeout(()=>rec.classList.remove('show'),4000)}
+        maskSavedKeys();loadAiConfig();
+      }
+    }
+  }catch(e){fail='Could not reach the app.'}
+  if(fail)toast('Could not save. '+fail);
+  else if(!silent)toast('Saved locally');
 }
 async function activateLicense(){
   const key=$('setLicenseKey').value.trim();
@@ -14466,11 +14472,18 @@ async function shareWifiUrl(){
   }
   copyText(url);
 }
+function copyUrlBox(el){if(el.dataset.noLink!=='1')copyText(el.textContent)}
 function applyTunnelUi(d){
   if(!d)return;
   if(d.tunnel_url)tunnelHref=d.tunnel_url;
   if(d.lan_url)lanHref=d.lan_url;
   const tunnelUrl=$('tunnelUrl'),qrTunnel=$('qrTunnel'),lanUrl=$('lanUrl'),qrLan=$('qrLan');
+  // No link yet: nothing to copy or open, and say why in words.
+  const hasLink=!!d.tunnel_url&&d.tunnel_status!=='paywall';
+  ['tunnelCopyBtn','tunnelOpenBtn'].forEach(id=>{const e=$(id);if(e)e.style.display=hasLink?'':'none'});
+  const pb=$('tunnelPasscodeBtn');if(pb)pb.style.display=d.tunnel_status==='locked'?'':'none';
+  if(tunnelUrl)tunnelUrl.dataset.noLink=hasLink?'':'1';
+  if(tunnelUrl)tunnelUrl.style.wordBreak=hasLink?'':'normal';
   if(d.tunnel_status==='paywall'){
     if(tunnelUrl)tunnelUrl.textContent='Subscribe $5/mo to unlock Tunnel QR';
     if(qrTunnel)qrTunnel.style.display='none';
@@ -14490,7 +14503,7 @@ function applyTunnelUi(d){
     if(d.tunnel_url&&qrTunnel){qrTunnel.style.display='';setQR(qrTunnel,d.join_url||d.tunnel_url)}
     else if(qrTunnel)qrTunnel.style.display='none';
   }else{
-    if(tunnelUrl)tunnelUrl.textContent=d.tunnel_status||'Starting tunnel…';
+    if(tunnelUrl)tunnelUrl.textContent=d.tunnel_status==='locked'?'Phone link is off. Set a passcode first.':(d.tunnel_status||'Starting tunnel…');
     if(qrTunnel)qrTunnel.style.display='none';
   }
   if(d.lan_url){
@@ -14594,8 +14607,6 @@ async function pullInfo(){
     showNetworkBanner(d);
     const hint=[];
     if(d.lan_hint)hint.push(d.lan_hint);
-    if(d.firewall&&d.firewall!=='ok')hint.push('Firewall: '+d.firewall);
-    if(d.network_profile)hint.push('Network: '+d.network_profile);
     if($('lanHint'))$('lanHint').textContent=hint.join(' · ');
     updateSkuChip(d);
     const payEl=$('paywallBanner');const payTxt=$('paywallBannerText');
