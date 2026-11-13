@@ -184,6 +184,22 @@ def set_agent_pinned(agent_id: int, pinned: bool) -> dict | None:
         return _agent_row(row) if row else None
 
 
+def set_agent_config(agent_id: int, config: dict) -> dict | None:
+    """Merge keys into an agent's config (e.g. the routine it is scheduled by)."""
+    init()
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM agents WHERE id=?", (int(agent_id),)).fetchone()
+        if not row:
+            return None
+        merged = {**_agent_row(row).get("config", {}), **config}
+        conn.execute(
+            "UPDATE agents SET config=?, updated_at=? WHERE id=?",
+            (json.dumps(merged), time.time(), int(agent_id)),
+        )
+        row = conn.execute("SELECT * FROM agents WHERE id=?", (int(agent_id),)).fetchone()
+        return _agent_row(row) if row else None
+
+
 def delete_agent(agent_id: int) -> dict:
     """Hard-delete an agent row (keeps run history orphaned — fine for local)."""
     init()
@@ -212,8 +228,8 @@ def claim_run(run_id: int) -> dict:
     init()
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=? WHERE id=? AND status IN ('queued','awaiting_human')",
-            ("running", int(run_id)),
+            "UPDATE agent_runs SET status=?, created_at=? WHERE id=? AND status IN ('queued','awaiting_human')",
+            ("running", time.time(), int(run_id)),
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
@@ -256,6 +272,33 @@ def finish_run(
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
+
+
+_OPEN_RUN_STATES = ("running", "queued", "claimed", "awaiting_human")
+
+
+def cancel_run(run_id: int, reason: str = "Stopped by you") -> bool:
+    """Mark an unfinished run stopped. False when it is missing or already finished."""
+    init()
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE agent_runs SET status='cancelled', error=?, finished_at=? "
+            "WHERE id=? AND status IN (?,?,?,?)",
+            (reason[:2000], time.time(), int(run_id), *_OPEN_RUN_STATES),
+        )
+        return cur.rowcount > 0
+
+
+def expire_stale_runs(max_age_sec: float = 3600.0) -> int:
+    """A run still 'running' long after it began lost its browser or its server."""
+    init()
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE agent_runs SET status='error', error=?, finished_at=? "
+            "WHERE status='running' AND created_at<?",
+            ("This run was abandoned (the page closed or the app restarted).", time.time(), time.time() - max_age_sec),
+        )
+        return cur.rowcount
 
 
 def list_runs(agent_id: int | None = None, limit: int = 50) -> list[dict]:

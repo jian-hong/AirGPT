@@ -160,6 +160,7 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
         import cortex_orchestrator
 
         agent_store.init()
+        agent_store.expire_stale_runs()
         agents = {int(a["id"]): a for a in agent_store.list_agents()}
         pending = cortex_orchestrator.list_pending() or []
         recent = agent_store.list_runs(None, 25)
@@ -242,7 +243,15 @@ def get_task(task_id: str) -> dict | None:
 
 def cancel(task_id: str) -> dict:
     if str(task_id).startswith("agent_run_"):
-        return {"ok": False, "error": "cancel agent runs from Cortex Pending"}
+        try:
+            import agent_store
+
+            rid = int(str(task_id).rsplit("_", 1)[-1])
+            if agent_store.cancel_run(rid):
+                return {"ok": True, "task_id": task_id, "status": "cancelled"}
+            return {"ok": False, "error": "That run has already finished."}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
     return cortex_client.workflows_cancel(task_id)
 
 
