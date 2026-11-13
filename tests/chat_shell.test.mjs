@@ -60,14 +60,19 @@ test("setQR shows the picture again after the link was cleared", () => {
 });
 
 test("setQR tells the user in words when the QR cannot be made", () => {
-  const said = [];
-  const ctx = load(["setQR"], { qrSrc: (u) => "/x?" + u, toast: (m) => said.push(m), Date });
+  const made = [];
+  const document = {
+    createElement() { const n = { classList: { contains: () => true }, hidden: true, textContent: "" }; made.push(n); return n; },
+  };
+  const ctx = load(["setQR"], { qrSrc: (u) => "/x?" + u, toast() {}, Date, document });
   const img = fakeImg();
-  img.offsetParent = {};
+  img.after = (n) => { img.nextElementSibling = n; };
   ctx.setQR(img, "http://a/b");
   img.onerror();
-  assert.match(img.alt, /unavailable/i);
-  assert.equal(said.length, 1);
+  assert.equal(img.style.display, "none", "no broken-image icon");
+  assert.equal(made.length, 1);
+  assert.match(made[0].textContent, /could not be drawn/i);
+  assert.equal(made[0].hidden, false);
 });
 
 function bodyWith(...classes) {
