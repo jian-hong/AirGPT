@@ -317,10 +317,10 @@ def _fetch_url_evidence(urls: list[str], *, max_chars: int = 1800) -> str:
             )
             if restricted:
                 _check_public_url(u)
-                opener = urllib.request.build_opener(_PublicOnlyRedirect)
+                opened = urllib.request.build_opener(_PublicOnlyRedirect).open(req, timeout=8)
             else:
-                opener = urllib.request.build_opener()
-            with opener.open(req, timeout=8) as r:
+                opened = urllib.request.urlopen(req, timeout=8)
+            with opened as r:
                 ctype = (r.headers.get("Content-Type") or "").lower()
                 raw = r.read(400_000)
             try:
