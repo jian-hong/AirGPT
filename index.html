@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#0a0a0a"/>
 <title>AirGPT</title>
 <link rel="manifest" href="/manifest.json"/>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<script src="/ui/sanitize.js"></script>
 <link rel="stylesheet" href="/OpenIDE/ui/openide.css"/>
 <!-- Materials, type scale, and the reduced-motion / transparency / contrast rules.
      The reduced-motion block carries !important because it has to beat inline styles;
@@ -2623,7 +2623,7 @@ body.theme-light .ai-block b,
 body.theme-light .ai-block th{color:var(--text)!important}
 body.theme-light .ai-block code{background:var(--code-bg);color:var(--code-fg);border-color:var(--line)}
 body.theme-light .ai-block pre{background:var(--code-block-bg)}
-body.theme-light .ai-block pre code{color:var(--code-block-fg)}
+body.theme-light .ai-block pre code{background:transparent;border:0;color:var(--code-block-fg)}
 body.theme-light .center-empty .hero-title,
 body.theme-light .center-empty .hero-sub,
 body.theme-light .center-empty .qotd,
@@ -3497,6 +3497,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<!-- Must run after the three libraries above: its AMD define() makes them skip creating page globals. -->
+<script defer src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <!-- Design foundations: springs/gestures + materials, type and a11y tokens.
@@ -4218,7 +4220,7 @@ async function openModelMenuFull(){
   let items=[];
   try{const d=await api('/api/marketplace?category=llm').then(r=>r.json());items=(d.items||[]).filter(it=>it.installed||it.detected)}catch(e){}
   const list=$('ddLocalList');if(!list)return;
-  list.innerHTML=items.length?items.slice(0,8).map(it=>`<button type="button" class="dd-local ${localModelSel===it.id?'on':''}" onclick="selectLocalModel('${esc(it.id)}','${esc(it.name||it.id)}')"><span class="mp-logo">${esc((it.creator&&it.creator.logo)||'•')}</span><span><strong>${esc(it.name||it.id)}</strong><small>${esc(it.est_tps_label||'')}${it.good_for?' · '+esc(it.good_for):''}</small></span></button>`).join('')
+  list.innerHTML=items.length?items.slice(0,8).map(it=>`<button type="button" class="dd-local ${localModelSel===it.id?'on':''}" data-call="selectLocalModel" data-args="${esc(JSON.stringify([it.id,it.name||it.id]))}"><span class="mp-logo">${esc((it.creator&&it.creator.logo)||'•')}</span><span><strong>${esc(it.name||it.id)}</strong><small>${esc(it.est_tps_label||'')}${it.good_for?' · '+esc(it.good_for):''}</small></span></button>`).join('')
     :`<button type="button" onclick="$('modelDd')?.classList.remove('open');openModelMarket('')"><small>No local models yet — browse marketplace to install one</small></button>`;
 }
 function showPricingModal(){
@@ -4288,7 +4290,7 @@ function renderStageBar(){
   }).join('');
   const skillHtml=pendingSkills.map(s=>{
     const label=s.title||s.id;
-    return `<span class="reply-tile" title="${esc(label)}"><span class="reply-kicker">Force</span><span class="reply-snip">${esc(label.slice(0,42))}</span><button type="button" class="stage-x" onclick="clearPendingSkill('${esc(s.id)}')" title="Remove skill" aria-label="Remove skill ${esc(label)}">×</button></span>`;
+    return `<span class="reply-tile" title="${esc(label)}"><span class="reply-kicker">Force</span><span class="reply-snip">${esc(label.slice(0,42))}</span><button type="button" class="stage-x" data-call="clearPendingSkill" data-arg="${esc(s.id)}" title="Remove skill" aria-label="Remove skill ${esc(label)}">×</button></span>`;
   }).join('');
   const has=!!(replyContext||stagedFiles.length||pendingSkills.length);
   if(!has){
@@ -4913,7 +4915,7 @@ async function renderProjectRail(key){
       <textarea id="goalNext" placeholder="Near-term next steps…">${esc(goals.next_goals||'')}</textarea>
       <label style="font-size:11px;color:var(--muted);display:block;margin-top:8px">Long-term goals</label>
       <textarea id="goalLong" placeholder="North-star outcomes…">${esc(goals.long_term||'')}</textarea>
-      <button type="button" class="pr-save" onclick="saveProjectGoals('${esc(key)}')">Save memory</button>
+      <button type="button" class="pr-save" data-call="saveProjectGoals" data-arg="${esc(key)}">Save memory</button>
     </div>`;
 }
 function closeProjectRail(){
@@ -5203,43 +5205,43 @@ async function showProjectFocus(key){
         <section class="proj-card" id="projCardInstructions">
           <div class="proj-card-hd">
             <h4>Instructions</h4>
-            <button type="button" class="icon-btn" title="${instructions?'Edit instructions':'Add instructions'}" onclick="openProjectInstructionsEditor('${esc(key)}')">${instructions?'✎':'+'}</button>
+            <button type="button" class="icon-btn" title="${instructions?'Edit instructions':'Add instructions'}" data-call="openProjectInstructionsEditor" data-arg="${esc(key)}">${instructions?'✎':'+'}</button>
           </div>
           ${instructions
-            ?`<div class="mem-snip" onclick="openProjectInstructionsEditor('${esc(key)}')">${esc(instructions.slice(0,280))}${instructions.length>280?'…':''}</div>`
+            ?`<div class="mem-snip" data-call="openProjectInstructionsEditor" data-arg="${esc(key)}">${esc(instructions.slice(0,280))}${instructions.length>280?'…':''}</div>`
             :`<p class="hint">Add instructions to tailor answers in this project.</p>`}
         </section>
         <section class="proj-card" id="projCardMemory">
           <div class="proj-card-hd">
             <h4>Memory</h4>
             <span class="lock" title="Private to you">🔒 Only you</span>
-            <button type="button" class="icon-btn" title="Edit memory" onclick="openProjectMemoryEditor('${esc(key)}')">✎</button>
+            <button type="button" class="icon-btn" title="Edit memory" data-call="openProjectMemoryEditor" data-arg="${esc(key)}">✎</button>
           </div>
           ${memPreview
-            ?`<div class="mem-snip" onclick="openProjectMemoryEditor('${esc(key)}')">${memPreview}</div>
+            ?`<div class="mem-snip" data-call="openProjectMemoryEditor" data-arg="${esc(key)}">${memPreview}</div>
                <div class="mem-meta">${memWhen?('Last updated '+esc(memWhen)):''}</div>`
             :`<p class="hint">No project memory yet — press edit to write what should stick across chats.</p>`}
         </section>
         <section class="proj-card" id="projCardContext">
           <div class="proj-card-hd">
             <h4>Context</h4>
-            <button type="button" class="icon-btn" title="Add context" onclick="openProjectContextAdder('${esc(key)}')">+</button>
+            <button type="button" class="icon-btn" title="Add context" data-call="openProjectContextAdder" data-arg="${esc(key)}">+</button>
           </div>
           ${ctx.length
             ?`<div class="proj-ctx-list">${ctx.map((f,i)=>`
                 <div class="proj-ctx-item"><span class="nm" title="${esc(f.name||f.title||'file')}">${esc(f.name||f.title||'file')}</span>
-                <button type="button" title="Remove" onclick="removeProjectContext('${esc(key)}',${i})">✕</button></div>`).join('')}</div>`
+                <button type="button" title="Remove" data-call="removeProjectContext" data-args="${esc(JSON.stringify([key,i]))}">✕</button></div>`).join('')}</div>`
             :`<p class="hint">Add notes or file names to reference in this project.</p>`}
         </section>
         <section class="proj-card" id="projCardScheduled">
           <div class="proj-card-hd">
             <h4>Scheduled</h4>
-            <button type="button" class="icon-btn" title="Create scheduled task" onclick="openProjectScheduleEditor('${esc(key)}')">+</button>
+            <button type="button" class="icon-btn" title="Create scheduled task" data-call="openProjectScheduleEditor" data-arg="${esc(key)}">+</button>
           </div>
           ${sched.length
             ?sched.map((t,i)=>`<div class="proj-sched-item"><strong>${esc(t.name||'Task')}</strong>
                 <span class="hint">${esc(t.frequency||'Manual')}</span>
-                <button type="button" class="icon-btn" style="display:inline-grid;margin-left:6px" title="Delete" onclick="removeProjectSchedule('${esc(key)}',${i})">✕</button>
+                <button type="button" class="icon-btn" style="display:inline-grid;margin-left:6px" title="Delete" data-call="removeProjectSchedule" data-args="${esc(JSON.stringify([key,i]))}">✕</button>
               </div>`).join('')
             :`<p class="hint">Set up recurring tasks for this project.</p>`}
         </section>
@@ -5777,6 +5779,38 @@ window.toggleHistoryDay=day=>{
     loadVaultTree();
   }
 };
+// Buttons built from untrusted text carry data-call="fnName" plus data-arg (one value) or
+// data-args (JSON list) instead of an inline onclick string. Values stay plain data.
+// data-ev="first"|"last" also passes the event; data-stop stops it reaching outer elements.
+// Only page functions: a browser built-in such as eval is never a valid target.
+function _pageFn(n){
+  const f=window[n];
+  return typeof f==='function'&&!/\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(f))?f:null;
+}
+function _dataCall(e,el){
+  const f=_pageFn(el.dataset.call);
+  if(!f){console.warn('No handler named',el.dataset.call);return}
+  const a=el.dataset.args?JSON.parse(el.dataset.args):[el.dataset.arg];
+  if(el.dataset.ev==='first')a.unshift(e);else if(el.dataset.ev==='last')a.push(e);
+  if(el.dataset.stop!==undefined)e.stopPropagation();
+  f.apply(null,a);
+}
+document.addEventListener('click',e=>{
+  const el=e.target.closest&&e.target.closest('[data-call]');
+  if(el)_dataCall(e,el);
+},true);
+document.addEventListener('change',e=>{
+  const el=e.target.closest&&e.target.closest('[data-change]');
+  const f=el&&_pageFn(el.dataset.change);
+  if(f)f(el.dataset.arg,el.value);
+});
+function _rtSetGoal(v){const g=document.getElementById('rtGoal');if(g)g.value=v}
+function _seekGoalNow(id){_seekGoalId=id;seekNow()}
+function _shareCat(key,ci){
+  if(window.MP&&MP.shareProject)MP.shareProject(key,'read_only');
+  else shareSession((cachedCategories[ci]?.sessions||[])[0]?.id||currentSession||0,'view');
+}
+function _shipCat(key){if(window.MP&&MP.shipProjectFlow)MP.shipProjectFlow(key);else toast('Ship unavailable')}
 function sessionAgentKey(s){
   if(s?.agent_id)return 'id:'+s.agent_id;
   if(s?.agent_name)return 'name:'+String(s.agent_name).toLowerCase();
@@ -5811,8 +5845,8 @@ function renderHistoryDays(sessions){
       const rows=byAg[k];
       const label=k==='home'?'Home chats':k.replace(/^(id|name|title):/,'');
       const open=expandedDays.has('agentg:'+k);
-      html+=`<div class="hist-day ${open?'open':''}" data-day="agentg:${k}">
-        <div class="hist-day-hdr" onclick="toggleHistoryDay('agentg:${k}')">
+      html+=`<div class="hist-day ${open?'open':''}" data-day="agentg:${esc(k)}">
+        <div class="hist-day-hdr" data-call="toggleHistoryDay" data-arg="agentg:${esc(k)}">
           <span class="chev">${open?'▼':'▶'}</span>
           <span>${esc(label)}</span>
           <small>${rows.length}</small>
@@ -5856,8 +5890,8 @@ function renderHistoryDays(sessions){
       const label=MODE_LABELS[k]||k;
       // Must respect expandedDays — first project used to be forced open forever
       const open=expandedDays.has('proj:'+k);
-      html+=`<div class="hist-day ${open?'open':''}" data-day="proj:${k}">
-        <div class="hist-day-hdr" onclick="toggleHistoryDay('proj:${k}')">
+      html+=`<div class="hist-day ${open?'open':''}" data-day="proj:${esc(k)}">
+        <div class="hist-day-hdr" data-call="toggleHistoryDay" data-arg="proj:${esc(k)}">
           <span class="chev">${open?'▼':'▶'}</span>
           <span>${esc(label)}</span>
           <small>${rows.length}</small>
@@ -6157,8 +6191,8 @@ async function renderCortexSideAgents(){
     const tools=agentToolHighlights(g.agent).slice(0,3).map(t=>`<span class="cr-tool">${esc(t)}</span>`).join('');
     const rows=g.runs.slice(0,6);
     const aid=Number(g.agent.id)||0;
-    html+=`<div class="hist-day ${open?'open':''}" data-day="agent:${k}">
-      <div class="hist-day-hdr" onclick="toggleHistoryDay('agent:${k}')">
+    html+=`<div class="hist-day ${open?'open':''}" data-day="agent:${esc(k)}">
+      <div class="hist-day-hdr" data-call="toggleHistoryDay" data-arg="agent:${esc(k)}">
         <span class="chev">${open?'▼':'▶'}</span>
         <span>${esc(name)}</span>
         <small>${rows.length}</small>
@@ -6596,7 +6630,7 @@ function docsDownloadMd(){
 }
 function docsRenderShell(){
   const list=docsState.list||[];
-  const items=list.map(d=>`<button type="button" class="docs-item${d.path===docsState.path?' on':''}" onclick='docsOpen(${JSON.stringify(d.path)})'>
+  const items=list.map(d=>`<button type="button" class="docs-item${d.path===docsState.path?' on':''}" data-call="docsOpen" data-arg="${esc(d.path)}">
     ${esc(d.title||d.path)}${d.has_canvas?' <span class="hint">authored canvas</span>':' <span class="hint">canvas</span>'}
   </button>`).join('');
   const toolbar=`<div class="docs-toolbar">
@@ -6730,7 +6764,7 @@ window.openPeerAccess=function(ev,ip,level){return (window.MP&&MP.openPeerAccess
 function hubNodeHtml(node,opts){
   const dull=!!(node.dull&&!node.online);
   const check=node.logged_in||node.role==='host'?'✓':'';
-  const menu=opts&&opts.showMenu?`<button type="button" class="hub-node-menu" title="Edit access" aria-label="Edit access" onclick="hubPeerMenu(event,'${esc(node.ip||'')}','${esc(node.access_level||'read_only')}')">⋯</button>`:'';
+  const menu=opts&&opts.showMenu?`<button type="button" class="hub-node-menu" title="Edit access" aria-label="Edit access" data-call="hubPeerMenu" data-ev="first" data-args="${esc(JSON.stringify([node.ip||'',node.access_level||'read_only']))}">⋯</button>`:'';
   return `<div class="hub-node ${node.role==='host'?'host':''} ${dull?'dull':''}">
     <div class="hub-node-hdr"><span class="hub-node-label">${esc(node.label||node.role||'')}</span>${check?`<span class="hub-node-check" title="Logged in">${check}</span>`:''}${menu}</div>
     <div class="hub-node-icon">${hubIconSvg(node.icon)}</div>
@@ -6841,7 +6875,7 @@ function hubMiniRowHtml(p,opts){
   const name=esc(hubRememberName(p));
   const role=hubShortRole(p);
   const canKick=opts&&opts.canKick&&p.ip&&p.role!=='host';
-  const kick=canKick?`<button type="button" class="hub-x" title="Remove connection" onclick="hubKickPeer('${esc(p.ip)}')">×</button>`:'';
+  const kick=canKick?`<button type="button" class="hub-x" title="Remove connection" data-call="hubKickPeer" data-arg="${esc(p.ip)}">×</button>`:'';
   return `<div class="hub-mini-row ${online?'online':'dull'}"><span title="${name}">${name}</span><span class="hub-role">${online?'●':'○'} ${role}</span>${kick}</div>`;
 }
 async function hubKickPeer(ip){
@@ -7266,7 +7300,7 @@ async function showCortexAgentChat(){
   window._cortexActiveAgent=window._cortexActiveAgent||getCortexActiveAgent();
   let agents=[];
   try{agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[]}catch(e){}
-  const chips=cortexSuggestionChips().map(s=>`<button type="button" onclick='useCortexSuggestion(${JSON.stringify(s)})'>${esc(s)}</button>`).join('');
+  const chips=cortexSuggestionChips().map(s=>`<button type="button" data-call="useCortexSuggestion" data-arg="${esc(s)}">${esc(s)}</button>`).join('');
   const active=window._cortexActiveAgent;
   const activeLine=active?`<p class="hint" style="margin:0 0 12px">Active: <strong>${esc(active.name||'agent')}</strong> — follow-ups continue this agent. Say “new agent …” to spawn another.</p>`:'';
   const subs=(agents||[]).filter(a=>a.config?.is_subagent||a.kind==='subagent'||a.config?.task);
@@ -8126,9 +8160,9 @@ async function renderMarketplace(){
         <div class="mp-progress"><i style="width:0%"></i></div>
       </div>
       <div class="mp-actions">
-        <button type="button" class="btn primary" ${fits?'':'disabled'} onclick="mpInstall('${esc(it.id)}',false)">${btnLabel}</button>
-        ${it.serving==='module'?'':`<button type="button" class="btn" onclick="mpServe('${esc(it.id)}')">Serve</button>
-        <button type="button" class="btn" onclick="mpTrial('${esc(it.id)}')">Trial</button>`}
+        <button type="button" class="btn primary" ${fits?'':'disabled'} data-call="mpInstall" data-args="${esc(JSON.stringify([it.id,false]))}">${btnLabel}</button>
+        ${it.serving==='module'?'':`<button type="button" class="btn" data-call="mpServe" data-arg="${esc(it.id)}">Serve</button>
+        <button type="button" class="btn" data-call="mpTrial" data-arg="${esc(it.id)}">Trial</button>`}
       </div>
     </div>`;
   }).join('')||'<p class="hint">No suitable models or tools for this profile. Try Use auto-detect or Show all.</p>';
@@ -8607,11 +8641,11 @@ async function showAppsHubPage(quiet){
     const dot=on?(healthy?'on':'warn'):'';
     const st=on?(healthy?'live':'port open'):'stopped';
     const startBtn=a.can_start&&!on
-      ?`<button type="button" class="btn primary" onclick="appsHubStart('${esc(a.id)}')">Activate</button>`:'';
+      ?`<button type="button" class="btn primary" data-call="appsHubStart" data-arg="${esc(a.id)}">Activate</button>`:'';
     const stopBtn=a.managed&&on
-      ?`<button type="button" class="btn" onclick="appsHubStop('${esc(a.id)}')">Stop</button>`:'';
+      ?`<button type="button" class="btn" data-call="appsHubStop" data-arg="${esc(a.id)}">Stop</button>`:'';
     const openBtn=a.url
-      ?`<button type="button" class="btn ${on?'primary':''}" onclick="appsHubOpen('${esc(a.id)}')">${on?'Open':'Start & open'}</button>`:'';
+      ?`<button type="button" class="btn ${on?'primary':''}" data-call="appsHubOpen" data-arg="${esc(a.id)}">${on?'Open':'Start & open'}</button>`:'';
     return `<div class="apps-hub-card" data-app="${esc(a.id)}">
       <div class="ah-top"><h4>${esc(a.name||a.id)}</h4><span class="ah-dot ${dot}" title="${esc(st)}"></span></div>
       <div class="ah-port">:${esc(String(a.port))} · ${esc(a.kind||'')} · ${esc(st)}</div>
@@ -8656,17 +8690,17 @@ function cortexPkgCardHtml(a){
   const hasDocker=!!(a.manifest&&a.manifest.has_dockerfile)||a.has_dockerfile;
   let actions='';
   if(a.status==='draft'){
-    actions+=`<button type="button" class="btn primary" ${safe?'':'title="Review warnings first"'} onclick="cortexPkgApprove('${esc(a.id)}')">Approve</button>`;
-    actions+=`<button type="button" class="btn" onclick="cortexPkgReject('${esc(a.id)}')">Reject</button>`;
+    actions+=`<button type="button" class="btn primary" ${safe?'':'title="Review warnings first"'} data-call="cortexPkgApprove" data-arg="${esc(a.id)}">Approve</button>`;
+    actions+=`<button type="button" class="btn" data-call="cortexPkgReject" data-arg="${esc(a.id)}">Reject</button>`;
   }
   if(a.status==='approved'||a.status==='draft'){
-    if(!hasDocker)actions+=`<button type="button" class="btn" onclick="cortexPkgDockerize('${esc(a.id)}')">Dockerize</button>`;
+    if(!hasDocker)actions+=`<button type="button" class="btn" data-call="cortexPkgDockerize" data-arg="${esc(a.id)}">Dockerize</button>`;
   }
   if(a.status==='approved'){
-    actions+=`<button type="button" class="btn primary" onclick="cortexPkgStart('${esc(a.id)}')">Start</button>`;
-    actions+=`<button type="button" class="btn" onclick="cortexPkgStop('${esc(a.id)}')">Stop</button>`;
+    actions+=`<button type="button" class="btn primary" data-call="cortexPkgStart" data-arg="${esc(a.id)}">Start</button>`;
+    actions+=`<button type="button" class="btn" data-call="cortexPkgStop" data-arg="${esc(a.id)}">Stop</button>`;
   }
-  actions+=`<button type="button" class="btn" style="color:#e03131" onclick="cortexPkgDelete('${esc(a.id)}')">Delete</button>`;
+  actions+=`<button type="button" class="btn" style="color:#e03131" data-call="cortexPkgDelete" data-arg="${esc(a.id)}">Delete</button>`;
   const err=a.explained_error?(typeof a.explained_error==='string'?a.explained_error:(a.explained_error.title||'')):'';
   return `<div class="apps-hub-card" style="min-width:260px">
     <div class="ah-top"><h4>${esc(a.name||a.id)}</h4><span class="sess-agent-tag">${st}</span></div>
@@ -8767,7 +8801,7 @@ async function showVideoPage(){
   try{cap=await api('/api/video/capability').then(r=>r.json())}catch(e){}
   try{jobs=await api('/api/video/jobs').then(r=>r.json())}catch(e){}
   const jobRows=(jobs.jobs||[]).map(j=>`<div class="video-job"><span>${esc(j.id)} · ${esc(j.status)} · ${esc(j.mode||'')}<br><span class="hint">${esc(j.prompt||'')}</span></span>
-    ${j.status==='completed'?`<button type="button" class="btn" onclick="videoShowResult('${esc(j.id)}')">View</button>`:''}</div>`).join('')||'<p class="hint">No jobs yet.</p>';
+    ${j.status==='completed'?`<button type="button" class="btn" data-call="videoShowResult" data-arg="${esc(j.id)}">View</button>`:''}</div>`).join('')||'<p class="hint">No jobs yet.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <div class="netie-hero">
       <div class="netie-hero-top"><h2>LTX-2 Video</h2><span class="netie-status ${cap.mode==='mock'?'standby':'live'}">${esc(cap.mode||'mock')}</span></div>
@@ -8831,7 +8865,7 @@ function netieEngineBoxHtml(e){
   const dot=st==='running'?'running':((e.detect&&e.detect.installed)?'installed':'');
   const stTxt=st==='running'?'Running':((e.detect&&e.detect.installed)?'Installed':'Ready to serve');
   return `<div class="netie-box" data-engine="${esc(e.id)}">
-    <button type="button" class="netie-remove" title="Remove" onclick="netieRemoveEngine('${esc(e.id)}')">×</button>
+    <button type="button" class="netie-remove" title="Remove" data-call="netieRemoveEngine" data-arg="${esc(e.id)}">×</button>
     <div class="netie-box-hd">
       <div class="ico">${esc(e.icon||'▢')}</div>
       <h4>${esc(e.name)}</h4>
@@ -8840,7 +8874,7 @@ function netieEngineBoxHtml(e){
     <p class="netie-blurb">${esc(e.kv_strategy||e.tagline||'')}</p>
     <div class="mp-meta">${(e.strengths||[]).slice(0,2).map(s=>`<span class="mp-chip">${esc(s)}</span>`).join('')}</div>
     <div class="netie-actions">
-      <button type="button" class="btn primary" onclick="openModelMarket('${esc(e.id)}')">＋ Model</button>
+      <button type="button" class="btn primary" data-call="openModelMarket" data-arg="${esc(e.id)}">＋ Model</button>
     </div>
   </div>`;
 }
@@ -8890,7 +8924,7 @@ async function openEngineMarket(){
         <p class="mp-blurb" style="margin-top:6px">${esc(reasons)}</p>${win}
       </div>
       <div class="mp-actions">
-        <button type="button" class="btn primary" onclick="netieAddEngine('${esc(e.id)}')">Add</button>
+        <button type="button" class="btn primary" data-call="netieAddEngine" data-arg="${esc(e.id)}">Add</button>
         <a class="btn" href="${esc(e.docs||'#')}" target="_blank" rel="noopener">Docs</a>
       </div></div>`;
   }).join('')||'<p class="hint">All engines are already added.</p>';
@@ -8941,7 +8975,7 @@ async function netieRenderModelMarket(){
         <div class="mp-progress"><i style="width:0%"></i></div>
       </div>
       <div class="mp-actions">
-        <button type="button" class="btn primary" ${fits?'':'disabled'} onclick="netieInstallModel('${esc(it.id)}')">Install</button>
+        <button type="button" class="btn primary" ${fits?'':'disabled'} data-call="netieInstallModel" data-arg="${esc(it.id)}">Install</button>
       </div></div>`;
   }).join('')||'<p class="hint">Nothing here fits your device yet — toggle “Supported by my device” off to see all.</p>';
   bd.innerHTML=`<div class="mp-meta-tabs">${tabs}</div>
@@ -9065,11 +9099,11 @@ async function showResearchPage(){
     <h3>${esc(x.id||'')}</h3>
     <p>${esc(x.stage||'')} · ${esc(x.status||'')} · ${esc(String(((x.cost||{}).usd_est!=null)?x.cost.usd_est:''))} · md ${esc(String(x.paper_md_chars||0))} chars ${x.paper_docx?'· Word':''} ${x.paper_pdf?'· PDF':''} ${x.paper_tex?'· TeX':''}</p>
     <div class="btn-row" style="margin-top:6px;flex-wrap:wrap">
-      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.md')">Markdown</button>
-      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.docx')">Word</button>
-      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.pdf')">PDF</button>
-      <button type="button" class="btn" onclick="downloadResearchArtifact('${esc(x.id||'')}','paper.tex')">TeX</button>
-      <button type="button" class="btn" onclick="repackageIdeaToPaper('${esc(x.id||'')}')">Rebuild Word/md</button>
+      <button type="button" class="btn" data-call="downloadResearchArtifact" data-args="${esc(JSON.stringify([x.id||'','paper.md']))}">Markdown</button>
+      <button type="button" class="btn" data-call="downloadResearchArtifact" data-args="${esc(JSON.stringify([x.id||'','paper.docx']))}">Word</button>
+      <button type="button" class="btn" data-call="downloadResearchArtifact" data-args="${esc(JSON.stringify([x.id||'','paper.pdf']))}">PDF</button>
+      <button type="button" class="btn" data-call="downloadResearchArtifact" data-args="${esc(JSON.stringify([x.id||'','paper.tex']))}">TeX</button>
+      <button type="button" class="btn" data-call="repackageIdeaToPaper" data-arg="${esc(x.id||'')}">Rebuild Word/md</button>
     </div>
   </div>`).join('')||'<p class="hint">No Idea-to-Paper runs yet.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
@@ -9266,9 +9300,9 @@ function routineCardHtml(r){
     ${lastTxt?`<p class="hint" style="margin:0 0 8px">Last run: ${esc(last.status||'')} · ${esc(lastTxt)}</p>`:''}
     ${err?`<p class="hint" style="margin:0 0 8px;color:#e03131">${esc(typeof err==='string'?err:_explainedToast(err))}</p>`:''}
     <div class="btn-row" style="gap:6px;flex-wrap:wrap">
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineRunNow('${esc(r.id)}')">Run now</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="routineTogglePause('${esc(r.id)}',${paused?'false':'true'})">${paused?'Resume':'Pause'}</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" onclick="routineDelete('${esc(r.id)}')">Delete</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" data-call="routineRunNow" data-arg="${esc(r.id)}">Run now</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" data-call="routineTogglePause" data-args="${esc(JSON.stringify([r.id,!paused]))}">${paused?'Resume':'Pause'}</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" data-call="routineDelete" data-arg="${esc(r.id)}">Delete</button>
     </div>
   </div>`;
 }
@@ -9295,7 +9329,7 @@ function routineComposerHtml(){
     'Email me a daily inbox digest every morning',
     'Deep research on our competitors every Monday morning'
   ];
-  const chipHtml=chips.slice(0,4).map(s=>`<button type="button" class="btn" style="padding:4px 10px;font-size:11px;border-radius:999px" onclick="document.getElementById('rtGoal').value=${JSON.stringify(s)}">${esc(s)}</button>`).join('');
+  const chipHtml=chips.slice(0,4).map(s=>`<button type="button" class="btn" style="padding:4px 10px;font-size:11px;border-radius:999px" data-call="_rtSetGoal" data-arg="${esc(s)}">${esc(s)}</button>`).join('');
   return `<div class="cortex-card" style="margin-bottom:14px">
     <h3 style="margin:0 0 8px">What should it do?</h3>
     <p class="hint" style="margin:0 0 8px">One sentence is enough. No schedule knobs — the engine guesses, you confirm.</p>
@@ -9409,8 +9443,8 @@ function seekProposalHtml(p){
     ${why?`<p style="margin:6px 0 0;font-size:12px;line-height:1.4">${esc(why)}</p>`:''}
     <p class="hint" style="margin:4px 0 0;opacity:.7">action ${esc(p.action||'')} · ${esc(p.risk||'')}${p.value_n?` · n=${esc(String(p.value_n))}`:''}</p>
     <div class="btn-row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-      <button type="button" class="btn primary" style="padding:4px 10px;font-size:12px" onclick="seekOutcome('${pid}','accepted')">Accept → routine draft</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="seekOutcome('${pid}','dismissed')">Dismiss</button>
+      <button type="button" class="btn primary" style="padding:4px 10px;font-size:12px" data-call="seekOutcome" data-args="${esc(JSON.stringify([pid,'accepted']))}">Accept → routine draft</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px" data-call="seekOutcome" data-args="${esc(JSON.stringify([pid,'dismissed']))}">Dismiss</button>
     </div>
   </div>`;
 }
@@ -9426,8 +9460,8 @@ function seekGoalCardHtml(g, activeId){
     ${crit?`<p class="hint" style="margin:6px 0 0">Measures: ${crit}</p>`:''}
     ${floor?`<ul style="margin:6px 0 0 16px;font-size:11px;color:var(--muted)">${floor}</ul>`:''}
     <div class="btn-row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-      <button type="button" class="btn primary" style="padding:4px 10px;font-size:12px" onclick="_seekGoalId='${esc(g.id)}';seekNow()">Seek</button>
-      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" onclick="seekDeleteGoal('${esc(g.id)}')">Delete</button>
+      <button type="button" class="btn primary" style="padding:4px 10px;font-size:12px" data-call="_seekGoalNow" data-arg="${esc(g.id)}">Seek</button>
+      <button type="button" class="btn" style="padding:4px 10px;font-size:12px;color:#e03131" data-call="seekDeleteGoal" data-arg="${esc(g.id)}">Delete</button>
     </div>
   </div>`;
 }
@@ -11807,8 +11841,8 @@ function renderProjects(cats){
       <div class="project-hdr cat" onclick="toggleCategory(${ci})" role="button" tabindex="0">
         <span class="chev" id="chevCat${ci}">${ci===0?'▼':'▶'}</span>
         <span class="pc-name">${esc(name)}</span>
-        <button type="button" class="btn proj-share" onclick="event.stopPropagation();(window.MP&&MP.shareProject)?MP.shareProject('${catKey}','read_only'):shareSession((cachedCategories[${ci}]?.sessions||[])[0]?.id||currentSession||0,'view')">Share</button>
-        <button type="button" class="btn proj-share" onclick="event.stopPropagation();(window.MP&&MP.shipProjectFlow)?MP.shipProjectFlow('${catKey}'):toast('Ship unavailable')">Ship</button>
+        <button type="button" class="btn proj-share" data-call="_shareCat" data-stop data-args="${esc(JSON.stringify([cat.key||cat.name||name,ci]))}">Share</button>
+        <button type="button" class="btn proj-share" data-call="_shipCat" data-stop data-arg="${esc(cat.key||cat.name||name)}">Ship</button>
         <small style="margin-left:auto;font-weight:400">${sessions.length}</small>
       </div>
       <div class="project-body ${ci===0?'open':''}" id="catBody${ci}"><div class="sec-morph-inner">`;
@@ -12697,25 +12731,13 @@ function setupDropZone(){
 }
 
 // Strip raw HTML/attributes that could execute script. Prefers DOMPurify; falls
-// back to a conservative DOM-based cleaner when the CDN is unreachable (LAN/offline).
+// back to the allow-list cleaner in ui/sanitize.js when the CDN is unreachable.
 function sanitizeHtml(html){
   if(window.DOMPurify){
-    return DOMPurify.sanitize(html,{ADD_ATTR:['target'],FORBID_TAGS:['style'],FORBID_ATTR:['onerror','onload']});
+    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select'],FORBID_ATTR:['onerror','onload']});
   }
-  try{
-    const tpl=document.createElement('template');
-    tpl.innerHTML=html;
-    tpl.content.querySelectorAll('script,style,iframe,object,embed,form,link,meta,base').forEach(n=>n.remove());
-    tpl.content.querySelectorAll('*').forEach(el=>{
-      [...el.attributes].forEach(a=>{
-        const name=a.name.toLowerCase();
-        const val=(a.value||'').replace(/\s+/g,'').toLowerCase();
-        if(name.startsWith('on'))el.removeAttribute(a.name);
-        else if((name==='href'||name==='src'||name==='xlink:href')&&val.startsWith('javascript:'))el.removeAttribute(a.name);
-      });
-    });
-    return tpl.innerHTML;
-  }catch(e){return html}
+  // No cleaner at all: show the text, never the markup.
+  return window.AirSanitize?AirSanitize.clean(html):esc(html);
 }
 // Minimal markdown parser used only when marked.js failed to load, so bold/lists/
 // code/links still render (never dumps raw **bold**).
@@ -14118,14 +14140,14 @@ async function refreshSettingsInvokePanel(){
         const sc=s.scope||(s.enabled?'global':'off');
         return `<div class="ds-row">
           <span class="ds-name" title="${esc(s.description||s.id)}">${esc(s.id)}</span>
-          <select onchange="settingsSetSkillScope('${esc(s.id)}',this.value)" title="Where this skill is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
+          <select data-change="settingsSetSkillScope" data-arg="${esc(s.id)}" title="Where this skill is active" style="flex:0 0 auto;max-width:104px;padding:3px 6px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px">
             <option value="off"${sc==='off'?' selected':''}>Off</option>
             <option value="global"${sc==='global'?' selected':''}>Global</option>
             <option value="project"${sc==='project'?' selected':''}>Project</option>
           </select>
           <span class="ds-acts">
-            <button type="button" class="ds-ico" title="Edit skill" onclick="editSkill('${esc(s.id)}')">✎</button>
-            <button type="button" class="ds-ico danger" title="Delete skill" onclick="deleteSkill('${esc(s.id)}')">✕</button>
+            <button type="button" class="ds-ico" title="Edit skill" data-call="editSkill" data-arg="${esc(s.id)}">✎</button>
+            <button type="button" class="ds-ico danger" title="Delete skill" data-call="deleteSkill" data-arg="${esc(s.id)}">✕</button>
           </span></div>`;
       }).join('')
         :'<p class="ds-empty">No skills yet.</p>';
@@ -14632,7 +14654,7 @@ async function pullInfo(){
     const idleDevs=parsed.filter(p=>!p.online&&!p.isHost);
     const rows=activeDevs.map(({x,ip,online,isHost})=>{
       const role=isHost?'Host':'Active';
-      const kick=(!isHost&&ip)?`<button type="button" class="hub-x" title="Remove" onclick="hubKickPeer('${esc(ip)}')">×</button>`:'';
+      const kick=(!isHost&&ip)?`<button type="button" class="hub-x" title="Remove" data-call="hubKickPeer" data-arg="${esc(ip)}">×</button>`:'';
       return `<div class="dev ${online||isHost?'online':'dull'}"><span title="${esc(x.name||ip)}">${esc(x.name||'Device')}</span><span>${esc(ip)} · ${role}</span>${kick}</div>`;
     });
     $('devList')&&($('devList').innerHTML=rows.join('')||'<div class="dev"><span>No active devices</span></div>');
@@ -15285,7 +15307,7 @@ function kvRender(){
     const open=kvOpenCards.has(p.id)||(p.id==='omniroute'&&!kvOpenCards.size&&kvOpenGroups.has('gateway'));
     const isOpenFree=p.id==='omniroute';
     const isOpenVault=p.id==='openvault_mesh';
-    return `<div class="kv-card${p.configured?' kv-ok':''}${p.group==='official'?' kv-official':''}${open?' open':''}" data-pid="${esc(p.id)}" onclick="kvToggleCard('${esc(p.id)}',event)">
+    return `<div class="kv-card${p.configured?' kv-ok':''}${p.group==='official'?' kv-official':''}${open?' open':''}" data-pid="${esc(p.id)}" data-call="kvToggleCard" data-ev="last" data-arg="${esc(p.id)}">
       <div class="kv-head">
         <div class="kv-title"><span class="kv-chev">${open?'▼':'▶'}</span><strong>${esc(p.label)}</strong></div>
         <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):'not set'}</span>
@@ -15300,7 +15322,7 @@ function kvRender(){
           ${p.console&&!isOpenFree&&!isOpenVault?`<a class="btn kv-link" href="${esc(p.console)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${p.group==='official'?'Buy / claim on netie.ai ↗':'Open '+esc(p.label)+' console ↗'}</a>`:''}
           ${isOpenFree||isOpenVault?'':(p.env_key?`<div class="field-row kv-paste" onclick="event.stopPropagation()">
             <input id="kv_${esc(p.id)}" class="side-search" type="password" autocomplete="off" placeholder="${p.group==='official'?'Optional Netie Engine key':(p.prefix?('Paste '+esc(p.prefix)+'… key'):'Paste key / URL')}"/>
-            <button type="button" class="btn primary" onclick="kvSave('${esc(p.env_key)}','kv_${esc(p.id)}')">Save</button>
+            <button type="button" class="btn primary" data-call="kvSave" data-args="${esc(JSON.stringify([p.env_key,'kv_'+p.id]))}">Save</button>
           </div>`:'')}
         </div>
       </div>
