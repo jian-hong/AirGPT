@@ -6014,6 +6014,7 @@ function updateSideNav(){
   $('navCortexTop')?.setAttribute('aria-selected',onCortexWorkspace?'true':'false');
   // Cortex chat keeps oval capsule; RAG never uses global composer (rag-mode hides it)
   document.body.classList.toggle('oval-chat',onCortexWorkspace&&sideView!=='cortex-catalog'&&!onBuild&&!onRag);
+  syncChatTitleBar?.(); // the chat header belongs to the chat view only, not Cortex or Projects
   // Only open the relevant section — never force-open Platform from Research/Agents
   syncNavSections(onBuild?'build':onAgents?'agents':onPlat?'platform':null);
   const hist=$('historySection'),proj=$('projectsSection'),scroll=$('sideScrollChats');

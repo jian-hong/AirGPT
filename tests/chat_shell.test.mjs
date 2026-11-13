@@ -159,3 +159,7 @@ test("Connectors opens the panel it names", () => {
   assert.ok(!/Settings → Integrations/.test(html));
   assert.ok(/Tools & MCPs'\);\s*openSettings\('tools'\)/.test(html));
 });
+
+test("the chat header is re-checked whenever the side view changes", () => {
+  assert.ok(grab("updateSideNav").includes("syncChatTitleBar"), "updateSideNav must hide the chat header on Cortex and Projects");
+});
