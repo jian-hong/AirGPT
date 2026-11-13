@@ -364,6 +364,63 @@ class ShareGuestTests(GuestScopeBase):
         # The token list had the same flaw: a half-written file read as empty and logged everyone out.
         self.assertEqual([t for t in toks + [self.host_tok, self.joined, self.view] if not auth.verify_token(t)], [])
 
+    def test_token_file_swap_waits_out_a_reader(self):
+        # On Windows a file cannot be replaced while anything still has it open; the
+        # swap raised PermissionError and the guest who was joining got an error.
+        real, calls = os.replace, []
+
+        def busy(src, dst):
+            calls.append(1)
+            if len(calls) <= 3:
+                raise PermissionError(5, "Access is denied")
+            return real(src, dst)
+
+        share = auth.issue_session_share(self.sid_a, acl="view", host_verified=True)["share_token"]
+        auth.os.replace = busy
+        try:
+            tok = auth.redeem_session_share(share)["token"]
+        finally:
+            auth.os.replace = real
+        self.assertGreater(len(calls), 3)
+        self.assertEqual(auth.token_session_acl(tok)["session_id"], self.sid_a)
+        self.assertTrue(auth.verify_token(tok))
+
+    def test_unreadable_scope_file_refuses_instead_of_opening_everything(self):
+        # "Cannot read the scopes" used to mean "nobody is scoped", which turns every
+        # share guest into an ordinary device. It must refuse instead, and a later
+        # join must not quietly start the file again from empty.
+        f = DATA_DIR / "token_session_acl.json"
+        good = f.read_bytes()
+        f.write_bytes(b"{not json")
+        try:
+            with self.assertRaises(ValueError):
+                auth.token_session_acl(self.view)
+            with contextlib.redirect_stdout(io.StringIO()):
+                st, _h, out = self.req("GET", "/api/history", self.view, raw=True, nonce=False)
+            self.assertEqual(st, 500, out[:200])
+            self.assertNotIn(SECRET_B.encode(), out)
+            share = auth.issue_session_share(self.sid_a, acl="view", host_verified=True)["share_token"]
+            before = set(auth._tokens)
+            with self.assertRaises(ValueError):
+                auth.redeem_session_share(share)
+            self.assertEqual(set(auth._tokens), before, "a token was left behind without its scope")
+            self.assertEqual(f.read_bytes(), b"{not json")
+        finally:
+            f.write_bytes(good)
+        self.assertEqual(auth.token_session_acl(self.view)["session_id"], self.sid_a)
+
+    def test_a_scope_does_not_lapse_before_its_token(self):
+        f = DATA_DIR / "token_session_acl.json"
+        good = f.read_bytes()
+        m = json.loads(good)
+        m[self.view]["exp"] = time.time() - 60
+        f.write_text(json.dumps(m), encoding="utf-8")
+        try:
+            self.assertTrue(auth.verify_token(self.view))
+            self.assertEqual(auth.token_session_acl(self.view)["session_id"], self.sid_a)
+        finally:
+            f.write_bytes(good)
+
     def test_view_guest_cannot_post_even_to_its_own_chat(self):
         for path in ("/api/messages", "/api/chat/stream"):
             st, _ = self.req("POST", path, self.view, {"text": "x", "session_id": self.sid_a})

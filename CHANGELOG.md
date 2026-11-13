@@ -2,6 +2,20 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-13 -- Share scopes: safe on Windows, and unreadable means refuse
+
+- Windows CI caught it: `os.replace` cannot swap a file another thread still
+  has open, so a guest joining while any request read the scope file got an
+  error (1 of 40 in the test). Readers now take the writer's lock and the swap
+  waits out other handles (`auth._swap`, `auth._read_acl_map`).
+- `token_session_acl` no longer answers "no scope" when the file cannot be
+  read or an entry is damaged; it raises and the request is refused. "No
+  scope" means an ordinary device that sees every chat, so the old answer
+  opened everything. A join no longer restarts a damaged file from empty.
+- A guest token whose scope cannot be written is withdrawn (`_bind_scope`).
+  A scope no longer lapses before its token.
+- Suite: 855 passed, 1 failed (same RAG test), 9 skipped.
+
 ## 2026-11-13 -- Whole-app audit (156 findings), nine fix lanes, merged and re-verified
 
 Audit: 11 read-only auditors over every control, screen size, route and access

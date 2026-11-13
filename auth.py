@@ -34,6 +34,19 @@ def _load_tokens() -> None:
             _tokens = {}
 
 
+def _swap(tmp, path) -> None:
+    """os.replace that waits out a reader. On Windows a file cannot be replaced while
+    anything (another request, a virus scanner, the indexer) still has it open."""
+    for attempt in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 39:
+                raise
+            time.sleep(0.025)
+
+
 def _save_tokens() -> None:
     # Swap the file in one step under the lock. Two phones joining at once used to
     # leave it half written; the next read then emptied the list and logged everyone out.
@@ -41,10 +54,26 @@ def _save_tokens() -> None:
         TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = TOKENS_FILE.with_name(TOKENS_FILE.name + ".tmp")
         tmp.write_text(json.dumps(_tokens), encoding="utf-8")
-        os.replace(tmp, TOKENS_FILE)
+        _swap(tmp, TOKENS_FILE)
 
 
-_acl_lock = threading.Lock()
+_acl_lock = threading.RLock()
+
+
+def _read_acl_map() -> dict:
+    """The share scopes, read under the same lock the writer holds.
+
+    A file that is there but cannot be read raises. It must never read as "no
+    scopes": a share guest without a scope is an ordinary device and sees every chat.
+    """
+    path = DATA_DIR / "token_session_acl.json"
+    with _acl_lock:
+        if not path.is_file():
+            return {}
+        acl_map = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(acl_map, dict):
+        raise ValueError("token_session_acl.json is not a map")
+    return acl_map
 
 
 def _update_acl_map(mutate) -> None:
@@ -56,15 +85,23 @@ def _update_acl_map(mutate) -> None:
     """
     path = DATA_DIR / "token_session_acl.json"
     with _acl_lock:
-        try:
-            acl_map = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-        except Exception:
-            acl_map = {}
+        acl_map = _read_acl_map()  # unreadable: raise, never start again from empty
         mutate(acl_map)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(json.dumps(acl_map), encoding="utf-8")
-        os.replace(tmp, path)
+        _swap(tmp, path)
+
+
+def _bind_scope(tok: str, scope: dict) -> None:
+    """Tie a fresh guest token to its scope. If that fails the token is withdrawn:
+    a token that exists without its scope would be a full-access device."""
+    try:
+        _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, scope))
+    except Exception:
+        _tokens.pop(tok, None)
+        _save_tokens()
+        raise
 
 
 _load_tokens()
@@ -273,30 +310,29 @@ _load_session_shares()
 
 
 def token_session_acl(token: str | None) -> dict | None:
-    """Return {session_id, acl, access_level, ai_mode, limited} if scoped."""
+    """Return {session_id, acl, access_level, ai_mode, limited} if scoped, else None.
+
+    None means "this token has no scope" and nothing else. A scope file that cannot
+    be read, or a damaged entry, raises instead: the caller then refuses the request
+    rather than treating a share guest as an ordinary device. The scope lasts as long
+    as the token does (verify_token decides that); it does not lapse on its own.
+    """
     if not token:
         return None
-    path = DATA_DIR / "token_session_acl.json"
-    if not path.is_file():
+    entry = _read_acl_map().get(token)
+    if entry is None:
         return None
-    try:
-        acl_map = json.loads(path.read_text(encoding="utf-8"))
-        entry = acl_map.get(token)
-        if not entry:
-            return None
-        if float(entry.get("exp", 0)) <= time.time():
-            return None
-        level = entry.get("access_level") or entry.get("acl", "view")
-        acl = entry.get("acl") or _level_to_acl(level)
-        return {
-            "session_id": int(entry.get("session_id") or 0),
-            "acl": acl,
-            "access_level": level,
-            "ai_mode": entry.get("ai_mode", "host" if level == "use_host_ai" else "own" if level == "use_own_ai" else ""),
-            "limited": bool(entry.get("limited") or level == "limited"),
-        }
-    except Exception:
-        return None
+    if not isinstance(entry, dict):
+        raise ValueError("damaged share scope")
+    level = entry.get("access_level") or entry.get("acl", "view")
+    acl = entry.get("acl") or _level_to_acl(level)
+    return {
+        "session_id": int(entry.get("session_id") or 0),
+        "acl": acl,
+        "access_level": level,
+        "ai_mode": entry.get("ai_mode", "host" if level == "use_host_ai" else "own" if level == "use_own_ai" else ""),
+        "limited": bool(entry.get("limited") or level == "limited"),
+    }
 
 
 # --- Hub access levels ---
@@ -489,7 +525,7 @@ def redeem_session_share(share_token: str) -> dict:
     # Keep reusable for TTL (multi-device), but still issue a guest token
     tok = _issue_token()
     # Bind ACL to guest token
-    _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, {
+    _bind_scope(tok, {
         "session_id": int(entry["session_id"]),
         "acl": entry.get("acl", "view"),
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
@@ -498,7 +534,7 @@ def redeem_session_share(share_token: str) -> dict:
         ),
         "limited": entry.get("access_level") == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }))
+    })
     _set_token_meta(tok, {
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
         "join_method": "qr",
@@ -596,7 +632,7 @@ def redeem_project_share(share_token: str) -> dict:
         return {"ok": False, "error": "Share link expired — ask host for a fresh QR"}
     tok = _issue_token()
     level = entry.get("access_level", "read_only")
-    _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, {
+    _bind_scope(tok, {
         "project_key": entry.get("project_key"),
         "acl": entry.get("acl", "view"),
         "access_level": level,
@@ -605,7 +641,7 @@ def redeem_project_share(share_token: str) -> dict:
         ),
         "limited": level == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }))
+    })
     _set_token_meta(tok, {
         "access_level": level,
         "join_method": "qr",
