@@ -301,6 +301,15 @@ class ShareGuestTests(GuestScopeBase):
                 self.assertEqual(st, 404, (path, body, out))
         self.assertEqual(len(db.get_messages(session_id=self.sid_b)), before)
 
+    def test_guest_cannot_pull_another_chat_in_through_a_long_context_list(self):
+        # The chat handler reads the first 10 context ids; the gate used to look at 3.
+        own = db.get_messages(session_id=self.sid_a)[0]["id"]
+        other = self.msg_b["id"]
+        for ctx in ([own, own, own, other], [own] * 9 + [other]):
+            for path in ("/api/messages", "/api/chat/stream"):
+                st, out = self.req("POST", path, self.post, {"text": "hi", "session_id": self.sid_a, "context_ids": ctx})
+                self.assertEqual(st, 404, (path, ctx, out))
+
     def test_view_guest_cannot_post_even_to_its_own_chat(self):
         for path in ("/api/messages", "/api/chat/stream"):
             st, _ = self.req("POST", path, self.view, {"text": "x", "session_id": self.sid_a})

@@ -2801,7 +2801,7 @@ class Handler(BaseHTTPRequestHandler):
                     return 400, "The request was not valid."
                 asked = int(data.get("session_id") or 0)
                 parent = int(data.get("parent_session_id") or 0)
-                msg_ids = [int(data.get("reply_to_id") or 0)] + [int(x) for x in (data.get("context_ids") or [])[:3]]
+                msg_ids = [int(data.get("reply_to_id") or 0)] + [int(x) for x in (data.get("context_ids") or [])]  # all of them: the handler reads the first 10
             except (ValueError, TypeError, AttributeError):
                 return 400, "The request was not valid."
             bad = self._chat_tools_guard(asked, write=path != "/api/presence/typing")
