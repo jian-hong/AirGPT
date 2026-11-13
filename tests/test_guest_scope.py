@@ -472,6 +472,11 @@ class ShareGuestTests(GuestScopeBase):
                 self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.1"})
             self.assertEqual(self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.1"}), 429)
             self.assertEqual(self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.2"}), 200)
+            # IPv6: one caller owns a /64 and can pick a fresh address per guess.
+            clipdrop._auth_fails.clear()
+            codes = [self._join(TUNNEL, {"CF-Connecting-IP": "2001:db8:1:2::%x" % (i + 1)}) for i in range(22)]
+            self.assertEqual(codes.index(429), 20)
+            self.assertEqual(self._join(TUNNEL, {"CF-Connecting-IP": "2001:db8:1:3::1"}), 200)  # the next network is not punished
         finally:
             clipdrop._auth_fails.clear()
 

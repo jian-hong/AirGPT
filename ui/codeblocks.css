@@ -1,8 +1,10 @@
 /* Bar above a code block in a chat message: language on the left, Copy on the right.
-   It sits inside the <pre>, so it scrolls away with long code instead of floating. */
+   It sits inside the <pre>; sticky at the padding edge keeps it (and Copy) in place
+   while a long line scrolls sideways. left:-14px matches the pre's side padding. */
 .msg .body pre[data-cb]{padding-top:0}
 .msg .body pre .cb-bar{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
+  position:sticky;left:-14px;
   margin:0 -14px 8px;padding:4px 6px 4px 14px;
   border-bottom:1px solid var(--line);
   font:500 11px/1 var(--sans);letter-spacing:.02em;color:var(--muted);

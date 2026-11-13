@@ -186,6 +186,32 @@ test("sidebar preview turns Markdown into plain words", () => {
   );
   assert.equal(ctx.mdPlain("```js\nlet a=1\n```\nAfter the code"), "After the code");
   assert.equal(ctx.mdPlain(""), "");
+  assert.equal(ctx.mdPlain("Rename file_name to my_var"), "Rename file_name to my_var", "underscores inside words stay");
+  assert.equal(ctx.mdPlain("2*3*4 = 24"), "2*3*4 = 24");
+  assert.equal(ctx.mdPlain("an *italic* and _under_ and ~~old~~ word"), "an italic and under and old word");
+});
+
+test("chat titles are plain words too", () => {
+  const ctx = load(["mdPlain", "summarizeChatTitle"], {});
+  assert.equal(ctx.summarizeChatTitle("Say **hi** to `Aina`"), "Say hi to Aina");
+});
+
+test("a dropped connection never offers Try again (the reply is still coming)", () => {
+  // grab() stops at the "{}" default argument, so cut sendStream out by its neighbours.
+  const start = html.indexOf("async function sendStream(");
+  const body = html.slice(start, html.indexOf("window.openItem=", start));
+  assert.ok(body.length > 2000, "sendStream found");
+  const c = body.slice(body.lastIndexOf("}catch(e){"));
+  assert.ok(c.includes("AbortError"), "this is the catch after the stream");
+  assert.ok(!/noteSendFailure/.test(c), "the catch after the stream opened must not raise a failure card");
+});
+
+test("the failure card is styled", () => {
+  for (const sel of [".send-fail{", ".send-fail-head{", ".send-fail-ico{", ".send-fail-acts{"]) assert.ok(html.includes(sel), sel);
+});
+
+test("Escape closes Settings only when nothing is open on top of it", () => {
+  assert.ok(/settingsModal'\)\?\.classList\.contains\('open'\)&&!document\.querySelector\('\.modal\.open:not\(#settingsModal\)'\)/.test(html));
 });
 
 test("a failed reply says what to do next in plain words", () => {

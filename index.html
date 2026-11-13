@@ -989,6 +989,17 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
    blank line ON TOP of the p/li margins below - measured at 331px vs 169px for the
    same short answer. Code blocks and the un-rendered mermaid fallback set their own
    white-space, so they are unaffected. */
+.send-fail{margin:6px 0 14px 44px;max-width:560px;padding:12px 14px;border-radius:14px;border:1px solid rgba(230,103,103,.45);background:rgba(230,103,103,.08);font-family:var(--sans);font-size:14px;line-height:1.45;color:var(--text)}
+.send-fail-head{display:flex;align-items:center;gap:8px}
+.send-fail-ico{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#e66767;color:#fff;font-weight:700;font-size:12px;flex-shrink:0}
+.send-fail p{margin:6px 0 10px;color:var(--muted)}
+.send-fail-acts{display:flex;flex-wrap:wrap;gap:8px}
+.send-fail-acts .btn{min-height:36px;padding:0 14px}
+.send-fail details{margin-top:10px;font-size:12px;color:var(--muted)}
+.send-fail summary{cursor:pointer;width:max-content}
+.send-fail pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 var(--mono);max-height:160px;overflow:auto}
+body.theme-light .send-fail{background:rgba(227,73,72,.06);border-color:rgba(227,73,72,.35)}
+@media(max-width:760px){.send-fail{margin-left:0}.send-fail-acts .btn{min-height:44px}}
 .user-md{white-space:normal}  /* same reason as .ai-block below: a blank line under every user message */
 .user-md>:last-child{margin-bottom:0}
 .ai-block{margin-top:6px;padding:12px;border-radius:var(--radius);border:1px solid var(--line);background:var(--bg);font-size:14px;line-height:1.45;color:var(--text);white-space:normal}
@@ -6196,7 +6207,7 @@ function markSelectedSession(id){
   syncChatTitleBar();
 }
 function summarizeChatTitle(raw){
-  let t=String(raw||'').replace(/\s+/g,' ').trim();
+  let t=mdPlain(raw);  // first message text becomes the title; "Say **hi**" reads "Say hi"
   if(!t)return 'New chat';
   // Drop date-prefixed daily labels into a short readable form
   t=t.replace(/^(Text|Images|AI Screenshot Chat|Clipboard|Screenshot|Photo|Capture)\s*[·\-]\s*/i,'').trim()||t;
@@ -13546,7 +13557,9 @@ function mdPlain(s){
     .replace(/\[([^\]]+)]\([^)]*\)/g,'$1')
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm,'')
     .replace(/^\s*\|?\s*:?-{3,}.*$/gm,' ')
-    .replace(/[*_~`|]+/g,'')
+    .replace(/(\*\*|__|~~)(\S(?:[\s\S]*?\S)?)\1/g,'$2')
+    .replace(/(^|[^\w*])[*_](\S(?:[^*_\n]*?\S)?)[*_](?=[^\w*]|$)/g,'$1$2')
+    .replace(/`+/g,'').replace(/\|/g,' ')
     .replace(/\s+/g,' ').trim();
 }
 function renderMarkdownLite(t){
@@ -14047,7 +14060,8 @@ async function sendStream(text,extra={}){
       return {ok:true, opened:streamOpened};
     }
     console.error(e);
-    if(streamOpened)noteSendFailure(text,String(e&&e.message||e));
+    // No failure card here: once the stream opened, the server has the question and keeps
+    // working, so the reply arrives by sync. A card would offer "Try again" and duplicate it.
     await reconcileAfterSendFail('Send failed — check connection / API keys');
     return {ok:false, opened:streamOpened};
   }finally{streamAbort=null}
@@ -15199,7 +15213,9 @@ document.addEventListener('keydown',e=>{
     }
     // Esc while marking a region only leaves the mark step (handled by the report code); Cancel ends the report.
     if(document.getElementById('bugOverlay'))return;
-    if($('settingsModal')?.classList.contains('open')){e.preventDefault();closeSettings();return}
+    if($('settingsModal')?.classList.contains('open')&&!document.querySelector('.modal.open:not(#settingsModal)')){
+      e.preventDefault();closeSettings();return;
+    }
     $('modelDd')?.classList.remove('open');
     $('projectDd')?.classList.remove('open');
     closeProjectPickModal?.();

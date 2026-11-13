@@ -1201,6 +1201,18 @@ def _is_host_request(headers, direct_ip: str) -> bool:
     return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
 
 
+def _per_network(ip: str) -> str:
+    """An IPv6 caller usually holds a whole /64 and can pick a new address per request,
+    so count guesses per /64. IPv4 and markers such as TUNNEL_PEER pass unchanged."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return ip
+
+
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     """Real remote client when cloudflared (or similar) proxies on loopback."""
     if not _is_local_host(direct_ip):
@@ -3044,9 +3056,9 @@ class Handler(BaseHTTPRequestHandler):
         direct = self.client_address[0]
         host = self.headers.get("Host", "")
         if not _is_local_host(direct) or _is_trusted_host(host):
-            return ip
+            return _per_network(ip)
         if _host_name(host).endswith(".trycloudflare.com") and (self.headers.get("CF-Connecting-IP") or "").strip():
-            return ip
+            return _per_network(ip)
         return TUNNEL_PEER
 
     def _passcode_rate_limited(self, ip: str) -> bool:
