@@ -3655,6 +3655,8 @@ async function api(path,opts={}){
       #bugOverlay{position:fixed;inset:0;z-index:99999;cursor:crosshair;background:rgba(0,0,0,.22);touch-action:none}
       /* Any open panel that carries .fab-hide hides the floating button (one rule, not one per panel). */
       body:has(.fab-hide.open) #bugReportBtn{display:none}
+      /* A phone held sideways is wider than 760px but only about 400px tall: dock the bar at the top so it stays off the message box. */
+      @media(pointer:coarse) and (max-height:500px){body #bugRecBar{top:8px;bottom:auto}}
       /* OpenIDE has its own message box with the Run button at the bottom right: keep the button above it. */
       body.openide-mode #bugReportBtn{top:auto!important;left:auto!important;right:14px!important;bottom:104px!important}
       #bugOverlay .hint-bar{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:7px 14px;border-radius:999px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.4);pointer-events:none;max-width:92vw;text-align:center}
@@ -3709,7 +3711,7 @@ async function api(path,opts={}){
     if(st&&session)st.textContent='Recording · '+session.regions.length+' region'+(session.regions.length===1?'':'s')+' · '+session.images.length+' image'+(session.images.length===1?'':'s')+' · '+session.events.length+' actions';
     const hint=$('bugReportStatusHint');
     if(hint)hint.textContent=on
-      ?('Recording — mark regions, paste screenshots, browse any settings page. Press End when done. Esc cancels mark / exits.')
+      ?('Recording — mark regions, paste screenshots, browse any settings page. Press End when done. Esc leaves the mark step. Cancel ends the report.')
       :('Start recording — keep marking regions / pasting screenshots across any settings page, then End to email.');
     ['bugReportMarkBtn','bugReportEndBtn'].forEach(id=>{const el=$(id);if(el)el.hidden=!on});
     const startBtn=$('bugReportStartBtn');if(startBtn)startBtn.textContent=on?'🐞 Recording…':'🐞 Start report';

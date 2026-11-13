@@ -70,3 +70,9 @@ test('phone.css: 16px fields, 44px dialog buttons, checkbox rows, docked report 
 test('memory Search button uses the shared button style', () => {
   assert.match(html, /<button type="button" class="btn" onclick="runMemSearch\(\)">Search<\/button>/);
 });
+
+test('bug report: every Esc hint agrees (Esc leaves the mark step, Cancel ends the report) and a sideways phone docks the bar', () => {
+  assert.ok(!/Esc cancels mark \/ exits/.test(html));
+  assert.match(html, /Esc leaves the mark step\. Cancel ends the report\./);
+  assert.match(html, /@media\(pointer:coarse\) and \(max-height:500px\)\{body #bugRecBar\{top:8px;bottom:auto\}\}/);
+});
