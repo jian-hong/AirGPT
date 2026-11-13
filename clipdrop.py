@@ -4334,8 +4334,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
-            rows = db.list_sessions(lim)
             gs = self._guest_scope()
+            rows = db.list_sessions(1_000_000 if gs else lim)  # a guest's old chat must not fall off the limit
             if gs:  # a share guest lists its own chat only
                 rows = [s for s in rows if int(s["id"]) == int(gs["session_id"])]
             return self._json(200, {"sessions": rows})
@@ -4344,8 +4344,8 @@ class Handler(BaseHTTPRequestHandler):
             sq = q.get("q", [""])[0]
             date_f = q.get("date", [""])[0]
             lim = min(int(q.get("limit", ["80"])[0] or 80), 200)
-            found = db.search_messages_and_sessions(sq, date_f, lim)
             gs = self._guest_scope()
+            found = db.search_messages_and_sessions(sq, date_f, 5000 if gs else lim)
             if gs:
                 own = int(gs["session_id"])
                 found["sessions"] = [s for s in found["sessions"] if int(s["id"]) == own]
@@ -4359,7 +4359,7 @@ class Handler(BaseHTTPRequestHandler):
                 own = int(gs["session_id"])
                 for cat in tree["categories"]:
                     cat["sessions"] = [s for s in cat["sessions"] if int(s["id"]) == own]
-                tree["recent"] = [s for s in tree["recent"] if int(s["id"]) == own]
+                tree["recent"] = [s for s in db.list_sessions(1_000_000) if int(s["id"]) == own]
             return self._json(200, tree)
 
         if path == "/api/projects":
