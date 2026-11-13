@@ -22,6 +22,7 @@
     try{var m=msgById(mid);if(m&&m.session_id)sid=Number(m.session_id)}catch(e){}
     if(!sid)sid=curSid();
     if(!mid||!sid){say('Could not fork: no chat is open.');return Promise.resolve(null)}
+    if(window.AirUI&&window.AirUI.shareAcl()){say('A shared chat cannot be forked.');return Promise.resolve(null)}
     if(forking)return Promise.resolve(null);
     forking=true;
     return api('/api/sessions/fork',{method:'POST',body:JSON.stringify({session_id:sid,upto_message_id:mid})})
@@ -77,6 +78,7 @@
 
   if(window.AirUI)window.AirUI.addMsgAction(function(m,isAi){
     if(!isAi||m.kind!=='text')return '';
+    if(window.AirUI.shareAcl())return '';  // a shared chat cannot be copied into the host's chats
     return '<button type="button" class="msg-fork" title="Start a new chat that begins with this conversation up to here" onclick="event.stopPropagation();ChatTools.fork('+Number(m.id)+')">Fork</button>';
   });
 

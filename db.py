@@ -1240,6 +1240,12 @@ def delete_message(msg_id: int) -> bool:
         if not row:
             return False
         conn.execute("DELETE FROM messages WHERE id=?", (msg_id,))
+        # Its prompt record (prompt_trace.py) holds the full text that was sent; deleting
+        # the reply must delete that copy too. The table only exists once a trace was saved.
+        try:
+            conn.execute("DELETE FROM prompt_traces WHERE message_id=?", (msg_id,))
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         # A forked chat points at the same stored file, so only remove a file
         # once no other message still uses it.

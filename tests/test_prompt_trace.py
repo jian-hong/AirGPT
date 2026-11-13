@@ -216,6 +216,32 @@ class ChatInstructionsTraceTest(unittest.TestCase):
                                  "Chat instructions")
 
 
+class DeleteTakesTheRecordTest(unittest.TestCase):
+    """The record holds the full text that was sent, so deleting the reply deletes it."""
+
+    def _reply_with_trace(self, sid):
+        m = db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text="reply", source="ai", session_id=sid)
+        t = prompt_trace.new("direct")
+        prompt_trace.add(t, "question", "Your message", "a private question")
+        prompt_trace.save(m["id"], sid, t)
+        self.assertIsNotNone(prompt_trace.load(m["id"]))
+        return m["id"]
+
+    def test_deleting_a_message_deletes_its_record(self):
+        sid = int(db.create_session("Trace delete")["id"])
+        mid = self._reply_with_trace(sid)
+        db.delete_message(mid)
+        self.assertIsNone(prompt_trace.load(mid))
+        db.delete_session(sid)
+
+    def test_deleting_a_chat_deletes_every_record_in_it(self):
+        sid = int(db.create_session("Trace delete chat")["id"])
+        mids = [self._reply_with_trace(sid) for _ in range(2)]
+        db.delete_session(sid)
+        self.assertEqual([m for m in mids if prompt_trace.load(m)], [])
+        self.assertIsNone(prompt_trace.latest_for_session(sid))
+
+
 class EffectiveSystemTest(unittest.TestCase):
     def test_security_block_is_appended_once(self):
         once = ai_engine._effective_system("Be brief.")

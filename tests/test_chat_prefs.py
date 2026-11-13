@@ -95,6 +95,47 @@ class PromptTest(unittest.TestCase):
             self.assertNotIn("chat_instructions", [s["key"] for s in trace["sections"]])
             self.assertEqual(trace["total_chars"], len(prompt))
 
+    def test_dual_brain_final_answer_also_gets_the_instructions(self):
+        # Max tier: a draft call, then a verify call that writes the final answer. The
+        # verify call used to get only the question and the draft.
+        calls = []
+        orig = (ai_engine._standard_llm, ai_engine._reasoning_llm, ai_engine.route_request,
+                ai_engine._finish_chat_side_effects, ai_engine.load_env)
+        ai_engine._standard_llm = lambda prompt, system="", **k: (calls.append(("draft", prompt)) or ("draft text", "fast"))
+        ai_engine._reasoning_llm = lambda prompt, system="": (calls.append(("verify", prompt)) or ("final", "reasoner", ""))
+        ai_engine.route_request = lambda *a, **k: {"complexity": "high"}
+        ai_engine._finish_chat_side_effects = lambda **k: None
+        ai_engine.load_env = lambda: {"DEEPSEEK_API_KEY": "x"}
+        try:
+            events = list(ai_engine.chat_text_stream("hello there", session_id=self.sid, model_tier="max", thinking=False))
+        finally:
+            (ai_engine._standard_llm, ai_engine._reasoning_llm, ai_engine.route_request,
+             ai_engine._finish_chat_side_effects, ai_engine.load_env) = orig
+        kinds = [c[0] for c in calls]
+        self.assertEqual(kinds, ["draft", "verify"])
+        self.assertIn(TEXT, calls[0][1])
+        self.assertIn(TEXT, calls[1][1], "the call that writes the final answer must see the chat's instructions")
+        trace = next(e["trace"] for e in events if e["type"] == "prompt_trace")
+        self.assertTrue(any("instructions to the reasoner" in n for n in trace["notes"]))
+
+    def test_dual_brain_in_another_chat_carries_nothing_over(self):
+        calls = []
+        orig = (ai_engine._standard_llm, ai_engine._reasoning_llm, ai_engine.route_request,
+                ai_engine._finish_chat_side_effects, ai_engine.load_env)
+        ai_engine._standard_llm = lambda prompt, system="", **k: ("draft text", "fast")
+        ai_engine._reasoning_llm = lambda prompt, system="": (calls.append(prompt) or ("final", "reasoner", ""))
+        ai_engine.route_request = lambda *a, **k: {"complexity": "high"}
+        ai_engine._finish_chat_side_effects = lambda **k: None
+        ai_engine.load_env = lambda: {"DEEPSEEK_API_KEY": "x"}
+        try:
+            list(ai_engine.chat_text_stream("first", session_id=self.sid, model_tier="max", thinking=False))
+            list(ai_engine.chat_text_stream("second", session_id=self.other, model_tier="max", thinking=False))
+        finally:
+            (ai_engine._standard_llm, ai_engine._reasoning_llm, ai_engine.route_request,
+             ai_engine._finish_chat_side_effects, ai_engine.load_env) = orig
+        self.assertIn(TEXT, calls[0])
+        self.assertNotIn(TEXT, calls[1], "one chat's instructions must not leak into the next turn")
+
     def test_cortex_route_sends_it_and_sections_add_up(self):
         import cortex_client
 

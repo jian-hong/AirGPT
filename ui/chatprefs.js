@@ -113,14 +113,15 @@
     },true);
   }
 
-  function setMsg(text,bad){msgEl.textContent=text||'';msgEl.classList.toggle('bad',!!bad)}
+  function setMsg(text,bad,over){msgEl.textContent=text||'';msgEl.classList.toggle('bad',!!bad);msgEl.dataset.over=over?'1':''}
+  function viewOnly(){return !!(window.AirUI&&window.AirUI.shareAcl&&window.AirUI.shareAcl()==='view')}
   function update(){
     var n=box.value.trim().length,over=n>LIMIT;
     countEl.textContent=num(n)+' / '+num(LIMIT);
     countEl.classList.toggle('bad',over);
-    if(over)setMsg('Too long by '+num(n-LIMIT)+(n-LIMIT===1?' character':' characters')+'. Shorten it to save.',true);
-    else if(msgEl.classList.contains('bad')&&!busy)setMsg('');
-    var none=!sid();
+    if(over)setMsg('Too long by '+num(n-LIMIT)+(n-LIMIT===1?' character':' characters')+'. Shorten it to save.',true,true);
+    else if(msgEl.dataset.over==='1'&&!busy)setMsg('');  // a refusal from the host stays until the next try
+    var none=!sid()||viewOnly();
     saveBtn.disabled=busy||none||over||box.value.trim()===saved;
     clearBtn.disabled=busy||none||(!saved&&!box.value);
   }
@@ -138,8 +139,10 @@
       sheet.focus({preventScroll:true});
       return;
     }
-    box.disabled=false;
-    subEl.textContent='Sent with every message in this chat, and nowhere else.';
+    box.disabled=viewOnly();
+    subEl.textContent=viewOnly()
+      ?'This chat was shared with you to read. You can see its instructions but not change them.'
+      :'Sent with every message in this chat, and nowhere else.';
     box.value=saved;update();
     sheet.focus({preventScroll:true});
     try{

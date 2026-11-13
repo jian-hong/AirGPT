@@ -22,6 +22,12 @@
         catch(e){console.warn('[AirUI] message action failed',e)}
       }
       return out;
+    },
+    /* 'view' or 'post' when this page was opened from a share link for one chat, else ''.
+       Read from the page's /api/info result; the server enforces it either way, this
+       only keeps the page from offering what the server will refuse. */
+    shareAcl:function(){
+      try{return (typeof info!=='undefined'&&info&&info.share_acl)||''}catch(e){return ''}
     }
   };
 })();

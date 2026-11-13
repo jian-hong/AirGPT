@@ -121,8 +121,8 @@
       btn.className = 'tile';
       btn.type = 'button';
       const img = document.createElement('img');
-      // Only real image data URLs; anything else from a peer is ignored.
-      if (String(dataUrl).length > 15e6 || !/^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+\/=]+$/i.test(String(dataUrl))) return;
+      // Only real image data URLs; anything else from a peer is refused, and said so.
+      if (String(dataUrl).length > 15e6 || !/^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+\/=]+$/i.test(String(dataUrl))) return false;
       img.src = dataUrl;
       img.alt = String(name || '');
       btn.appendChild(img);
@@ -133,7 +133,11 @@
         a.click();
       };
       grid.prepend(btn);
+      return true;
     }
+    // What addThumb can show. Checked before sending, so nothing vanishes on either side.
+    const SHOWABLE = /^image\/(png|jpe?g|gif|webp)$/i;
+    const MAX_BYTES = 11 * 1024 * 1024;
 
     function connectPeer() {
       const code = sanitizeRoom(roomInput.value);
@@ -203,13 +207,15 @@
         showToast('Device connected');
       });
       conn.on('data', msg => {
-        if (msg?.type === 'image') addThumb(msg.dataUrl, msg.name);
+        if (msg?.type === 'image' && !addThumb(msg.dataUrl, msg.name)) showToast('A photo arrived that this page cannot show');
       });
       conn.on('close', () => { conn = null; status.textContent = 'Peer disconnected'; });
     }
 
     function sendFile(file) {
       if (!conn || !conn.open) { showToast('Join room & wait for other device'); return; }
+      if (!SHOWABLE.test(file.type)) { showToast(`${file.name}: use a JPEG, PNG, GIF or WebP photo`); return; }
+      if (file.size > MAX_BYTES) { showToast(`${file.name} is too large (11 MB at most)`); return; }
       const reader = new FileReader();
       reader.onload = () => {
         conn.send({ type: 'image', name: file.name, dataUrl: reader.result });

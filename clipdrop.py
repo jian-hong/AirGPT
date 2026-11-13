@@ -1114,7 +1114,7 @@ _GUEST_GET: frozenset = frozenset({
 })
 _GUEST_POST: frozenset = frozenset({
     "/api/establish", "/api/messages", "/api/chat/stream", "/api/chat/project-suggest",
-    "/api/chat/prefs", "/api/presence/typing", "/api/sessions/fork",
+    "/api/chat/prefs", "/api/presence/typing",
     "/api/snippets", "/api/snippets/delete",
 })
 _GUEST_PREFIXES: tuple[str, ...] = ("/ui/", "/OpenIDE/ui/", "/data/", "/api/auth/")
@@ -3032,6 +3032,23 @@ class Handler(BaseHTTPRequestHandler):
             "security_version": AIRGPT_SECURITY_VERSION,
         })
 
+    def _guess_key(self, ip: str) -> str:
+        """Who a passcode guess is counted against, in a form the guesser cannot change.
+
+        Over a tunnel the client address comes from a forwarded header. Only
+        cloudflared on a trycloudflare.com name is known to overwrite that header; any
+        other tunnel passes the caller's own value through, so rotating it gave every
+        guess a fresh count (a 4-character passcode fell to 40 tries). Those callers
+        share one count. A device on the LAN is counted by its socket address.
+        """
+        direct = self.client_address[0]
+        host = self.headers.get("Host", "")
+        if not _is_local_host(direct) or _is_trusted_host(host):
+            return ip
+        if _host_name(host).endswith(".trycloudflare.com") and (self.headers.get("CF-Connecting-IP") or "").strip():
+            return ip
+        return TUNNEL_PEER
+
     def _passcode_rate_limited(self, ip: str) -> bool:
         """Throttle passcode/join-code guessing. Local host is exempt.
 
@@ -3040,15 +3057,16 @@ class Handler(BaseHTTPRequestHandler):
         """
         if _is_local_host(ip):
             return False
+        key = self._guess_key(ip)
         now = time.time()
-        fails = [t for t in _auth_fails.get(ip, []) if now - t < 300]
-        _auth_fails[ip] = fails
+        fails = [t for t in _auth_fails.get(key, []) if now - t < 300]
+        _auth_fails[key] = fails
         return len(fails) >= 20
 
     def _note_passcode_fail(self, ip: str) -> None:
         if _is_local_host(ip):
             return
-        _auth_fails.setdefault(ip, []).append(time.time())
+        _auth_fails.setdefault(self._guess_key(ip), []).append(time.time())
 
     def send_header(self, keyword, value):
         if keyword.lower() == "content-type":
@@ -4010,6 +4028,8 @@ class Handler(BaseHTTPRequestHandler):
                     wifi_url=None, mdns_url=None, recommended_connect=None, local_url="",
                     join_url="", input_notes={"recording": False}, recommended_url=None,
                     firewall="", network_profile="", lan_hint="",
+                    # Nor the host's computer name, licence and account, or engine details.
+                    hostname="", license={}, paywall="", cortex={},
                 )
             return self._json(200, info_out)
 
@@ -4406,6 +4426,9 @@ class Handler(BaseHTTPRequestHandler):
             import snippets
 
             try:
+                if self._guest_scope():
+                    # Saved prompts are the host's own library, not part of the shared chat.
+                    return self._json(200, {"ok": True, "items": [], "shared_view": True})
                 return self._json(200, {"ok": True, "items": snippets.list_all()})
             except snippets.SnippetError as e:
                 return self._json(e.status, {"ok": False, "error": str(e)})

@@ -327,3 +327,9 @@ body:not(.openide-mode) #openideIdeBtn{display:none!important}
   .openide-shell.right-collapsed .openide-workspace,.openide-shell.openide-view-editor.right-collapsed .openide-center{opacity:1;pointer-events:auto}
   .openide-shell.openide-view-agents.right-collapsed .openide-workspace{display:flex}
 }
+/* Phone: the header buttons ran off the right edge (Vault cut, no way to scroll to it).
+   Let the action row take its own line and wrap. */
+@media(max-width:760px){
+  .openide-session-hdr{flex-wrap:wrap;row-gap:6px}
+  .openide-hdr-actions{flex-shrink:1;min-width:0}
+}

@@ -295,6 +295,22 @@ class ShareGuestTests(GuestScopeBase):
         self.assertEqual(out.get("session_id"), self.sid_a)
         for key in ("recommended_url", "firewall", "network_profile", "lan_hint"):
             self.assertFalse(out.get(key), key)  # the host's LAN address and firewall state
+        for key in ("hostname", "license", "cortex", "data_dir"):
+            self.assertFalse(out.get(key), key)  # the host's computer name, licence and engine
+
+    def test_guest_sees_no_saved_prompts(self):
+        import snippets
+        made = snippets.save("Host only prompt", "PRIVATE-PROMPT-BODY")
+        try:
+            for tok in (self.view, self.post):
+                st, out = self.req("GET", "/api/snippets", tok)
+                self.assertEqual(st, 200)
+                self.assertEqual(out.get("items"), [])
+                self.assertNotIn("PRIVATE-PROMPT-BODY", json.dumps(out))
+            st, out = self.req("GET", "/api/snippets", self.joined)
+            self.assertIn("PRIVATE-PROMPT-BODY", json.dumps(out))  # the owner's own phone still sees them
+        finally:
+            snippets.delete(made["id"])
 
     def test_guest_cannot_mint_a_share_link(self):  # A7.4
         for tok in (self.view, self.post):
@@ -420,6 +436,44 @@ class ShareGuestTests(GuestScopeBase):
             self.assertEqual(auth.token_session_acl(self.view)["session_id"], self.sid_a)
         finally:
             f.write_bytes(good)
+
+    def _join(self, host, headers):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("POST", "/api/auth/join", body=json.dumps({"passcode": "wrong"}),
+                  headers={"Host": host, "Content-Type": "application/json", **headers})
+        r = c.getresponse()
+        r.read()
+        c.close()
+        return r.status
+
+    def test_rotating_a_forwarded_address_does_not_reset_the_passcode_throttle(self):
+        # localtunnel and ssh forwards pass the caller's own X-Forwarded-For through, so a
+        # new value per guess used to give every guess a fresh count.
+        clipdrop._auth_fails.clear()
+        try:
+            codes = [self._join("abc.loca.lt", {"X-Forwarded-For": "9.8.%d.%d" % (i // 200, i % 200 + 1)})
+                     for i in range(25)]
+            self.assertIn(429, codes, "rotating X-Forwarded-For must not dodge the throttle")
+            self.assertEqual(codes.index(429), 20)
+            # The same trick through a Cloudflare-shaped header on a non-Cloudflare name.
+            clipdrop._auth_fails.clear()
+            codes = [self._join("abc.loca.lt", {"CF-Connecting-IP": "9.7.%d.%d" % (i // 200, i % 200 + 1)})
+                     for i in range(25)]
+            self.assertIn(429, codes)
+        finally:
+            clipdrop._auth_fails.clear()
+
+    def test_cloudflared_clients_are_still_counted_one_by_one(self):
+        # cloudflared overwrites CF-Connecting-IP, so one person's wrong guesses must not
+        # lock out the next phone.
+        clipdrop._auth_fails.clear()
+        try:
+            for _ in range(20):
+                self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.1"})
+            self.assertEqual(self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.1"}), 429)
+            self.assertEqual(self._join(TUNNEL, {"CF-Connecting-IP": "9.6.0.2"}), 200)
+        finally:
+            clipdrop._auth_fails.clear()
 
     def test_view_guest_cannot_post_even_to_its_own_chat(self):
         for path in ("/api/messages", "/api/chat/stream"):

@@ -240,10 +240,13 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(self._req("GET", f"/api/sessions/export?session_id={self.sid}&format=md")[0], 200)
 
     def test_scoped_guest_touches_only_its_own_chat(self):
+        # A fork is a new chat in the host's list that the guest's link cannot open, so a
+        # share guest (even with write access) may not fork at all, not even its own chat.
         self._guest("write")
-        code, j = self._fork(self.sid, self.m[0]["id"])
-        self.assertEqual(code, 200)
-        self.assertEqual(self._fork(self.other, self.om["id"])[0], 404)
+        count = len(db.list_sessions(500))
+        self.assertEqual(self._fork(self.sid, self.m[0]["id"])[0], 403)
+        self.assertEqual(self._fork(self.other, self.om["id"])[0], 403)
+        self.assertEqual(len(db.list_sessions(500)), count)
         code, body, _ = self._req("GET", f"/api/sessions/export?session_id={self.other}&format=md")
         self.assertEqual(code, 404)
         self.assertNotIn("secret", body)

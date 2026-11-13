@@ -1792,6 +1792,9 @@ def _prepare_text_chat(
             if trace is not None:
                 trace["notes"].append("This chat's instructions could not be loaded, so they were not sent.")
     prompt = head + asked + tail + history_block + vault_block + url_block + chat_block
+    # The dual-brain verify call writes the final answer from the question and the draft.
+    # Without these two blocks it never saw the chat's own instructions or the evidence.
+    _turn.carry = url_block + chat_block
     if trace is not None:
         try:
             import prompt_trace as _pt
@@ -2142,8 +2145,8 @@ def chat_text_stream(
     trace["pipeline"] = "dual" if dual else ("reasoner" if (tier == "max" and not has_reasoner) else "single")
     if dual:
         trace["notes"].append(
-            "Two calls: a draft, then a verify call that re-sends your message plus the draft "
-            "(up to 6,000 characters) to the reasoner."
+            "Two calls: a draft, then a verify call that re-sends your message, the draft "
+            "(up to 6,000 characters), the evidence and this chat's instructions to the reasoner."
         )
     try:
         import pii_guard
@@ -2200,13 +2203,16 @@ def chat_text_stream(
         draft, draft_model = _standard_llm(prompt, MODES[mode], max_tokens=CHAT_MAX_TOKENS)
         if show_thinking:
             yield {"type": "thinking", "text": f"Draft ready ({draft_model}). Verifying with reasoner…"}
+        carry = getattr(_turn, "carry", "") or ""
         verify_prompt = (
             "You are the verifier half of a dual-brain system. Improve accuracy, keep first principles, "
             "fix errors, and NEVER invent biography or company products beyond Linked Evidence. "
             "When structure helps, add ONE compact Mermaid flowchart with subgraph frames "
             "(never mindmap, never ((circle))):\n"
             "```mermaid\nflowchart TD\n  root([\"Topic\"])\n  subgraph g[\"Branch\"]\n    a[\"Step\"] --> b([\"Leaf\"])\n  end\n  root --> g\n```\n\n"
-            f"USER QUESTION:\n{question}\n\nDRAFT:\n{draft[:6000]}\n\nReturn the final improved answer only."
+            f"USER QUESTION:\n{question}\n\nDRAFT:\n{draft[:6000]}\n"
+            + (f"\nThe final answer must keep following this context:\n{carry}\n" if carry else "")
+            + "\nReturn the final improved answer only."
         )
         text, model, reasoning = _reasoning_llm(verify_prompt, MODES[mode])
         if reasoning and show_thinking:
