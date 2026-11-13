@@ -62,5 +62,5 @@ body.theme-light .snip-root{--sn-panel:#fff;--sn-raise:rgba(0,0,0,.04)}
 }
 @media(prefers-reduced-motion:reduce){.snip-sheet,.snip-sheet.open,.snip-scrim{transition:none}}
 
-/* The + menu is a pill row sized for five entries; make room for the sixth. */
-body .plus-menu{width:min(760px,calc(100vw - 24px))}
+/* The + menu is a pill row sized for five entries; make room for the sixth. Wrap instead of clipping the last entry. */
+body .plus-menu{width:min(760px,calc(100vw - 24px));flex-wrap:wrap;overflow:visible;justify-content:center;border-radius:22px}
