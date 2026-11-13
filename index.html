@@ -1071,18 +1071,6 @@ body.theme-light .search-result mark{background:rgba(255,196,60,.35)}
 .drop-overlay.show{display:grid}
 .main-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:row}
 /* scroll lives on main-chat-col so the bar stays at the far right of the pane */
-.mem-fab{
-  position:absolute;top:12px;right:14px;z-index:90;width:36px;height:36px;border-radius:10px;
-  border:1px solid rgba(255,255,255,.28);background:rgba(36,36,40,.92);color:#fff;cursor:pointer;
-  display:grid;place-items:center;padding:0;
-  backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);
-  box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14);
-  transition:transform .2s cubic-bezier(.22,1,.36,1),background .2s,border-color .2s,opacity .2s;
-}
-.mem-fab:hover{transform:scale(1.06);background:rgba(52,52,58,.96);border-color:rgba(255,255,255,.4)}
-.mem-fab svg{width:16px;height:16px;display:block;stroke:#fff}
-.mem-fab.on{border-color:rgba(255,255,255,.55);background:rgba(255,255,255,.14)}
-.mem-fab[hidden]{display:none!important}
 /* Full-main overlay so chat + composer sit behind blur */
 .mem-overlay{
   position:absolute;inset:0;z-index:85;display:none;align-items:stretch;justify-content:flex-end;
@@ -1094,7 +1082,6 @@ body.theme-light .mem-overlay{background:rgba(20,20,22,.28)}
 .main.mem-open .composer,.main.mem-open .ctx-bar,.main.mem-open .main-wrap{
   pointer-events:none;user-select:none;
 }
-.main.mem-open .mem-fab{pointer-events:auto}
 .mem-panel{
   width:min(400px,94%);height:100%;overflow:auto;padding:16px 16px 28px;
   border-left:1px solid rgba(255,255,255,.18);
@@ -1155,7 +1142,6 @@ body.theme-light .mem-overlay{background:rgba(20,20,22,.28)}
 .mem-search-row input{flex:1}
 .mem-search-row .btn{flex:0 0 auto;min-width:0;padding:8px 14px}
 @media(max-width:760px){
-  .mem-fab{top:8px;right:10px;width:34px;height:34px}
   .mem-panel{width:min(100%,420px)}
 }
 .project-rail{
@@ -1301,8 +1287,7 @@ body.theme-light .proj-modal{background:#fff}
 .proj-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap}
 .proj-modal-actions .btn{border-radius:999px;padding:7px 14px}
 body.project-workspace-mode .composer,
-body.project-workspace-mode .ctx-bar,
-body.project-workspace-mode .mem-fab{display:none!important}
+body.project-workspace-mode .ctx-bar{display:none!important}
 .project-recents{max-width:680px;margin:28px auto 0;width:100%;text-align:left;padding:0 8px}
 .center-empty.project-focus .project-recents{margin-top:32px}
 .project-recents h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
@@ -1331,11 +1316,11 @@ body.project-workspace-mode .mem-fab{display:none!important}
 #projectsSection.cortex-shell #projectsBody{display:none}
 #projectsSection.cortex-shell .cortex-proj-shell{display:block}
 #projectsSection .cortex-proj-shell{display:none;padding:12px 14px;font-size:11px;color:var(--muted);line-height:1.4}
-body.view-only-mode .composer,body.view-only-mode .ctx-bar,body.view-only-mode .mem-fab,body.view-only-mode .project-rail{display:none!important}
+body.view-only-mode .composer,body.view-only-mode .ctx-bar,body.view-only-mode .project-rail{display:none!important}
 /* RAG owns its own oval ask bar — never show global project composer on RAG */
-body.rag-mode .composer,body.rag-mode .ctx-bar,body.rag-mode .mem-fab,body.rag-mode .project-rail{display:none!important}
+body.rag-mode .composer,body.rag-mode .ctx-bar,body.rag-mode .project-rail{display:none!important}
 body.rag-mode.rag-ask-on .rag-ask-bar{display:block}
-body.cortex-catalog-mode .composer,body.cortex-catalog-mode .ctx-bar,body.cortex-catalog-mode .mem-fab,body.cortex-catalog-mode .project-rail{display:none!important}
+body.cortex-catalog-mode .composer,body.cortex-catalog-mode .ctx-bar,body.cortex-catalog-mode .project-rail{display:none!important}
 .rag-ask-bar{display:none;flex-shrink:0;padding:8px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,rgba(10,10,10,.55) 28%,rgba(10,10,10,.9));z-index:6}
 body.theme-light .rag-ask-bar{background:linear-gradient(180deg,transparent,rgba(245,244,239,.92) 28%,var(--bg))}
 .rag-ask-scope{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
@@ -1687,7 +1672,7 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .forge-honesty span.warn{border-color:rgba(232,184,74,.35);color:var(--warn);background:rgba(232,184,74,.08)}
 .forge-schematic{min-height:180px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0a0a0a;padding:12px;overflow:auto}
 .forge-schematic svg{max-width:100%;height:auto}
-body.openforge-mode .composer,body.openforge-mode .ctx-bar,body.openforge-mode .mem-fab,body.openforge-mode .project-rail{display:none!important}
+body.openforge-mode .composer,body.openforge-mode .ctx-bar,body.openforge-mode .project-rail{display:none!important}
 body.openforge-mode .connect-col,body.openforge-mode .connect-collapse-btn{display:none!important}
 @media(max-width:900px){.forge-shell{grid-template-columns:1fr}}
 .msg-queue-hint{font-size:11px;color:var(--muted);padding:4px 12px}
@@ -2348,7 +2333,6 @@ body.theme-light .project-ask-cta:hover{background:#222;border-color:#222}
 .day-sum li{margin:0 0 6px;color:var(--text)}
 .day-sum .ds-empty{color:var(--muted);font-size:12.5px;padding:4px 0}
 .day-sum pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;color:var(--text);margin:0}
-.mem-fab{display:none!important}
 .ai-thinking span:nth-child(2){animation-delay:.2s}
 .ai-thinking span:nth-child(3){animation-delay:.4s}
 @keyframes think{0%,80%,100%{opacity:.25;transform:scale(.85)}40%{opacity:1;transform:scale(1)}}
@@ -2649,9 +2633,6 @@ body.theme-light .proj-page-card h3{color:var(--text)}
 body.theme-light .proj-page-card p,
 body.theme-light .proj-page-card .meta{color:var(--muted)}
 body.theme-light .projects-page h2{color:var(--text)}
-body.theme-light .mem-fab{background:#fff;border-color:rgba(0,0,0,.14);color:var(--text);box-shadow:var(--shadow-soft)}
-body.theme-light .mem-fab svg{stroke:currentColor}
-body.theme-light .mem-fab.on{background:var(--surface2);border-color:rgba(0,0,0,.22)}
 body.theme-light .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 body.theme-light .session-item.on{background:rgba(0,0,0,.06)!important;border-color:rgba(0,0,0,.16)!important;box-shadow:inset 3px 0 0 var(--accent)}
 body.theme-light .connect-col{background:var(--surface);color:var(--text)}
@@ -2892,9 +2873,6 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     </div>
     <div class="main-wrap">
       <div class="main-chat-col">
-        <button type="button" class="mem-fab" id="memFab" title="Memory panel" aria-label="Open memory panel" aria-expanded="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h14"/><rect x="16" y="10" width="5" height="5" rx="1"/></svg>
-        </button>
         <div class="msg-jump-bar" id="msgJumpBar" hidden aria-label="AI reply nodes">
           <div class="msg-jump-count" id="msgJumpCount">0</div>
           <div class="msg-jump-track" id="msgJumpTrack">
@@ -3301,7 +3279,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
         <div class="sc-panel" id="scPanel-agents" data-panel="agents">
           <h3>Agents</h3>
-          <p class="hint">Agents are durable and suggested from your trends. Create them from Cortex (suggested chips), not Settings. Subagents spawn on demand for one task.</p>
+          <p class="hint">Agents are durable. Create them from Cortex (the suggestion chips are examples to start from), not Settings. Subagents spawn on demand for one task.</p>
           <div class="settings-section" style="border-top:0;padding-top:0">
             <h4>Catalog</h4>
             <div id="scAgentsList" class="sc-list"><div class="hint">Loading…</div></div>
@@ -4715,6 +4693,18 @@ const PROJECT_BLURBS={
   ml:'Models, training, inference, and AI systems.'
 };
 let _projectsSort='updated';
+let _customProjects=[];
+/** Projects the user added (anything but the four built-in ones). Returns true when the list changed. */
+async function loadCustomProjects(){
+  try{
+    const r=await api('/api/projects').then(r=>r.json());
+    const builtIn=Object.values(MODE_LABELS);
+    const next=(r.projects||[]).filter(p=>!builtIn.includes(p.name));
+    const changed=JSON.stringify(next)!==JSON.stringify(_customProjects);
+    _customProjects=next;
+    return changed;
+  }catch(e){return false}
+}
 let _projectsQuery='';
 function showWelcomeHome(opts){
   return showCenterProjects(Object.assign({},opts||{},{asChats:true}));
@@ -4741,7 +4731,7 @@ function showProjectsPage(opts){
     const latest=sess[0];
     const when=latest?.updated_at?relativeTime(latest.updated_at):'—';
     return {k,label,blurb,count:sess.length,when,updated:latest?.updated_at||0,on:k===selected};
-  }).filter(c=>{
+  }).concat(_customProjects.map(p=>({k:p.category||'general',label:p.name,blurb:'Your project in '+(MODE_LABELS[p.category]||'General')+'.',count:p.session_count||0,when:p.updated_at?relativeTime(p.updated_at):'—',updated:p.updated_at||0,on:false}))).filter(c=>{
     if(!q)return true;
     return (c.label+' '+c.blurb+' '+c.k).toLowerCase().includes(q);
   });
@@ -4784,6 +4774,7 @@ function showProjectsPage(opts){
   applyPlaceholder();
   if(memPanelOpen)toggleMemPanel(false);
   syncMemFabVisibility();
+  loadCustomProjects().then(ch=>{if(ch&&sideView==='projects'&&$('airgptProjectsPage'))showProjectsPage({keepSession:true})});
 }
 function relativeTime(ts){
   const t=(typeof ts==='number'?ts:(Date.parse(ts)/1000))||0;
@@ -4925,30 +4916,19 @@ window.saveProjectGoals=async key=>{
 };
 
 let memPanelOpen=false;
-function canShowMemPanel(){
-  // Fab stays hidden — the old goals/folders rail was noise. Open only from Settings.
-  return false;
-}
+// Memory opens only from Settings. Views call this when they take over the pane, so the panel never lingers.
 function syncMemFabVisibility(){
-  const fab=$('memFab');
-  if(fab){fab.hidden=true;fab.style.display='none';fab.classList.remove('on')}
   if(memPanelOpen)toggleMemPanel(false);
 }
 function toggleMemPanel(force){
-  // force===true (Settings) may open; fab path is disabled via canShowMemPanel.
-  if(force!==true && force!==false && !canShowMemPanel()){
-    syncMemFabVisibility();
-    return;
-  }
   const open=typeof force==='boolean'?force:!memPanelOpen;
   memPanelOpen=open;
-  const ov=$('memOverlay');const fab=$('memFab');const main=$('main');
+  const ov=$('memOverlay');const main=$('main');
   if(!ov)return;
   ov.classList.toggle('open',open);
   ov.setAttribute('aria-hidden',open?'false':'true');
   main?.classList.toggle('mem-open',open);
   document.body.classList.toggle('mem-open',open);
-  if(fab){fab.classList.toggle('on',open);fab.setAttribute('aria-expanded',open?'true':'false')}
   if(open)renderMemPanel();
 }
 async function renderMemPanel(){
@@ -4972,7 +4952,7 @@ async function renderMemPanel(){
         <button type="button" class="btn" onclick="runMemSearch()">Search</button>
       </div>
       <div class="mem-list" id="memList">${mems.length?mems.map(m=>`
-        <div class="mem-item"><strong>${esc(m.title||m.kind||'note')}</strong>
+        <div class="mem-item">${m.title&&!String(m.body||'').trim().startsWith(String(m.title).replace(/…$/,'').trim())?`<strong>${esc(m.title)}</strong>`:''}
         <div class="mem-body">${esc((m.body||'').slice(0,220))}${m.body&&m.body.length>220?'…':''}</div>
         <div class="mem-meta">${esc(m.kind||'')}${m.source?' · '+esc(m.source):''}</div></div>`).join(''):'<div class="hint">No notes yet. Add one below — nothing auto-fills fake goals.</div>'}</div>
       <div class="mem-actions" style="margin-top:10px"><button type="button" onclick="memShowAddNote()">+ Add note</button></div>
@@ -5069,8 +5049,7 @@ window.runMemSearch=async()=>{
     <div class="mem-meta">${esc(m.source||'index')}${m.score!=null?' · score '+Number(m.score).toFixed(2):''}</div></div>`).join(''):'<div class="hint">No hits</div>';
 };
 function setupMemFab(){
-  const fab=$('memFab');const close=$('memCloseBtn');const ov=$('memOverlay');
-  if(fab)fab.onclick=e=>{e.stopPropagation();toggleMemPanel()};
+  const close=$('memCloseBtn');const ov=$('memOverlay');
   if(close)close.onclick=e=>{e.stopPropagation();toggleMemPanel(false)};
   if(ov)ov.addEventListener('click',e=>{if(e.target===ov)toggleMemPanel(false)});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&memPanelOpen)toggleMemPanel(false)});
@@ -6723,6 +6702,7 @@ function openPeerAccess(ev,ip,level){
     ],
   });
 }
+window.__openAccessPopover=openAccessPopover; // the hook ui/multiplayer_demo.js calls
 window.openAccessPopover=function(ev,opts){return (window.MP&&MP.openAccessPopover)?MP.openAccessPopover(ev,opts):openAccessPopover(ev,opts)};
 window.openPeerAccess=function(ev,ip,level){return (window.MP&&MP.openPeerAccess)?MP.openPeerAccess(ev,ip,level):openPeerAccess(ev,ip,level)};
 function hubNodeHtml(node,opts){
@@ -6904,26 +6884,9 @@ function agentPlainBlurb(a){
   if(a?.description)return String(a.description).slice(0,160);
   return 'A ready-to-use worker you can chat with.';
 }
+// Fixed, well-written examples only. Never build one from the placeholder question the empty screen shows.
 function habitAgentActions(){
-  const out=[];
-  try{
-    const taste=JSON.parse(localStorage.getItem('airgpt_taste')||'{}');
-    const q=taste.question||{};
-    const top=Object.entries(q).sort((a,b)=>(b[1]||0)-(a[1]||0)).slice(0,2);
-    top.forEach(([k],i)=>{
-      const idx=parseInt(k,10);
-      const theme=Number.isFinite(idx)&&QUESTIONS_OF_THE_DAY[idx]
-        ? QUESTIONS_OF_THE_DAY[idx].replace(/\?+$/,'').replace(/^(Why|What|How|Could|If)\s+/i,'').slice(0,48)
-        : '';
-      if(theme){
-        out.push(i===0
-          ? `Daily insights on ${theme} — notify me every morning`
-          : `Daily tutorial: ${theme} — short practice cue every day`);
-      }
-    });
-  }catch(e){}
-  HABIT_AGENT_ACTIONS.forEach(a=>{if(!out.includes(a))out.push(a)});
-  return out;
+  return HABIT_AGENT_ACTIONS.slice();
 }
 function suggestedAgentsFromTrend(){
   // Deterministic, local — recent agents + prefScore taste. No server call.
@@ -7085,7 +7048,7 @@ async function loadCortexReach(){
   const spaces=(rag&&rag.spaces)||[];
   const memCount=(mem&&mem.count)||0;
   const rows=[
-    reachRowHtml('Cortex engine',engineOn,engineOn?'online':((health&&health.status)||'offline - running locally')),
+    reachRowHtml('Cortex engine',engineOn,engineOn?'online':'not running - chat still works'),
     reachRowHtml('Workspace',wsOn,wsOn?(String(ws.root).replace(/[\\/]+$/,'').split(/[\\/]/).pop()||String(ws.root)):'no folder opened'),
     reachRowHtml('Memory / vault',!!mem,mem?`${(mem.backend||'local_vault')} - ${memCount} item${memCount===1?'':'s'}`:'unavailable'),
     reachRowHtml('RAG spaces',spaces.length>0,spaces.length?`${spaces.length} space${spaces.length===1?'':'s'}`:'none created')
@@ -7705,11 +7668,15 @@ function buildCortexOrchestrationPrompt(userText,agentName,intent,caps){
     intent==='chat'?'Mode: auto-respond now with tools — do not only plan.':'Mode: create/improve the agent then demonstrate one useful run.',
   ].join('\n');
 }
+let _cortexUserText='';
+let _cortexEngineDown=false;
 function ensureCortexLiveCard(title,subtitle){
   const chat=$('chat');if(!chat)return null;
   let live=$('cortexOrchLive');
   if(!live){
-    chat.insertAdjacentHTML('beforeend',`<div class="cortex-page chat-page-enter"><div class="cortex-card">
+    chat.insertAdjacentHTML('beforeend',`<div class="cortex-page chat-page-enter"><div class="cortex-card" id="cortexOrchCard">
+      <p id="cortexOrchEcho" style="margin:0 0 8px;font-size:13px;white-space:pre-wrap"></p>
+      <p id="cortexOrchEngine" class="status-standby" style="margin:0 0 8px;font-size:13px;display:none">The Cortex engine is not running on this computer, so some steps may be skipped. To turn it on, open Apps and press Start Cortex for me.</p>
       <h3 id="cortexOrchTitle" style="margin:0 0 8px">${esc(title)}</h3>
       <p class="hint" id="cortexOrchSub" style="margin:0 0 8px">${esc(subtitle)}</p>
       <div class="cortex-cap-chips" id="cortexCapChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px"></div>
@@ -7723,6 +7690,10 @@ function ensureCortexLiveCard(title,subtitle){
     const t=$('cortexOrchTitle');const s=$('cortexOrchSub');
     if(t)t.textContent=title;if(s)s.textContent=subtitle;
   }
+  const echo=$('cortexOrchEcho');
+  if(echo){echo.textContent=_cortexUserText?'You: '+_cortexUserText:'';echo.style.display=_cortexUserText?'':'none'}
+  const eng=$('cortexOrchEngine');if(eng)eng.style.display=_cortexEngineDown?'':'none';
+  $('cortexOrchCard')?.scrollIntoView({block:'start',behavior:'smooth'});
   return live;
 }
 /* SHELL-01 / F20a — Claude Code readout. Consecutive tool events collapse into ONE
@@ -7820,7 +7791,11 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
   });
   if(!r.ok||!r.body){toast('Run failed ('+r.status+')');return ''};
   const reader=r.body.getReader();const dec=new TextDecoder();let buf='',final='',log=[];
-  const push=(line)=>{const t=String(line||'').trim();if(t)cortexLogAppend(log,{t:'text',text:t})};
+  const push=(line)=>{
+    let t=String(line||'').trim();
+    if(/^Quality loop skipped/i.test(t)){console.info('[cortex] '+t);t='The final quality check was skipped because the Cortex engine is not available.'}
+    if(t)cortexLogAppend(log,{t:'text',text:t});
+  };
   // pending: name -> queue of calls opened by `tool_call` and still awaiting their `tool`
   // result. Run-scoped, not segment-scoped, so a status event arriving mid-step resolves
   // into the row that opened the call instead of counting the same call twice.
@@ -7956,6 +7931,8 @@ async function ensureCortexConcierge(caps){
 }
 /** Main Cortex brain — every chat turn */
 async function handleCortexChat(text){
+  _cortexUserText=String(text||'').trim();
+  try{const h=await api('/api/cortex/health').then(r=>r.json());_cortexEngineDown=!(h&&(h.ok||h.status==='live'||h.status==='ok'))}catch(e){_cortexEngineDown=true}
   const intent=classifyCortexIntent(text);
   const caps=await assembleCortexCapabilities(text,intent);
   renderCortexCapChips(caps);
@@ -7994,7 +7971,6 @@ async function handleCortexChatCreate(text,caps,intent){
   const prompt=buildCortexOrchestrationPrompt(text,name,intent,caps);
   await runCortexAgentStream(agent,prompt,{thinking_mode:'deep',max_steps:16,token_budget:4000,skill_pack:caps.skill_pack});
   toast('“'+name+'” ready');
-  if(!connectOpen)toggleConnect(true);
   refreshCortexRight();
   try{
     const agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
@@ -8360,20 +8336,30 @@ function cortexCrmBannerHtml(cx){
   }
   return `<div class="cortex-card" id="cortexCrmBanner" style="margin-bottom:14px;border-color:rgba(251,191,36,.4)">
     <h3>Cortex engine · offline</h3>
-    <div class="status-standby">Start D:\\Cortex first</div>
+    <div class="status-standby">The Cortex engine is not running on this computer</div>
     <p style="margin-top:8px"><b>Chat still works</b> without Cortex: AirGPT uses local Ollama/vLLM when up, then your keys (Groq / OpenRouter / OpenFree). Cortex is for Hosting CRM, agents, Seek, and business gates.</p>
-    <p style="margin-top:8px">Manual: run <code>.\\scripts\\start_cortex_engine.ps1 -Port 8010</code> in <code>D:\\Cortex</code>. AirGPT already points at <code>${url}</code>.</p>
+    <p style="margin-top:8px">Press <b>Start Cortex for me</b>. If that does not work, start the Cortex engine yourself and then press Retry health.</p>
+    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Details</summary><p style="margin-top:6px;font-size:12px;color:var(--muted)">AirGPT looks for the engine at <code>${url}</code>. To start it by hand, run <code>scripts/start_cortex_engine.ps1 -Port 8010</code> in the Cortex folder.</p></details>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       <button type="button" class="btn primary" style="border-radius:12px" id="cortexStartBtn" onclick="startCortexEngine()">Start Cortex for me</button>
-      <button type="button" class="btn" style="border-radius:12px" onclick="showHostingPage()">Retry health</button>
+      <button type="button" class="btn" style="border-radius:12px" onclick="retryCortexHealth(this)">Retry health</button>
     </div>
     <p class="hint" id="cortexStartState" style="margin-top:8px;font-size:12px"></p>
   </div>`;
 }
+async function retryCortexHealth(btn){
+  if(btn){btn.disabled=true;btn.textContent='Checking…'}
+  let cx=null;
+  try{cx=await api('/api/cortex/health?fresh=1').then(r=>r.json())}catch(e){}
+  const banner=$('cortexCrmBanner');
+  if(banner&&cx)banner.outerHTML=cortexCrmBannerHtml(cx);
+  else if(btn){btn.disabled=false;btn.textContent='Retry health'}
+  toast(cx&&cx.ok?'Cortex engine is running':'The Cortex engine is still not running');
+}
 async function startCortexEngine(){
   const btn=$('cortexStartBtn'), st=$('cortexStartState');
   if(btn){btn.disabled=true;btn.textContent='Starting…';}
-  if(st)st.textContent='Launching D:\\Cortex engine on :8010…';
+  if(st)st.textContent='Starting the Cortex engine…';
   try{
     const r=await api('/api/cortex/ensure',{method:'POST',body:JSON.stringify({force:true,wait_sec:20})}).then(x=>x.json());
     if(r&&r.ok){
@@ -8382,7 +8368,7 @@ async function startCortexEngine(){
       showHostingPage();
       return;
     }
-    if(st)st.textContent=jwClean((r&&(r.error||r.hint))||'Could not start Cortex. Open D:\\Cortex and run the start script.');
+    if(st)st.textContent=jwClean((r&&(r.error||r.hint))||'Could not start the Cortex engine. Open Details above for how to start it by hand.');
     toast('Cortex still offline');
   }catch(e){
     if(st)st.textContent='Could not reach AirGPT ensure API.';
@@ -8464,7 +8450,7 @@ async function showHostingPage(quiet){
   const state=cortexLive?(runningN?'live':'standby'):'empty';
   const stateLbl=cortexLive
     ?(runningN?(runningN+' running'):(added.length?(added.length+' added · Cortex live'):'Cortex live · add engine'))
-    :'Cortex offline — start D:\\Cortex';
+    :'Cortex engine is not running';
   if(quiet){
     const st=document.querySelector('.netie-hero .netie-status');
     if(st){st.className='netie-status '+state;st.textContent=stateLbl}
@@ -8608,6 +8594,8 @@ async function showAppsHubPage(quiet){
   const conflicts=(d.port_conflicts_in_registry||[]).length
     ?`<p class="hint" style="color:#e6b84d">Registry port conflict: ${(d.port_conflicts_in_registry||[]).join(', ')}</p>`:'';
   const cards=(d.apps||[]).map(a=>{
+    // This page is served by AirGPT itself, so its own card uses the real address, not the registry default.
+    if(a.kind==='self')a=Object.assign({},a,{port:location.port||(location.protocol==='https:'?443:80),running:true,healthy:true});
     const on=!!a.running;
     const healthy=!!a.healthy;
     const dot=on?(healthy?'on':'warn'):'';
@@ -8616,8 +8604,13 @@ async function showAppsHubPage(quiet){
       ?`<button type="button" class="btn primary" data-call="appsHubStart" data-arg="${esc(a.id)}">Activate</button>`:'';
     const stopBtn=a.managed&&on
       ?`<button type="button" class="btn" data-call="appsHubStop" data-arg="${esc(a.id)}">Stop</button>`:'';
+    const openNow=on||a.open==='panel';
     const openBtn=a.url
-      ?`<button type="button" class="btn ${on?'primary':''}" data-call="appsHubOpen" data-arg="${esc(a.id)}">${on?'Open':'Start & open'}</button>`:'';
+      ?(a.kind==='self'
+        ?`<button type="button" class="btn primary" onclick="window.open(location.origin+'/','_blank','noopener')">Open</button>`
+        :(openNow||a.can_start
+          ?`<button type="button" class="btn ${on?'primary':''}" data-call="appsHubOpen" data-arg="${esc(a.id)}">${openNow?'Open':'Start & open'}</button>`
+          :`<button type="button" class="btn" disabled title="Not running, and AirGPT cannot start it. Start it yourself, then reload this page.">Open</button>`)):'';
     return `<div class="apps-hub-card" data-app="${esc(a.id)}">
       <div class="ah-top"><h4>${esc(a.name||a.id)}</h4><span class="ah-dot ${dot}" title="${esc(st)}"></span></div>
       <div class="ah-port">:${esc(String(a.port))} · ${esc(a.kind||'')} · ${esc(st)}</div>
@@ -8645,7 +8638,7 @@ async function showAppsHubPage(quiet){
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px">Local ports</h3>
     ${conflicts}
     <div class="apps-hub-grid">${cards}</div>
-    <p class="hint" style="margin-top:14px">Canonical: AirGPT :8765 · DMS v1 :3000 · Cortex/DMS v2 :8010 · LTX-2 :8020 · OpenFree :20128 · vLLM :8001 · Colibri :8002</p>
+    <p class="hint" style="margin-top:14px">Canonical: AirGPT :${location.port||8765} · DMS v1 :3000 · Cortex/DMS v2 :8010 · LTX-2 :8020 · OpenFree :20128 · vLLM :8001 · Colibri :8002</p>
   </div>`;
 }
 function cortexPkgCardHtml(a){
@@ -12487,8 +12480,11 @@ async function addProject(){
   if(!name||!name.trim())return;
   const cat=prompt('Category: general, engineering, finance, ml','engineering')||'general';
   if(!MODES.includes(cat)){toast('Use: general, engineering, finance, ml');return}
-  await api('/api/projects',{method:'POST',body:JSON.stringify({name:name.trim(),category:cat})});
+  const r=await api('/api/projects',{method:'POST',body:JSON.stringify({name:name.trim(),category:cat})});
+  if(!r.ok){toast('Could not add the project');return}
+  await loadCustomProjects();
   loadVaultTree();toast('Project added');
+  if(sideView==='projects'&&$('airgptProjectsPage'))showProjectsPage({keepSession:true});
 }
 async function daySummary(){
   toast('Building day summary…');
@@ -13774,7 +13770,7 @@ function beginStreamUi(userText){
   hideThinking();
   _cotStreamStart=Date.now();
   _cotHadReasoning=false;
-  // Leave project focus rail — chat owns the pane; Memory stays on mem-fab overlay
+  // Leave project focus rail — chat owns the pane; Memory opens from Settings
   setProjectMode(false);
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page')){
     $('chat').classList.add('chat-switching');
