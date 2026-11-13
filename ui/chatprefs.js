@@ -33,7 +33,9 @@
     btn.classList.toggle('on',on);
     btn.classList.toggle('unknown',loadFailed);
     btn.setAttribute('aria-pressed',on?'true':'false');
-    btn.title=loadFailed?'Could not check this chat\'s instructions. Tap to try again.'
+    var none=!sid();
+    btn.disabled=none;
+    btn.title=none?'Send a message first, then you can give this chat instructions.':loadFailed?'Could not check this chat\'s instructions. Tap to try again.'
       :on?'This chat has its own instructions. Tap to view or change them.':'Give this chat its own instructions';
     btn.setAttribute('aria-label',btn.title);
     btn.querySelector('.cprefs-label').textContent=loadFailed?'Instructions ?':on?'Instructions on':'Instructions';
