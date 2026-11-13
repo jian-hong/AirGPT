@@ -165,6 +165,19 @@ class OriginGuardTest(unittest.TestCase):
         self.assertEqual(clipdrop._forwarded_client_ip(
             {"Host": "x.trycloudflare.com", "CF-Connecting-IP": "9.9.9.9"}, "127.0.0.1"), "9.9.9.9")
 
+    def test_forwarded_address_scope_and_mapped_forms(self):
+        # ip_address() accepts an IPv6 scope id with any text after the %, so a payload
+        # hid behind a valid-looking address; mapped loopback must not look like a peer.
+        f = lambda v: clipdrop._forwarded_client_ip(
+            {"Host": "x.trycloudflare.com", "CF-Connecting-IP": v}, "127.0.0.1")
+        self.assertEqual(f('fe80::1%' + XSS), "fe80::1")
+        self.assertEqual(f("::ffff:9.9.9.9"), "9.9.9.9")
+        self.assertEqual(f("::ffff:127.0.0.1"), clipdrop.TUNNEL_PEER)
+        before = {d["ip"] for d in db.list_devices()}
+        self.req("GET", "/api/sessions", {"Host": "abc.trycloudflare.com", "X-Forwarded-For": 'fe80::1%' + XSS})
+        ips = [d["ip"] for d in db.list_devices() if d["ip"] not in before]
+        self.assertFalse([i for i in ips if "<" in i or '"' in i], ips)
+
     # --- bodies and errors ----------------------------------------------------
     def test_oversized_body_is_413(self):
         st, _h, out = self.req("POST", "/api/messages", {"Content-Type": "application/json"},

@@ -1177,10 +1177,15 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     # it for one.
     # The value is shown in the admin page and the peer list, so it must be a real
     # address and nothing else (no markup, no quotes).
+    # ip_address() accepts an IPv6 scope ("fe80::1%<anything>") and IPv4-mapped IPv6, so
+    # drop the scope and unwrap the mapped form before the value is stored or compared.
     try:
-        ipaddress.ip_address(cand)
+        addr = ipaddress.ip_address(cand.split("%")[0])
     except ValueError:
         return TUNNEL_PEER
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    cand = str(addr)
     if not _is_local_host(cand):
         return cand
     return TUNNEL_PEER
