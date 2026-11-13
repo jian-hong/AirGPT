@@ -312,6 +312,34 @@ class ShareGuestTests(GuestScopeBase):
                 st, out = self.req("POST", path, self.post, {"text": "hi", "session_id": self.sid_a, "context_ids": ctx})
                 self.assertEqual(st, 404, (path, ctx, out))
 
+    def test_a_guest_never_loses_its_scope_while_others_join(self):
+        # The scope file was rewritten in place with no lock: a reader could catch it half
+        # written, and two redeems at once could drop one guest. Either made the guest
+        # look like an ordinary device, which sees every chat.
+        shares = [auth.issue_session_share(self.sid_a, acl="view", host_verified=True)["share_token"] for _ in range(40)]
+        toks, lost, stop = [], [], threading.Event()
+
+        def redeem(share):
+            toks.append(auth.redeem_session_share(share)["token"])
+
+        def watch():
+            while not stop.is_set():
+                if not auth.token_session_acl(self.view):
+                    lost.append(1)
+
+        watchers = [threading.Thread(target=watch) for _ in range(3)]
+        workers = [threading.Thread(target=redeem, args=(s,)) for s in shares]
+        for t in watchers + workers:
+            t.start()
+        for t in workers:
+            t.join()
+        stop.set()
+        for t in watchers:
+            t.join()
+        self.assertEqual(len(toks), 40)
+        self.assertEqual(lost, [], "an existing guest was seen as unscoped")
+        self.assertEqual([t for t in toks if not auth.token_session_acl(t)], [], "a new guest lost its scope")
+
     def test_view_guest_cannot_post_even_to_its_own_chat(self):
         for path in ("/api/messages", "/api/chat/stream"):
             st, _ = self.req("POST", path, self.view, {"text": "x", "session_id": self.sid_a})

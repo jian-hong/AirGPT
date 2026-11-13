@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
+import threading
 import time
 
 from config import DATA_DIR
@@ -31,6 +33,29 @@ def _load_tokens() -> None:
 def _save_tokens() -> None:
     TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKENS_FILE.write_text(json.dumps(_tokens), encoding="utf-8")
+
+
+_acl_lock = threading.Lock()
+
+
+def _update_acl_map(mutate) -> None:
+    """Change token_session_acl.json under a lock and swap the file in one step.
+
+    A reader that caught the file half-written, or a second redeem that overwrote the
+    first, made a share guest look like an ordinary device, and an ordinary device
+    sees every chat.
+    """
+    path = DATA_DIR / "token_session_acl.json"
+    with _acl_lock:
+        try:
+            acl_map = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        except Exception:
+            acl_map = {}
+        mutate(acl_map)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(acl_map), encoding="utf-8")
+        os.replace(tmp, path)
 
 
 _load_tokens()
@@ -386,12 +411,9 @@ def revoke_token(token: str) -> dict:
     _revoked_tokens.add(token)
     _tokens.pop(token, None)
     _save_tokens()
-    path = DATA_DIR / "token_session_acl.json"
-    if path.is_file():
+    if (DATA_DIR / "token_session_acl.json").is_file():
         try:
-            acl_map = json.loads(path.read_text(encoding="utf-8"))
-            acl_map.pop(token, None)
-            path.write_text(json.dumps(acl_map), encoding="utf-8")
+            _update_acl_map(lambda acl_map: acl_map.pop(token, None))
         except Exception:
             pass
     if TOKEN_META_FILE.is_file():
@@ -457,12 +479,7 @@ def redeem_session_share(share_token: str) -> dict:
     # Keep reusable for TTL (multi-device), but still issue a guest token
     tok = _issue_token()
     # Bind ACL to guest token
-    _tokens_acl = DATA_DIR / "token_session_acl.json"
-    try:
-        acl_map = json.loads(_tokens_acl.read_text(encoding="utf-8")) if _tokens_acl.is_file() else {}
-    except Exception:
-        acl_map = {}
-    acl_map[tok] = {
+    _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, {
         "session_id": int(entry["session_id"]),
         "acl": entry.get("acl", "view"),
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
@@ -471,9 +488,7 @@ def redeem_session_share(share_token: str) -> dict:
         ),
         "limited": entry.get("access_level") == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }
-    _tokens_acl.parent.mkdir(parents=True, exist_ok=True)
-    _tokens_acl.write_text(json.dumps(acl_map), encoding="utf-8")
+    }))
     _set_token_meta(tok, {
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
         "join_method": "qr",
@@ -570,13 +585,8 @@ def redeem_project_share(share_token: str) -> dict:
         _save_project_shares()
         return {"ok": False, "error": "Share link expired — ask host for a fresh QR"}
     tok = _issue_token()
-    _tokens_acl = DATA_DIR / "token_session_acl.json"
-    try:
-        acl_map = json.loads(_tokens_acl.read_text(encoding="utf-8")) if _tokens_acl.is_file() else {}
-    except Exception:
-        acl_map = {}
     level = entry.get("access_level", "read_only")
-    acl_map[tok] = {
+    _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, {
         "project_key": entry.get("project_key"),
         "acl": entry.get("acl", "view"),
         "access_level": level,
@@ -585,9 +595,7 @@ def redeem_project_share(share_token: str) -> dict:
         ),
         "limited": level == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }
-    _tokens_acl.parent.mkdir(parents=True, exist_ok=True)
-    _tokens_acl.write_text(json.dumps(acl_map), encoding="utf-8")
+    }))
     _set_token_meta(tok, {
         "access_level": level,
         "join_method": "qr",
