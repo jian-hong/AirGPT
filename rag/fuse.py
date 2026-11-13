@@ -64,7 +64,10 @@ def fuse_channels(
             if doc_id not in payloads and hit.payload:
                 payloads[doc_id] = dict(hit.payload)
 
-    ranked = sorted(rank_scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    # Rounded so float noise cannot reorder near-equal scores. The sort is stable, so
+    # ties keep first-seen order: the keyword channel is read first, which makes its
+    # rank the tie-break. Each channel's own order is fixed by its query.
+    ranked = sorted(rank_scores.items(), key=lambda x: -round(x[1], 9))[:top_n]
     return [
         FusedHit(
             doc_id=doc_id,

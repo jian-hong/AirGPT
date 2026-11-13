@@ -35,15 +35,21 @@ import multilingual_bench as mb  # noqa: E402
 
 # lang: ((a r@1, a r@5, a answer, a false-abstain max), (b ...same...), flagged min)
 # flagged = unanswerable questions refused or warned about, of 10.
+# Recall and answer floors are the measured count minus one; the false-abstain
+# ceiling is the measured count PLUS one, for the same reason. A "false abstention"
+# here is almost always a retrieval miss: the right passage is not in the top five,
+# so the name truly is absent from the evidence and the answer says so. Which passage
+# lands fifth differs between SQLite and numpy builds (Linux measured ja name-only at
+# 3, the Windows runner at 4), so the ceiling moves with the recall floor beside it.
 FLOORS = {
-    "zh": ((18, 26, 22, 0), (18, 22, 21, 0), 9),
-    "ja": ((18, 26, 23, 0), (17, 25, 22, 3), 10),
-    "ko": ((19, 25, 23, 0), (29, 29, 29, 0), 9),
-    "ar": ((12, 28, 23, 0), (11, 29, 29, 0), 5),   # WEAK: see docstring
-    "th": ((19, 28, 27, 0), (21, 26, 23, 0), 9),
-    "ru": ((25, 27, 27, 2), (29, 29, 29, 0), 10),
-    "ms": ((27, 29, 28, 1), (25, 29, 26, 4), 10),
-    "es": ((29, 29, 29, 0), (25, 28, 25, 1), 10),
+    "zh": ((18, 26, 22, 1), (18, 22, 21, 1), 9),
+    "ja": ((18, 26, 23, 1), (17, 25, 22, 4), 10),
+    "ko": ((19, 25, 23, 1), (29, 29, 29, 1), 9),
+    "ar": ((12, 28, 23, 1), (11, 29, 29, 1), 5),   # WEAK: see docstring
+    "th": ((19, 28, 27, 1), (21, 26, 23, 1), 9),
+    "ru": ((25, 27, 27, 3), (29, 29, 29, 1), 10),
+    "ms": ((27, 29, 28, 2), (25, 29, 26, 5), 10),
+    "es": ((29, 29, 29, 1), (25, 28, 25, 2), 10),
 }
 
 

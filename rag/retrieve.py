@@ -85,7 +85,7 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
                 FROM chunks_fts
                 JOIN chunks c ON c.id = chunks_fts.chunk_id
                 WHERE chunks_fts MATCH ? AND c.space_id=? AND c.kind='child'
-                ORDER BY score
+                ORDER BY score, chunks_fts.rowid
                 LIMIT ?
                 """,
                 (fts_q, int(space_id), int(k)),
@@ -408,7 +408,7 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
                     FROM chunks_fts
                     JOIN chunks c ON c.id = chunks_fts.chunk_id
                     WHERE chunks_fts MATCH ? AND c.space_id=? AND c.kind='child'
-                    ORDER BY score
+                    ORDER BY score, chunks_fts.rowid
                     LIMIT ?
                     """,
                     ('"' + " ".join(parts) + '"', int(space_id), EXACT_MAX_DF + 1),
@@ -429,7 +429,7 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
                 slot["bm25"] += -float(r["score"] or 0.0)
         if lowercase:
             _script_name_slots(conn, space_id, query, found)
-    ranked = sorted(found.values(), key=lambda s: (-s["terms"], -s["bm25"]))
+    ranked = sorted(found.values(), key=lambda s: (-s["terms"], -round(s["bm25"], 6), int(s["row"]["id"])))
     return [
         RankedHit(
             doc_id=str(s["row"]["id"]),
@@ -483,7 +483,7 @@ def dense_vector_search(space_id: int, query: str, *, k: int = 40) -> list[Ranke
     with store._conn() as conn:
         rows = conn.execute(
             "SELECT id, text, path, heading, parent_id, source_id FROM chunks "
-            "WHERE space_id=? AND kind='child' LIMIT 2000",
+            "WHERE space_id=? AND kind='child' ORDER BY id LIMIT 2000",
             (int(space_id),),
         ).fetchall()
     scored: list[tuple[float, Any]] = []
@@ -491,7 +491,7 @@ def dense_vector_search(space_id: int, query: str, *, k: int = 40) -> list[Ranke
         s = _overlap_score(query, f"{r['heading']} {r['path']} {r['text']}")
         if s > 0:
             scored.append((s, r))
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(key=lambda x: (-round(x[0], 6), int(x[1]["id"])))
     for s, r in scored[:k]:
         hits.append(
             RankedHit(
@@ -522,7 +522,7 @@ def file_level_search(space_id: int, query: str, *, k: int = 20) -> list[RankedH
                 FROM file_index_fts
                 JOIN file_index f ON f.id = file_index_fts.file_id
                 WHERE file_index_fts MATCH ? AND f.space_id=?
-                ORDER BY score
+                ORDER BY score, file_index_fts.rowid
                 LIMIT ?
                 """,
                 (fts_q, int(space_id), int(k)),
@@ -786,7 +786,10 @@ def _search(
                 h["score"] = float(h.get("score") or 0) + boost
                 h["sheet_kpi_boost"] = boost
 
-    chunk_hits.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
+    # Rounded score; ties keep the fused order (stable sort). The same question must
+    # rank the same on every machine: float noise in the last bits and undefined
+    # database tie order did not guarantee that.
+    chunk_hits.sort(key=lambda x: -round(float(x.get("score") or 0), 9))
 
     # Cross-encoder rerank after RRF (feature-flagged; soft-falls to RRF order)
     chunk_hits = rerank_hits(query, chunk_hits, top_n=min(len(chunk_hits), 40 if base == "max" else 30))

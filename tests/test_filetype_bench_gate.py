@@ -92,3 +92,20 @@ def test_offline_answer_quotes_the_value_not_the_chunk_head():
     # No name in the question: both look-alikes are legitimate evidence.
     out = answer.extractive_answer("what is the discount band", hits)
     assert "QJ-202807" in out and "KT-397107" in out
+
+
+def test_equal_scores_rank_in_a_defined_order():
+    """Ranking must not depend on how a database build returns equal scores. Every
+    ORDER BY on a score names a second key, and fusion rounds before it sorts."""
+    import re
+
+    from rag import fuse, retrieve
+
+    src = Path(retrieve.__file__).read_text(encoding="utf-8")
+    orders = re.findall(r"ORDER BY ([^\n]+)", src)
+    assert orders and all("rowid" in o or "id" in o.split(",")[-1] for o in orders if "score" in o), orders
+    a = fuse.RankedHit("7", 1.0, {"t": 1})
+    b = fuse.RankedHit("3", 1.0, {"t": 2})
+    # one channel each at the same rank: equal fused score, first-seen order wins
+    out = fuse.fuse_channels({"sparse": [a], "dense": [b]})
+    assert [h.doc_id for h in out] == ["7", "3"]
