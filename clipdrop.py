@@ -1210,9 +1210,9 @@ def _compute_lan_diagnostics() -> dict:
     elif fw == "ok" and profile == "Public":
         hint = "Firewall OK but WiFi is Public -- run allow_firewall.ps1 as Admin to switch to Private, then scan LAN QR."
     elif profile == "Public":
-        hint = "LAN blocked -- run allow_firewall.ps1 as Admin (sets Private + opens port 8765). Or use Tunnel QR."
+        hint = f"LAN blocked. On Windows, run allow_firewall.ps1 as Admin (sets Private + opens port {PORT}). Or use Tunnel QR."
     else:
-        hint = "Run allow_firewall.ps1 as Admin to open port 8765. Then scan LAN QR on phone."
+        hint = f"On Windows, run allow_firewall.ps1 as Admin to open port {PORT}. Then scan LAN QR on phone."
     out = {
         "ips": ips,
         "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
@@ -7473,6 +7473,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import invoke_registry
                 data = json.loads(self._body().decode() or "{}")
+                if str(data.get("action") or "").lower() == "delete":
+                    return self._json(
+                        200, invoke_registry.delete_skill(str(data.get("id") or data.get("skill_id") or ""))
+                    )
                 if str(data.get("action") or "").lower() in ("enable", "set_scope", "scope"):
                     return self._json(
                         200,
