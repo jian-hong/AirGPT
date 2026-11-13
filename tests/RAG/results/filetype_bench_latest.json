@@ -5,9 +5,9 @@
   "top_k": 5,
   "n_total": 480,
   "index_fingerprint": {
-    "schema_version": 1,
+    "schema_version": 2,
     "chunker": {
-      "name": "parent_child",
+      "name": "parent_child_sentence",
       "child_tokens": 200,
       "parent_max_tokens": 900,
       "child_overlap": 40,
@@ -24,7 +24,7 @@
     "extra": {
       "pack": "filetype_bench"
     },
-    "id": "4398f74d949fa425"
+    "id": "d89d8a69d7804e6c"
   },
   "honesty": "retrieval only, hash embedder, synthetic facts, no model call. Counts, not rates: n per type is too small to claim zero error.",
   "types": {

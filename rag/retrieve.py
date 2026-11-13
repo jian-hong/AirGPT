@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any
 
 from rag import adaptive, authority, sira, store, vectors
@@ -12,12 +13,48 @@ from rag.fuse import RankedHit, fuse_channels
 from rag.rerank import rerank_hits
 
 
+def fold_text(text: str) -> str:
+    """Make a question and a passage comparable word for word.
+
+    sira.tokenize keeps ASCII letters and treats every other letter as a separate
+    run, so "información" became "informaci" (the accented letter and what follows
+    were cut off) and an Arabic question mark stayed glued to the last word of the
+    question ("الراشد؟" never equals "الراشد"). Accents are taken off Latin letters
+    only: Thai, Arabic and Devanagari marks are part of the letter and Hangul
+    syllables must not be split. Punctuation outside ASCII (؟ ، « » “ ” —) becomes a
+    space. Text that is already ASCII is returned untouched.
+    """
+    if not text or text.isascii():
+        return text or ""
+    out: list[str] = []
+    for ch in text:
+        o = ord(ch)
+        if o < 0x80:
+            out.append(ch)
+        elif 0xC0 <= o <= 0x24F or 0x1E00 <= o <= 0x1EFF:
+            base = unicodedata.normalize("NFD", ch)[0]
+            out.append(base if base.isascii() else ch)
+        elif 0x300 <= o <= 0x36F:
+            continue  # an accent already written as a separate mark
+        elif unicodedata.category(ch)[0] in "PS":
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _tokens(text: str) -> list[str]:
-    return sira.tokenize(text)
+    return sira.tokenize(fold_text(text))
 
 
 def _fts_query(query: str) -> str:
-    toks = [t for t in _tokens(query) if len(t) >= 2][:12]
+    all_toks = [t for t in _tokens(query) if len(t) >= 2]
+    # A 2-character piece of Chinese/Japanese/Thai only ever matches here when a cell
+    # or a heading holds that piece as a whole word ("客户" in a spreadsheet header),
+    # which put unrelated sheets at the top. script_search reads those scripts.
+    toks = [t for t in all_toks if not _is_unseg(t)][:12]
+    if not toks and any(_is_unseg(t) for t in all_toks):
+        return '""'
     if not toks:
         return (query or "").replace('"', " ").strip()[:80]
     return " OR ".join(f'"{t}"' for t in toks)
@@ -90,6 +127,109 @@ def sparse_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
     return hits
 
 
+# --- scripts written without spaces (Chinese, Japanese, Thai) ----------------------
+#
+# sira.tokenize cuts these into 2-character pieces (3 for Thai), but sqlite's FTS5
+# sees one run of characters as ONE word, so a piece can never match inside a
+# sentence: the keyword channel was blind to them and everything rested on the
+# hashed-vector channel (r@1 for Chinese was 8 of 30). The pieces are indexed here
+# instead, in memory, built on first use from the chunks the space already holds.
+_UNSEG_RE = re.compile(r"[\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")  # Thai, kana, CJK
+# Above this many chunks the table is not built (memory) and the channel stays off.
+SCRIPT_INDEX_MAX_CHUNKS = 50000
+_script_cache: dict[tuple, tuple[tuple, dict[str, set[int]]]] = {}
+
+
+def _is_unseg(token: str) -> bool:
+    return bool(token) and bool(_UNSEG_RE.match(token[0]))
+
+
+def _script_index(conn, space_id: int) -> tuple[dict[str, set[int]] | None, int]:
+    """(token -> ids of the chunks holding it, number of chunks), unsegmented tokens only."""
+    sig = tuple(
+        conn.execute(
+            "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(SUM(id),0), COALESCE(SUM(LENGTH(text)),0) "
+            "FROM chunks WHERE space_id=? AND kind='child'",
+            (int(space_id),),
+        ).fetchone()
+    )
+    key = (str(store.DB_PATH), int(space_id))
+    cached = _script_cache.get(key)
+    if cached and cached[0] == sig:
+        return cached[1], sig[0]
+    if sig[0] > SCRIPT_INDEX_MAX_CHUNKS:
+        return None, sig[0]
+    post: dict[str, set[int]] = defaultdict(set)
+    for r in conn.execute("SELECT id, text FROM chunks WHERE space_id=? AND kind='child'", (int(space_id),)):
+        text = r["text"] or ""
+        if not _UNSEG_RE.search(text):
+            continue
+        for t in set(sira.tokenize(fold_text(text))):
+            if _is_unseg(t):
+                post[t].add(int(r["id"]))
+    if len(_script_cache) >= 8:
+        _script_cache.pop(next(iter(_script_cache)))
+    _script_cache[key] = (sig, post)
+    return post, sig[0]
+
+
+def _script_query_tokens(query: str) -> list[str]:
+    return [t for t in sira.tokenize(fold_text(query)) if _is_unseg(t) and t not in QUESTION_FLUFF]
+
+
+def _chunk_rows(conn, ids: list[int]) -> dict[int, Any]:
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    return {
+        int(r["id"]): r
+        for r in conn.execute(
+            f"SELECT id, text, path, heading, parent_id, source_id, authority FROM chunks WHERE id IN ({marks})",
+            ids,
+        )
+    }
+
+
+def _chunk_payload(r, channel: str) -> dict:
+    return {
+        "chunk_id": int(r["id"]),
+        "text": r["text"],
+        "path": r["path"],
+        "heading": r["heading"],
+        "parent_id": int(r["parent_id"] or 0),
+        "source_id": int(r["source_id"] or 0),
+        "authority": r["authority"] or "",
+        "channel": channel,
+    }
+
+
+def script_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
+    """Chunks sharing the most character pieces with the question, rare pieces counting more."""
+    qt = list(dict.fromkeys(_script_query_tokens(query)))
+    if not qt:
+        return []
+    store.init()
+    with store._conn() as conn:
+        post, n = _script_index(conn, space_id)
+        if not post:
+            return []
+        idf = {t: math.log(1.0 + n / len(post[t])) for t in qt if t in post}
+        total = sum(idf.values())
+        if not total:
+            return []
+        score: Counter = Counter()
+        for t, w in idf.items():
+            for cid in post[t]:
+                score[cid] += w
+        top = score.most_common(int(k))
+        rows = _chunk_rows(conn, [cid for cid, _ in top])
+    return [
+        RankedHit(doc_id=str(cid), score=float(sc / total), payload=_chunk_payload(rows[cid], "script"))
+        for cid, sc in top
+        if cid in rows
+    ]
+
+
 # A code ("ZQ-4471", "frtr_0001", anything in quotes) or a name (capitalised somewhere
 # other than the start of the question: "Halvorsen"). A bare number is neither: "2024"
 # and "5" turn up by accident in chunks that have nothing to do with the question.
@@ -99,6 +239,35 @@ EXACT_MAX_DF = 5
 EXACT_WEIGHT = 3.0
 _QUESTION_WORDS = frozenset(
     "what which when where does that this with from have about there their during will".split()
+)
+# The same job in other languages, as sira.tokenize cuts them: the words of a question
+# that ask and say nothing about the thing asked ("what is", "tell me about",
+# "information on"). Without them a Malay or Spanish question "Apakah X bagi akaun Y?"
+# looked 50% uncovered because no passage contains "apakah", and the offline answer
+# refused a question it could answer.
+_FLUFF_WORDS = (
+    # Chinese, Japanese, Korean
+    "什么 是什么 哪个 如何 怎么 多少 请问 请告诉我 什麼 情况 情況 "
+    "は何ですか 何ですか 何です とは 教えてください について 情報 "
+    "무엇입니까 무엇인가요 알려 주세요 대해 대한 "
+    # Thai: what / please tell / information about
+    "คืออะไร อะไร บอก ข้อมูลของ "
+    # Arabic
+    "ما هو هي ماذا كم من هل أين متى عن معلومات "
+    # Russian
+    "что какой какая какое каков каковы расскажите указано где когда кто о "
+    # Malay / Indonesian
+    "apakah apa siapakah berapakah bagaimana maklumat tentang mengenai yang "
+    # Spanish (accent-folded, as fold_text leaves them)
+    "cual cuales que como informacion sobre dime donde cuando quien"
+)
+# Only for the scripts written without spaces: inside a word of a spaced script (Arabic
+# "ماجد" holds "ما") cutting a phrase out would eat the name.
+FLUFF_PHRASES = tuple(w for w in _FLUFF_WORDS.split() if len(w) >= 2 and _UNSEG_RE.match(w[0]))
+# Cut the way sira.tokenize cuts a question, so a phrase like "คืออะไร" is recognised by
+# the pieces it leaves ("ืออ", "ออะ", ...) and not only by the whole word.
+QUESTION_FLUFF = frozenset(
+    {w for w in _FLUFF_WORDS.split()} | {t for w in _FLUFF_WORDS.split() for t in sira.tokenize(w)}
 )
 
 
@@ -117,6 +286,77 @@ def identifier_terms(query: str) -> list[str]:
     return list(dict.fromkeys(out))[:6]
 
 
+def _content_tokens(query: str) -> set[str]:
+    """What the question is about, minus the words that only ask it."""
+    return {
+        t
+        for t in sira.tokenize(fold_text(query))
+        if len(t) >= (4 if t.isascii() else 2)
+        and t not in _QUESTION_WORDS
+        and t not in QUESTION_FLUFF
+        and not _is_unseg(t)
+    }
+
+
+def _script_name_slots(conn, space_id: int, query: str, found: dict[int, dict]) -> None:
+    """The rare-word rule for Chinese, Japanese and Thai, which have no capitals.
+
+    A name there is a run of consecutive character pieces that are all rare in the
+    space (each in at most EXACT_MAX_DF chunks). A chunk counts for the run when it
+    holds at least 60% of the run's pieces AS ONE UNBROKEN STRING. Holding the pieces
+    is not enough: one chunk that lists many look-alike names holds every piece of
+    every name and outscored the chunk with the real one. 60% rather than all of it,
+    because the piece that straddles the name and the next word ("盛客" in "华兴盛客户")
+    is missing when a table cell or the question words it differently. The usual
+    coverage guard applies too: the chunk must hold half of the question's other pieces.
+    """
+    post, _n = _script_index(conn, space_id)
+    toks = _script_query_tokens(query)
+    if not post or not toks:
+        return
+    groups: list[list[str]] = [[]]
+    for t in toks:
+        if 1 <= len(post.get(t, ())) <= EXACT_MAX_DF:
+            if groups[-1] and groups[-1][-1][1:] != t[:-1]:
+                groups.append([])  # not the next overlapping piece of the same run
+            groups[-1].append(t)
+        elif groups[-1]:
+            groups.append([])
+    rare = {t for g in groups for t in g}
+    rest = {t for t in toks if t not in rare}
+
+    def string(pieces: list[str]) -> str:
+        return pieces[0] + "".join(t[-1] for t in pieces[1:])
+
+    for g in groups:
+        if not g:
+            continue
+        need = math.ceil(0.6 * len(g))
+        held = Counter(cid for t in dict.fromkeys(g) for cid in post[t])
+        cands = [cid for cid, k in held.items() if k >= need]
+        rows = _chunk_rows(conn, cands)
+        for cid in cands:
+            row = rows.get(cid)
+            if row is None:
+                continue
+            if rest and sum(cid in post.get(t, ()) for t in rest) < 0.5 * len(rest):
+                continue
+            text = fold_text(row["text"] or "").lower()
+            run = next(
+                (
+                    w
+                    for w in range(len(g), need - 1, -1)
+                    if any(string(g[a : a + w]).lower() in text for a in range(len(g) - w + 1))
+                ),
+                0,
+            )
+            if not run:
+                continue
+            slot = found.setdefault(cid, {"row": {**dict(row), "score": 0.0}, "terms": 0, "bm25": 0.0})
+            slot["terms"] += 1
+            slot["bm25"] += float(run)
+
+
 def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> list[RankedHit]:
     """Chunks holding a name or code from the question that is RARE in this space.
 
@@ -133,7 +373,7 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
     store.init()
     found: dict[int, dict] = {}
     terms = identifier_terms(query)
-    content = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in _QUESTION_WORDS}
+    content = _content_tokens(query)
     if lowercase:
         # A lowercase name is also where typos live ("halvorsn"). Correct words the
         # space has never seen against its own vocabulary before looking them up.
@@ -143,14 +383,18 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
             query = spell.correct_query(query, space_id)
         except Exception:
             pass
-        content = {t for t in sira.tokenize(query) if len(t) >= 4 and t not in _QUESTION_WORDS}
+        content = _content_tokens(query)
         # People type names in lowercase. Any longer word of the question may be one;
         # the rarity limit and the coverage rule decide, not the capital letter. Kept
         # as a separate, ordinary-weight channel: a rare lowercase word is weaker
         # evidence of a name than a capital or a code, and at full weight it took
         # rank 1 from the chunk that matched the capitalised name.
-        seen = {t for term in terms for t in sira.tokenize(term)}
-        terms = [t for t in sira.tokenize(query) if len(t) >= 5 and t in content and t not in seen]
+        # Longer than 4 letters for ASCII; a Korean or Arabic word says as much in 3.
+        seen = {t for term in terms for t in sira.tokenize(fold_text(term))}
+        terms = [
+            t for t in sira.tokenize(fold_text(query))
+            if len(t) >= (5 if t.isascii() else 3) and t in content and t not in seen
+        ]
     with store._conn() as conn:
         for term in terms:
             parts = re.findall(r"[^\W_]+", term.lower())
@@ -177,12 +421,14 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
             for r in rows:
                 if rest and not _is_code(term):
                     # snake_case keys ("discount_band") are one token to the tokenizer
-                    have = set(sira.tokenize(str(r["text"]).replace("_", " ")))
+                    have = set(sira.tokenize(fold_text(str(r["text"])).replace("_", " ")))
                     if len(rest & have) < 0.5 * len(rest):
                         continue
                 slot = found.setdefault(int(r["id"]), {"row": r, "terms": 0, "bm25": 0.0})
                 slot["terms"] += 1
                 slot["bm25"] += -float(r["score"] or 0.0)
+        if lowercase:
+            _script_name_slots(conn, space_id, query, found)
     ranked = sorted(found.values(), key=lambda s: (-s["terms"], -s["bm25"]))
     return [
         RankedHit(
@@ -440,6 +686,9 @@ def _search(
         dense_meta = {}
     files = file_level_search(space_id, query, k=20)
     channels = {"sparse": sparse, "dense": dense, "file": files}
+    scripted = script_search(space_id, query, k=sparse_k)
+    if scripted:
+        channels["script"] = scripted
     if expanded_q and expanded_q.strip() != (query or "").strip():
         channels["expand"] = sparse_search(space_id, expanded_q, k=sparse_k)
 

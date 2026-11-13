@@ -119,6 +119,11 @@ def build_context_block(hits: list[dict], *, max_chars: int = 6000, neighbors: b
 _FILE_REF_RE = re.compile(r"\b[\w-]+\.(?:pdf|docx?|pptx?|xlsx?|csv|tsv|txt|md|html?|json)\b", re.I)
 
 
+# A line end, or . ! ? followed by a space (a decimal point is not an end), or the
+# full-width / Arabic marks 。！？؟ which are not followed by a space in Chinese and Japanese.
+_SENTENCE_END = re.compile(r"\n+|(?<=[.!?])\s+|(?<=[\u3002\uff01\uff1f\u061f])\s*")
+
+
 def abstention(query: str, hits: list[dict]) -> dict | None:
     """Is the evidence too thin to answer from? None means go ahead and answer.
 
@@ -147,7 +152,7 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
     blob_tokens = set(sira.tokenize(blob))
 
     def _present(term: str) -> bool:
-        toks = sira.tokenize(term)
+        toks = sira.tokenize(_fold(term))
         return term.lower() in blob or (bool(toks) and all(t in blob_tokens for t in toks))
 
     terms = retrieve.identifier_terms(query)
@@ -161,6 +166,10 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
     if files:
         return {"kind": "file", "missing": files,
                 "reason": "no retrieved passage comes from " + ", ".join(f'"{f}"' for f in files)}
+    # Words in a script without capitals that no passage holds are NOT grounds to
+    # refuse. A missing name and a reworded ordinary word look the same there, and
+    # refusing on them turned "请问...大概是多久" into "the space does not mention".
+    # extractive_answer warns about them instead (see unseen_terms_note).
     toks = _salient_tokens(query)
     blobs = [_evidence_blob([h]) for h in hits]
 
@@ -183,6 +192,72 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
                     "reason": f"no passage covers more than {int(best * 100)}% of what the question asks"
                               + (f" (nothing mentions {', '.join(gone[:4])})" if gone else "")}
     return None
+
+
+def _unseen_script_terms(query: str, blob: str) -> list[str]:
+    """Words of the question, in a script that has no capital letters, that no passage holds.
+
+    identifier_terms finds a name by its capital letter, so for Chinese, Japanese,
+    Korean, Arabic and Thai nothing ever said "this name is not in the space", and a
+    question about a look-alike name was answered with the look-alike's value. The
+    coverage floor cannot do it either: one missing name out of ten question words is
+    still 90% covered. Two rules, both on the whole retrieved pool:
+      - a word written in letters (Hangul, Arabic, Cyrillic) must appear, allowing for
+        its ending ("-의", "-ом") once it is long enough to have one;
+      - Chinese, Japanese and Thai are cut into overlapping 2- or 3-character pieces,
+        and a name that is not there breaks at least two of them in a row, while a
+        reworded attribute usually breaks one. So two or more missing pieces count,
+        and the pieces are joined back into the string the user typed.
+    Words that only ask the question (retrieve.QUESTION_FLUFF) never count.
+    """
+    from rag import retrieve
+
+    # Cut the question without its asking words, so no piece straddles "...について".
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(retrieve.FLUFF_PHRASES, key=len, reverse=True):
+        text = text.replace(w, " ")
+    toks = [
+        t for t in dict.fromkeys(sira.tokenize(text))
+        if not t.isascii() and t not in retrieve.QUESTION_FLUFF and t not in _STOPWORDS
+    ]
+    held = set(sira.tokenize(blob))
+    # Compare words by stem on both sides: "고객에" (to the customer) and "고객의" (of the
+    # customer) are the same word with a different particle.
+    held_stems = held | {w[:-1] for w in held if len(w) >= 3}
+    gone: list[str] = []
+    for t in toks:
+        if retrieve._is_unseg(t):
+            continue
+        stem = t[:-1] if len(t) >= 3 else t
+        if t not in held_stems and stem not in held_stems:
+            gone.append(t)
+    # Chinese, Japanese and Thai are not judged at all: the tokenizer cuts them into
+    # overlapping pieces, and "two missing pieces in a row" refused ordinary rewordings
+    # and printed fragments such as "户目前的" as the missing term.
+    return gone
+
+
+def unseen_terms_note(query: str, hits: list[dict]) -> str:
+    """A warning, not a refusal: words of the question that no passage holds."""
+    if not hits:
+        return ""
+    blob = _evidence_blob(hits)
+    gone = _unseen_script_terms(query, blob)
+    if gone:
+        return ("Not found in this space: " + ", ".join(f'"{t}"' for t in gone[:4])
+                + ". The passages below may be about something else.")
+    # Chinese, Japanese, Thai: two missing pieces in a row usually means a word of the
+    # question is absent, but which word cannot be cut out reliably, so none is named.
+    from rag import retrieve
+
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(retrieve.FLUFF_PHRASES, key=len, reverse=True):
+        text = text.replace(w, " ")
+    pieces = [t for t in sira.tokenize(text) if retrieve._is_unseg(t) and t not in retrieve.QUESTION_FLUFF]
+    missing = [t not in blob for t in pieces]
+    if any(a and b for a, b in zip(missing, missing[1:])):
+        return "Some words of this question were not found in this space. The passages below may be about something else."
+    return ""
 
 
 def _abstention_text(hits: list[dict], why: dict) -> str:
@@ -219,16 +294,16 @@ def extractive_answer(query: str, hits: list[dict]) -> str:
     # sentences, so the offline answer showed everything except the answer.
     from rag import retrieve, sira
 
-    q_terms = set(sira.tokenize(query))
-    names = {t for term in retrieve.identifier_terms(query) for t in sira.tokenize(term)}
+    q_terms = set(sira.tokenize(_fold(query)))
+    names = {t for term in retrieve.identifier_terms(query) for t in sira.tokenize(_fold(term))}
     picked: list[tuple[float, int, str, bool]] = []
     for i, h in enumerate(hits[:4], start=1):
         best, best_score, best_named = "", 0.0, False
         parts = [
-            x.strip() for x in re.split(r"\n+|(?<=[.!?])\s+", (h.get("text") or "").strip())
+            x.strip() for x in _SENTENCE_END.split((h.get("text") or "").strip())
             if x.strip() and not x.lstrip().startswith("#")
         ]
-        toksets = [set(sira.tokenize(x)) for x in parts]
+        toksets = [set(sira.tokenize(_fold(x))) for x in parts]
         # Prose spreads one fact over sentences: "Globex handles logistics. ... Payment
         # terms are net 30." The best single sentence for "payment terms for globex"
         # is the FIRST "Payment terms" line, which belongs to another vendor. So a
@@ -262,6 +337,9 @@ def extractive_answer(query: str, hits: list[dict]) -> str:
         where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
         lines.append(f"- {passage} [{i}] ({where})")
     body = "\n".join(lines) if lines else "Evidence was retrieved but could not be paraphrased offline."
+    note = unseen_terms_note(query, hits)
+    if note:
+        body = note + "\n" + body
     cites = ", ".join(f"[{i}] {_display_path(h.get('path'))}" for i, h in enumerate(hits[:5], start=1))
     return (
         f"{body}\n\n"
@@ -719,14 +797,26 @@ def _token_in_blob(t: str, blob: str) -> bool:
     return False
 
 
+def _fold(text: str) -> str:
+    """retrieve.fold_text, imported late (retrieve does not import this module, but keep it cheap)."""
+    from rag import retrieve
+
+    return retrieve.fold_text(text)
+
+
 def _salient_tokens(query: str) -> list[str]:
     # Question/meta words are not "coverage" terms — counting them made trivial
     # queries ("what is this about") look uncovered and fabricated gap notes.
     # ASCII floor stays 3; CJK bigrams are length 2 and must still count or
     # coverage returns 1.0 vacuously (P13).
     out: list[str] = []
-    for t in dict.fromkeys(sira.tokenize(query)):
-        if t in _STOPWORDS:
+    from rag import retrieve
+
+    for t in dict.fromkeys(sira.tokenize(_fold(query))):
+        # "apakah" / "cual" / "是什么" ask the question and say nothing about its subject;
+        # no passage holds them, so counting them made every Malay or Spanish question
+        # look 50% uncovered and the answer refused.
+        if t in _STOPWORDS or t in retrieve.QUESTION_FLUFF:
             continue
         if t.isascii() and len(t) < 3:
             continue
@@ -737,9 +827,9 @@ def _salient_tokens(query: str) -> list[str]:
 
 
 def _evidence_blob(hits: list[dict]) -> str:
-    return " ".join(
+    return _fold(" ".join(
         f"{h.get('heading') or ''} {h.get('path') or ''} {h.get('text') or ''}" for h in hits
-    ).lower()
+    ).lower())
 
 
 def _coverage(query: str, hits: list[dict]) -> float:

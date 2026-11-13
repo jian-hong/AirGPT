@@ -116,3 +116,59 @@ Open after wave 2:
 - A table past one million rows reports `n_rows` as the cap; European number
   notation (`1.200,50`) and non-English month names are not read.
 - Re-upload identity is the resolved path: a changed copy under a new path is a new file.
+
+## Wave 3 (2026-11-13): chunking, cross-type ontology, multilingual
+
+Shape: three Sonnet builders in worktrees, one independent adversary each. A container
+restart killed the first run after two builders had committed; the third had
+uncommitted work, saved as a patch and resumed by a fresh builder. Verdicts: chunking
+merge (3 medium), ontology NO merge (1 high), multilingual NO merge (1 high). Every
+reproduced defect was fixed inline before commit.
+
+Finding 5 - table chunks had no column names. Only the first window of a sheet held
+the header row, so a hit on row 400 was bare values. Expected: every row window carries
+its header. Chunk bench, old -> new: sheet windows with header 3% -> 100%; facts whole
+in one chunk 0/30 -> 30/30. Root-cause class: context dropped at a boundary.
+
+Finding 6 - prose was cut by character count. A PDF page arrives as one paragraph, so
+the hard split fell mid-sentence. Old -> new: PDF chunks on a sentence boundary 0% ->
+88%; facts aimed at the old cut 8/15 -> 15/15. Chinese chunks were up to 926 tokens
+against a 200 budget; now 200. xlsx empty cells keep their column (9/9, was 0/9).
+The index fingerprint changes identity (schema 1 -> 2, chunker name), so older retained
+scores are reported as not comparable instead of being mixed in.
+
+Finding 7 - near-identical table rows were dropped from search. The chunker demoted a
+child whose tokens matched the previous one at 0.9 Jaccard. Two rows that differ only
+in an id are two records. Pre-existing; found while replaying an adversary repro.
+Invariant: data-loss handling.
+
+Finding 8 - non-Latin headers had no name. `_norm` kept a-z0-9 only, so every Chinese,
+Russian or Arabic header became "", and "" == "" was reported as "names agree". The
+builder's fix then let the preposition "на" count as name evidence (adversary, high);
+scripts with spaces now need three letters like Latin. Also: `2026年3月5日` dates, tsv /
+json / xml records as tables, relations across file types.
+
+Finding 9 - refusing on missing pieces refused rewordings. For scripts without capitals
+the builder refused when words of the question were absent. On Chinese, Japanese and
+Thai that refused ordinary rewordings and printed fragments as the "missing term"
+(adversary, high). Decision: in those scripts the answer WARNS and still shows the
+passages; it never refuses. Invariant: a control that blocks legitimate work is a
+failure. Cost, stated: unanswerable questions there are flagged 9-10 of 10 by a warning
+line, refused 0 of 10.
+
+Multilingual bench (8 languages, one space, of 30; own-language question, top 5):
+zh 27, ja 27, ko 26, ar 29, th 29, ru 28, ms 30, es 30. Rank 1: zh 19 (was 8),
+th 20 (was 11), ar 13 (weak).
+
+Open after wave 3:
+
+- Arabic: rank 1 is 13 of 30 and only 5 of 10 unanswerable questions are flagged.
+- Hindi is not on the board: `rag.sira.tokenize` returns nothing for Devanagari.
+- pypdf drops Arabic text on a line that also holds a Latin code.
+- An English question about a non-English document is measured only with the name
+  kept in its own script. A true cross-language question needs the embedder (P13).
+- Headerless sheets: an all-text first data row is still taken for a header.
+- Two header rows carry only the first; a second table lower in a sheet gets the
+  first table's header. Fullwidth full stop and "Dr." / "No." are not handled.
+- Thai: 27 of 30 facts whole in one chunk.
+- No native speaker reviewed the bench templates.

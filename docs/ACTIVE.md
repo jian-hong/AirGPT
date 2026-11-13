@@ -29,6 +29,15 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `rag/ingest.py` extractors emit structure the chunker turns into citations:
   `## Page N` (pdf), heading styles + table rows (docx), shown slide order +
   notes (pptx), headings + cells (html), `.eml`, whole json records.
+- `rag/chunking.py` -- chunker `parent_child_sentence`: every sheet row
+  window carries its header row; prose is cut at sentence ends (CJK, Thai,
+  Arabic marks too); size budget is per script. `index_fingerprint`
+  schema 2, so older scores read as not comparable.
+  `tests/RAG/chunk_bench.py` measures it.
+- `tests/RAG/multilingual_bench.py` -- 8 languages in one space. Scripts
+  without capitals get a warning line for an unfound word, never a refusal.
+- `rag/ontology.py` -- `ONTOLOGY_VERSION=4`: Unicode keys, tsv/json/xml
+  records as tables, relations across file types.
 - `tests/RAG/paraphrase_bench.py` -- same facts asked four ways (verbatim,
   synonym, lowercase+typo, by another fact). Gate pins measured floors; two are
   deliberately weak and say so. Measure only.

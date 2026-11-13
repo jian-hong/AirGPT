@@ -2,6 +2,26 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-13 -- Wave 3: chunks keep their meaning, in any script
+
+- Chunker is now `parent_child_sentence`. Every sheet row window carries its
+  header row (3% -> 100% of windows); prose is cut at sentence ends, not by
+  character count (PDF facts on the old cut 8/15 -> 15/15 whole); the size
+  budget is per script (Chinese chunks were up to 926 tokens, now 200); xlsx
+  keeps empty cells in their column. Index fingerprint is schema 2, so older
+  retained scores read as not comparable.
+- Near-identical table rows are no longer dropped from search as duplicates.
+- Ontology: non-Latin headers get real keys (they were all ""), CJK dates,
+  tsv / json / xml records as tables, relations across file types.
+- Multilingual: an exact-match channel for names in scripts without capitals
+  (zh rank 1 8 -> 19 of 30, th 11 -> 20). The offline answer splits on CJK and
+  Arabic sentence marks. In those scripts an unfound word gets a warning line,
+  never a refusal.
+- New benches with gates: `tests/RAG/chunk_bench.py`, `tests/RAG/multilingual_bench.py`.
+- Three builders in worktrees, each attacked by an independent agent; two were
+  refused on a reproduced high defect and fixed before landing.
+- Suite 881 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
 ## 2026-11-12 -- Wave 2: abstention, five more file types, the hot-file bonus
 
 - Retrieval: the flat +0.05 hot-file bonus was three rank votes; with more than

@@ -310,7 +310,12 @@ def _xlsx_text(path: Path) -> str:
                 continue
             rows: list[str] = []
             for row in ws.iter_rows(values_only=True):
-                cells = [str(c) for c in row if c is not None and str(c).strip() != ""]
+                # Empty cells keep their column (as `_csv_text` does): dropping them slid
+                # every later value under the wrong header. Trailing blanks are trimmed;
+                # a line break inside a cell becomes a space so a row stays one line.
+                cells = ["" if c is None else re.sub(r"\s+", " ", str(c)).strip() for c in row]
+                while cells and not cells[-1]:
+                    cells.pop()
                 if cells:
                     rows.append(" | ".join(cells))
             if rows:

@@ -20,13 +20,15 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
-5. **RAG reliability (PR #90, draft).** Ontology v2 is data-derived (#6).
-   File-type bench: 16 types in one space, recall@5 480/480, every hit
-   cites a place. Paraphrase bench (of 64): verbatim 64, synonym 45,
-   lowercase+typo 49, by-another-fact 17 (weak, recorded). Offline answer
-   abstains when the space lacks the name. Upload no longer wipes a
-   space. Suite 796 pass / 0 fail on Linux. All synthetic, hash
-   embedder, no model. n=320 `hybrid_max` NOT re-run here.
+5. **RAG reliability (PR #90, draft).** Benches, all synthetic, hash
+   embedder, no model: file types 16 in one space 480/480 top-5, every
+   hit cites a place; paraphrase (of 64) verbatim 64, synonym 45,
+   lowercase+typo 49, by-another-fact 17 (weak); chunking: sheet chunks
+   with header 100% (was 3%), facts whole 30/30 (was 0/30); multilingual
+   8 languages top-5 26-30 of 30, Arabic rank-1 13 (weak). Offline
+   answer abstains (Latin scripts) or warns (scripts without capitals).
+   Suite 881 pass / 0 fail on Linux. Chunker changed: index fingerprint
+   schema 2, older scores are not comparable. n=320 NOT re-run here.
 6. **Daily task** "AirGPT RAG daily improve" 04:23 MYT, draft PRs only.
    It was stored with no repo source and no connectors.
 7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
@@ -36,10 +38,9 @@
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
-2. NEEDS-YOU: confirm the per-file-type reliability epic (built under
-   your "continue build"), `pypdf` as a dependency, and whether xlsx may
-   keep empty cells (re-chunks every workbook). Ledger rows and open list:
-   `docs/subagents_findings/2026-11-12_*.md`.
+2. NEEDS-YOU: confirm the reliability epic and `pypdf`; re-score the
+   n=320 board on the new chunker (old rows are now incomparable).
+   Open list: `docs/subagents_findings/2026-11-12_*.md`.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

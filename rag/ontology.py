@@ -20,12 +20,15 @@ import hashlib
 import json
 import re
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any
 
-from rag import store
+from rag import sira, store
 
-ONTOLOGY_VERSION = 3  # 3: relation confidence/sampled, probable_foreign_key, full-table profiling
+# 3: relation confidence/sampled, probable_foreign_key, full-table profiling
+# 4: non-Latin column keys and tokens, multilingual text dates, tsv/json/xml tables
+ONTOLOGY_VERSION = 4
 
 # Rows profiled per table. Profiling costs O(distinct values), not O(rows), so this
 # is a memory ceiling rather than a 50k prefix. Beyond it uniqueness is a claim about
@@ -39,7 +42,10 @@ _PROBABLE_MIN_OVERLAP = 0.7
 _PROBABLE_MIN_DISTINCT = 8
 _SHARED_MIN_OVERLAP = 0.5
 _DIGITS = re.compile(r"[0-9]+$")
-_TABLE_SUFFIXES = (".xlsx", ".xlsm", ".xls", ".csv")
+_TABLE_SUFFIXES = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".json", ".xml")
+# json / xml are read whole to look for records. Past this size the file is left to
+# retrieval rather than risk the process; a table here would be a claim about a prefix.
+_MAX_STRUCT_BYTES = 64 * 1024 * 1024
 _DATE_FORMATS = (
     "%Y-%m-%d",
     "%Y/%m/%d",
@@ -51,13 +57,79 @@ _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%SZ",
     "%Y.%m.%d",
     "%d.%m.%Y",
-    "%d %b %Y",
-    "%d %B %Y",
-    "%B %d, %Y",
-    "%b %d, %Y",
-    "%d-%b-%Y",
-    "%d-%b-%y",
 )
+# Notations with a month word or a unit character are parsed here, not by strptime:
+# %b and %B follow the process locale, so "5 mars 2026" failed on an English host and
+# "Mar" on a French one. One word per language and month, in full; a column may
+# abbreviate to any prefix of 3+ letters ("Sept", "Dez").
+_MONTH_WORDS = (
+    "january janvier januar enero janeiro gennaio januari januarie ocak يناير января",
+    "february février februar febrero fevereiro febbraio februari şubat فبراير февраля",
+    "march mars märz marzo março maart maret mac mart مارس марта",
+    "april avril abril aprile nisan أبريل ابريل апреля",
+    "may mai mayo maio maggio mei mayıs مايو мая",
+    "june juin juni junio junho giugno haziran يونيو июня",
+    "july juillet juli julio julho luglio temmuz يوليو июля",
+    "august août augustus agosto agustus ogos ağustos أغسطس اغسطس августа",
+    "september septembre septiembre setiembre setembro settembre eylül سبتمبر сентября",
+    "october octobre oktober octubre outubro ottobre ekim أكتوبر اكتوبر октября",
+    "november novembre noviembre novembro kasım نوفمبر ноября",
+    "december décembre dezember diciembre dezembro dicembre desember disember aralık ديسمبر декабря",
+)
+
+
+def _fold(word: str) -> str:
+    """Casefolded, accent-free, one alef: the form month words are compared in."""
+    d = unicodedata.normalize("NFKD", word.casefold())
+    d = "".join(c for c in d if not unicodedata.category(c).startswith("M"))
+    return re.sub("[أإآ]", "ا", d)
+
+
+def _month_index() -> dict[str, int]:
+    seen: dict[str, set[int]] = {}
+    for n, row in enumerate(_MONTH_WORDS, 1):
+        for w in map(_fold, row.split()):
+            for k in range(3, len(w) + 1):
+                seen.setdefault(w[:k], set()).add(n)
+    # A prefix names a month only when every word it starts says the same month
+    # ("jui" starts both juin and juillet, so it names neither).
+    return {w: next(iter(ns)) for w, ns in seen.items() if len(ns) == 1}
+
+
+_MONTHS = _month_index()
+_MON = r"([^\W\d_]+)"
+_ORD = r"(?:st|nd|rd|th|er)?"
+_DATE_LAYOUTS = tuple(
+    # label (a strftime spelling where one exists), pattern, group order for (year, month, day)
+    (label, re.compile(f"^{rx}$"), order)
+    for label, rx, order in (
+        ("%d %b %Y", rf"(\d{{1,2}}){_ORD}\.?\s+(?:d[eo]\s+)?{_MON}\.?,?\s+(?:d[eo]\s+)?(\d{{4}})", (3, 2, 1)),
+        ("%d-%b-%Y", rf"(\d{{1,2}})-{_MON}\.?-(\d{{4}})", (3, 2, 1)),
+        ("%d-%b-%y", rf"(\d{{1,2}})-{_MON}\.?-(\d{{2}})", (3, 2, 1)),
+        ("%B %d, %Y", rf"{_MON}\.?\s+(\d{{1,2}}){_ORD},?\s+(\d{{4}})", (3, 1, 2)),
+        # Chinese, Japanese and Korean write a unit character after each number.
+        ("%Y年%m月%d日", r"(\d{4})\s*[年년]\s*(\d{1,2})\s*[月월]\s*(\d{1,2})\s*[日일]?", (1, 2, 3)),
+    )
+)
+
+
+def _layout_ok(layout: tuple, s: str) -> bool:
+    m = layout[1].match(s.strip())
+    if not m:
+        return False
+    parts = []
+    for g in layout[2]:
+        w = m.group(g)
+        n = int(w) if w.isdigit() else _MONTHS.get(_fold(w))
+        if n is None:
+            return False
+        parts.append(n)
+    y, mo, d = parts
+    try:
+        _dt.date(y + 2000 if y < 100 else y, mo, d)
+    except ValueError:
+        return False
+    return True
 # "45%", "RM 1,200.50", "$3,400", "(1,200)". Plain digits are NOT matched on their own:
 # "007" is a code. A value needs a %, a currency or a thousands comma to count.
 _CUR = r"(?:US\$|S\$|RM|MYR|USD|SGD|EUR|GBP|AUD|IDR|THB|CNY|JPY|INR|[$€£¥])"
@@ -66,7 +138,18 @@ _TEXT_NUM = re.compile(
     r"(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?P<pct>%)?\s*\)?$",
     re.I,
 )
-_ID_NAME = re.compile(r"(^|_)(id|no|num|number|code|key|ref|row|seq|index|idx|sn)$")
+_ID_NAME = re.compile(
+    # "customer_id", and "客户id" where the Latin word follows a non-Latin one with no separator.
+    r"(^|_|(?<=[^\x00-\x7f]))(id|no|num|number|code|key|ref|row|seq|index|idx|sn)$"
+)
+# Words that mean "number / code / id" outside English. Chinese and Japanese attach them
+# to the end of the name with no space ("订单号", "顧客番号"); the others are separate
+# words that can lead or trail ("رقم العميل", "номер заказа", "kode pelanggan").
+_ID_SUFFIX_CJK = ("编号", "编码", "代码", "号码", "番号", "コード", "번호", "코드", "号", "码", "番")
+_ID_WORDS = frozenset(
+    "nummer numero numéro número nr nomor kode codigo código номер код идентификатор "
+    "رقم معرف رمز".split()
+)
 # Without matching names, a text column needs this many distinct values before
 # sitting inside another table's key counts as evidence. Grades A-C are "contained"
 # in any unrelated table whose codes happen to be A-F.
@@ -79,25 +162,83 @@ _AGGREGATE = re.compile(
 )
 
 
+def _words(s: str) -> list[str]:
+    """Runs of letters, digits and combining marks, NFKC-folded and casefolded. A mark
+    belongs to its letter (a Hindi vowel sign, an Arabic harakah), so it is not a break."""
+    out: list[str] = []
+    cur: list[str] = []
+    for ch in unicodedata.normalize("NFKC", s or "").casefold():
+        if ch.isalnum() or unicodedata.category(ch).startswith("M"):
+            cur.append(ch)
+        elif cur:
+            out.append("".join(cur))
+            cur = []
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
 def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", (s or "").strip().lower()).strip("_")
+    """Comparable column key. It used to keep only a-z0-9, so every Chinese, Arabic or
+    Cyrillic header became "" and any two of them looked like the same name."""
+    return "_".join(_words(s))
 
 
 def _tokens(s: str) -> set[str]:
-    """Name parts, with camelCase split and a trailing plural dropped."""
+    """Name parts, with camelCase split and a trailing plural dropped.
+
+    A word in a script written without spaces (Chinese, Japanese, Thai) is cut by the
+    retrieval tokenizer, so a 2-character word is one token and a longer one is overlapping
+    pairs. Every other script keeps whole words."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", s or "")
-    out = set()
-    for w in re.findall(r"[^\W_]+", spaced.casefold()):
-        if len(w) >= 3:
-            out.add(w[:-1] if w.endswith("s") and len(w) > 3 else w)
+    out: set[str] = set()
+    for w in _words(spaced):
+        if any(sira._script_kind(c) in ("cjk", "thai") for c in w):
+            parts = sira.tokenize(w)
+        else:
+            parts = [w]
+        for t in parts:
+            if t.isascii():
+                if len(t) >= 3:
+                    out.add(t[:-1] if t.endswith("s") and len(t) > 3 else t)
+            elif any(sira._script_kind(c) in ("cjk", "thai") for c in t):
+                out.add(t)  # a two-character word is a whole word here
+            elif len(t) >= 3:
+                # Scripts with spaces (Cyrillic, Arabic, Greek, Hangul) get the same
+                # floor as Latin. Without it the preposition "на" or "في" counted as
+                # the names agreeing, and one shared particle made a relation.
+                out.add(t)
     return out
+
+
+def _id_stem(key: str) -> str:
+    """A column key without its "id / number / code" word: customer_id -> customer."""
+    key = re.sub(r"_(id|no|num|number|code|key|ref)$", "", key)
+    for suf in _ID_SUFFIX_CJK:
+        if key.endswith(suf) and len(key) > len(suf):
+            return key[: -len(suf)]
+    parts = key.split("_")
+    if len(parts) > 1:
+        if parts[0] in _ID_WORDS:
+            parts = parts[1:]
+        elif parts[-1] in _ID_WORDS:
+            parts = parts[:-1]
+    return "_".join(parts)
+
+
+def _is_id_name(key: str) -> bool:
+    return bool(
+        _ID_NAME.search(key)
+        or any(key.endswith(suf) for suf in _ID_SUFFIX_CJK)
+        or (len(key.split("_")) > 1 and (key.split("_")[0] in _ID_WORDS or key.split("_")[-1] in _ID_WORDS))
+    )
 
 
 def term_name(sheet: str, workbook: str) -> str:
     """Readable entity name for a table. A generic sheet name borrows the file's."""
     raw = sheet if sheet and not _GENERIC_SHEET.match(sheet.strip()) else Path(workbook).stem
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw.strip())
-    parts = [p for p in re.split(r"[^A-Za-z0-9]+", spaced) if p]
+    parts = [p for p in re.split(r"[\W_]+", spaced) if p]
     return " ".join(p if p.isupper() else p.capitalize() for p in parts) or raw
 
 
@@ -127,6 +268,9 @@ def _date_format(values: list[str]) -> str | None:
                 pass
         if ok >= 0.9 * len(head):
             return fmt
+    for layout in _DATE_LAYOUTS:
+        if sum(_layout_ok(layout, s) for s in head) >= 0.9 * len(head):
+            return layout[0]
     return None
 
 
@@ -205,7 +349,7 @@ def _profile(name: str, present: list[Any], n: int, n_rows: int) -> tuple[dict[s
         # A unique column of whole numbers is a key only when it is also NAMED like
         # an identifier. Unique revenue is a measure, and so is a quantity column
         # that happens to hold 1..30 once each.
-        id_named = bool(_ID_NAME.search(prof["key"]))
+        id_named = _is_id_name(prof["key"])
         role = "key" if prof["is_unique"] and integer_like and id_named else "measure"
         if integer_like and id_named and role != "key":
             role = "dimension"  # a repeated id is a reference, never a quantity
@@ -216,47 +360,153 @@ def _profile(name: str, present: list[Any], n: int, n_rows: int) -> tuple[dict[s
     return prof, distinct
 
 
-def _load_frames(path: Path) -> dict[str, Any]:
-    """Sheet name -> DataFrame, through the product loader (it rejects banner rows)."""
-    from rag import xlsx_sql
+def _text_frame(header: list[str], data: list[list[Any]]):
+    """DataFrame from text cells. A column of numbers written as text becomes numbers,
+    except zero-padded codes, which stay text."""
+    import pandas as pd
 
-    if path.suffix.lower() == ".csv":
-        # Same header rule as a sheet: a report banner above the header is common
-        # in exports too. Decoded by the ingest decoder, so a BOM is not a column name.
-        import csv
-        import io
+    df = pd.DataFrame(data, columns=header)
+    for i in range(len(header)):
+        col = df.iloc[:, i]
+        num = pd.to_numeric(col, errors="coerce")
+        # "001" is a code. Turning it into the number 1 showed the user a value
+        # the file does not contain.
+        # Same for "1E5": to a parser it is 100000.0, in the file it is a part code.
+        padded = col.dropna().astype(str).str.match(r"0\d+$|.*[eE]").any()
+        if col.notna().any() and not padded and num.notna().sum() == col.notna().sum():
+            df.isetitem(i, num)
+    return df
 
-        import pandas as pd
 
-        from rag import ingest
+def _delimited_frames(path: Path, delim: str | None) -> dict[str, Any]:
+    import csv
+    import io
 
-        text = ingest._decode(path.read_bytes())
+    from rag import ingest, xlsx_sql
+
+    # Decoded by the ingest decoder, so a BOM is not a column name.
+    text = ingest._decode(path.read_bytes())
+    if delim is None:
         # Delimiter by the line most lines agree on. csv.Sniffer read a banner
         # sentence as the pattern and returned the whole header as one column.
         head = [ln for ln in text.splitlines()[:40] if ln.strip()]
         delim = max(",;\t|", key=lambda d: sorted(ln.count(d) for ln in head)[len(head) // 2] if head else 0)
-        rows = []
-        for row in csv.reader(io.StringIO(text, newline=""), delimiter=delim):
-            rows.append([c.strip() or None for c in row])
-            if len(rows) > MAX_ROWS + 50:
-                break
-        hi = xlsx_sql.choose_header_row(rows)
-        if hi is None:
+    rows = []
+    # Tab-separated exports do not quote; a leading '"' swallowed the rows after it.
+    quoting = csv.QUOTE_NONE if delim == "\t" else csv.QUOTE_MINIMAL
+    for row in csv.reader(io.StringIO(text, newline=""), delimiter=delim, quoting=quoting):
+        rows.append([c.strip() or None for c in row])
+        if len(rows) > MAX_ROWS + 50:
+            break
+    # Same header rule as a sheet: a report banner above the header is common
+    # in exports too.
+    hi = xlsx_sql.choose_header_row(rows)
+    if hi is None:
+        return {}
+    header = xlsx_sql.unique_headers([c if c else f"c{j}" for j, c in enumerate(rows[hi])])
+    data = [r[: len(header)] + [None] * (len(header) - len(r)) for r in rows[hi + 1 :] if any(r)]
+    return {path.stem: _text_frame(header, data)}
+
+
+def _scalar(v: Any) -> bool:
+    return v is None or isinstance(v, (str, int, float, bool))
+
+
+def _records_frame(items: list):
+    """A list of flat records as a table, or None. A nested value is not a cell: it reads
+    as empty, and a column that never holds a scalar is left out, so `address: {..}` does
+    not stop `customer_id` from being a table column."""
+    import pandas as pd
+
+    if len(items) < 2 or not all(isinstance(r, dict) for r in items):
+        return None
+    cols = list(dict.fromkeys(str(k) for r in items for k in r))
+    cell = {k: [r.get(k) if _scalar(r.get(k)) else None for r in items] for k in cols}
+    keep = [k for k in cols if any(v is not None for v in cell[k])]
+    if len(keep) < 2:
+        return None
+    return pd.DataFrame({k: cell[k] for k in keep})
+
+
+def _json_frames(path: Path) -> dict[str, Any]:
+    from rag import ingest
+
+    try:
+        doc = json.loads(ingest._decode(path.read_bytes()))
+    except ValueError:
+        return {}
+    out: dict[str, Any] = {}
+
+    def walk(node: Any, name: str, path_name: str, depth: int) -> None:
+        if isinstance(node, list):
+            df = _records_frame(node)
+            if df is not None:
+                # east.items and west.items are two tables. Keyed by the bare name,
+                # the second one was dropped without a word.
+                out[path_name if name in out else name] = df
+        elif isinstance(node, dict) and depth < 6:  # response.data.rows is three deep
+            for k, v in node.items():
+                walk(v, str(k), f"{path_name}.{k}" if depth else str(k), depth + 1)
+
+    walk(doc, path.stem, path.stem, 0)
+    return out
+
+
+def _xml_frames(path: Path) -> dict[str, Any]:
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(path.read_bytes())
+    except ET.ParseError:
+        return {}
+
+    def local(name: Any) -> str:
+        return str(name).rsplit("}", 1)[-1]
+
+    def fields(e: Any) -> dict[str, str | None]:
+        # Attributes and leaf children are the record's fields; a child that has
+        # children of its own is nested structure, not a cell.
+        f = {local(k): v.strip() or None for k, v in e.attrib.items()}
+        for c in e:
+            if len(c) == 0:
+                f[local(c.tag)] = (c.text or "").strip() or None
+        return f
+
+    out: dict[str, Any] = {}
+
+    def walk(e: Any) -> None:
+        groups: dict[str, list] = {}
+        for c in e:
+            groups.setdefault(local(c.tag), []).append(c)
+        for t, members in groups.items():
+            recs = [fields(m) for m in members]
+            names = list(dict.fromkeys(k for r in recs for k in r))
+            if len(members) >= 2 and len(names) >= 2:
+                name, n = t, 2
+                while name in out:
+                    name, n = f"{t}_{n}", n + 1
+                out[name] = _text_frame(names, [[r.get(k) for k in names] for r in recs])
+            else:
+                for m in members:
+                    walk(m)
+
+    walk(root)
+    return out
+
+
+def _load_frames(path: Path) -> dict[str, Any]:
+    """Sheet name -> DataFrame, through the product loader (it rejects banner rows)."""
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return _delimited_frames(path, None)
+    if suffix == ".tsv":
+        return _delimited_frames(path, "\t")
+    if suffix in (".json", ".xml"):
+        if path.stat().st_size > _MAX_STRUCT_BYTES:
             return {}
-        header = xlsx_sql.unique_headers(
-            [c if c else f"c{j}" for j, c in enumerate(rows[hi])]
-        )
-        data = [r[: len(header)] + [None] * (len(header) - len(r)) for r in rows[hi + 1 :] if any(r)]
-        df = pd.DataFrame(data, columns=header)
-        for i in range(len(header)):
-            col = df.iloc[:, i]
-            num = pd.to_numeric(col, errors="coerce")
-            # "001" is a code. Turning it into the number 1 showed the user a value
-            # the file does not contain.
-            padded = col.dropna().astype(str).str.match(r"0\d+$").any()
-            if col.notna().any() and not padded and num.notna().sum() == col.notna().sum():
-                df.isetitem(i, num)
-        return {path.stem: df}
+        return _json_frames(path) if suffix == ".json" else _xml_frames(path)
+
+    from rag import xlsx_sql
 
     return xlsx_sql.load_sheets(path)
 
@@ -301,9 +551,12 @@ def profile_workbook(path: str | Path) -> tuple[dict[str, Any], dict[tuple[str, 
 
 
 def _name_affinity(col: dict, key: dict, target: dict) -> bool:
+    # An empty key is a header with no usable letters; two of them agree on nothing.
+    if not col["key"]:
+        return False
     if col["key"] == key["key"]:
         return True
-    stem = re.sub(r"_(id|no|num|number|code|key|ref)$", "", col["key"])
+    stem = _id_stem(col["key"])
     return bool(stem) and bool(_tokens(stem) & (_tokens(target["entity"]) | _tokens(target["name"])))
 
 
@@ -427,7 +680,7 @@ def infer_relations(
                 if (a["workbook"], a["name"], ca["name"]) in linked:
                     continue
                 for cb in b["columns"]:
-                    if cb["key"] != ca["key"] or cb["role"] != "dimension" or cb["kind"] != ca["kind"]:
+                    if not ca["key"] or cb["key"] != ca["key"] or cb["role"] != "dimension" or cb["kind"] != ca["kind"]:
                         continue
                     va, vb = vals(a, ca), vals(b, cb)
                     overlap = len(va & vb) / max(1, min(len(va), len(vb)))
@@ -496,6 +749,9 @@ def build_ontology(paths: list[str | Path]) -> dict[str, Any]:
             wb, vals = profile_workbook(path)
         except Exception as e:
             workbooks.append({"ok": False, "source": str(path), "error": str(e)[:200]})
+            continue
+        # A json / xml file with no records is a document, not a table source.
+        if not wb["sheets"] and Path(path).suffix.lower() in (".json", ".xml"):
             continue
         workbooks.append(wb)
         tables.extend(wb["sheets"])
