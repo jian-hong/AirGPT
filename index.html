@@ -192,6 +192,11 @@ body{background:var(--bg)}
   .app.show-connect-edge .connect-collapse-btn,.connect-collapse-btn:hover{opacity:1}
   .app:has(.connect-col.open-sheet) .connect-collapse-btn{right:min(36vw,320px)}
 }
+/* Tablet: an open sidebar floats over the chat instead of pushing it, so the message box keeps its width. */
+@media(min-width:761px) and (max-width:960px){
+  .app:not(.side-collapsed),.app:not(.side-collapsed).no-connect{grid-template-columns:0 minmax(0,1fr)}
+  .app:not(.side-collapsed) .side{position:absolute;top:0;bottom:0;left:0;z-index:100;box-shadow:8px 0 24px rgba(0,0,0,.28)}
+}
 /* Phone only: drawer + dim backdrop (desktop must never trap behind a black sheet) */
 @media(max-width:760px){
   .app,.app.side-collapsed,.app.no-connect,.app.side-collapsed.no-connect{grid-template-columns:1fr}
@@ -370,14 +375,13 @@ textarea.side-search{height:auto;min-height:64px;padding:10px 12px;line-height:1
   .topbar{gap:8px;padding:10px 12px}
   .brand>div{display:none}
   .brand-mark{width:20px;height:20px}
-  .ai-switch-label{display:none}
-  .ai-switch{gap:0}
+  .ai-switch-label:not(.on){display:none}
+  .ai-switch{gap:6px}
   .composer-shell{max-width:100%;padding-top:calc(var(--bump-height) - 4px)}
   .composer-inner{min-height:44px;padding:6px 10px;gap:6px}
   .composer textarea{font-size:14px;min-height:22px}
   .composer .model-dd-btn{min-width:48px!important;height:30px!important;padding:0 8px!important;font-size:11px}
   .composer .send{width:40px;height:40px}
-  .composer .think-btn{display:none}
   .project-dd-btn{font-size:11.5px!important;padding:0 10px!important;max-width:110px}
   .msg-jump-bar{right:calc(10px + scrollbar-gutter);max-height:min(48vh,280px)}
   .center-empty{padding:28px 14px 24px;min-height:min(60vh,480px)}
@@ -1139,6 +1143,7 @@ body.theme-light .mem-overlay{background:rgba(20,20,22,.28)}
 .mem-folder .ico{font-size:18px;line-height:1;margin-bottom:3px;display:block}
 .mem-search-row{display:flex;gap:6px;margin-bottom:8px}
 .mem-search-row input{flex:1}
+.mem-search-row .btn{flex:0 0 auto;min-width:0;padding:8px 14px}
 @media(max-width:760px){
   .mem-fab{top:8px;right:10px;width:34px;height:34px}
   .mem-panel{width:min(100%,420px)}
@@ -1664,6 +1669,7 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 /* OpenForge workspace */
 .forge-shell{display:grid;grid-template-columns:minmax(280px,38%) minmax(0,1fr);gap:0;height:100%;min-height:0;background:#0a0a0a}
 .forge-left{display:flex;flex-direction:column;min-height:0;border-right:1px solid rgba(255,255,255,.08);padding:16px;background:#0e0e0e}
+.forge-left .btn{flex:none}
 .forge-right{display:flex;flex-direction:column;min-height:0;padding:16px;overflow:auto;background:#121212}
 .forge-honesty{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
 .forge-honesty span{font-size:10px;padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.12);color:var(--muted)}
@@ -2722,7 +2728,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     <div class="topbar-actions">
       <div class="ai-switch" id="aiSwitchWrap" title="Manual = chat & clipboard only · AI = screenshot analysis (online)">
         <span class="ai-switch-label on" id="aiLabelL">Manual</span>
-        <button type="button" class="ai-switch-track" id="aiSwitchBtn" aria-label="Toggle AI mode">
+        <button type="button" class="ai-switch-track" id="aiSwitchBtn" role="switch" aria-checked="false" aria-label="Toggle AI mode">
           <span class="ai-switch-thumb" id="aiSwitchIcon">M</span>
         </button>
         <span class="ai-switch-label r" id="aiLabelR">AI</span>
@@ -2938,7 +2944,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               </div>
               <textarea id="input" rows="1" placeholder=""></textarea>
               <div class="composer-actions">
-                <div class="model-dd" id="modelDd">
+                <div class="model-dd fab-hide" id="modelDd">
                   <button type="button" class="model-dd-btn" id="modelBtn" title="Tap to cycle · hold for all models" onpointerdown="modelBtnDown(event)" onpointerup="modelBtnUp(event)" onpointercancel="modelBtnCancel()" onpointerleave="modelBtnCancel()" oncontextmenu="return false">
                     <span id="modelBtnLabel">High</span><span class="dd-caret" aria-hidden="true">▾</span>
                   </button>
@@ -2972,7 +2978,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         <div class="rag-ask-scope-panel" id="ragAskScopePanel" hidden></div>
       </div>
     </div>
-    <div class="mem-overlay" id="memOverlay" aria-hidden="true">
+    <div class="mem-overlay fab-hide" id="memOverlay" aria-hidden="true">
       <div class="mem-panel" id="memPanel" role="dialog" aria-label="Chat memory">
         <div class="mem-panel-hdr">
           <h3>Memory</h3>
@@ -3031,7 +3037,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     </div>
     <div id="loginJoinPane" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
       <p style="font-size:12px;margin-bottom:8px;color:var(--muted)">Joining from phone — enter host passcode</p>
-      <input id="modalJoinPass" class="side-search" style="width:100%;margin-bottom:12px" placeholder="Workspace passcode" type="password"/>
+      <input id="modalJoinPass" class="side-search" style="width:100%;margin:0 0 12px" placeholder="Workspace passcode" type="password"/>
       <button class="btn primary" style="width:100%" onclick="doJoinLogin('modalJoinPass')">Join workspace</button>
     </div>
       <button class="btn" style="width:100%;margin-top:8px" id="loginSkipBtn" onclick="hideLogin();bootApp()">Skip — use locally on this PC</button>
@@ -3617,7 +3623,13 @@ async function api(path,opts={}){
         background:#ff5c8a;color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;
       }
       #bugReportBtn.recording .bug-fab-count{display:inline-flex}
-      #bugOverlay{position:fixed;inset:0;z-index:99999;cursor:crosshair;background:rgba(0,0,0,.22)}
+      #bugOverlay{position:fixed;inset:0;z-index:99999;cursor:crosshair;background:rgba(0,0,0,.22);touch-action:none}
+      /* Any open panel that carries .fab-hide hides the floating button (one rule, not one per panel). */
+      body:has(.fab-hide.open) #bugReportBtn{display:none}
+      /* A phone held sideways is wider than 760px but only about 400px tall: dock the bar at the top so it stays off the message box. */
+      @media(pointer:coarse) and (max-height:500px){body #bugRecBar{top:8px;bottom:auto}}
+      /* OpenIDE has its own message box with the Run button at the bottom right: keep the button above it. */
+      body.openide-mode #bugReportBtn{top:auto!important;left:auto!important;right:14px!important;bottom:104px!important}
       #bugOverlay .hint-bar{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:7px 14px;border-radius:999px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.4);pointer-events:none;max-width:92vw;text-align:center}
       #bugOverlay .bug-esc{
         position:fixed;top:14px;right:14px;pointer-events:auto;border:0;border-radius:999px;padding:8px 12px;
@@ -3670,7 +3682,7 @@ async function api(path,opts={}){
     if(st&&session)st.textContent='Recording · '+session.regions.length+' region'+(session.regions.length===1?'':'s')+' · '+session.images.length+' image'+(session.images.length===1?'':'s')+' · '+session.events.length+' actions';
     const hint=$('bugReportStatusHint');
     if(hint)hint.textContent=on
-      ?('Recording — mark regions, paste screenshots, browse any settings page. Press End when done. Esc cancels mark / exits.')
+      ?('Recording — mark regions, paste screenshots, browse any settings page. Press End when done. Esc leaves the mark step. Cancel ends the report.')
       :('Start recording — keep marking regions / pasting screenshots across any settings page, then End to email.');
     ['bugReportMarkBtn','bugReportEndBtn'].forEach(id=>{const el=$(id);if(el)el.hidden=!on});
     const startBtn=$('bugReportStartBtn');if(startBtn)startBtn.textContent=on?'🐞 Recording…':'🐞 Start report';
@@ -3734,23 +3746,23 @@ async function api(path,opts={}){
     if(!session){startBugReport({skipMark:true});return}
     if(document.getElementById('bugOverlay'))return;
     const ov=document.createElement('div');ov.id='bugOverlay';
-    ov.innerHTML='<div class="hint-bar">Drag a box around what looks wrong · Esc cancels mark · Cancel exits report</div><button type="button" class="bug-esc" id="bugEscBtn">Esc / Exit</button>';
+    ov.innerHTML='<div class="hint-bar">Drag a box around what looks wrong. Esc or Stop marking goes back. Cancel in the bar ends the report.</div><button type="button" class="bug-esc" id="bugEscBtn">Stop marking</button>';
     const bx=document.createElement('div');bx.id='bugBox';ov.appendChild(bx);
     document.body.appendChild(ov);
     box=bx;drag=null;
-    ov.addEventListener('mousedown',onDown);
-    ov.addEventListener('mousemove',onMove);
-    ov.addEventListener('mouseup',onUp);
-    ov.querySelector('#bugEscBtn')?.addEventListener('click',e=>{e.stopPropagation();window.__bugCancel?.()});
+    ov.addEventListener('pointerdown',onDown);
+    ov.addEventListener('pointermove',onMove);
+    ov.addEventListener('pointerup',onUp);
+    ov.addEventListener('pointercancel',()=>{drag=null;if(box)box.style.display='none'});
+    ov.querySelector('#bugEscBtn')?.addEventListener('click',e=>{e.stopPropagation();cancelMark(true)});
     document.addEventListener('keydown',onKeyMark);
     pushEvent('mark_begin',{});
   }
   function onKeyMark(e){
     if(e.key!=='Escape')return;
     e.preventDefault();
-    // First Esc clears the dark mark sheet; second Esc (or Cancel) ends the report so users never get trapped
-    if(document.getElementById('bugOverlay')){cancelMark(true);return}
-    window.__bugCancel?.();
+    // Esc only leaves the mark step; the Cancel button in the bar ends the report
+    if(document.getElementById('bugOverlay'))cancelMark(true);
   }
   function cancelMark(keepSession){
     document.removeEventListener('keydown',onKeyMark);
@@ -3758,7 +3770,7 @@ async function api(path,opts={}){
     drag=null;box=null;
     if(keepSession)pushEvent('mark_cancel',{});
   }
-  function onDown(e){drag={x:e.clientX,y:e.clientY};box.style.display='block';box.style.left=e.clientX+'px';box.style.top=e.clientY+'px';box.style.width='0px';box.style.height='0px'}
+  function onDown(e){if(e.target.closest?.('#bugEscBtn')||e.isPrimary===false)return;try{e.currentTarget.setPointerCapture(e.pointerId)}catch(_){}drag={x:e.clientX,y:e.clientY};box.style.display='block';box.style.left=e.clientX+'px';box.style.top=e.clientY+'px';box.style.width='0px';box.style.height='0px'}
   function onMove(e){if(!drag||!box)return;const x=Math.min(drag.x,e.clientX),y=Math.min(drag.y,e.clientY),w=Math.abs(e.clientX-drag.x),h=Math.abs(e.clientY-drag.y);box.style.left=x+'px';box.style.top=y+'px';box.style.width=w+'px';box.style.height=h+'px'}
   function onUp(e){
     if(!drag||!session)return;
@@ -3892,6 +3904,8 @@ async function checkAuth(){
       authToken='';localStorage.removeItem('airgpt_token');
     }
     $('loginJoinPane').style.display=st.initialized?'block':'none';
+    // "First person on this PC" is for the host; a phone joining an existing workspace does not need it
+    $('loginHostPane').style.display=st.initialized?'none':'';
     const skip=$('loginSkipBtn');
     if(skip)skip.style.display=isLocal?'block':'none';
     if(isLocal)return true;
@@ -4950,7 +4964,7 @@ async function renderMemPanel(){
       <h4>Notes · ${esc(MODE_LABELS[project]||project)}</h4>
       <div class="mem-search-row">
         <input type="text" id="memSearchQ" placeholder="Search…"/>
-        <button type="button" onclick="runMemSearch()">Search</button>
+        <button type="button" class="btn" onclick="runMemSearch()">Search</button>
       </div>
       <div class="mem-list" id="memList">${mems.length?mems.map(m=>`
         <div class="mem-item"><strong>${esc(m.title||m.kind||'note')}</strong>
@@ -5439,6 +5453,7 @@ function updateAiSwitch(){
   const online=info.online!==false;
   const hasKeys=!!info.has_ai_keys;
   track.classList.toggle('on',aiMode);
+  track.setAttribute('aria-checked',aiMode?'true':'false');
   track.classList.toggle('offline',!online&&!hasKeys&&aiMode);
   $('aiLabelL').classList.toggle('on',!aiMode);
   $('aiLabelR').classList.toggle('on',aiMode);
@@ -15054,9 +15069,8 @@ document.addEventListener('keydown',e=>{
     if($('backdrop')?.classList.contains('show')||$('side')?.classList.contains('open')){
       e.preventDefault();closeSide();return;
     }
-    if(document.getElementById('bugOverlay')||document.getElementById('bugRecBar')?.style?.display==='inline-flex'){
-      e.preventDefault();window.__bugCancel?.();return;
-    }
+    // Esc while marking a region only leaves the mark step (handled by the report code); Cancel ends the report.
+    if(document.getElementById('bugOverlay'))return;
     $('modelDd')?.classList.remove('open');
     $('projectDd')?.classList.remove('open');
     closeProjectPickModal?.();
@@ -15436,6 +15450,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
       'color:var(--text);font:500 12.5px/1 var(--sans);cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.18);',
       'backdrop-filter:blur(10px);transition:transform var(--morph),opacity var(--morph)}',
     '#bgTasksBtn.on{display:flex}',
+    '/* OpenIDE has no message box and its Run button sits where the pill does; the top bar button still shows the count */',
+    'body.openide-mode #bgTasksBtn{display:none!important}',
     '#bgTasksBtn .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:bgPulse 1.5s infinite}',
     '@keyframes bgPulse{0%,100%{opacity:1}50%{opacity:.28}}',
     '#bgTasksPanel{position:fixed;top:clamp(48px,7vh,56px);right:0;width:min(440px,100vw);height:calc(100dvh - clamp(48px,7vh,56px));',
@@ -15506,6 +15522,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
 
   var panel = document.createElement('div');
   panel.id = 'bgTasksPanel';
+  panel.className = 'fab-hide';
   panel.innerHTML =
     '<div class="bgHead"><h3>Background tasks</h3>' +
     '<button id="bgTasksRefresh" title="Refresh">&#8635;</button>' +
@@ -15533,8 +15550,29 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     });
   }
 
+  // Keep the panel and the "N running" pill clear of the message box: they stop where it starts.
+  function fit(){
+    var c = document.querySelector('.composer'), r = c && c.getBoundingClientRect();
+    var gap = r && r.height > 0 ? Math.max(0, Math.round(window.innerHeight - r.top)) : 0;
+    panel.style.bottom = gap + 'px'; panel.style.height = 'auto';
+    btn.style.bottom = gap ? (gap + 10) + 'px' : '';
+  }
+  window.addEventListener('resize', fit);
+  if(window.ResizeObserver){ var cm = document.querySelector('.composer'); if(cm) new ResizeObserver(fit).observe(cm); }
+  // Escape and a click outside close it (the top bar and the pill open it, so they are not "outside")
+  document.addEventListener('keydown', function(e){
+    if(open && e.key === 'Escape'){ e.preventDefault(); e.stopImmediatePropagation(); openPanel(false); }
+  }, true);
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if(!open || !t || !t.isConnected || panel.contains(t)) return;
+    if(t.closest && t.closest('#bgTasksTopBtn,#bgTasksTitleBtn,#bgTasksBtn')) return;
+    openPanel(false);
+  });
+
   function openPanel(v){
     open = v; panel.classList.toggle('open', v);
+    if(v) fit();
     if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
     else { detachSse(); }
   }
@@ -15657,6 +15695,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(cl) cl.onclick = function(){ fetch('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
 
     var n = run.length;
+    fit();
     syncBadges(n);
     if(n === 0 && timer && !open){ clearInterval(timer); timer = null; }
     if(open && (!sse || sseTask !== ((run[0]&&run[0].id)||''))) attachSse();
