@@ -177,3 +177,47 @@ test("Connectors opens the panel it names", () => {
 test("the chat header is re-checked whenever the side view changes", () => {
   assert.ok(grab("updateSideNav").includes("syncChatTitleBar"), "updateSideNav must hide the chat header on Cortex and Projects");
 });
+
+test("sidebar preview turns Markdown into plain words", () => {
+  const ctx = load(["mdPlain"], {});
+  assert.equal(
+    ctx.mdPlain("## Launch plan\n\nHere is a **short** plan with `code`.\n\n1. Draft [the outline](https://x.y).\n| A | B |\n|---|---|\n> Keep it small."),
+    "Launch plan Here is a short plan with code. Draft the outline. A B Keep it small.",
+  );
+  assert.equal(ctx.mdPlain("```js\nlet a=1\n```\nAfter the code"), "After the code");
+  assert.equal(ctx.mdPlain(""), "");
+});
+
+test("a failed reply says what to do next in plain words", () => {
+  const host = load(["sendFailureCopy"], { isLocalHost: () => true });
+  const noKey = host.sendFailureCopy("No text LLM available (ollama(down) -> Groq(no key))");
+  assert.equal(noKey.title, "No AI model is ready");
+  assert.equal(noKey.key, true, "the host is offered the API key settings");
+  assert.match(host.sendFailureCopy("HTTP 429 rate limit").title, /busy/);
+  assert.match(host.sendFailureCopy("Empty reply from the model.").title, /nothing/);
+  assert.match(host.sendFailureCopy("socket hang up").title, /did not answer/);
+  const guest = load(["sendFailureCopy"], { isLocalHost: () => false });
+  const g = guest.sendFailureCopy("No text LLM available");
+  assert.ok(!g.key, "a remote device is not sent to settings it cannot change");
+  assert.match(g.body, /owner/);
+});
+
+test("user messages render Markdown without a blank trailing line", () => {
+  assert.ok(html.includes('inner=`<div class="user-md">${renderMd(m.text)}</div>`'));
+  assert.match(html, /\.user-md\{white-space:normal\}/);
+});
+
+test("a hidden toast is moved up by its own height, not a fixed 80px", () => {
+  assert.match(html, /\.toast\{[^}]*translateY\(calc\(-100% - 24px\)\)/);
+});
+
+test("code blocks name their language", () => {
+  const src = fs.readFileSync(new URL("../ui/codeblocks.js", import.meta.url), "utf8");
+  const ctx = vm.createContext({ document: { readyState: "complete", getElementById: () => null }, window: {}, requestAnimationFrame() {} });
+  ctx.window = ctx;
+  vm.runInContext(src, ctx);
+  assert.equal(ctx.CodeBlocks.lang({ className: "language-python" }), "python");
+  assert.equal(ctx.CodeBlocks.lang({ className: "hljs language-c++" }), "c++");
+  assert.equal(ctx.CodeBlocks.lang({ className: "" }), "");
+  assert.equal(ctx.CodeBlocks.lang({ className: 'language-x"><img' }), "x", "only the plain name is taken");
+});
