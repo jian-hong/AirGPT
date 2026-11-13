@@ -1,7 +1,9 @@
 """ClipDrop v5 — ChatGPT-style LAN chat. SQLite + multi-tunnel."""
 from __future__ import annotations
 
+import functools
 import hashlib
+import ipaddress
 import io
 import json
 import mimetypes
@@ -1064,11 +1066,56 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/desktop",     # computer-use observe/plan/click/type (host PC only)
     "/api/admin",       # admin dashboard data (covers /api/admin[/*])
     "/api/audit",       # audit trail (covers /api/audit[/*])
+    "/api/netie/",      # Netie account link / login / logout (writes the user-level account file)
+    "/api/input-notes", # keystroke-note recorder start/stop/append and the saved notes
+    "/api/restart-tunnel",  # drops the tunnel for every phone
+    "/api/optimizers/", # pip install of optional packages
+    "/api/agents",      # exact path too: "/api/agents/" alone left list + create open
+)
+
+# A machine-level write that only the host may do, while a read stays open (the page
+# shows the licence state on every device).
+_HOST_ONLY_WRITES: tuple[str, ...] = (
+    "/api/license",     # activate / set the account email
 )
 
 
-def _is_host_only_path(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
+def _is_host_only_path(path: str, method: str = "GET") -> bool:
+    if any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES):
+        return True
+    return method not in ("GET", "HEAD") and path in _HOST_ONLY_WRITES
+
+
+# Uploaded files a browser may show in place. Everything else is sent as a download.
+_INLINE_MIME = frozenset({
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "application/pdf", "text/plain",
+})
+
+
+def _data_file_chats(rel: str) -> set[int]:
+    """Chats whose messages point at this stored file (data-folder relative, forward slashes)."""
+    with db._lock, db._connect() as conn:
+        rows = conn.execute("SELECT session_id FROM messages WHERE filepath=? OR thumb=?", (rel, rel)).fetchall()
+    return {int(r[0] or 0) for r in rows}
+
+
+# A share guest (a token that carries a chat scope) is default-deny: it reaches the page
+# shell, the status calls the page needs, and its own chat, and nothing else. Whether a
+# given call is the guest's own chat (and whether it may write) is checked where the
+# chat id is known; this list only decides which routes are in play at all.
+_GUEST_GET: frozenset = frozenset({
+    "/", "/index.html", "/manifest.json", "/wasm_gate.js",
+    "/api/probe", "/api/health", "/healthz", "/health",
+    "/api/info", "/api/wait", "/api/history", "/api/sessions", "/api/search", "/api/vault",
+    "/api/messages", "/api/sessions/export", "/api/chat/prefs", "/api/chat/prompt-trace",
+    "/api/snippets", "/api/update", "/api/ai/config",
+})
+_GUEST_POST: frozenset = frozenset({
+    "/api/establish", "/api/messages", "/api/chat/stream", "/api/chat/project-suggest",
+    "/api/chat/prefs", "/api/presence/typing", "/api/sessions/fork",
+    "/api/snippets", "/api/snippets/delete",
+})
+_GUEST_PREFIXES: tuple[str, ...] = ("/ui/", "/OpenIDE/ui/", "/data/", "/api/auth/")
 
 
 # HOST-DEMO-02 / F8a: non-local clients must complete POST /api/establish before
@@ -1107,6 +1154,37 @@ def _is_tunnel_host(host: str) -> bool:
 TUNNEL_PEER = "tunnel-peer"
 
 
+def _host_name(host_header: str) -> str:
+    """Hostname part of a Host header: lower case, no port, no [] around IPv6."""
+    h = (host_header or "").strip().lower()
+    if h.startswith("["):
+        return h[1:].split("]")[0]
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def _is_trusted_host(host_header: str) -> bool:
+    """True when the Host header names this machine. Anything else is a remote caller.
+
+    A browser lets any web page send requests to 127.0.0.1, and DNS rebinding lets a
+    page choose the Host header, so the socket address alone must never mean "host".
+    A missing Host (HTTP/1.0 tools) cannot come from a browser and is allowed.
+    Extra names go in AIRGPT_TRUSTED_HOSTS (comma separated).
+    """
+    name = _host_name(host_header)
+    if not name or name in ("localhost", "127.0.0.1", "::1"):
+        return True
+    names = {n.strip().lower() for n in os.environ.get("AIRGPT_TRUSTED_HOSTS", "").split(",") if n.strip()}
+    try:
+        me = socket.gethostname().lower()
+        names.update((me, me + ".local"))
+        names.update(local_ips())
+        if wifi_access:
+            names.add((urlparse(wifi_access.mdns_url()).hostname or "").lower())
+    except Exception:
+        pass
+    return name in names
+
+
 def _is_host_request(headers, direct_ip: str) -> bool:
     """True only for the host machine itself, never for anything off a tunnel.
 
@@ -1116,16 +1194,16 @@ def _is_host_request(headers, direct_ip: str) -> bool:
     request carrying a tunnel Host header came from outside this machine, whatever
     any header claims.
     """
-    if _is_tunnel_host(headers.get("Host", "")):
+    if not _is_trusted_host(headers.get("Host", "")):
         return False
     return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
 
 
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     """Real remote client when cloudflared (or similar) proxies on loopback."""
-    if direct_ip not in ("127.0.0.1", "::1"):
+    if not _is_local_host(direct_ip):
         return None
-    if not _is_tunnel_host(headers.get("Host", "")):
+    if _is_trusted_host(headers.get("Host", "")):
         return None
     cf = (headers.get("CF-Connecting-IP") or "").strip()
     xff = (headers.get("X-Forwarded-For") or "").strip()
@@ -1142,7 +1220,18 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     # value claiming to be this machine is always a lie. Refuse it, and fall back to
     # a marker that is deliberately not an address so nothing downstream can mistake
     # it for one.
-    if cand and not _is_local_host(cand):
+    # The value is shown in the admin page and the peer list, so it must be a real
+    # address and nothing else (no markup, no quotes).
+    # ip_address() accepts an IPv6 scope ("fe80::1%<anything>") and IPv4-mapped IPv6, so
+    # drop the scope and unwrap the mapped form before the value is stored or compared.
+    try:
+        addr = ipaddress.ip_address(cand.split("%")[0])
+    except ValueError:
+        return TUNNEL_PEER
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    cand = str(addr)
+    if not _is_local_host(cand):
         return cand
     return TUNNEL_PEER
 
@@ -2582,9 +2671,26 @@ def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
     )
 
 
+class _HttpError(Exception):
+    """Raised anywhere under a handler to answer with this status and plain message."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+# Largest legitimate body: one file upload (MAX_BYTES, 100 MB) base64-wrapped or inside
+# a multipart form, and the zip restore. Everything else is a few KB of JSON.
+MAX_BODY = int(os.environ.get("AIRGPT_MAX_BODY_MB", "200") or 200) * 1024 * 1024
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
+    # A client that connects and sends nothing must not pin a thread forever. This
+    # limits each socket read or write, not a whole request, so slow long replies
+    # (chat streams, /api/wait) and big uploads that keep moving are unaffected.
+    timeout = 120
 
     # Keep-alive safety. Early error returns (429 rate limit, 403 share ACL, 503 no
     # engine) reply before anyone reads the POST body. On HTTP/1.1 those bytes stay in
@@ -2607,6 +2713,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_one_request(self):
         self._body_consumed = False
+        self._hdr_sent = False
+        self._last_body = None
+        self._ctype = ""
         try:
             super().handle_one_request()
         except self._BENIGN_DISCONNECTS as e:
@@ -2641,7 +2750,9 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if args and str(args[0]).startswith("GET /api"):
             return
-        print(f"[{self.client_address[0]}] {fmt % args}")
+        # A session token or one-time join token in the address must not reach the log.
+        line = re.sub(r"([?&](?:token|qr)=)[^&\s\"]+", r"\1***", fmt % args)
+        print(f"[{self.client_address[0]}] {line}")
 
     def _request_token(self, allow_query: bool = False) -> str:
         tok = self.headers.get("X-AirGPT-Token") or ""
@@ -2667,6 +2778,81 @@ class Handler(BaseHTTPRequestHandler):
                 return 403, "This share is view-only."
         return None
 
+    def _guest_scope(self, allow_query: bool = False):
+        """The chat scope of a share guest, or None (host, or a joined device's own token)."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            return app_auth.token_session_acl(self._request_token(allow_query)) or None
+        return None
+
+    def _guest_chat_refusal(self, path: str, scoped: dict):
+        """None when this guest call stays inside its own chat, else (status, message)."""
+        sid = int(scoped["session_id"])
+        cmd = self.command
+        if cmd == "POST" and path in ("/api/messages", "/api/chat/stream", "/api/chat/project-suggest", "/api/presence/typing"):
+            body, ctype = self._body(), self.headers.get("Content-Type", "")
+            try:
+                if "multipart" in ctype:
+                    data = _parse_multipart(body, ctype)
+                else:
+                    data = json.loads(body.decode("utf-8") or "{}")
+                if not isinstance(data, dict):
+                    return 400, "The request was not valid."
+                asked = int(data.get("session_id") or 0)
+                parent = int(data.get("parent_session_id") or 0)
+                msg_ids = [int(data.get("reply_to_id") or 0)] + [int(x) for x in (data.get("context_ids") or [])]  # all of them: the handler reads the first 10
+            except (ValueError, TypeError, AttributeError):
+                return 400, "The request was not valid."
+            bad = self._chat_tools_guard(asked, write=path != "/api/presence/typing")
+            if bad or parent not in (0, sid):
+                return bad or (404, "Chat not found.")
+            for mid in msg_ids:
+                row = db.get_message(mid) if mid else None
+                if row and int(row.get("session_id") or 0) != sid:
+                    return 404, "Chat not found."
+        elif cmd == "PATCH":
+            return self._chat_tools_guard(int(path.rstrip("/").rsplit("/", 1)[-1]), write=True)
+        elif cmd == "DELETE":
+            row = db.get_message(int(path.rsplit("/", 1)[-1]))
+            return self._chat_tools_guard(int((row or {}).get("session_id") or 0), write=True)
+        return None
+
+    def _gate(self, path: str) -> bool:
+        """The one gate every method runs, in this order: passcode set (S1), token,
+        host-only paths, handshake, then the share-guest scope. False after a refusal."""
+        if not self._s1_ok(path):
+            return False
+        if not self._auth_ok(path):
+            self._json(401, {"error": "auth required", "auth": True})
+            return False
+        if _is_host_only_path(path, self.command) and not _is_host_request(self.headers, self.client_address[0]):
+            self._json(403, {"error": "host only"})
+            return False
+        if not self._establish_ok(path):
+            return False
+        scoped = self._guest_scope(allow_query=path.startswith("/data/"))
+        if not scoped:
+            return True
+        cmd = self.command
+        if cmd in ("GET", "HEAD"):
+            ok = path in _GUEST_GET or path.startswith(_GUEST_PREFIXES)
+        elif cmd == "POST":
+            ok = path in _GUEST_POST or path.startswith("/api/auth/")
+        elif cmd == "PATCH":
+            ok = re.fullmatch(r"/api/sessions/\d+", path.rstrip("/")) is not None
+        elif cmd == "DELETE":
+            ok = re.fullmatch(r"/api/messages/\d+", path) is not None
+        else:
+            ok = False
+        bad = self._guest_chat_refusal(path, scoped) if ok else (403, "A shared link can only open its own chat.")
+        if bad:
+            if app_audit:
+                app_audit.log("guest_refused", ip=self._client_ip(), detail=f"{cmd} {path}", ok=False)
+            self._json(bad[0], {"ok": False, "error": bad[1]})
+            return False
+        return True
+
     def _client_ip(self) -> str:
         direct = self.client_address[0]
         return _forwarded_client_ip(self.headers, direct) or direct
@@ -2677,6 +2863,11 @@ class Handler(BaseHTTPRequestHandler):
         if not app_auth:
             return base_url, ""
         if not app_auth.status().get("needs_auth"):
+            return base_url, ""
+        # A join link is a credential: only the host machine is handed one. Any other
+        # caller (a joined phone, a share guest) gets the bare address and no token,
+        # whatever is cached for the host.
+        if not _is_host_request(self.headers, self.client_address[0]):
             return base_url, ""
         key = base_url.rstrip("/")
         cached = _qr_join_cache.get(key)
@@ -2708,6 +2899,19 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         if app_audit:
             app_audit.log("s1_passcode_required", ip=ip, detail=path, ok=False)
+        if "text/html" in (self.headers.get("Accept") or "") and self.command == "GET":
+            # A person opening the link in a browser sees why, not raw JSON.
+            page = (
+                "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+                "<meta name=color-scheme content='light dark'>"
+                "<title>AirGPT is locked</title>"
+                "<body style='font:18px/1.5 system-ui,sans-serif;max-width:30em;margin:12vh auto;padding:0 20px'>"
+                "<h1>This computer is not ready for your phone yet</h1>"
+                "<p>On the computer that runs AirGPT, open Settings, then Profile, and set a passcode.</p>"
+                "<p>Then come back here and reload this page.</p></body>"
+            ).encode()
+            self._send(403, page, "text/html; charset=utf-8")
+            return False
         self._json(403, {
             "ok": False,
             "error": "set a host passcode before LAN or tunnel access",
@@ -2717,9 +2921,9 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
-        if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
+        if path.startswith("/api/auth/"):
             return True
         direct = self.client_address[0]
         if _is_local_host(direct) and not _forwarded_client_ip(self.headers, direct):
@@ -2844,19 +3048,60 @@ class Handler(BaseHTTPRequestHandler):
             return
         _auth_fails.setdefault(ip, []).append(time.time())
 
+    def send_header(self, keyword, value):
+        if keyword.lower() == "content-type":
+            self._ctype = str(value)
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        self._hdr_sent = True
+        super().send_header("X-Content-Type-Options", "nosniff")
+        if getattr(self, "_ctype", "").startswith("text/html"):
+            super().send_header("X-Frame-Options", "SAMEORIGIN")
+            super().send_header("Content-Security-Policy", "frame-ancestors 'self'")
+        super().end_headers()
+
+    def _origin_ok(self) -> bool:
+        """No Origin (curl, native apps, navigations) or the page's own origin."""
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        o = origin.strip().lower().rstrip("/")
+        if not o or o == "null":
+            return False
+        if urlparse(o).netloc and urlparse(o).netloc == (self.headers.get("Host") or "").strip().lower():
+            return True
+        extra = os.environ.get("AIRGPT_ALLOWED_ORIGINS", "")
+        return o in {x.strip().lower().rstrip("/") for x in extra.split(",") if x.strip()}
+
+    def _origin_gate(self) -> bool:
+        """False after answering 403 to a request that came from another web page."""
+        if self._origin_ok():
+            return True
+        path = urlparse(self.path).path
+        if self.command == "OPTIONS" or path.startswith(("/api/", "/data/")):
+            self._json(403, {"ok": False, "error": "Blocked: this request came from another website."})
+            return False
+        return True
+
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin")
+        if origin and self._origin_ok():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header(
             "Access-Control-Allow-Headers",
             "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
         )
         self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
-    def _send(self, code, body: bytes, ctype):
+    def _send(self, code, body: bytes, ctype, headers: dict | None = None):
         try:
             self._drain_request_body()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
             self._cors()
@@ -3387,9 +3632,21 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"ok": True, "session_id": sid, "instructions": saved, "limit": chat_prefs.MAX_CHARS})
 
     def _body(self):
+        if self._last_body is not None:
+            return self._last_body  # already read (the gate peeks at it for a share guest)
         self._body_consumed = True
-        n = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(n) if n else b""
+        try:
+            n = int(self.headers.get("Content-Length"))
+        except (TypeError, ValueError):
+            n = -1
+        if n < 0:
+            self.close_connection = True
+            raise _HttpError(400, "The request has no valid Content-Length.")
+        if n > MAX_BODY:
+            self.close_connection = True
+            raise _HttpError(413, f"That is too large to send at once (limit {MAX_BODY // (1024 * 1024)} MB).")
+        self._last_body = self.rfile.read(n) if n else b""
+        return self._last_body
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -3469,16 +3726,10 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/establish":
             return self._handle_establish()
-        if not self._establish_ok(path):
-            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/info", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -3680,7 +3931,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 devices = []
             cortex = _cortex_info(quick=True)
-            return self._json(200, {
+            info_out = {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
                 "app_version": APP_VERSION,
@@ -3737,7 +3988,18 @@ class Handler(BaseHTTPRequestHandler):
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
                 "ai_lockdown": _ai_lockdown_payload(),
                 **share_meta,
-            })
+            }
+            if not _is_host_request(self.headers, self.client_address[0]):
+                info_out["data_dir"] = ""  # where the host keeps its files is not for a phone
+            if share_meta:
+                # A share guest needs its chat, not the host's network, other devices or notes.
+                info_out.update(
+                    ips=[], devices=[], tunnel_attempts=[], connect_methods=[], lan_url=None,
+                    wifi_url=None, mdns_url=None, recommended_connect=None, local_url="",
+                    join_url="", input_notes={"recording": False}, recommended_url=None,
+                    firewall="", network_profile="", lan_hint="",
+                )
+            return self._json(200, info_out)
 
         if path == "/api/input-notes":
             if not input_notes:
@@ -3764,9 +4026,12 @@ class Handler(BaseHTTPRequestHandler):
             hist_since = int(q.get("hist_since", ["0"])[0])
             sid_raw = q.get("session_id", [None])[0]
             sid = int(sid_raw) if sid_raw not in (None, "", "0") else None
+            gs = self._guest_scope()
+            if gs:  # a share guest hears about its own chat only
+                sid = int(gs["session_id"])
             # Non-blocking poll — long-wait starved SSE/chat threads under browser spam
             new_chat = db.get_messages(since_id=since, limit=80, session_id=sid) if since else []
-            new_hist = db.get_messages(since_id=hist_since, limit=40) if hist_since else []
+            new_hist = db.get_messages(since_id=hist_since, limit=40, session_id=sid if gs else None) if hist_since else []
             # Cheap poll: reuse cached LAN URL / tunnel only — no PowerShell/netsh every tick
             cached = _lan_diag_cache.get("value") or {}
             lan_url = cached.get("lan_url")
@@ -3798,12 +4063,12 @@ class Handler(BaseHTTPRequestHandler):
                 "tunnel_healthy": _tunnel.get("healthy", False),
                 "tunnel_status": _tunnel.get("status"),
                 "tunnel_provider": _tunnel_provider_label(),
-                "lan_url": lan_url,
+                "lan_url": None if gs else lan_url,
                 "join_url": j_url,
                 "qr_token": qr_tok,
                 "network_epoch": _network_epoch,
                 "ai_lockdown": _ai_lockdown_payload(),
-                "app_state": _app_state_payload(q),
+                "app_state": _app_state_payload(q) if not gs else {"epoch": 0, "updates": []},
             })
 
         if path == "/api/presence":
@@ -3820,10 +4085,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/history":
             since = int(q.get("since", ["0"])[0])
+            gs = self._guest_scope()
+            gsid = int(gs["session_id"]) if gs else None  # a share guest sees its own chat only
             if since:
-                msgs = db.get_messages(since_id=since, limit=200)
+                msgs = db.get_messages(since_id=since, limit=200, session_id=gsid)
                 return self._json(200, {"messages": msgs, "latest_id": db.latest_id(), "incremental": True})
-            return self._json(200, db.messages_grouped(since_id=0, limit=500))
+            return self._json(200, db.messages_grouped(since_id=0, limit=500, session_id=gsid))
 
         if path == "/api/auth/status":
             if app_auth:
@@ -4067,16 +4334,33 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
-            return self._json(200, {"sessions": db.list_sessions(lim)})
+            gs = self._guest_scope()
+            rows = db.list_sessions(1_000_000 if gs else lim)  # a guest's old chat must not fall off the limit
+            if gs:  # a share guest lists its own chat only
+                rows = [s for s in rows if int(s["id"]) == int(gs["session_id"])]
+            return self._json(200, {"sessions": rows})
 
         if path == "/api/search":
             sq = q.get("q", [""])[0]
             date_f = q.get("date", [""])[0]
             lim = min(int(q.get("limit", ["80"])[0] or 80), 200)
-            return self._json(200, db.search_messages_and_sessions(sq, date_f, lim))
+            gs = self._guest_scope()
+            found = db.search_messages_and_sessions(sq, date_f, 5000 if gs else lim)
+            if gs:
+                own = int(gs["session_id"])
+                found["sessions"] = [s for s in found["sessions"] if int(s["id"]) == own]
+                found["messages"] = [m for m in found["messages"] if int(m.get("session_id") or 0) == own]
+            return self._json(200, found)
 
         if path == "/api/vault":
-            return self._json(200, db.list_vault_tree())
+            tree = db.list_vault_tree()
+            gs = self._guest_scope()
+            if gs:
+                own = int(gs["session_id"])
+                for cat in tree["categories"]:
+                    cat["sessions"] = [s for s in cat["sessions"] if int(s["id"]) == own]
+                tree["recent"] = [s for s in db.list_sessions(1_000_000) if int(s["id"]) == own]
+            return self._json(200, tree)
 
         if path == "/api/projects":
             # POST /api/projects has always written rows; without this nothing
@@ -4192,11 +4476,24 @@ class Handler(BaseHTTPRequestHandler):
             # Containment guard: absolute / drive-relative names must not
             # escape the data directory even though ".." was already rejected.
             try:
-                p.resolve().relative_to(data_root)
+                inside = p.resolve().relative_to(data_root).as_posix()
             except (ValueError, OSError):
                 return self._json(400, {"error": "bad path"})
+            if not _is_host_request(self.headers, self.client_address[0]):
+                # Everyone else gets chat attachments only: a file some message points at,
+                # and for a share guest only a message in its own chat. Never the databases,
+                # token files, passcode hash, audit log or licence at the top of the folder.
+                gs = self._guest_scope(allow_query=True)
+                owners = _data_file_chats(inside)
+                if not owners or (gs and int(gs["session_id"]) not in owners):
+                    return self._json(404, {"error": "missing"})
             mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
-            return self._send(200, p.read_bytes(), mime)
+            if mime in _INLINE_MIME or mime.startswith(("audio/", "video/")):
+                return self._send(200, p.read_bytes(), mime)
+            # Anything a browser would run (html, svg, xml, js, ...) is a download, never a page.
+            safe = re.sub(r"[^A-Za-z0-9._-]", "_", p.name)
+            return self._send(200, p.read_bytes(), "application/octet-stream",
+                              {"Content-Disposition": f'attachment; filename="{safe}"'})
 
         if path == "/api/access":
             try:
@@ -5084,16 +5381,10 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path) and not path.startswith("/api/auth/"):
-            return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/establish":
             return self._handle_establish()
-        if not self._establish_ok(path):
-            return
 
         if path == "/api/presence/typing":
             try:
@@ -5404,7 +5695,7 @@ class Handler(BaseHTTPRequestHandler):
                 (self.headers.get(h) or "").strip()
                 for h in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded")
             )
-            if not _is_local_host(direct) or proxied:
+            if not _is_local_host(direct) or proxied or not _is_host_request(self.headers, direct):
                 if app_audit:
                     app_audit.log("passcode_toggle", ip=ip, detail="refused: not host", ok=False)
                 return self._json(403, {"ok": False, "error": "Host only — change this on the PC"})
@@ -5584,6 +5875,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/init":
             if not app_auth:
                 return self._json(400, {"error": "auth unavailable"})
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"ok": False, "error": "Only the host computer can set the first passcode."})
             data = json.loads(self._body().decode() or "{}")
             return self._json(200, app_auth.init_workspace(
                 str(data.get("email", "")), str(data.get("passcode", "")),
@@ -5698,6 +5991,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/qr-redeem":
             if not app_auth:
                 return self._json(400, {"error": "auth unavailable"})
+            if self._passcode_rate_limited(ip):
+                if app_audit:
+                    app_audit.log("auth_blocked", ip=ip, detail="qr-redeem throttle", ok=False)
+                return self._json(429, {"ok": False, "error": "Too many attempts — wait a few minutes."})
             data = json.loads(self._body().decode() or "{}")
             qr_tok = str(data.get("qr_token", ""))
             # Prefer session-share redeem when token is a share token
@@ -5743,6 +6040,8 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             elif app_audit:
                 app_audit.log("auth_qr_fail", ip=ip, detail=qr_tok[:20], ok=False)
+            if not r.get("ok"):
+                self._note_passcode_fail(ip)
             return self._json(200, r)
 
         if path.endswith("/share") and path.startswith("/api/sessions/"):
@@ -7601,8 +7900,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self):
         path = urlparse(self.path).path
         ip = self._client_ip()
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
+        if not self._gate(path):
+            return
         raw = self._body() or b"{}"
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
@@ -7674,14 +7973,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         ip = self._client_ip()
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
-        # do_GET and do_POST both carry this gate; DELETE did not, so a peer
-        # could delete under a host-only prefix it was not allowed to read.
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/messages":
             # Bulk clear wipes every message for everyone — host action only.
             if not _is_local_host(ip):
@@ -7692,11 +7985,17 @@ class Handler(BaseHTTPRequestHandler):
             # Deleting a session removes another peer's chat — host action only.
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
-            sid = int(path.split("/")[-1])
+            try:
+                sid = int(path.split("/")[-1])
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
             db.delete_session(sid)
             return self._json(200, {"ok": True})
         if path.startswith("/api/messages/"):
-            mid = int(path.split("/")[-1])
+            try:
+                mid = int(path.split("/")[-1])
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
             db.delete_message(mid)
             return self._json(200, {"ok": True})
         if path.startswith("/api/cortex/routines/"):
@@ -7724,6 +8023,43 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
         return self._json(404, {"error": "not found"})
+
+
+def _wrap_dispatch(name: str) -> None:
+    """One place for the cross-site guard and for turning a crash into an answer."""
+    orig = getattr(Handler, name)
+
+    @functools.wraps(orig)
+    def run(self):
+        if not self._origin_gate():
+            return
+        try:
+            return orig(self)
+        except Handler._BENIGN_DISCONNECTS:
+            raise
+        except Exception as e:
+            code, msg = 500, "Something went wrong on the server."
+            body = self._last_body
+            if isinstance(e, _HttpError):
+                code, msg = e.code, e.message
+            elif body is not None and (
+                (isinstance(e, json.JSONDecodeError) and e.doc.strip() == body.decode("utf-8", "replace").strip())
+                or (isinstance(e, UnicodeDecodeError) and e.object == body)
+            ):
+                code, msg = 400, "The request body is not valid JSON."
+            else:
+                import traceback
+                print(f"[http] {self.command} {self.path} failed: {e!r}\n{traceback.format_exc()}")
+            if self._hdr_sent:
+                self.close_connection = True
+                return
+            self._json(code, {"ok": False, "error": msg})
+
+    setattr(Handler, name, run)
+
+
+for _m in ("do_OPTIONS", "do_HEAD", "do_GET", "do_POST", "do_PATCH", "do_DELETE"):
+    _wrap_dispatch(_m)
 
 
 def _save_network_state(ips: list[str]) -> None:
