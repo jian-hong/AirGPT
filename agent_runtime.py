@@ -452,7 +452,25 @@ def create_agent(payload: dict) -> dict:
     )
 
 
-def run_agent_events(
+def run_agent_events(*args, **kwargs) -> Iterator[dict]:
+    """Run an agent and stream events. If the reader goes away (browser closed, tunnel
+    dropped) the generator is closed mid-run; end that run instead of leaving it
+    'running' forever. A run that already finished is left alone."""
+    seen_run_id = int(kwargs.get("run_id") or 0)
+    inner = _run_agent_events(*args, **kwargs)
+    try:
+        for ev in inner:
+            if isinstance(ev, dict) and ev.get("run_id"):
+                seen_run_id = int(ev["run_id"])
+            yield ev
+    except GeneratorExit:
+        inner.close()
+        if seen_run_id:
+            agent_store.cancel_run(seen_run_id, "The page closed before this run finished.")
+        raise
+
+
+def _run_agent_events(
     agent_id: int,
     prompt: str,
     *,

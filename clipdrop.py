@@ -493,7 +493,9 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
     threading.Thread(target=run_analysis, args=(msg_id, question, mode, session_id, depth), daemon=True).start()
 
 
-def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+def run_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False) -> None:
+    if ai_engine:
+        ai_engine.set_link_fetch_restricted(restrict_links)
     blocked = _ai_lockdown_block()
     if blocked:
         db.add_message(
@@ -544,13 +546,13 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> 
     bump_sync()
 
 
-def queue_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False) -> None:
     rate_err = _check_ai_rate()
     if rate_err:
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=rate_err, kind="text", source="ai", session_id=session_id)
         bump_sync()
         return
-    threading.Thread(target=run_text_chat, args=(question, mode, session_id), daemon=True).start()
+    threading.Thread(target=run_text_chat, args=(question, mode, session_id, restrict_links), daemon=True).start()
 
 
 # ---- chat_classifier wiring: one-off small-talk → shared Scratch space, no linkage ----
@@ -3054,8 +3056,11 @@ class Handler(BaseHTTPRequestHandler):
         event_q: queue.Queue = queue.Queue()
         done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None}
 
+        restrict_links = not _is_host_request(self.headers, self.client_address[0])
+
         def _producer() -> None:
             try:
+                ai_engine.set_link_fetch_restricted(restrict_links)
                 for ev in _chat_stream_events(
                     question, mode, history, abort,
                     session_id=session_id,
@@ -4790,9 +4795,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/csv; charset=utf-8")
                     self.send_header("Content-Disposition", 'attachment; filename="airgpt-usage.csv"')
+                    csv_bytes = csv_body.encode("utf-8")
+                    self.send_header("Content-Length", str(len(csv_bytes)))
                     self._cors()
                     self.end_headers()
-                    self.wfile.write(csv_body.encode("utf-8"))
+                    self.wfile.write(csv_bytes)
                     return
                 return self._json(200, hosting.usage_summary(lim))
             except Exception as e:
@@ -4971,28 +4978,36 @@ class Handler(BaseHTTPRequestHandler):
                     f"{base}/api/workflows/task/{tid}/events",
                     headers=cortex_client._headers(key),
                 )
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                with urllib.request.urlopen(req, timeout=300) as upstream:
-                    while True:
-                        chunk = upstream.read(1024)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
+                try:
+                    upstream = urllib.request.urlopen(req, timeout=300)
+                except Exception as e:
+                    return self._json(503, {"error": "Workflow engine is not reachable: " + str(e)[:160]})
+                with upstream:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    try:
+                        while True:
+                            chunk = upstream.read(1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                    except (BrokenPipeError, ConnectionError):
+                        pass
+                    except Exception as e:
+                        # Headers are gone: say it as an event, never as a second status line.
+                        try:
+                            err = json.dumps({"error": "Workflow stream stopped: " + str(e)[:160]})
+                            self.wfile.write(("event: error\ndata: " + err + "\n\n").encode())
+                            self.wfile.flush()
+                        except Exception:
+                            pass
                 return
             except Exception as e:
-                try:
-                    self.send_response(503)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"error": str(e)[:200]}).encode())
-                except Exception:
-                    pass
-                return
+                return self._json(503, {"error": str(e)[:200]})
 
         if path.startswith("/api/workflows/task/"):
             try:
@@ -5253,7 +5268,7 @@ class Handler(BaseHTTPRequestHandler):
                     if target and (target.get("vision_cache") or target.get("ai_analysis")):
                         queue_analysis(int(target["id"]), text, mode=mode, session_id=sid, depth=depth)
                         return self._json(200, {"ok": True, "message": user_msg, "ai": "queued", "context_id": target["id"], "session_id": sid})
-                    queue_text_chat(text, mode=mode, session_id=sid)
+                    queue_text_chat(text, mode=mode, session_id=sid, restrict_links=not _is_host_request(self.headers, self.client_address[0]))
                     return self._json(200, {"ok": True, "message": user_msg, "ai": "queued_text", "session_id": sid})
                 if not sid:
                     daily = db.get_or_create_daily_text_session()
@@ -7640,6 +7655,11 @@ class Handler(BaseHTTPRequestHandler):
                 aid = int(path.rstrip("/").split("/")[-1])
             except Exception:
                 return self._json(400, {"error": "bad id"})
+            if isinstance(body.get("config"), dict) and "pinned" not in body:
+                agent = agent_store.set_agent_config(aid, body["config"])
+                if not agent:
+                    return self._json(404, {"error": "agent not found"})
+                return self._json(200, {"ok": True, "agent": agent})
             if "pinned" not in body:
                 return self._json(400, {"error": "pinned required"})
             agent = agent_store.set_agent_pinned(aid, bool(body.get("pinned")))

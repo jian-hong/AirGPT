@@ -263,18 +263,64 @@ def _looks_like_access_wall(text: str) -> bool:
     return False
 
 
+# Set per chat thread by the server: True when the caller is not the host machine
+# (a joined device or a share guest). Those callers may not make the host fetch
+# loopback, LAN, link-local or metadata addresses. The host's own links stay open.
+_fetch_ctx = threading.local()
+
+
+def set_link_fetch_restricted(flag: bool) -> None:
+    _fetch_ctx.restricted = bool(flag)
+
+
+class _PrivateAddress(Exception):
+    pass
+
+
+def _check_public_url(u: str) -> None:
+    """Raise _PrivateAddress unless u is http(s) and every resolved address is public."""
+    import ipaddress
+    import socket
+
+    parts = urllib.parse.urlsplit(u)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise _PrivateAddress("not a web link")
+    try:
+        infos = socket.getaddrinfo(parts.hostname, parts.port or 80, proto=socket.IPPROTO_TCP)
+    except OSError as e:
+        raise _PrivateAddress(f"could not resolve the address ({e})")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        if not ip.is_global:
+            raise _PrivateAddress("private address")
+
+
+class _PublicOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _fetch_url_evidence(urls: list[str], *, max_chars: int = 1800) -> str:
     """Best-effort fetch of linked pages so chat can ground claims. Never invent."""
     if not urls:
         return ""
     blocks: list[str] = []
+    restricted = bool(getattr(_fetch_ctx, "restricted", False))
     for u in urls[:3]:
         try:
             req = urllib.request.Request(
                 u,
                 headers={"User-Agent": "AirGPT/1.0 (link-grounding; +local)"},
             )
-            with urllib.request.urlopen(req, timeout=8) as r:
+            if restricted:
+                _check_public_url(u)
+                opener = urllib.request.build_opener(_PublicOnlyRedirect)
+            else:
+                opener = urllib.request.build_opener()
+            with opener.open(req, timeout=8) as r:
                 ctype = (r.headers.get("Content-Type") or "").lower()
                 raw = r.read(400_000)
             try:
@@ -315,6 +361,12 @@ def _fetch_url_evidence(urls: list[str], *, max_chars: int = 1800) -> str:
             snippet = text[:max_chars]
             label = (title or u)[:120]
             blocks.append(f"- {label}\n  URL: {u}\n  Excerpt:\n{snippet}")
+        except _PrivateAddress:
+            blocks.append(
+                f"- {u}: not opened. This link points to a private or internal address, "
+                "and only the host can open those. Tell the user you could not open it; "
+                "do not guess what it says."
+            )
         except Exception as e:
             blocks.append(f"- {u}: fetch failed ({str(e)[:100]}) - do not invent what the page says.")
     if not blocks:

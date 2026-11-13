@@ -7918,10 +7918,12 @@ async function ensureCortexAgent(name,text,caps,intent){
       const rid=r&&(r.routine_id||r.id||(r.routine&&r.routine.id));
       if(r&&r.ok&&rid){
         agent.config=Object.assign({},agent.config,{routine_id:rid,scheduler:r.scheduler||'cortex'});
-        try{await api('/api/agents/'+agent.id,{method:'POST',body:JSON.stringify({config:agent.config})})}catch(e){}
+        let linked=false;
+        try{const lr=await api('/api/agents/'+agent.id,{method:'PATCH',body:JSON.stringify({config:agent.config})});linked=lr.ok}catch(e){}
+        if(!linked)toast('Scheduled, but the link to this agent was not saved');
         const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||r.next_run_at||'';
         const host=r.scheduler==='airgpt_host'?' (host clock)':'';
-        toast('Scheduled'+host+(when?(' — '+String(when).slice(0,40)):''));
+        if(linked)toast('Scheduled'+host+(when?(' — '+String(when).slice(0,40)):''));
       }else{
         toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
       }
