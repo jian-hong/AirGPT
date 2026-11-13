@@ -3078,9 +3078,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _origin_gate(self) -> bool:
         """False after answering 403 to a request that came from another web page."""
-        if self._origin_ok():
-            return True
         path = urlparse(self.path).path
+        if self._origin_ok():
+            # A plain cross-site GET (an <img>, a link, a no-cors fetch) carries no Origin
+            # header, but the browser still says where it came from. Such a page cannot
+            # read the answer, yet the request itself would run as the host.
+            site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+            if self.headers.get("Origin") is not None or site not in ("cross-site", "same-site") or not path.startswith("/api/"):
+                return True
         if self.command == "OPTIONS" or path.startswith(("/api/", "/data/")):
             self._json(403, {"ok": False, "error": "Blocked: this request came from another website."})
             return False
@@ -3640,9 +3645,11 @@ class Handler(BaseHTTPRequestHandler):
         if self._last_body is not None:
             return self._last_body  # already read (the gate peeks at it for a share guest)
         self._body_consumed = True
+        raw = self.headers.get("Content-Length")
         try:
-            n = int(self.headers.get("Content-Length"))
-        except (TypeError, ValueError):
+            # No header at all is a request without a body (curl -X POST, HTTP/1.0 tools).
+            n = 0 if raw is None else int(raw)
+        except ValueError:
             n = -1
         if n < 0:
             self.close_connection = True

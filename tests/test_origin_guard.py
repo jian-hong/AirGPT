@@ -190,8 +190,25 @@ class OriginGuardTest(unittest.TestCase):
             st, _h, out = self.req("POST", "/api/messages", {"Content-Type": "application/json"}, raw_cl=cl)
             self.assertEqual(st, 400, cl)
             self.assertIn(b"Content-Length", out)
-        st, *_ = self.req("POST", "/api/messages", {"Content-Type": "application/json"})
-        self.assertEqual(st, 400)
+
+    def test_post_without_a_body_or_length_is_not_refused_for_that(self):
+        # curl -X POST sends no Content-Length. That is a request with no body, not a bad one.
+        st, _h, out = self.req("POST", "/api/messages", {"Content-Type": "application/json"})
+        self.assertNotIn(b"Content-Length", out)
+        self.assertNotEqual(st, 413)
+
+    def test_cross_site_get_without_origin_is_refused(self):
+        # An <img> or a no-cors fetch from another page sends no Origin, only Sec-Fetch-Site.
+        for site in ("cross-site", "same-site"):
+            st, _h, out = self.req("GET", "/api/wait", {"Sec-Fetch-Site": site})
+            self.assertEqual(st, 403, site)
+            self.assertIn(b"another website", out)
+        for site in ("same-origin", "none"):
+            st, *_ = self.req("GET", "/api/wait?since=0&timeout=0", {"Sec-Fetch-Site": site})
+            self.assertNotEqual(st, 403, site)
+        # A link from another site to the page itself still opens.
+        st, *_ = self.req("GET", "/", {"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(st, 200)
 
     def test_bad_json_is_400_not_a_dropped_connection(self):
         st, _h, out = self.req("POST", "/api/messages", {"Content-Type": "application/json"}, "{bad")
