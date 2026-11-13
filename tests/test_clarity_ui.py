@@ -29,6 +29,10 @@ class ClarityUiTests(unittest.TestCase):
     def test_archive_toast_offers_undo(self):
         self.assertIn("archived:false", HTML)
 
+    def test_newer_toast_is_not_hidden_by_an_older_timer(self):
+        self.assertIn("if(g===toast._g)$('toast').classList.remove('show')", HTML)
+        self.assertIn("if(g===toast._g)t.classList.remove('show')", HTML)
+
     def test_instructions_disabled_with_reason_on_empty_chat(self):
         self.assertIn("btn.disabled=none", PREFS)
 

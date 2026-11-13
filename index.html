@@ -12422,7 +12422,8 @@ async function archiveSession(id){
       }catch(e){toast('Could not restore the chat')}
     };
     t.appendChild(u);t.classList.add('show');
-    setTimeout(()=>{if(t.contains(u))t.classList.remove('show')},7000);
+    const g=toast._g=(toast._g||0)+1;
+    setTimeout(()=>{if(g===toast._g)t.classList.remove('show')},7000);
     loadVaultTree();loadSessions();
   }catch(e){toast('Archive failed')}
 }
@@ -12972,7 +12973,7 @@ async function imageFileForShare(blob,name){
   return new File([jb],fname,{type:'image/jpeg',lastModified:Date.now()});
 }
 
-function toast(m){$('toast').textContent=m;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2400)}
+function toast(m){$('toast').textContent=m;$('toast').classList.add('show');const g=toast._g=(toast._g||0)+1;setTimeout(()=>{if(g===toast._g)$('toast').classList.remove('show')},2400)}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function withAuthQuery(url){
   if(!authToken)return url;
