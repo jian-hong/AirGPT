@@ -271,6 +271,8 @@ class ShareGuestTests(GuestScopeBase):
         self.assertEqual(out.get("ips"), [])
         self.assertEqual(out.get("devices"), [])
         self.assertEqual(out.get("session_id"), self.sid_a)
+        for key in ("recommended_url", "firewall", "network_profile", "lan_hint"):
+            self.assertFalse(out.get(key), key)  # the host's LAN address and firewall state
 
     def test_guest_cannot_mint_a_share_link(self):  # A7.4
         for tok in (self.view, self.post):

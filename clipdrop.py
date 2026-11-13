@@ -3996,7 +3996,8 @@ class Handler(BaseHTTPRequestHandler):
                 info_out.update(
                     ips=[], devices=[], tunnel_attempts=[], connect_methods=[], lan_url=None,
                     wifi_url=None, mdns_url=None, recommended_connect=None, local_url="",
-                    join_url="", input_notes={"recording": False},
+                    join_url="", input_notes={"recording": False}, recommended_url=None,
+                    firewall="", network_profile="", lan_hint="",
                 )
             return self._json(200, info_out)
 
