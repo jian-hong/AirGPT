@@ -35,11 +35,12 @@
       border:0; border-radius:12px; padding:12px 16px; font-weight:600; cursor:pointer;
       background:linear-gradient(135deg,var(--blue),#6366f1); color:#fff;
     }
+    @media(pointer:coarse),(max-width:760px){.btn{min-height:44px}}
     .btn.ghost{background:rgba(255,255,255,.08);border:1px solid var(--stroke)}
     .status{font-size:.85rem;color:var(--muted);display:flex;gap:8px;align-items:center;margin-top:10px}
     .dot{width:8px;height:8px;border-radius:50%;background:#64748b}
     .dot.ok{background:var(--ok);box-shadow:0 0 10px var(--ok)}
-    .drop{
+    .drop{ display:block;
       border:2px dashed rgba(79,140,255,.35); border-radius:18px; text-align:center;
       padding:28px 16px; cursor:pointer; transition:.2s;
     }
@@ -54,11 +55,6 @@
       transition:.3s;z-index:9;
     }
     .toast.show{transform:translateX(-50%) translateY(0)}
-    .fab{
-      position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));
-      width:56px;height:56px;border-radius:50%;border:0;font-size:1.5rem;color:#fff;cursor:pointer;
-      background:linear-gradient(135deg,var(--blue),#8b5cf6);box-shadow:0 14px 36px rgba(79,140,255,.4);
-    }
     .note{font-size:.8rem;color:var(--muted);line-height:1.5}
     .note strong{color:#cbd5e1}
   </style>
@@ -92,8 +88,6 @@
     </div>
   </div>
 
-  <button class="fab" id="fab">＋</button>
-  <input id="fabFile" type="file" accept="image/*" multiple hidden />
   <div class="toast" id="toast"></div>
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -105,9 +99,9 @@
     const grid = document.getElementById('grid');
     const toast = document.getElementById('toast');
     const fileInput = document.getElementById('file');
-    const fabFile = document.getElementById('fabFile');
     const drop = document.getElementById('drop');
 
+    const PEER_SRC = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
     let peer = null;
     let conn = null;
     let joined = false;
@@ -126,7 +120,12 @@
       const btn = document.createElement('button');
       btn.className = 'tile';
       btn.type = 'button';
-      btn.innerHTML = `<img src="${dataUrl}" alt="${name}">`;
+      const img = document.createElement('img');
+      // Only real image data URLs; anything else from a peer is ignored.
+      if (String(dataUrl).length > 15e6 || !/^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+\/=]+$/i.test(String(dataUrl))) return;
+      img.src = dataUrl;
+      img.alt = String(name || '');
+      btn.appendChild(img);
       btn.onclick = () => {
         const a = document.createElement('a');
         a.href = dataUrl;
@@ -140,6 +139,21 @@
       const code = sanitizeRoom(roomInput.value);
       if (!code) { showToast('Enter a room code'); return; }
       localStorage.setItem('droplink-room', code);
+      if (typeof Peer === 'undefined') {
+        // The peer library did not load (blocked network). Say so, and try again on each press.
+        status.textContent = 'Loading the connection library…';
+        const sc = document.createElement('script');
+        sc.src = PEER_SRC;
+        const fail = () => {
+          sc.remove();
+          dot.classList.remove('ok');
+          status.textContent = 'Could not load the connection library. Your network may block it. Try a phone hotspot, then press Join room again.';
+        };
+        sc.onload = () => (typeof Peer === 'undefined' ? fail() : connectPeer());
+        sc.onerror = fail;
+        document.head.appendChild(sc);
+        return;
+      }
       if (peer) peer.destroy();
       conn = null;
       dot.classList.remove('ok');
@@ -212,8 +226,6 @@
     joinBtn.onclick = connectPeer;
     roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') connectPeer(); });
     fileInput.onchange = e => handleFiles(e.target.files);
-    fabFile.onchange = e => handleFiles(e.target.files);
-    document.getElementById('fab').onclick = () => fabFile.click();
     drop.onclick = () => fileInput.click();
     drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
     drop.ondragleave = () => drop.classList.remove('drag');
