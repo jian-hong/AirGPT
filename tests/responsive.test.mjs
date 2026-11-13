@@ -24,7 +24,11 @@ test('the Thinking button and the Manual/AI cue stay at 900px and below', () => 
   assert.ok(!/\.think-btn\{display:none\}/.test(block));
   assert.ok(!/\.ai-switch-label\{display:none\}/.test(block));
   assert.match(block, /\.ai-switch-label:not\(\.on\)\{display:none\}/);
-  assert.match(html, /id="aiSwitchBtn" role="switch" aria-checked="false"/);
+  // Attribute order is not the point: the switch must say it is a switch and carry its state.
+  const sw = /<button[^>]*id="aiSwitchBtn"[^>]*>/.exec(html);
+  assert.ok(sw, "the Manual/AI switch button exists");
+  assert.match(sw[0], /role="switch"/);
+  assert.match(sw[0], /aria-checked="false"/);
 });
 
 test('bug report: pointer events, one Esc meaning, and a button that says what it does', () => {
