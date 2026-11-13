@@ -700,6 +700,8 @@ body.theme-light .project-dd-menu .dd-label{color:var(--muted);opacity:1}
 .model-dd-menu button:hover,.model-dd-menu button.on{background:rgba(255,255,255,.1)!important;color:#fff!important}
 .model-dd-menu button strong{display:block;font-size:13px;font-weight:600;line-height:1.3;color:#fff}
 .model-dd-menu button small{display:block;font-size:11px;color:var(--muted);margin:0;font-weight:400;line-height:1.35;opacity:.85}
+body.theme-light .model-dd-menu{background:#fff;border-color:var(--line)}
+body.theme-light .model-dd-menu button strong,body.theme-light .model-dd-menu button:hover,body.theme-light .model-dd-menu button.on{color:var(--text)!important}
 .model-dd.open .model-dd-menu.full{max-height:min(62vh,430px);overflow:auto;min-width:238px}
 .model-dd-menu .dd-sec{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:8px 10px 2px;pointer-events:none}
 .model-dd-menu .dd-banner{display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:8px;margin-bottom:4px;background:linear-gradient(90deg,rgba(120,170,255,.14),rgba(255,255,255,.03));color:var(--text);font-size:11.5px;cursor:pointer;font:inherit}
@@ -739,6 +741,14 @@ body.theme-light .project-dd-menu .dd-label{color:var(--muted);opacity:1}
 .composer-attach{display:none;flex-wrap:wrap;gap:8px;padding:8px 4px 2px;width:100%;max-height:0;opacity:0;overflow:hidden;transition:max-height .35s cubic-bezier(.22,1,.36,1),opacity .28s ease,padding .28s ease}
 .cortex-wire-hint{margin:0;padding:2px 8px 6px;font-size:11px;color:var(--muted);line-height:1.35;letter-spacing:.01em}
 .cortex-wire-hint[hidden]{display:none!important}
+.manual-note{margin:0;padding:2px 8px 6px;font-size:12px;color:var(--text);line-height:1.35}
+.manual-note[hidden]{display:none!important}
+.main.mode-manual #modelDd,.main.mode-manual #thinkBtn,.main.mode-manual .cprefs-btn,.main.mode-manual .plens-meter{display:none!important}
+.composer button.web-chip{width:auto;height:28px;padding:0 12px;margin:0 8px 6px;border-radius:999px;border:1px solid var(--line);background:rgba(128,128,128,.12);color:var(--text);font:500 12px/1 var(--sans);cursor:pointer;align-self:flex-start}
+.composer button.web-chip[hidden]{display:none!important}
+.composer button.attach-plus.web-on{box-shadow:0 0 0 2px #3dd68c}
+body.theme-light .composer button.attach-plus.web-on{box-shadow:0 0 0 2px #1a8f5a}
+.composer button.cprefs-btn:disabled{opacity:.5;cursor:not-allowed}
 .composer-attach.show{display:flex;max-height:120px;opacity:1;overflow:visible}
 .stage-tile{position:relative;width:52px;height:52px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.045);display:grid;place-items:center;overflow:hidden;flex-shrink:0;animation:stageIn .32s cubic-bezier(.22,1,.36,1) both}
 .stage-tile img{width:100%;height:100%;object-fit:cover;display:block}
@@ -2726,9 +2736,9 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
       </div>
     </div>
     <div class="topbar-actions">
-      <div class="ai-switch" id="aiSwitchWrap" title="Manual = chat & clipboard only · AI = screenshot analysis (online)">
+      <div class="ai-switch" id="aiSwitchWrap" title="Manual = notes only, no AI reply · AI = the AI answers you">
         <span class="ai-switch-label on" id="aiLabelL">Manual</span>
-        <button type="button" class="ai-switch-track" id="aiSwitchBtn" role="switch" aria-checked="false" aria-label="Toggle AI mode">
+        <button type="button" class="ai-switch-track" id="aiSwitchBtn" aria-label="AI replies: off" role="switch" aria-checked="false">
           <span class="ai-switch-thumb" id="aiSwitchIcon">M</span>
         </button>
         <span class="ai-switch-label r" id="aiLabelR">AI</span>
@@ -2758,8 +2768,12 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           Cortex
         </button>
       </div>
+      <button type="button" class="nav-item nav-newchat" id="navNewChat" onclick="newChatFromNav()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        New chat
+      </button>
       <div class="nav-chats-row" id="navChatsRow">
-        <button type="button" class="nav-item on" id="navChats" onclick="onNavChatsClick()" title="Chats — new chat if current has messages">
+        <button type="button" class="nav-item on" id="navChats" onclick="onNavChatsClick()" title="Show your chats">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10h8M8 14h5"/><path d="M21 12a8.5 8.5 0 0 1-8.5 8.5H7l-4 2.2V12A8.5 8.5 0 1 1 21 12z"/></svg>
           <span class="nav-chats-label">Chats</span>
         </button>
@@ -2927,6 +2941,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
           <div class="composer-inner">
             <div class="composer-attach" id="stageBar" aria-live="polite"></div>
             <p class="cortex-wire-hint" id="cortexWireHint" hidden></p>
+            <p class="manual-note" id="manualNote" role="status" hidden>Manual mode: the AI will not reply. Switch to AI (top right) to get an answer.</p>
+            <button type="button" class="web-chip" id="webChip" hidden title="Turn web search off">Web search is on. Tap to turn off.</button>
             <div class="composer-row">
               <div class="phone-attach" id="phoneAttach">
                 <button type="button" id="camBtn" title="Take photo">📷</button>
@@ -2945,7 +2961,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <textarea id="input" rows="1" placeholder=""></textarea>
               <div class="composer-actions">
                 <div class="model-dd fab-hide" id="modelDd">
-                  <button type="button" class="model-dd-btn" id="modelBtn" title="Tap to cycle · hold for all models" onpointerdown="modelBtnDown(event)" onpointerup="modelBtnUp(event)" onpointercancel="modelBtnCancel()" onpointerleave="modelBtnCancel()" oncontextmenu="return false">
+                  <button type="button" class="model-dd-btn" id="modelBtn" title="Effort: how much the AI thinks. Tap to choose." aria-label="Effort" aria-haspopup="menu" onclick="modelBtnClick()">
                     <span id="modelBtnLabel">High</span><span class="dd-caret" aria-hidden="true">▾</span>
                   </button>
                   <div class="model-dd-menu" id="modelMenu">
@@ -4126,6 +4142,7 @@ function isThinkingOn(){return thinkingAllowed()&&thinkingEnabled}
 function updateModelUi(){
   const lab=$('modelBtnLabel');
   if(lab)lab.textContent=localModelSel?localModelShort():(MODEL_TIER_LABELS[modelTier]||'High');
+  const mb=$('modelBtn');if(mb)mb.setAttribute('aria-label','Effort: '+(lab?lab.textContent:''));
   const think=$('thinkBtn');
   if(think){
     const allow=thinkingAllowed();
@@ -4147,35 +4164,23 @@ function setModelTier(tier){
   else if(localStorage.getItem('airgpt_thinking')!=='0')thinkingEnabled=true;
   updateModelUi();
   $('modelDd')?.classList.remove('open');
-  toast('Model: '+MODEL_TIER_LABELS[tier]);
+  toast('Effort: '+MODEL_TIER_LABELS[tier]);
 }
 function toggleModelMenu(){
   const dd=$('modelDd');if(!dd)return;
   dd.classList.toggle('open');
   $('projectDd')?.classList.remove('open');
 }
-/* --- Netie model picker: tap = cycle auto tier, hold = full menu --- */
+/* --- Netie model picker: tap opens the full menu --- */
 let localModelSel=localStorage.getItem('airgpt_local_model')||'';
 function localModelShort(){
   return (localModelSel.split('/').pop()||localModelSel).replace(/-instruct|-chat/i,'').slice(0,14);
 }
 function isNetieSubscriber(){return localStorage.getItem('netie_sub')==='1'}
-let _mdTimer=0,_mdHeld=false;
-function modelBtnDown(ev){
-  if(ev.button&&ev.button!==0)return;
-  _mdHeld=false;clearTimeout(_mdTimer);
-  _mdTimer=setTimeout(()=>{_mdHeld=true;openModelMenuFull()},420);
-}
-function modelBtnUp(ev){
-  clearTimeout(_mdTimer);
-  if(_mdHeld){_mdHeld=false;return}
-  cycleModelTier();
-}
-function modelBtnCancel(){clearTimeout(_mdTimer)}
-function cycleModelTier(){
-  if(localModelSel){selectAutoTier('high');return}
-  const i=(MODEL_TIERS.indexOf(modelTier)+1)%MODEL_TIERS.length;
-  setModelTier(MODEL_TIERS[i]);
+function modelBtnClick(){
+  const dd=$('modelDd');
+  if(dd&&dd.classList.contains('open')){dd.classList.remove('open');return}
+  openModelMenuFull();
 }
 function selectAutoTier(t){
   localModelSel='';localStorage.removeItem('airgpt_local_model');
@@ -4809,7 +4814,7 @@ function showCenterProjects(opts){
   }
   const q=questionOfTheDay(true);
   const invites=[
-    {id:'clipboard',kicker:'Clipboard',title:'Paste & go',body:'Drop notes or screenshots — sync to this PC.',ico:'📋'},
+    {id:'clipboard',kicker:'Clipboard',title:'Paste & go',body:'Type or paste a note here. It is saved in this chat.',ico:'📋'},
     {id:'research',kicker:'Research',title:'Idea → paper',body:'Long markdown, figures, Word + IEEE PDF.',ico:'📄'},
     {id:'rag',kicker:'Build',title:'Knowledge spaces',body:'Ingest, rebuild, Copilot pack, ops amend.',ico:'📚'},
     {id:'projects',kicker:'Projects',title:'Open projects',body:'Lanes with their own memory & recents.',ico:'📁'},
@@ -5453,12 +5458,14 @@ function updateAiSwitch(){
   const online=info.online!==false;
   const hasKeys=!!info.has_ai_keys;
   track.classList.toggle('on',aiMode);
-  track.setAttribute('aria-checked',aiMode?'true':'false');
   track.classList.toggle('offline',!online&&!hasKeys&&aiMode);
   $('aiLabelL').classList.toggle('on',!aiMode);
   $('aiLabelR').classList.toggle('on',aiMode);
   $('aiSwitchIcon').textContent=aiMode?'AI':'M';
-  track.title=aiMode?'AI mode — screenshot analysis & AI chat':'Manual — chat & clipboard only';
+  track.title=aiMode?'AI replies are on. Tap to switch to Manual.':'AI replies are off (Manual). Tap to turn them on.';
+  track.setAttribute('aria-label','AI replies: '+(aiMode?'on':'off'));
+  track.setAttribute('aria-checked',aiMode?'true':'false');
+  const mn=$('manualNote');if(mn)mn.hidden=aiMode;
   updateModeBtn();
   document.querySelector('.main').classList.toggle('mode-manual',!aiMode);
   document.querySelector('.main').classList.toggle('mode-ai',aiMode);
@@ -5796,7 +5803,7 @@ function renderHistoryDays(sessions){
       return tb-ta;
     });
     if($('historyHint'))$('historyHint').textContent=keys.length?`${keys.length} agents`:'';
-    if(!keys.length){$('historyDays').innerHTML='<div class="empty">No chats yet — copy something from Windows or + New</div>';return}
+    if(!keys.length){$('historyDays').innerHTML='<div class="empty">No chats yet. Press New chat, or type a message to start one.</div>';return}
     let html='';
     keys.forEach(k=>{
       const rows=byAg[k];
@@ -5819,7 +5826,7 @@ function renderHistoryDays(sessions){
   }
   if(groupByMode==='none'){
     if($('historyHint'))$('historyHint').textContent=list.length?`${list.length}`:'';
-    if(!list.length){$('historyDays').innerHTML='<div class="empty">No chats yet — copy something from Windows or + New</div>';return}
+    if(!list.length){$('historyDays').innerHTML='<div class="empty">No chats yet. Press New chat, or type a message to start one.</div>';return}
     $('historyDays').innerHTML=`<div class="hist-day open" data-day="none"><div class="hist-day-body"><div class="sec-morph-inner">${list.map(sessionCardHtml).join('')}</div></div></div>`;
     bindSessionCards($('historyDays'));
     $('historyBody').classList.toggle('collapsed',historySectionCollapsed);
@@ -5840,7 +5847,7 @@ function renderHistoryDays(sessions){
     });
     applyProjectDefaults(keys);
     if($('historyHint'))$('historyHint').textContent=keys.length?`${keys.length} projects`:'';
-    if(!keys.length){$('historyDays').innerHTML='<div class="empty">No chats yet — copy something from Windows or + New</div>';return}
+    if(!keys.length){$('historyDays').innerHTML='<div class="empty">No chats yet. Press New chat, or type a message to start one.</div>';return}
     let html='';
     keys.forEach(k=>{
       const rows=byProj[k];
@@ -5871,7 +5878,7 @@ function renderHistoryDays(sessions){
   applyHistoryDefaults(byDay,days);
   const today=todayKey(),yest=yesterdayKey();
   if($('historyHint'))$('historyHint').textContent=days.length?`${days.length} day${days.length===1?'':'s'}`:'';
-  if(!days.length){$('historyDays').innerHTML='<div class="empty">No chats yet — copy something from Windows or + New</div>';return}
+  if(!days.length){$('historyDays').innerHTML='<div class="empty">No chats yet. Press New chat, or type a message to start one.</div>';return}
   let html='';
   days.forEach(day=>{
     const dayList=sortSessionsForDay(byDay[day]);
@@ -7406,6 +7413,11 @@ function morphNavChats(){
   clearTimeout(morphNavChats._t);
   morphNavChats._t=setTimeout(()=>btn.classList.remove('morphing'),420);
 }
+async function newChatFromNav(){
+  await newChat();
+  closeSideDrawerOnly();
+  $('input')?.focus();
+}
 async function onNavChatsClick(){
   morphNavChats();
   // Immediately hide Build / Agents / Platform and show chat histories
@@ -7443,9 +7455,7 @@ async function onNavChatsClick(){
     return;
   }
   if(hasContent){
-    await newChat();
     focusChatHistories();
-    $('input')?.focus();
     return;
   }
   applyPlaceholder({force:true});
@@ -12409,7 +12419,19 @@ async function archiveSession(id){
       currentSession=0;localStorage.setItem('clipdrop_session','0');lastId=0;
       showCenterProjects({asChats:true,forceWelcome:true,keepSession:false});
     }
-    toast('Archived');
+    const t=$('toast');
+    t.textContent='Archived. It is hidden from your list and search. ';
+    const u=document.createElement('button');u.type='button';u.textContent='Undo';
+    u.style.cssText='margin-left:8px;font:inherit;cursor:pointer';
+    u.onclick=async()=>{
+      try{
+        await api('/api/sessions/'+id,{method:'PATCH',body:JSON.stringify({archived:false})});
+        loadVaultTree();loadSessions();toast('Chat restored');
+      }catch(e){toast('Could not restore the chat')}
+    };
+    t.appendChild(u);t.classList.add('show');
+    const g=toast._g=(toast._g||0)+1;
+    setTimeout(()=>{if(g===toast._g)t.classList.remove('show')},7000);
     loadVaultTree();loadSessions();
   }catch(e){toast('Archive failed')}
 }
@@ -12948,7 +12970,7 @@ async function imageFileForShare(blob,name){
   return new File([jb],fname,{type:'image/jpeg',lastModified:Date.now()});
 }
 
-function toast(m){$('toast').textContent=m;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2400)}
+function toast(m){$('toast').textContent=m;$('toast').classList.add('show');const g=toast._g=(toast._g||0)+1;setTimeout(()=>{if(g===toast._g)$('toast').classList.remove('show')},2400)}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function withAuthQuery(url){
   if(!authToken)return url;
@@ -14890,7 +14912,7 @@ $('aiSwitchBtn').onclick=()=>{
   if(!aiMode&&info.online===false&&!hasKeys){toast('AI needs internet or API keys in Settings');return}
   aiMode=!aiMode;localStorage.setItem('clipdrop_ai_mode',aiMode?'1':'0');
   updateAiSwitch();
-  toast(aiMode?'AI on — screenshot analysis enabled':'Manual — chat & clipboard only');
+  toast(aiMode?'AI replies are on':'AI replies are off. Your notes are still saved.');
 };
 async function loadAiConfig(){
   try{
@@ -14980,6 +15002,13 @@ $('sendBtn').onclick=send;
 let webSearchArmed=localStorage.getItem('airgpt_web_search')==='1';
 function syncPlusWebCheck(){
   const el=$('pmWebCheck');if(el)el.hidden=!webSearchArmed;
+  const chip=$('webChip');if(chip)chip.hidden=!webSearchArmed;
+  $('attachBtn')?.classList.toggle('web-on',webSearchArmed);
+}
+function setWebSearch(on){
+  webSearchArmed=!!on;
+  localStorage.setItem('airgpt_web_search',webSearchArmed?'1':'0');
+  syncPlusWebCheck();
 }
 function closePlusMenu(){
   const m=$('plusMenu'),b=$('attachBtn');
@@ -15000,16 +15029,16 @@ function togglePlusMenu(force){
   if(open){syncPlusWebCheck();try{$('projectDd')?.classList.remove('open')}catch(e){}}
 }
 $('attachBtn').onclick=e=>{e.stopPropagation();togglePlusMenu()};
+$('webChip').onclick=()=>{setWebSearch(false);toast('Web search off')};
+syncPlusWebCheck();
 $('plusMenu')?.addEventListener('click',e=>{
   const btn=e.target.closest('button[data-pm]');if(!btn)return;
   const act=btn.dataset.pm;
   closePlusMenu();
   if(act==='files')$('fileIn')?.click();
   else if(act==='web'){
-    webSearchArmed=!webSearchArmed;
-    localStorage.setItem('airgpt_web_search',webSearchArmed?'1':'0');
-    syncPlusWebCheck();
-    toast(webSearchArmed?'Web search on for next messages':'Web search off');
+    setWebSearch(!webSearchArmed);
+    toast(webSearchArmed?'Web search is on until you turn it off':'Web search off');
   }else if(act==='research'){
     const el=$('input');
     if(el){
@@ -15017,7 +15046,8 @@ $('plusMenu')?.addEventListener('click',e=>{
       el.value=cur?(cur.replace(/\s*$/,'')+' — research and verify from the live pages'):'Research and verify the people/companies mentioned — fetch the pages, do not invent';
       el.dispatchEvent(new Event('input'));el.focus();
     }
-    webSearchArmed=true;localStorage.setItem('airgpt_web_search','1');
+    setWebSearch(true);
+    toast('Web search is on until you turn it off');
   }else if(act==='skills'){
     const el=$('input');if(el){el.value='/skill ';el.focus();el.dispatchEvent(new Event('input'))}
     toast('Cortex auto-wires. Type /skill <pack> to force.');
