@@ -54,6 +54,10 @@ class WorkspaceGuards(unittest.TestCase):
         self.assertNotIn(".mem-fab", PAGE)
         self.assertNotIn("canShowMemPanel", PAGE)
 
+    def test_project_workspace_hides_composer(self):
+        # removing the .mem-fab selector once left this rule without its declaration
+        self.assertRegex(PAGE, r"body\.project-workspace-mode \.ctx-bar\s*\{display:none!important\}")
+
     def test_no_placeholder_built_suggestions(self):
         self.assertNotIn("airgpt_taste", _body("habitAgentActions"))
         self.assertNotIn("QUESTIONS_OF_THE_DAY", _body("habitAgentActions"))
