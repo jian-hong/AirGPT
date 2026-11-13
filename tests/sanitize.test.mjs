@@ -113,3 +113,25 @@ test("empty and non-string input give an empty string", async () => {
   assert.equal(await clean(""), "");
   assert.equal(await page.evaluate(() => window.AirSanitize.clean(null)), "");
 });
+
+// The page runs buttons through data-call="fnName". A model reply must never be able to
+// carry those attributes, and the dispatcher must never reach a browser built-in like eval.
+import { readFileSync } from "node:fs";
+const INDEX = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "index.html"), "utf8");
+
+test("message sanitizer drops data-* attributes so data-call cannot be forged", () => {
+  const m = INDEX.match(/function sanitizeHtml\(html\)\{[\s\S]*?\n\}/);
+  assert.ok(m, "sanitizeHtml not found");
+  assert.match(m[0], /ALLOW_DATA_ATTR:false/);
+});
+
+test("data-call dispatcher refuses browser built-ins such as eval", async () => {
+  const m = INDEX.match(/function _pageFn\(n\)\{[\s\S]*?\n\}/);
+  assert.ok(m, "_pageFn not found");
+  const r = await page.evaluate((src) => {
+    window.myPageFn = function () { return 1; };
+    const _pageFn = new Function(src + "; return _pageFn;")();
+    return [_pageFn("eval"), _pageFn("alert"), _pageFn("Function"), _pageFn("myPageFn") === window.myPageFn, _pageFn("nope")];
+  }, m[0]);
+  assert.deepEqual(r, [null, null, null, true, null]);
+});
