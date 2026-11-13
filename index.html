@@ -7434,6 +7434,8 @@ async function onNavChatsClick(){
         if(_homeChatSnapshot.session){
           currentSession=_homeChatSnapshot.session;
           localStorage.setItem('clipdrop_session',String(currentSession));
+          document.body.classList.remove('claude-home');
+          syncChatTitleBar();
           markSelectedSession(currentSession);
         }
         _homeChatSnapshot=null;
@@ -12525,6 +12527,7 @@ async function newChat(){
 window.openSession=async id=>{
   if(!id)return;
   saveComposerDraft();
+  document.body.classList.remove('claude-home');
   if(+id===+currentSession&&$('chat')?.querySelector('.msg')&&sideView==='chats'&&!document.body.classList.contains('openide-mode')){
     markSelectedSession(id);restoreComposerDraft();closeSideDrawerOnly();return;
   }
@@ -13766,11 +13769,13 @@ function beginStreamUi(userText){
 function adoptSessionId(sid){
   const n=parseInt(sid,10);
   if(!n)return;
-  if(n===currentSession)return;
+  if(n===currentSession){document.body.classList.remove('claude-home');syncChatTitleBar();return}
   // Ignore late stream session flips after user navigated away
   if(aiPending&&streamSessionGen&&streamSessionGen!==sessionGen)return;
   currentSession=n;
   localStorage.setItem('clipdrop_session',String(n));
+  document.body.classList.remove('claude-home');
+  syncChatTitleBar();
 }
 async function sendStream(text,extra={}){
   streamAbort=new AbortController();
