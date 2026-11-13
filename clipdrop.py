@@ -1,7 +1,9 @@
 """ClipDrop v5 — ChatGPT-style LAN chat. SQLite + multi-tunnel."""
 from __future__ import annotations
 
+import functools
 import hashlib
+import ipaddress
 import io
 import json
 import mimetypes
@@ -1107,6 +1109,37 @@ def _is_tunnel_host(host: str) -> bool:
 TUNNEL_PEER = "tunnel-peer"
 
 
+def _host_name(host_header: str) -> str:
+    """Hostname part of a Host header: lower case, no port, no [] around IPv6."""
+    h = (host_header or "").strip().lower()
+    if h.startswith("["):
+        return h[1:].split("]")[0]
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def _is_trusted_host(host_header: str) -> bool:
+    """True when the Host header names this machine. Anything else is a remote caller.
+
+    A browser lets any web page send requests to 127.0.0.1, and DNS rebinding lets a
+    page choose the Host header, so the socket address alone must never mean "host".
+    A missing Host (HTTP/1.0 tools) cannot come from a browser and is allowed.
+    Extra names go in AIRGPT_TRUSTED_HOSTS (comma separated).
+    """
+    name = _host_name(host_header)
+    if not name or name in ("localhost", "127.0.0.1", "::1"):
+        return True
+    names = {n.strip().lower() for n in os.environ.get("AIRGPT_TRUSTED_HOSTS", "").split(",") if n.strip()}
+    try:
+        me = socket.gethostname().lower()
+        names.update((me, me + ".local"))
+        names.update(local_ips())
+        if wifi_access:
+            names.add((urlparse(wifi_access.mdns_url()).hostname or "").lower())
+    except Exception:
+        pass
+    return name in names
+
+
 def _is_host_request(headers, direct_ip: str) -> bool:
     """True only for the host machine itself, never for anything off a tunnel.
 
@@ -1116,16 +1149,16 @@ def _is_host_request(headers, direct_ip: str) -> bool:
     request carrying a tunnel Host header came from outside this machine, whatever
     any header claims.
     """
-    if _is_tunnel_host(headers.get("Host", "")):
+    if not _is_trusted_host(headers.get("Host", "")):
         return False
     return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
 
 
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     """Real remote client when cloudflared (or similar) proxies on loopback."""
-    if direct_ip not in ("127.0.0.1", "::1"):
+    if not _is_local_host(direct_ip):
         return None
-    if not _is_tunnel_host(headers.get("Host", "")):
+    if _is_trusted_host(headers.get("Host", "")):
         return None
     cf = (headers.get("CF-Connecting-IP") or "").strip()
     xff = (headers.get("X-Forwarded-For") or "").strip()
@@ -1142,7 +1175,13 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     # value claiming to be this machine is always a lie. Refuse it, and fall back to
     # a marker that is deliberately not an address so nothing downstream can mistake
     # it for one.
-    if cand and not _is_local_host(cand):
+    # The value is shown in the admin page and the peer list, so it must be a real
+    # address and nothing else (no markup, no quotes).
+    try:
+        ipaddress.ip_address(cand)
+    except ValueError:
+        return TUNNEL_PEER
+    if not _is_local_host(cand):
         return cand
     return TUNNEL_PEER
 
@@ -2582,9 +2621,26 @@ def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
     )
 
 
+class _HttpError(Exception):
+    """Raised anywhere under a handler to answer with this status and plain message."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+# Largest legitimate body: one file upload (MAX_BYTES, 100 MB) base64-wrapped or inside
+# a multipart form, and the zip restore. Everything else is a few KB of JSON.
+MAX_BODY = int(os.environ.get("AIRGPT_MAX_BODY_MB", "200") or 200) * 1024 * 1024
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
+    # A client that connects and sends nothing must not pin a thread forever. This
+    # limits each socket read or write, not a whole request, so slow long replies
+    # (chat streams, /api/wait) and big uploads that keep moving are unaffected.
+    timeout = 120
 
     # Keep-alive safety. Early error returns (429 rate limit, 403 share ACL, 503 no
     # engine) reply before anyone reads the POST body. On HTTP/1.1 those bytes stay in
@@ -2607,6 +2663,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_one_request(self):
         self._body_consumed = False
+        self._hdr_sent = False
+        self._last_body = None
+        self._ctype = ""
         try:
             super().handle_one_request()
         except self._BENIGN_DISCONNECTS as e:
@@ -2844,8 +2903,47 @@ class Handler(BaseHTTPRequestHandler):
             return
         _auth_fails.setdefault(ip, []).append(time.time())
 
+    def send_header(self, keyword, value):
+        if keyword.lower() == "content-type":
+            self._ctype = str(value)
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        self._hdr_sent = True
+        super().send_header("X-Content-Type-Options", "nosniff")
+        if getattr(self, "_ctype", "").startswith("text/html"):
+            super().send_header("X-Frame-Options", "SAMEORIGIN")
+            super().send_header("Content-Security-Policy", "frame-ancestors 'self'")
+        super().end_headers()
+
+    def _origin_ok(self) -> bool:
+        """No Origin (curl, native apps, navigations) or the page's own origin."""
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        o = origin.strip().lower().rstrip("/")
+        if not o or o == "null":
+            return False
+        if urlparse(o).netloc and urlparse(o).netloc == (self.headers.get("Host") or "").strip().lower():
+            return True
+        extra = os.environ.get("AIRGPT_ALLOWED_ORIGINS", "")
+        return o in {x.strip().lower().rstrip("/") for x in extra.split(",") if x.strip()}
+
+    def _origin_gate(self) -> bool:
+        """False after answering 403 to a request that came from another web page."""
+        if self._origin_ok():
+            return True
+        path = urlparse(self.path).path
+        if self.command == "OPTIONS" or path.startswith(("/api/", "/data/")):
+            self._json(403, {"ok": False, "error": "Blocked: this request came from another website."})
+            return False
+        return True
+
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin")
+        if origin and self._origin_ok():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header(
             "Access-Control-Allow-Headers",
             "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
@@ -3388,8 +3486,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         self._body_consumed = True
-        n = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(n) if n else b""
+        try:
+            n = int(self.headers.get("Content-Length"))
+        except (TypeError, ValueError):
+            n = -1
+        if n < 0:
+            self.close_connection = True
+            raise _HttpError(400, "The request has no valid Content-Length.")
+        if n > MAX_BODY:
+            self.close_connection = True
+            raise _HttpError(413, f"That is too large to send at once (limit {MAX_BODY // (1024 * 1024)} MB).")
+        self._last_body = self.rfile.read(n) if n else b""
+        return self._last_body
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -5404,7 +5512,7 @@ class Handler(BaseHTTPRequestHandler):
                 (self.headers.get(h) or "").strip()
                 for h in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded")
             )
-            if not _is_local_host(direct) or proxied:
+            if not _is_local_host(direct) or proxied or not _is_host_request(self.headers, direct):
                 if app_audit:
                     app_audit.log("passcode_toggle", ip=ip, detail="refused: not host", ok=False)
                 return self._json(403, {"ok": False, "error": "Host only — change this on the PC"})
@@ -5584,6 +5692,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/init":
             if not app_auth:
                 return self._json(400, {"error": "auth unavailable"})
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"ok": False, "error": "Only the host computer can set the first passcode."})
             data = json.loads(self._body().decode() or "{}")
             return self._json(200, app_auth.init_workspace(
                 str(data.get("email", "")), str(data.get("passcode", "")),
@@ -7720,6 +7830,43 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
         return self._json(404, {"error": "not found"})
+
+
+def _wrap_dispatch(name: str) -> None:
+    """One place for the cross-site guard and for turning a crash into an answer."""
+    orig = getattr(Handler, name)
+
+    @functools.wraps(orig)
+    def run(self):
+        if not self._origin_gate():
+            return
+        try:
+            return orig(self)
+        except Handler._BENIGN_DISCONNECTS:
+            raise
+        except Exception as e:
+            code, msg = 500, "Something went wrong on the server."
+            body = self._last_body
+            if isinstance(e, _HttpError):
+                code, msg = e.code, e.message
+            elif body is not None and (
+                (isinstance(e, json.JSONDecodeError) and e.doc.strip() == body.decode("utf-8", "replace").strip())
+                or (isinstance(e, UnicodeDecodeError) and e.object == body)
+            ):
+                code, msg = 400, "The request body is not valid JSON."
+            else:
+                import traceback
+                print(f"[http] {self.command} {self.path} failed: {e!r}\n{traceback.format_exc()}")
+            if self._hdr_sent:
+                self.close_connection = True
+                return
+            self._json(code, {"ok": False, "error": msg})
+
+    setattr(Handler, name, run)
+
+
+for _m in ("do_OPTIONS", "do_HEAD", "do_GET", "do_POST", "do_PATCH", "do_DELETE"):
+    _wrap_dispatch(_m)
 
 
 def _save_network_state(ips: list[str]) -> None:
