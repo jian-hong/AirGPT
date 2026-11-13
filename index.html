@@ -116,6 +116,14 @@ body.theme-light{
   transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s cubic-bezier(.22,1,.36,1),opacity .18s ease,box-shadow .18s ease;
 }
 .nav-item:active,.btn:active,.qr-btn:active,.icon-btn:active,.proj-page-card:active{transform:scale(.97)}
+.side-toggle-top{
+  display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;margin-right:2px;
+  border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);
+  font-size:15px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s cubic-bezier(.22,1,.36,1);
+}
+.side-toggle-top:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2)}
+.side-toggle-top:active{transform:scale(.96)}
+body.theme-light .side-toggle-top:hover{background:rgba(0,0,0,.05)}
 .projects-page{padding:28px 28px 48px;max-width:960px;margin:0 auto;width:100%;box-sizing:border-box}
 .projects-page-hdr{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .projects-page-hdr h2{font-family:var(--display);font-size:clamp(28px,4vw,36px);font-weight:600;letter-spacing:-.03em;color:var(--text);line-height:1.1}
@@ -429,6 +437,7 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
 .menu-btn{display:none;width:36px;height:36px;border:1px solid var(--line);border-radius:var(--radius);background:transparent;color:#fff;font-size:16px;cursor:pointer}
 @media(max-width:760px){
   .menu-btn{display:grid;place-items:center}
+  .side-toggle-top{display:none}
 }
 /* Chat title + share (Claude-style header above messages) */
 .chat-titlebar{
@@ -2696,6 +2705,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 <div class="backdrop" id="backdrop" onclick="closeSide()"></div>
 <div class="shell" id="shell">
   <header class="topbar">
+    <button type="button" class="side-toggle-top" id="sideToggleTop" title="Show / hide left panel" aria-label="Toggle left panel" onclick="toggleSideCollapsed()">☰</button>
     <button class="menu-btn" onclick="openSide()">☰</button>
     <div class="brand brand-exit" id="brandHome" title="AirGPT — vault + Cortex" onclick="onBrandClick(event)">
       <span class="brand-mark" aria-hidden="true">
@@ -12077,6 +12087,11 @@ function syncCollapseChevrons(){
   if(sc){
     sc.textContent=(isPhoneSideDrawer()?phoneOpen: !sideCollapsed)?'‹':'›';
     sc.title=(isPhoneSideDrawer()?phoneOpen:!sideCollapsed)?'Collapse sidebar':'Expand sidebar';
+  }
+  const top=$('sideToggleTop');
+  if(top){
+    top.title=sideCollapsed?'Expand left panel':'Collapse left panel';
+    top.setAttribute('aria-pressed',sideCollapsed?'false':'true');
   }
   const closeBtn=$('connectCloseBtn');
   if(closeBtn)closeBtn.hidden=true;

@@ -153,11 +153,20 @@ test("the search chips come from the same project list as the rest of the app", 
 
 test("the duplicate controls and dead rules are gone", () => {
   assert.equal((html.match(/^function showLogin\(/gm) || []).length, 1, "showLogin declared once");
-  for (const gone of ["sideToggleTop", "side-toggle-top", "navAllAgents", 'data-wired="0"']) {
+  for (const gone of ["navAllAgents", 'data-wired="0"']) {
     assert.ok(!html.includes(gone), gone + " should be removed");
   }
   assert.ok(!/onclick="event\.stopPropagation\(\);addProject\(\)">\+ Project/.test(html), "second New project button");
   assert.ok(!/\.banner-x\{[^}]*color:#fff/.test(html), "banner close button must follow the theme colour");
+});
+
+test("the sidebar can be opened from the top bar and from the edge tab", () => {
+  // Not a duplicate pair: the sidebar starts closed up to 1400px wide, so the top-bar
+  // button is the one people find; the edge tab is the only route in short windows,
+  // where the top bar slides away.
+  assert.ok(/id="sideToggleTop"[^>]*onclick="toggleSideCollapsed\(\)"/.test(html), "top-bar sidebar button");
+  assert.ok(html.includes('id="sideCollapseBtn"'), "edge tab");
+  assert.ok(/@media\(max-width:760px\)\{[^@]*\.side-toggle-top\{display:none\}/.test(html), "phones use the drawer button instead");
 });
 
 test("Connectors opens the panel it names", () => {
