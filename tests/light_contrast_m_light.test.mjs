@@ -58,3 +58,13 @@ test("dark theme: the same places keep exactly the colours they had at the base 
   const want = JSON.parse(fs.readFileSync(new URL("fixtures/m_light_dark_styles.json", import.meta.url), "utf8"));
   assert.deepEqual(cs, want);
 });
+
+test("light theme: the access popover is a light card with readable text (was dark ink on a dark card)", async () => {
+  const page = await load("theme-light");
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML("beforeend", `<div class="access-pop" id="ap" style="left:20px;top:20px"><div class="access-pop-title" id="apt">Access</div><p class="access-pop-note" id="apn">Levels are saved</p><button class="access-row on" id="apr"><span class="access-row-main"><b id="apb">Read only</b><small id="aps">Can look</small></span></button></div>`);
+  });
+  const bad = [];
+  for (const s of ["#apt", "#apn", "#apb", "#aps"]) { const r = await page.evaluate(RATIO(s)); if (r < 4.5) bad.push(`${s} ${r}`); }
+  assert.deepEqual(bad, []);
+});
