@@ -21,7 +21,9 @@
 <link rel="stylesheet" href="/ui/snippets.css"/>
 <link rel="stylesheet" href="/ui/palette.css"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<!-- Fonts and maths styling load without blocking: a print-media sheet is not render-blocking and does not hold back the app script; it switches to all when it arrives. A slow or blocked CDN just means system fonts for a while. -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/></noscript>
 <style>
 :root{
   --bg:#0a0a0a;--surface:rgba(17,17,17,.72);--surface2:rgba(28,28,28,.78);--line:rgba(255,255,255,.12);
@@ -844,6 +846,11 @@ body.theme-light .invite-card .inv-ico{background:var(--surface2)}
 }
 .main-chat-col{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .day{text-align:center;margin:20px 0 12px}
+.chat-earlier{display:block;margin:8px auto 4px}
+#historyMore{text-align:center;padding:8px 0 72px}
+#historyMore[hidden]{display:none}
+.gen-note{margin:6px 0 10px 44px;font-size:13px;color:var(--muted);font-family:var(--sans)}
+.sess-gen{font-size:10px;color:var(--muted);margin-left:6px;white-space:nowrap}
 .day span{font-size:11px;color:var(--muted);font-family:var(--sans);padding:4px 10px;border:0;border-radius:0}
 .msg{display:flex;gap:12px;margin-bottom:12px;width:100%;align-items:flex-start}
 .msg.me{flex-direction:row-reverse;justify-content:flex-start}
@@ -2721,7 +2728,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
 </style>
 <link rel="stylesheet" href="/ui/phone.css"/>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" media="print" onload="this.media='all'"/>
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/></noscript>
 </head>
 <body>
 <div class="backdrop" id="backdrop" onclick="closeSide()"></div>
@@ -2882,6 +2890,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         </div>
         <div class="side-section-body" id="historyBody">
           <div id="historyDays"><div class="empty">Loading…</div></div>
+          <div id="historyMore" hidden><button type="button" class="btn" onclick="showOlderChats()">Show older chats</button></div>
         </div>
       </div>
       <div class="side-section" id="projectsSection" style="display:none" hidden>
@@ -4021,6 +4030,15 @@ function autoGrowInput(){
 let lastId=0,lastHistId=0,myName=localStorage.getItem('clipdrop_name')||'';
 let pullGen=0;
 let chatCacheBySession={}; // session_id → {by_date, latest_id} for instant switch paint
+const CHAT_CACHE_MAX=8, chatCacheOrder=[]; // only the last few chats stay in memory
+function chatCachePut(sess,val){
+  chatCacheBySession[sess]=val;
+  const i=chatCacheOrder.indexOf(sess);
+  if(i>=0)chatCacheOrder.splice(i,1);
+  chatCacheOrder.push(sess);
+  while(chatCacheOrder.length>CHAT_CACHE_MAX)delete chatCacheBySession[chatCacheOrder.shift()];
+}
+
 let composerDraftByKey={}; // per-chat / per-new-mode draft text so switching views keeps what you typed
 let curItem=null,tunnelHref='',lanHref='',msgById={},allHistory=[],info={};
 let lastTunnelUrl='',lastKnownLan='',lastNetworkEpoch=0;
@@ -12511,10 +12529,37 @@ async function pruneEmptySessions(sessions){
   const gone=new Set(empties.map(s=>+s.id));
   return (sessions||[]).filter(s=>!gone.has(+s.id));
 }
+// The sidebar holds the newest chats first, 200 at a time; "Show older chats" asks for the next 200.
+let sessionsShown=200,sessionsHasMore=false,sessionsTotal=0;
+async function fetchSessionList(){
+  const seen=new Map();let offset=0,more=false,total=0;
+  while(seen.size<sessionsShown){
+    const d=await api('/api/sessions?limit=200&offset='+offset).then(r=>r.json());
+    const got=d.sessions||[];
+    got.forEach(s=>seen.set(+s.id,s));
+    offset+=got.length;more=!!d.has_more;total=d.total||seen.size;
+    if(!more||!got.length)break;
+  }
+  sessionsHasMore=more;sessionsTotal=total;
+  return {sessions:[...seen.values()]};
+}
+function updateHistoryMore(){
+  const box=$('historyMore');if(!box)return;
+  const left=Math.max(0,sessionsTotal-(cachedSessions||[]).length);
+  box.hidden=!(sessionsHasMore&&left>0);
+  const b=box.querySelector('button');
+  if(b)b.textContent=left===1?'Show 1 older chat':`Show ${Math.min(left,200)} older chats`;
+}
+window.showOlderChats=async()=>{
+  sessionsShown+=200;
+  const b=$('historyMore')?.querySelector('button');if(b)b.disabled=true;
+  try{await loadVaultTree()}catch(e){toast('Could not load older chats')}
+  if(b)b.disabled=false;
+};
 async function loadVaultTree(){
   const [vault,sessData]=await Promise.all([
     api('/api/vault').then(r=>r.json()).catch(()=>({categories:[],recent:[]})),
-    api('/api/sessions').then(r=>r.json()).catch(()=>({sessions:[]})),
+    fetchSessionList().catch(()=>({sessions:[]})),
   ]);
   let allSessions=(sessData.sessions&&sessData.sessions.length)?sessData.sessions:(vault.recent||[]);
   allSessions=await pruneEmptySessions(allSessions);
@@ -12524,6 +12569,8 @@ async function loadVaultTree(){
   renderProjects(vault.categories||[]);
   markSelectedSession(currentSession);
   updateSideNav();
+  updateHistoryMore();
+  applySidebarGenerating(allSessions.filter(x=>x.generating).map(x=>x.id));
 }
 window.toggleRecent=()=>{
   const b=$('recentBody');const c=$('chevRecent');
@@ -12645,7 +12692,8 @@ window.openSession=async id=>{
   // Instant paint from cache — never wipe to "Loading…" (kills flicker)
   const cached=chatCacheBySession[id];
   if(cached&&cached.by_date&&cached.by_date.length){
-    renderChat({by_date:cached.by_date,latest_id:cached.latest_id});
+    renderChat({by_date:cached.by_date,latest_id:cached.latest_id,has_more:cached.has_more});
+    chatDomSess=id;
     if(cached.latest_id)lastId=cached.latest_id;
     $('chat')?.classList.add('chat-switching');
   }else{
@@ -12659,13 +12707,24 @@ window.openSession=async id=>{
   syncChatTitleBar();
   // Defer vault refresh so switch feels snappy
   setTimeout(()=>{loadVaultTree().catch(()=>{})},40);
-  if(currentSession && !sessionExistsInCache(currentSession)){
+  if(currentSession && !(await sessionExists(currentSession))){
     clearMissingSession('That chat is gone');
   }
 };
 function sessionExistsInCache(id){
   if(!id)return false;
   return (cachedSessions||[]).some(s=>+s.id===+id);
+}
+// The sidebar only holds the newest chats, so a chat that is not in it may still exist:
+// ask the server before saying it is gone. Only a clear "no such chat" counts; a failed
+// request leaves the chat alone.
+async function sessionExists(id){
+  if(sessionExistsInCache(id))return true;
+  try{
+    const r=await api('/api/sessions/'+(+id));
+    if(r.status===404)return false;
+    return true;
+  }catch(e){return true}
 }
 function clearMissingSession(msg){
   currentSession=0;
@@ -13252,7 +13311,7 @@ async function deleteHistoryItem(id){
   await api('/api/messages/'+id,{method:'DELETE'});
   delete msgById[id];
   if(curItem&&curItem.id===id)closeModal();
-  pullHistory();pullChat();
+  pullHistory();pullChat({full:true});
 }
 
 /* ===== Presence — who else is in this chat right now =========================
@@ -13405,6 +13464,135 @@ function renderMsg(m){
     <div class="body">${inner}</div></div></div>`;
 }
 
+// A long chat opens on its newest messages; older ones come in a page at a time.
+const CHAT_PAGE=200;
+function earlierBtnHtml(data){
+  return data&&data.has_more?'<button type="button" id="chatEarlier" class="btn chat-earlier" onclick="loadEarlierMessages()">Load earlier messages</button>':'';
+}
+function renderedMsgIds(){
+  const out=[];
+  $('chat')?.querySelectorAll('.msg[id^="msg-"]').forEach(el=>{const n=+el.id.slice(4);if(n>0)out.push(n)});
+  return out;
+}
+// Only new messages arrived (the usual case after a send): add them to the end instead of
+// rebuilding every message. Returns false when the page does not match the server
+// (another chat, a message was deleted, a gap): the caller then does the full rebuild.
+function appendChatTail(data,sess){
+  const box=$('chat');if(!box||!sess||chatDomSess!==sess)return false;
+  const fetched=[];
+  for(const gr of (data.by_date||[]))for(const m of (gr.messages||[]))fetched.push([m,gr.label]);
+  if(!fetched.length)return false;
+  const have=renderedMsgIds();
+  if(!have.length)return false;
+  // Compare the part both sides cover: from the older of the two starting points.
+  const lo=Math.max(have[0],fetched[0][0].id);
+  const tail=have.filter(id=>id>=lo);
+  const win=fetched.filter(f=>f[0].id>=lo);
+  if(!tail.length||tail.length>win.length)return false;
+  for(let i=0;i<tail.length;i++)if(win[i][0].id!==tail[i])return false;
+  const fresh=win.slice(tail.length);
+  if(!fresh.length)return true;
+  const days=box.querySelectorAll('.day span');
+  let lastLabel=days.length?days[days.length-1].textContent:'';
+  let html='';
+  for(const [m,label] of fresh){
+    if(label!==lastLabel){html+=`<div class="day"><span>${esc(label)}</span></div>`;lastLabel=label}
+    html+=renderMsg(m);
+  }
+  box.querySelector('.empty')?.remove();
+  document.getElementById('gen-note')?.remove();
+  const pendingEl=document.getElementById('pending-user');
+  if(pendingEl&&fresh.some(([m])=>m.source!=='ai'&&m.kind==='text'))pendingEl.remove();
+  if(fresh.some(([m])=>m.source==='ai'))hideThinking();
+  const anchor=document.getElementById('pending-user')||document.getElementById('ai-stream');
+  if(anchor)anchor.insertAdjacentHTML('beforebegin',html);
+  else box.insertAdjacentHTML('beforeend',html);
+  applyCategory(detectCategoryFromMsgs(fetched.map(f=>f[0]))||currentMode());
+  wireFollowups();
+  wireEngagementSignals();
+  renderMermaidIn(box);
+  paintSendFailure();
+  if(chatFreshOpen){chatFreshOpen=false;scrollChatBottomNow()}
+  else scrollChatIfPinned();
+  updateMsgScrollRail();
+  return true;
+}
+// Keep `el` at the same place on screen for a moment: the messages above it settle (code
+// blocks, tables, maths) a little after they are added and would push it away. Stops as
+// soon as the person scrolls.
+let holdAnchorToken=0;
+function holdScrollAnchor(sc,el,y){
+  let stop=false;
+  const mine=++holdAnchorToken;
+  const end=Date.now()+1500;
+  const halt=()=>{stop=true};
+  ['wheel','touchstart','pointerdown','keydown'].forEach(ev=>sc.addEventListener(ev,halt,{once:true,passive:true}));
+  const step=()=>{
+    if(stop||mine!==holdAnchorToken||Date.now()>end||!el.isConnected)return;
+    const d=el.getBoundingClientRect().top-sc.getBoundingClientRect().top-y;
+    if(Math.abs(d)>1)sc.scrollTop+=d;
+    requestAnimationFrame(step);
+  };
+  step();
+}
+let earlierBusy=false;
+let chatDomSess=0; // which chat the messages on screen belong to (0 = the all-chats feed)
+window.loadEarlierMessages=async()=>{
+  const sess=currentSession,box=$('chat'),btn=$('chatEarlier');
+  const first=renderedMsgIds()[0];
+  if(earlierBusy||!sess||!box||!first)return;
+  earlierBusy=true;
+  if(btn){btn.disabled=true;btn.textContent='Loading…'}
+  try{
+    const d=await fetchJson(`/api/messages?full=1&session_id=${sess}&before_id=${first}&limit=${CHAT_PAGE}`);
+    if(sess!==currentSession)return;
+    const g=d.by_date||[];
+    const sc=chatScrollEl();
+    // The message that is at the top now stays where it is on screen while older ones go above it.
+    const anchor=box.querySelector('.msg[id^="msg-"]');
+    const anchorY=anchor&&sc?anchor.getBoundingClientRect().top-sc.getBoundingClientRect().top:0;
+    // The day at the seam is shown once.
+    const seam=box.querySelector('.day span');
+    if(g.length&&seam&&seam.textContent===g[g.length-1].label)seam.parentElement.remove();
+    const html=g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+gr.messages.map(renderMsg).join('')).join('');
+    if(btn)btn.insertAdjacentHTML('afterend',html);else box.insertAdjacentHTML('afterbegin',html);
+    if(sc&&anchor)holdScrollAnchor(sc,anchor,anchorY);
+    userPinnedScroll=true;
+    wireFollowups();
+    renderMermaidIn(box);
+    updateMsgScrollRail();
+    if(btn){if(d.has_more){btn.disabled=false;btn.textContent='Load earlier messages'}else btn.remove()}
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Load earlier messages'}
+    toast('Could not load earlier messages. Try again.');
+  }finally{earlierBusy=false}
+};
+// "AirGPT is still answering": a chat whose reply is being written by the server, seen
+// from a tab that is not showing the live stream (left and came back, or another device).
+function syncGenNote(sess,generating){
+  if(!sess||sess!==currentSession)return;
+  const box=$('chat');if(!box)return;
+  const msgs=box.querySelectorAll('.msg[id^="msg-"]');
+  const last=msgs[msgs.length-1];
+  const own=aiPending&&streamSessionGen===sessionGen;
+  const show=!!generating&&!own&&!!last&&last.dataset.ai!=='1';
+  const note=document.getElementById('gen-note');
+  if(show&&!note){
+    box.insertAdjacentHTML('beforeend','<div id="gen-note" class="gen-note" role="status">AirGPT is still answering…</div>');
+    scrollChatIfPinned();
+  }else if(!show&&note)note.remove();
+}
+function applySidebarGenerating(ids){
+  const on=new Set((ids||[]).map(Number));
+  document.querySelectorAll('#historyDays .session-item[data-sid]').forEach(el=>{
+    const tag=el.querySelector('.sess-gen'),want=on.has(+el.dataset.sid);
+    if(want&&!tag){
+      const row=el.querySelector('.h-title-row');
+      if(row)row.insertAdjacentHTML('beforeend','<span class="sess-gen">Answering…</span>');
+    }else if(!want&&tag)tag.remove();
+  });
+}
+let lastGeneratingIds=[];
 function renderChat(data){
   const g=data.by_date||[];
   const sameStream=aiPending&&streamSessionGen===sessionGen&&(document.getElementById('ai-stream')||document.getElementById('pending-user'));
@@ -13420,7 +13608,7 @@ function renderChat(data){
     const holdStream=streamEl?streamEl.outerHTML:'';
     const hasUserInDb=allMsgs.some(m=>m.source==='ai-chat'||(m.device_name&&m.device_name!=='AirGPT'&&m.text));
     const holdPending=(!hasUserInDb&&pendingEl)?pendingEl.outerHTML:'';
-    $('chat').innerHTML=html+holdPending+holdStream;
+    $('chat').innerHTML=earlierBtnHtml(data)+html+holdPending+holdStream;
     // re-bind stop button
     const stop=$('streamStopBtn');
     if(stop)stop.onclick=stopStream;
@@ -13450,7 +13638,7 @@ function renderChat(data){
   }
   const allMsgs=g.flatMap(gr=>gr.messages||[]);
   applyCategory(detectCategoryFromMsgs(allMsgs)||currentMode());
-  $('chat').innerHTML=g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+
+  $('chat').innerHTML=earlierBtnHtml(data)+g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+
     gr.messages.map(renderMsg).join('')).join('');
   wireFollowups();
   wireEngagementSignals();
@@ -14630,17 +14818,38 @@ async function pullHistory(){
 }
 
 let syncInFlight=false;
+// How often the page asks the server what changed. Quick (1 s) while something is going
+// on, slower when nothing has happened for a while, slowest when the tab is hidden. Any
+// key, tap or new message speeds it up again, and coming back to the tab asks at once.
+let syncTimer=0,syncDue=0,syncLastAct=Date.now();
+function syncNext(ms){
+  clearTimeout(syncTimer);
+  syncDue=Date.now()+ms;
+  syncTimer=setTimeout(syncLoop,ms);
+}
+function syncDelay(){
+  if(document.hidden)return 15000;
+  const quiet=Date.now()-syncLastAct;
+  return quiet<10000?1000:quiet<30000?2000:4000;
+}
+function syncActivity(){
+  syncLastAct=Date.now();
+  if(syncDue-Date.now()>1000&&!syncInFlight)syncNext(1000);
+}
+['keydown','pointerdown','touchstart'].forEach(ev=>document.addEventListener(ev,syncActivity,{passive:true,capture:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncLastAct=Date.now();syncNext(0)}});
 async function syncLoop(){
-  if(syncInFlight){setTimeout(syncLoop, aiPending?800:400);return}
+  if(syncInFlight){syncNext(aiPending?800:400);return}
   // Soft-pause long-poll while streaming so SSE isn't starved of threads
-  if(aiPending){setTimeout(syncLoop,900);return}
+  if(aiPending){syncNext(900);return}
   syncInFlight=true;
   try{
     const sessAtStart=currentSession;
     const genAtStart=pullGen;
     const sessQ=currentSession?`&session_id=${currentSession}`:'';
     const d=await api(`/api/wait?since=${lastId}&hist_since=${lastHistId}${sessQ}&ver=${syncVer}`,{cache:'no-store'}).then(r=>r.json());
-    if(sessAtStart!==currentSession||genAtStart!==pullGen){setTimeout(syncLoop,200);return}
+    if(sessAtStart!==currentSession||genAtStart!==pullGen){syncNext(200);return}
+    if(d.sync_version!==undefined&&d.sync_version!==syncVer||d.new_chat?.length||d.new_hist?.length||(d.presence||[]).length)syncLastAct=Date.now();
     syncVer=d.sync_version??syncVer;
     try{renderPresence(d.presence)}catch(e){}
     try{if(window.MP&&MP.onWaitPayload)MP.onWaitPayload(d)}catch(e){}
@@ -14655,6 +14864,7 @@ async function syncLoop(){
       for(const m of d.new_chat){
         if(currentSession&&m.session_id&&m.session_id!==currentSession)continue;
         if(m.id>lastId){
+          document.getElementById('gen-note')?.remove();
           if(m.source==='ai')hideThinking();
           const empty=$('chat').querySelector('.empty');
           if(empty)empty.remove();
@@ -14670,30 +14880,40 @@ async function syncLoop(){
       scrollChatIfPinned();
       updateMsgScrollRail();
     }
+    const busyIds=Array.isArray(d.generating)?d.generating:[];
+    if(busyIds.length||lastGeneratingIds.length)applySidebarGenerating(busyIds);
+    lastGeneratingIds=busyIds;
+    if(busyIds.length)syncLastAct=Date.now();
+    syncGenNote(currentSession,busyIds.includes(+currentSession));
     if(d.tunnel_url||d.tunnel_status||d.lan_url){
       info={...info,...d};
       applyTunnelUi(info);
     }
   }catch(e){
-    if(e.message==='auth'){showLogin();setTimeout(syncLoop,3000);return}
-    setTimeout(syncLoop,2000);return;
+    if(e.message==='auth'){showLogin();syncNext(3000);return}
+    syncNext(document.hidden?15000:2000);return;
   }finally{
     syncInFlight=false;
   }
-  setTimeout(syncLoop, aiPending?1000:350);
+  syncNext(aiPending?1000:syncDelay());
 }
 
-async function pullChat(){
+// opts.full forces a rebuild of every message (after a delete); otherwise only new
+// messages are added when the page already shows the same chat.
+async function pullChat(opts){
   const gen=++pullGen;
   const sess=currentSession;
   const sessQ=sess?`&session_id=${sess}`:'';
   try{
-    const d=await fetchJson('/api/messages?since=0&full=1'+sessQ);
+    // A chat is fetched as its newest page, or as many as the page already shows.
+    const lim=sess?`&limit=${Math.min(500,Math.max(CHAT_PAGE,renderedMsgIds().length+40))}`:'';
+    const d=await fetchJson('/api/messages?since=0&full=1'+lim+sessQ);
     if(gen!==pullGen)return; // stale response — ignore
     const payload=d.by_date?d:{by_date:[]};
-    if(sess)chatCacheBySession[sess]={by_date:payload.by_date||[],latest_id:d.latest_id||0};
-    renderChat(payload);
+    if(sess)chatCachePut(sess,{by_date:payload.by_date||[],latest_id:d.latest_id||0,has_more:!!d.has_more});
+    if(!(sess&&!(opts&&opts.full)&&appendChatTail(payload,sess))){renderChat(payload);chatDomSess=sess}
     if(d.latest_id)lastId=d.latest_id;
+    if(sess)syncGenNote(sess,d.generating);
     wireFollowups();
   }catch(e){
     if(gen!==pullGen)return;
@@ -15485,7 +15705,7 @@ async function bootApp(force){
     loadVaultTree().catch(()=>{$('historyDays').innerHTML='<div class="empty">Sidebar failed — refresh</div>'}),
   ]);
   if(currentSession>0){
-    if(!sessionExistsInCache(currentSession)){
+    if(!(await sessionExists(currentSession))){
       clearMissingSession('Previous chat was removed');
     }else{
       try{await pullChat()}catch(e){
@@ -15869,7 +16089,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   function openPanel(v){
     open = v; panel.classList.toggle('open', v);
     if(v) fit();
-    if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
+    if(v){ idleFails = 0; poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
     else { detachSse(); }
   }
 
@@ -15997,9 +16217,16 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(open && (!sse || sseTask !== ((run[0]&&run[0].id)||''))) attachSse();
   }
 
+  // The engine can be down for hours. Each failed or "engine offline" answer doubles the
+  // wait before the next idle check (5 s up to 60 s); an answer from a running engine, or
+  // opening the panel, puts it back to 5 s.
+  var idleFails = 0;
   function poll(){
     fetch('/api/workflows/tasks').then(function(r){return r.json()})
-      .then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
+      .then(function(d){
+        if(d && d.ok){ render(d); idleFails = d.degraded ? Math.min(idleFails + 1, 4) : 0; }
+        else idleFails = Math.min(idleFails + 1, 4);
+      }).catch(function(){ idleFails = Math.min(idleFails + 1, 4); });
   }
 
   window.bgTasks = {
@@ -16010,7 +16237,20 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     refresh: poll
   };
 
-  setInterval(function(){ if(!open) poll(); }, 5000);
+  // Idle check: slower after failures, and not at all while the tab is hidden.
+  var idleTimer = null;
+  function idleTick(){
+    if(!open && !document.hidden) poll();
+    scheduleIdle();
+  }
+  function scheduleIdle(){
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(idleTick, Math.min(60000, 5000 * Math.pow(2, idleFails)));
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden){ idleFails = 0; poll(); scheduleIdle(); }
+  });
+  scheduleIdle();
   poll();
 })();
 /* ── Background tasks — top-bar entry point badge ─────────────────────────
