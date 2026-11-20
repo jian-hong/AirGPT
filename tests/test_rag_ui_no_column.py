@@ -50,3 +50,26 @@ def test_asks_that_name_something_are_left_alone(lane, q):
     hit = lane(q)
     # either computed from named columns, or not a table question at all
     assert hit is None or "Which column do you mean" not in hit["answer"]
+
+
+def test_row_count_over_several_sheets_reports_all_of_them(tmp_path, monkeypatch):
+    """The headline said "406 ... from Q1, 3 of 3 rows": the figure was the sum, the rest was sheet 1."""
+    from rag import answer, reveal
+
+    a, b = tmp_path / "a.csv", tmp_path / "b.csv"
+    a.write_text("Order,Amount\n" + "\n".join(f"{i},{i}" for i in range(1, 6)) + "\n")
+    b.write_text("Order,Amount\n" + "\n".join(f"{i},{i}" for i in range(1, 9)) + "\n")
+    srcs = [{"path": str(a), "title": "a.csv"}, {"path": str(b), "title": "b.csv"}]
+    monkeypatch.setattr(answer.store, "list_sources", lambda sid: srcs)
+    monkeypatch.setattr(reveal, "resolve_source_path", lambda src: (src["path"], "path"))
+    hit = answer._try_hybrid_sql_lane(1, "how many rows")
+    prov = hit["provenance"]
+    assert prov["value"] == 13
+    # the totals shown beside the 13 are over every table, not the first one
+    assert prov["rows_matched"] == prov["rows_total"] == 13
+    assert "a.csv" in prov["workbook"] and "b.csv" in prov["workbook"]
+    # SQL in the answer text is code, so a Markdown renderer cannot eat the asterisks
+    assert "`SELECT COUNT(*)" in hit["answer"]
+    # and when it has to ask which column, it does not call the first sheet's size "the sheet"
+    ask = answer._try_hybrid_sql_lane(1, "what is the total?")["provenance"]
+    assert ask["abstained"] is True and "rows_total" not in ask

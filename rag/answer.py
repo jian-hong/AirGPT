@@ -1304,16 +1304,17 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
                 head = f"{sheets[0]['value']:,} rows, counted over the whole of the {sheets[0]['sheet']} sheet of {sheets[0]['workbook']}."
             else:
                 head = "Row counts, every row counted: " + "; ".join(lines) + "."
-            (wb0, sh0) = frames[0][0]
             return {
-                "answer": head + "\n\nSQL: " + "; ".join(s["sql"] for s in sheets),
+                "answer": head + "\n\nSQL: `" + "; ".join(s["sql"] for s in sheets) + "`",
                 "citations": [{"path": (owner or {}).get(wb, {}).get("path") or wb, "title": wb, "sheet": sh} for (wb, sh), _df in frames],
-                "sql": sheets[0]["sql"],
+                "sql": "; ".join(s["sql"] for s in sheets),
                 "provenance": {
-                    "workbook": wb0, "sheet": sh0, "sql": sheets[0]["sql"], "operation": "COUNT",
-                    "value": sheets[0]["value"] if len(sheets) == 1 else sum(s["value"] for s in sheets),
-                    "rows_matched": sheets[0]["rows_matched"], "rows_total": sheets[0]["rows_total"],
-                    "abstained": False, "filter": "", "values_used": sheets[0]["rows_total"],
+                    # Over several sheets the figure is the sum, so the sheets and rows named beside it are all of them.
+                    "workbook": ", ".join(dict.fromkeys(s["workbook"] for s in sheets)),
+                    "sheet": ", ".join(s["sheet"] for s in sheets), "sql": "; ".join(s["sql"] for s in sheets), "operation": "COUNT",
+                    "value": sum(s["value"] for s in sheets),
+                    "rows_matched": sum(s["rows_matched"] for s in sheets), "rows_total": sum(s["rows_total"] for s in sheets),
+                    "abstained": False, "filter": "", "values_used": sum(s["rows_total"] for s in sheets),
                     "assumed": ["no column was named, so every row was counted"],
                     "sheets": sheets if len(sheets) > 1 else [],
                 },
@@ -1341,8 +1342,10 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
             ),
             "citations": [{"path": (owner or {}).get(wb, {}).get("path") or wb, "title": wb, "sheet": sh} for (wb, sh), _df in frames],
             "provenance": {
-                "workbook": wb0, "sheet": sh0, "rows_total": int(len(df0)), "abstained": True,
+                "workbook": wb0, "sheet": sh0, "abstained": True,
                 "abstain_reason": "no column was named",
+                # a row count is only stated when there is one sheet, so it is never "the sheet" of several
+                **({"rows_total": int(len(df0))} if len(frames) == 1 else {}),
             },
         }
     except Exception:
