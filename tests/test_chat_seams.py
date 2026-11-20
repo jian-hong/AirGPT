@@ -217,6 +217,30 @@ class BusyChat(SeamsBase):
             clipdrop.Handler._sse_send = orig
         self.assertEqual(seen, {"busy_at_done": False, "saved_at_done": 1})
 
+    def test_two_regenerates_at_the_same_instant_give_one_reply(self):
+        # The busy check and the claim on the chat are one step: slow the window between
+        # them down and fire two requests together; only one may go through.
+        sid = self.new_chat()
+        u, _ = self.turn(sid)
+        orig = clipdrop._last_turn
+
+        def slow_last_turn(*a, **kw):
+            time.sleep(0.4)
+            return orig(*a, **kw)
+
+        clipdrop._last_turn = slow_last_turn
+        codes = []
+        try:
+            ts = [threading.Thread(target=lambda: codes.append(
+                self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": u["id"]})[0])) for _ in range(2)]
+            [t.start() for t in ts]
+            [t.join(15) for t in ts]
+        finally:
+            clipdrop._last_turn = orig
+        self.assertEqual(sorted(codes), [200, 409])
+        self.assertEqual([m["source"] for m in self.rows(sid)], ["ai-chat", "ai"])
+        self.assertFalse(clipdrop._generating_sessions(sid))
+
     def test_three_lines_sent_back_to_back_all_get_answered_in_order(self):
         sid = self.new_chat()
         for q in ("one", "two", "three"):

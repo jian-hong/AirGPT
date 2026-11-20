@@ -3759,12 +3759,18 @@ class Handler(BaseHTTPRequestHandler):
         turn_user: dict | None = None
         turn_replies: list[dict] = []
         turn_files: list[int] = []
+        claimed_id, claimed_abort = uuid.uuid4().hex, threading.Event()  # the claim made above, reused as the stream
         if regen_id or replace_id:
             turn_sid = int(data.get("session_id", 0) or 0)
             # The server is the only place that knows a reply is being written: two tabs
             # (or a tab and a phone) must not both change the same turn.
-            if turn_sid and _generating_sessions(turn_sid):
-                return self._json(409, {"error": "AirGPT is still answering in this chat. Wait for it or press Stop."})
+            # Check and claim in one step: two requests at the same instant must not both pass.
+            with _chat_streams_lock:
+                if turn_sid and any(int(r.get("session_id") or 0) == turn_sid for r in _chat_streams.values()):
+                    return self._json(409, {"error": "AirGPT is still answering in this chat. Wait for it or press Stop."})
+                if turn_sid:
+                    _chat_streams[claimed_id] = {"abort": claimed_abort, "session_id": turn_sid, "started": time.time()}
+                    self._stream_ids.append(claimed_id)
             turn_user, turn_replies, turn_err = _last_turn(
                 turn_sid, regen_id or replace_id, data.get("attachment_ids") or []
             )
@@ -3879,9 +3885,12 @@ class Handler(BaseHTTPRequestHandler):
         # up with its question sitting there unanswered forever.
         abort = threading.Event()
         stream_id = uuid.uuid4().hex
-        with _chat_streams_lock:
-            _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
-        self._stream_ids.append(stream_id)
+        if (regen_id or replace_id) and claimed_id in self._stream_ids:
+            abort, stream_id = claimed_abort, claimed_id  # already on the running list
+        else:
+            with _chat_streams_lock:
+                _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
+            self._stream_ids.append(stream_id)
 
         def _release() -> None:
             """Take the chat off the "answering" list. Called once the reply is saved and
