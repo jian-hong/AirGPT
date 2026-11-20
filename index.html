@@ -4870,8 +4870,10 @@ function openSkuSettings(){
   openSettings('plan');
   setTimeout(()=>{const el=$('setLicenseKey');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},200);
 }
+const _bannerGone={};   // the close still works when the browser refuses to store anything (private mode)
 function dismissBanner(which){
-  localStorage.setItem('banner_dismiss_'+which,'1');
+  _bannerGone[which]=1;
+  try{localStorage.setItem('banner_dismiss_'+which,'1')}catch(e){}
   const map={lan:'lanBanner',net:'netBanner',pay:'paywallBanner'};
   const el=$(map[which]);
   if(!el)return;
@@ -4881,7 +4883,7 @@ function dismissBanner(which){
     el.classList.remove('show','dismissing');
   },340);
 }
-function bannerAllowed(which){return localStorage.getItem('banner_dismiss_'+which)!=='1'}
+function bannerAllowed(which){if(_bannerGone[which])return false;try{return localStorage.getItem('banner_dismiss_'+which)!=='1'}catch(e){return true}}
 function markHadSession(){
   if(localStorage.getItem('airgpt_had_session')!=='1')localStorage.setItem('airgpt_had_session','1');
 }
