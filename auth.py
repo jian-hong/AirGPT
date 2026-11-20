@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import threading
 import time
 
@@ -113,18 +114,41 @@ def _hash_passcode(passcode: str, salt: str) -> str:
     ).hex()
 
 
+DAMAGED_MSG = (
+    "The passcode file on the host PC is damaged, so remote access is off. "
+    "A copy was kept as workspace.json.bad in the data folder. On the host PC, "
+    "restore it from a backup or remove workspace.json and set a new passcode."
+)
+
+
 def _load() -> dict:
+    """The workspace file. A file that is there but unreadable must never read as
+    "no passcode": that would open the gate. It reads as damaged, which refuses
+    remote access, and the bad file is kept as workspace.json.bad."""
     if not WORKSPACE_FILE.is_file():
         return {}
     try:
-        return json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
     except Exception:
-        return {}
+        pass
+    bad = WORKSPACE_FILE.with_name(WORKSPACE_FILE.name + ".bad")
+    try:
+        if not bad.exists():
+            shutil.copyfile(WORKSPACE_FILE, bad)
+    except OSError:
+        pass
+    return {"_damaged": True, "pass_hash": "!damaged", "salt": "", "email": ""}
 
 
 def _save(data: dict) -> None:
+    if data.get("_damaged"):
+        raise RuntimeError(DAMAGED_MSG)
     WORKSPACE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WORKSPACE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = WORKSPACE_FILE.with_name(WORKSPACE_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _swap(tmp, WORKSPACE_FILE)
 
 
 def passcode_required() -> bool:
@@ -144,6 +168,8 @@ def set_passcode_required(required: bool) -> dict:
     does not know who is asking.
     """
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if not ws.get("pass_hash"):
         return {"ok": False, "error": "No passcode set on this machine yet"}
     ws["passcode_off"] = not bool(required)
@@ -157,7 +183,10 @@ def status() -> dict:
     required = passcode_required()
     no_passcode = not bool(ws.get("pass_hash"))
     passcode_set = bool(ws.get("pass_hash"))
+    damaged = bool(ws.get("_damaged"))
     return {
+        "damaged": damaged,
+        "damaged_reason": DAMAGED_MSG if damaged else "",
         "initialized": passcode_set,
         "host_email": ws.get("email", ""),
         # Disarming the gate opens LAN access on purpose — the UI shows a standing
@@ -181,6 +210,8 @@ def init_workspace(email: str, passcode: str) -> dict:
     if not email or "@" not in email:
         return {"ok": False, "error": "Valid email required for host"}
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if ws.get("pass_hash"):
         return {"ok": False, "error": "Workspace already initialized on this machine"}
     salt = secrets.token_hex(16)
@@ -201,6 +232,8 @@ def init_workspace(email: str, passcode: str) -> dict:
 def join_workspace(passcode: str) -> dict:
     passcode = (passcode or "").strip()
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if not ws.get("pass_hash"):
         return {"ok": False, "error": "Host has not set up this workspace yet"}
     salt = ws.get("salt", "")
@@ -225,6 +258,8 @@ def verify_token(token: str | None) -> bool:
         return False
     _load_tokens()
     ws = _load()
+    if ws.get("_damaged"):
+        return False
     if not ws.get("pass_hash"):
         return True
     exp = _tokens.get(token)
