@@ -157,8 +157,21 @@ def init_db() -> None:
     ensure_default_projects()
 
 
+class ClosingConnection(sqlite3.Connection):
+    """`with _connect() as conn:` commits (or rolls back) and then CLOSES. sqlite3's own
+    context manager only commits, and on Python 3.13+ an unclosed connection lives until a
+    garbage-collection pass; on Windows that keeps the file open, so a restore cannot swap
+    it and a folder holding it cannot be removed."""
+
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, factory=ClosingConnection)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from config import DATA_DIR
+from db import ClosingConnection  # commits and closes on leaving a with-block
 
 DB_PATH = DATA_DIR / "agents.db"
 
@@ -19,7 +20,7 @@ NON_AGENT_NAMES = ("memory", "vault summarizer")
 
 def _conn() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    c = sqlite3.connect(str(DB_PATH), check_same_thread=False, factory=ClosingConnection)
     c.row_factory = sqlite3.Row
     return c
 
