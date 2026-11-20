@@ -131,6 +131,28 @@ class RestoreIsSafe(unittest.TestCase):
         self.assertEqual((self.dd / "notes.txt").read_text(), "keep")
         self.assertFalse(list(self.dd.glob("pre-restore-*")))
 
+    def test_two_restores_in_one_second_keep_both_safety_copies(self):
+        (self.dd / "notes.txt").write_text("first")
+        c1, o1 = clipdrop._restore_package(self._zip({"data/notes.txt": "second"}))
+        c2, o2 = clipdrop._restore_package(self._zip({"data/notes.txt": "third"}))
+        self.assertEqual((c1, c2), (200, 200))
+        self.assertNotEqual(o1["safety_copy"], o2["safety_copy"])
+        with zipfile.ZipFile(o1["safety_copy"]) as z:
+            self.assertEqual(z.read("data/notes.txt"), b"first")
+
+    def test_a_backup_too_big_for_the_disk_is_refused_before_anything_changes(self):
+        (self.dd / "notes.txt").write_text("keep")
+        real = clipdrop.shutil.disk_usage
+        clipdrop.shutil.disk_usage = lambda p: type("U", (), {"free": 10})()
+        try:
+            code, out = clipdrop._restore_package(self._zip({"data/big.bin": b"x" * 1000}))
+        finally:
+            clipdrop.shutil.disk_usage = real
+        self.assertEqual(code, 400)
+        self.assertIn("free space", out["error"])
+        self.assertEqual((self.dd / "notes.txt").read_text(), "keep")
+        self.assertFalse(list(self.dd.glob("pre-restore-*")))
+
     def test_backup_leaves_out_safety_copies_and_keeps_data(self):
         (self.dd / "a.txt").write_text("A")
         (self.dd / "pre-restore-1.zip").write_bytes(b"old")

@@ -1636,8 +1636,21 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             plan.append((name, target))
         if not plan:
             return 400, {"error": "That backup has no data to restore.", "skipped": skipped}
+        # Room first: the safety copy plus the restored files must fit on the disk.
+        need = sum(zf.getinfo(n).file_size for n, _ in plan)
+        try:
+            need += sum(f.stat().st_size for f in DATA_DIR.rglob("*") if f.is_file())
+            free = shutil.disk_usage(DATA_DIR if DATA_DIR.is_dir() else DATA_DIR.parent).free
+            if need > free:
+                return 400, {"error": "There is not enough free space on this PC to restore that backup safely. Nothing was changed.", "skipped": skipped}
+        except OSError:
+            pass
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         safety = DATA_DIR / f"pre-restore-{stamp}.zip"
+        n = 1
+        while safety.exists():  # two restores in one second must not overwrite the first copy
+            n += 1
+            safety = DATA_DIR / f"pre-restore-{stamp}-{n}.zip"
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(safety, "w", zipfile.ZIP_DEFLATED) as sz:
@@ -1653,8 +1666,9 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             for name, target in plan:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 tmp = target.with_name(target.name + ".restoring")
-                tmp.write_bytes(zf.read(name))
                 tmps.append((tmp, target))
+                with zf.open(name) as src, open(tmp, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
         except Exception as e:
             for tmp, _ in tmps:
                 try:

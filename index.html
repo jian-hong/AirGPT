@@ -3923,6 +3923,7 @@ async function checkAuth(){
   try{
     const st=await fetch(API()+'/api/auth/status').then(r=>r.json());
     if(!st.initialized){authToken='';localStorage.removeItem('airgpt_token')}
+    if(st.damaged&&isLocal)toast(st.damaged_reason);
     if(!st.needs_auth){await ensureEstablish();return true}
     if(authToken){
       const t=await fetch(API()+'/api/info',{headers:{'X-AirGPT-Token':authToken}});
@@ -14175,7 +14176,7 @@ async function openSettings(panel){
   if($('setAiAuto')){$('setAiAuto').checked=!!s.ai_auto;_aiAutoDirty=false}
   if($('setLoginHostPane'))$('setLoginHostPane').style.display=st.initialized?'none':'block';
   if($('setLoginJoinPane'))$('setLoginJoinPane').style.display=st.initialized?'block':'none';
-  if($('authStatusLine'))$('authStatusLine').textContent=st.initialized
+  if($('authStatusLine'))$('authStatusLine').textContent=st.damaged?st.damaged_reason:st.initialized
     ?(authToken?'✓ Signed in':'Workspace ready — use passcode to join from phone')
     :'Do this once on this PC. Phones cannot connect until you do.';
   renderPasscodeGate(st);
