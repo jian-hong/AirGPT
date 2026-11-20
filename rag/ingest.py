@@ -1672,15 +1672,29 @@ def ingest_urls(space_id: int, urls: list[str], *, force: bool = False, max_byte
             failed.append({"url": u, "reason": "only http(s) links"})
             continue
         try:
+            # Same address filter the chat link fetch uses: a link, or any redirect it
+            # follows, may not point at this machine, the LAN, link-local or metadata
+            # addresses. Otherwise a web page could make the host read its own local API
+            # and index the answer as a document.
+            import ai_engine
+
             req = urllib.request.Request(u, headers={"User-Agent": "AirGPT-RAG/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            ai_engine._check_public_url(u)  # noqa: SLF001
+            opener = urllib.request.build_opener(ai_engine._PublicOnlyRedirect)  # noqa: SLF001
+            with opener.open(req, timeout=15) as r:
                 ctype = (r.headers.get("Content-Type") or "").lower()
                 charset = "utf-8"
                 if "charset=" in ctype:
                     charset = ctype.split("charset=")[-1].split(";")[0].strip() or "utf-8"
                 data = r.read(max_bytes)
         except Exception as e:
-            failed.append({"url": u, "reason": str(e)[:120]})
+            if type(e).__name__ == "_PrivateAddress":
+                failed.append({
+                    "url": u,
+                    "reason": "not opened: this link points to a private or internal address (this computer or your network)",
+                })
+            else:
+                failed.append({"url": u, "reason": str(e)[:120]})
             continue
         try:
             body = data.decode(charset, errors="replace")
