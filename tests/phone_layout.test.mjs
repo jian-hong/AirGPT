@@ -93,7 +93,9 @@ test("phone: choosing an action runs it and closes the menu", async () => {
   await page.tap("#chatMoreBtn"); await page.tap("#bgTasksTitleBtn");
   await page.tap("#chatMoreBtn"); await page.tap("#chatShareBtn");
   const r = await page.evaluate(() => ({ hit: window.__hit, ex: document.getElementById("chatMoreBtn").getAttribute("aria-expanded") }));
+  const focus = await page.evaluate(() => document.activeElement.id); // not lost when the menu closes after an action
   await ctx.close();
+  assert.equal(focus, "chatMoreBtn");
   assert.deepEqual(r, { hit: ["bg", "share"], ex: "false" });
 });
 
@@ -160,4 +162,12 @@ test("reply rail: hidden in OpenIDE and when the page has no replies, shown in a
 test("reply rail: re-checked when a page replaces #chat or the page mode changes", () => {
   assert.match(html, /new MutationObserver\(q\)\.observe\(c,\{childList:true\}\)/);
   assert.match(html, /new MutationObserver\(q\)\.observe\(document\.body,\{attributes:true,attributeFilter:\['class'\]\}\)/);
+});
+
+test("phone: the open ... menu sits above the reply rail (z-index 22)", async () => {
+  const { ctx, page } = await open(PHONE(320, 568));
+  await page.tap("#chatMoreBtn");
+  const z = await page.evaluate(() => +getComputedStyle(document.getElementById("chatTitleBar")).zIndex);
+  await ctx.close();
+  assert.ok(z > 22, "title bar z-index " + z);
 });

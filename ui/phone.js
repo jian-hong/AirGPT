@@ -49,7 +49,7 @@
     }
     function inSub(t){return !!(t&&t.closest&&t.closest('.ctools-menu'))}
     btn.addEventListener('click',function(e){e.stopPropagation();isOpen()?close(true):open()});
-    box.addEventListener('click',function(e){var b=e.target.closest('button');if(b&&b.id!=='chatExportBtn')close(false)});
+    box.addEventListener('click',function(e){var b=e.target.closest('button');if(b&&b.id!=='chatExportBtn'){close(false);var a=document.activeElement;if(a===document.body||(box.contains(a)&&!a.offsetParent))try{btn.focus({preventScroll:true})}catch(x){}}});
     document.addEventListener('click',function(e){
       if(!isOpen())return;
       var b=inSub(e.target)&&e.target.closest('button[data-fmt]');

@@ -159,6 +159,7 @@
 @media(max-width:760px){
   .chat-titlebar{position:relative;gap:8px}
   .chat-titlebar-title{font-size:16px;max-width:none}
+  .chat-titlebar.more-open{z-index:30} /* above the reply rail (22) so the open menu is never under it */
   .chat-more-btn{
     display:inline-flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;
     width:32px;height:32px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--text);cursor:pointer;
