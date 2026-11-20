@@ -1191,6 +1191,38 @@ def add_message(
     return _row_to_dict(row)
 
 
+def count_session_messages(session_id: int, before_id: int = 0) -> int:
+    """How many messages a chat holds (only those before `before_id` when given)."""
+    with _lock, _connect() as conn:
+        if before_id:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE session_id=? AND id<?", (session_id, before_id)
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM messages WHERE session_id=?", (session_id,)).fetchone()
+    return int(row["n"] or 0)
+
+
+def get_messages_before(session_id: int, before_id: int, limit: int = 60) -> list[dict]:
+    """The latest `limit` messages of a chat that come before `before_id`, oldest first."""
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?",
+            (session_id, before_id, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in reversed(rows)]
+
+
+def set_message_ai_info(msg_id: int, *, model: str = "", status: str = "") -> None:
+    """Record which model wrote a reply, and whether it was cut short ('stopped')."""
+    with _lock, _connect() as conn:
+        if model:
+            conn.execute("UPDATE messages SET ai_model=? WHERE id=?", (model[:80], msg_id))
+        if status:
+            conn.execute("UPDATE messages SET ai_status=? WHERE id=?", (status[:20], msg_id))
+        conn.commit()
+
+
 def get_media_messages(limit: int = 200) -> list[dict]:
     with _lock, _connect() as conn:
         rows = conn.execute(
