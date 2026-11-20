@@ -156,5 +156,55 @@ class AttachmentsTest(unittest.TestCase):
         self.assertEqual(trace["total_chars"], len(prompt))
 
 
+class CortexRouteTest(unittest.TestCase):
+    """Every chat turn goes to the Cortex agent loop first, so the file must be in that prompt too."""
+
+    def test_cortex_prompt_carries_the_file_and_the_record_adds_up(self):
+        import threading
+
+        import clipdrop
+        import cortex_client
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "notes.txt").write_text("The vault passcode is SECRET-42")
+        captured = {}
+        orig = cortex_client.engine_agent_loop
+        cortex_client.engine_agent_loop = lambda prompt, **kw: (captured.update(prompt=prompt) or {"ok": True, "content": "ok"})
+        try:
+            events = list(clipdrop._chat_stream_events(
+                "What is the passcode?", "general", [], threading.Event(), session_id=0,
+                attachments=[{"name": "notes.txt", "path": tmp / "notes.txt"}],
+            ))
+        finally:
+            cortex_client.engine_agent_loop = orig
+        trace = next(e["trace"] for e in events if e["type"] == "prompt_trace")
+        self.assertIn("SECRET-42", captured["prompt"])
+        self.assertIn("untrusted file content", captured["prompt"])
+        self.assertEqual(trace["total_chars"], len(captured["prompt"]))
+        self.assertIn("attachments", [s["key"] for s in trace["sections"]])
+
+
+class UploadAndLimitTest(unittest.TestCase):
+    def test_only_files_of_this_chat_can_be_read(self):
+        import clipdrop
+        import db
+
+        a = db.create_session("a", capture_type="ai")["id"]
+        b = db.create_session("b", capture_type="ai")["id"]
+        rel = "files/test/own.txt"
+        (db.DATA_DIR / "files" / "test").mkdir(parents=True, exist_ok=True)
+        (db.DATA_DIR / rel).write_text("private")
+        m = db.add_message(device_ip="x", device_name="x", text="", kind="file", filename="own.txt",
+                           filepath=rel, mime="text/plain", size=7, source="chat", session_id=a,
+                           content_hash="h-own-txt")
+        self.assertEqual(len(clipdrop._attachment_files([m["id"]], (a, 0))), 1)
+        self.assertEqual(clipdrop._attachment_files([m["id"]], (b, 0)), [], "another chat's file must not be readable")
+        self.assertEqual(clipdrop._attachment_files(["abc", 99999999], (a,)), [])
+
+    def test_a_cut_message_is_flagged_by_the_limit_constant(self):
+        self.assertEqual(ai_engine.QUESTION_LIMIT, 6000)
+        self.assertIn("6,000", ai_engine.QUESTION_CUT_NOTE)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -617,6 +617,18 @@ def hash_seen_in_session(content_hash: str, session_id: int) -> bool:
     return bool(row)
 
 
+def message_by_hash_in_session(content_hash: str, session_id: int) -> dict | None:
+    """The message in this chat that already holds this file, if any."""
+    if not content_hash or not session_id:
+        return None
+    with _lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE content_hash=? AND session_id=? ORDER BY id DESC LIMIT 1",
+            (content_hash, session_id),
+        ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
 def prune_empty_screenshot_sessions() -> int:
     """Back-compat alias — prunes empty screenshot + empty daily orphans."""
     return prune_empty_orphan_sessions()

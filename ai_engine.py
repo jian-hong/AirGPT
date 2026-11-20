@@ -413,6 +413,14 @@ def web_search_snippets(query: str, max_results: int = 5) -> str:
     return "\n".join(f"- {p}" for p in parts[:max_results])
 
 
+# The model reads at most this many characters of one message; the composer shows the same number.
+QUESTION_LIMIT = 6000
+QUESTION_CUT_NOTE = (
+    "Your message was longer than 6,000 characters, so I only read the first 6,000. "
+    "Send the rest in a second message if it matters."
+)
+
+
 def _guard_user_question(question: str) -> str:
     if not question:
         return question
@@ -421,7 +429,7 @@ def _guard_user_question(question: str) -> str:
         if flags:
             print(f"[security] input flags={flags}")
         return wrapped
-    return question[:6000]
+    return question[:QUESTION_LIMIT]
 
 
 def _prepare_image(image_bytes: bytes, mime: str = "image/png") -> tuple[bytes, str]:
@@ -1900,7 +1908,7 @@ def _prepare_text_chat(
     # placeholders and raises KeyError, which killed every text chat that reached
     # this path. Plain substitution is immune to whatever the prompt text contains.
     head, _, tail = TEXT_CHAT_TEMPLATE.replace("{mode_prompt}", MODES[mode]).partition("{question}")
-    asked = question[:6000]
+    asked = question[:QUESTION_LIMIT]
     chat_block = ""
     if session_id:
         try:
@@ -1924,7 +1932,7 @@ def _prepare_text_chat(
             _pt.add(trace, "instructions", "Instructions", head + tail)
             _pt.add(
                 trace, "question", "Your message", asked,
-                note="Cut to 6,000 characters before sending." if len(question) > 6000 else "",
+                note="Cut to 6,000 characters before sending." if len(question) > QUESTION_LIMIT else "",
             )
             sent = len(history_msgs)
             squeezed = sum(1 for m in history_msgs if m.get("_compressed_for_prompt"))

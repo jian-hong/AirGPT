@@ -667,6 +667,7 @@ def _cortex_prompt_trace(
     tier: str,
     web_search: bool,
     chat_block: str = "",
+    attach_block: str = "",
 ) -> dict:
     """What AirGPT handed to the Cortex agent loop for this turn.
 
@@ -3374,10 +3375,13 @@ class Handler(BaseHTTPRequestHandler):
 
         restrict_links = not _is_host_request(self.headers, self.client_address[0])
         attach_files = _attachment_files(attach_ids, attach_sessions)
+        cut_note = ai_engine.QUESTION_CUT_NOTE if ai_engine and len(text) > ai_engine.QUESTION_LIMIT else ""
 
         def _producer() -> None:
             try:
                 ai_engine.set_link_fetch_restricted(restrict_links)
+                if cut_note:
+                    event_q.put({"type": "token", "text": cut_note + "\n\n"})
                 for ev in _chat_stream_events(
                     question, mode, history, abort,
                     session_id=session_id,
@@ -3388,6 +3392,9 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     if abort.is_set():
                         break
+                    if cut_note and ev.get("type") == "done":
+                        # Said in the reply itself (and saved with it), not only in the prompt panel.
+                        ev = {**ev, "analysis": cut_note + "\n\n" + str(ev.get("analysis") or "")}
                     if ev.get("type") == "prompt_trace":
                         # Kept for the reply row; the client reads it back by message id.
                         done_ev["trace"] = ev.get("trace")
@@ -5574,10 +5581,17 @@ class Handler(BaseHTTPRequestHandler):
                         if not sid:
                             daily = db.get_or_create_daily_image_session() if is_img else db.get_or_create_daily_text_session()
                             sid = daily["id"]
+                        # A document attached to a question must be in THIS chat, even when the same
+                        # file was added to another chat before (otherwise the model never reads it).
                         msg = post_message(
                             ip, dname, text=text, file_data=fdata, filename=up.get("filename"),
                             source="chat", session_id=sid, auto_analyze=not skip_ai, auto_clipboard=auto_clip,
+                            allow_duplicate=not is_img,
                         )
+                        if not msg and not is_img:
+                            msg = db.message_by_hash_in_session(hashlib.sha256(fdata).hexdigest(), sid)
+                            if msg:
+                                return self._json(200, {"ok": True, "duplicate": True, "message": msg})
                 elif text.strip():
                     if not sid:
                         daily = db.get_or_create_daily_text_session()
