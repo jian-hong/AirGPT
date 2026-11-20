@@ -6366,7 +6366,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not ops:
                     return self._json(400, {"error": "path, paths, session_ids, research_ids, or urls required"})
 
-                force = bool(data.get("force", True))
+                # Adding sources never clears the space. Only Rebuild clears and re-reads
+                # every source in one go; a force here would wipe the other documents.
+                if data.get("force"):
+                    return self._json(400, {"error": "Adding sources keeps your other documents. Use Rebuild to clear and re-read everything."})
+                force = False
                 run_async = bool(data.get("async") or data.get("background"))
 
                 def _run_ops(force_flag: bool) -> dict:
@@ -6432,6 +6436,12 @@ class Handler(BaseHTTPRequestHandler):
                 for key, val in form.items():
                     if isinstance(val, dict) and val.get("data") is not None:
                         fname = Path(str(val.get("filename") or key or "upload.txt")).name
+                        # Two files with one name in one batch: the second overwrote the
+                        # first on disk and the reply still counted both.
+                        first, n = fname, 1
+                        while (updir / fname) in saved:
+                            n += 1
+                            fname = f"{Path(first).stem}_{n}{Path(first).suffix}"
                         dest = updir / fname
                         dest.write_bytes(val["data"])
                         saved.append(dest)
@@ -8064,6 +8074,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad id"})
             db.delete_message(mid)
             return self._json(200, {"ok": True})
+        if path.startswith("/api/rag/spaces/"):
+            # Deleting a whole space removes its files, vectors and chats: host only.
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                from rag import store as rag_store
+
+                parts = path.rstrip("/").split("/")
+                if len(parts) != 5:
+                    return self._json(404, {"error": "not found"})
+                out = rag_store.delete_space(int(parts[4]))
+                return self._json(200 if out.get("ok") else 404, out)
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
         if path.startswith("/api/cortex/routines/"):
             try:
                 import cortex_client

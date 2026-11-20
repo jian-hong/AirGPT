@@ -11101,7 +11101,7 @@ async function ragIngestPath(){
   if(!p){toast('Enter a local path');return}
   const st=$('ragIngestStatus');if(st)st.textContent='Ingesting… authorize → chunk → enrich → index';
   try{
-    const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({path:p,force:true})}).then(x=>x.json());
+    const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({path:p,force:false})}).then(x=>x.json());
     if(r&&r.ok){toast('Ingested');ragState.summary='';ragRefreshSpace();}
     else{if(st)st.textContent='Failed: '+esc(r.error||'unknown');toast('Ingest failed')}
   }catch(e){if(st)st.textContent='Failed';toast('Ingest failed')}
