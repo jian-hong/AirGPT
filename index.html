@@ -28,7 +28,7 @@
 <style>
 :root{
   --bg:#0a0a0a;--surface:rgba(17,17,17,.72);--surface2:rgba(28,28,28,.78);--line:rgba(255,255,255,.12);
-  --text:#f5f5f5;--muted:#8a8a8a;--accent:#ffffff;--ok:#3dd68c;--warn:#e8b84a;
+  --text:#f5f5f5;--muted:#8a8a8a;--accent:#ffffff;--ok:#3dd68c;--warn:#e8b84a;--fail:#e06c6c;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
   --sans:"DM Sans",system-ui,-apple-system,sans-serif;
   --display:var(--sans);
@@ -54,7 +54,7 @@ body.theme-classyblack{
 body.theme-light{
   /* Claude / Manus-like: warm paper, solid surfaces, near-black ink */
   --bg:#f5f4ef;--surface:#ffffff;--surface2:#f0eee8;--line:rgba(0,0,0,.1);
-  --text:#141414;--muted:#5c5c5c;--accent:#1a1a1a;--ok:#1a8f5a;--warn:#a67c00;
+  --text:#141414;--muted:#555555;--accent:#1a1a1a;--ok:#167a4c;--warn:#8a6200;--fail:#b42318;
   --accent-fg:#faf9f5;--code-bg:#eceae3;--code-fg:#1a1a1a;
   --code-block-bg:#1e1e1e;--code-block-fg:#e8e6e1;
   --glass-blur:0px;--glass-saturate:1;
@@ -64,6 +64,23 @@ body.theme-light{
   --send-bg:#1a1a1a;--send-fg:#faf9f5;
   --shadow-soft:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
 }
+/* Light theme contrast: dark-only colours that sat on beige or white. */
+body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
+body.theme-light .field-eye{color:var(--text)}
+body.theme-light .pal-hint-btn{opacity:.9}
+body.theme-light .side-nav .nav-label,body.theme-light .side-section-hdr,body.theme-light .side-section-hdr .chev,body.theme-light .side-section-hdr small{opacity:1}
+body.theme-light .side-nav .nav-label:hover .chev{opacity:1}
+body.theme-light .side-collapse-btn{opacity:.75}
+body.theme-light .msg-jump-count{color:var(--text)}
+body.theme-light .ds-ico:hover{background:rgba(0,0,0,.07)}
+body.theme-light .ds-ico.danger:hover{background:rgba(180,35,24,.1);color:var(--fail)}
+body.theme-light .ds-add .ds-plus{opacity:1}
+body.theme-light #bgTasksPanel .bgHead button,body.theme-light #bgTasksPanel .bgX,body.theme-light #bgTasksPanel .bgPhaseHd .cv{opacity:.8}
+body.theme-light #bgTasksPanel .bgHead button:hover,body.theme-light #bgTasksPanel .bgX:hover{opacity:1}
+body.theme-light .cortex-call span[style*="#e06c6c"],body.theme-light #bgTasksPanel .bgDesc[style*="#e03131"]{color:var(--fail)!important}
+body.theme-light #bgTasksPanel .bgLabel span{opacity:1!important}
+body.theme-light #bgTasksPanel .dots i.err,body.theme-light #bgTasksPanel .st.err{background:var(--fail)}
+body.theme-light #bgTasksPanel .bgAudit .tl.bad{color:var(--fail)}
 .shell{display:flex;flex-direction:column;height:100%;height:100dvh;min-height:0;overflow:hidden;background:var(--bg)}
 .shell>.topbar{flex:0 0 auto;min-height:var(--topbar-h);z-index:60}
 /* Wide desktop: --side animates 0 ↔ --side-w and chat shares the row.
@@ -1064,7 +1081,7 @@ body.theme-light .send-fail{background:rgba(227,73,72,.06);border-color:rgba(227
 .ds-row:hover{border-color:rgba(128,128,128,.4)}
 .ds-row .ds-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .ds-row .ds-sub{color:var(--muted);font-size:11px;flex:0 0 auto}
-.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:.55;transition:opacity .15s}
+.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:1;transition:opacity .15s}
 .ds-row:hover .ds-acts{opacity:1}
 .ds-ico{width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:7px;
   background:transparent;color:var(--muted);font-size:12px;line-height:1;cursor:pointer;padding:0}
@@ -13717,14 +13734,15 @@ let _mermaidReady=false;
 function initMermaid(){
   if(_mermaidReady||!window.mermaid)return;
   try{
-    const dark=document.body.classList.contains('theme-dark')||!document.body.classList.contains('theme-light');
+    // The diagram panel is dark in every theme (.ai-block .mermaid), so the diagram
+    // always uses the dark palette. A light palette put near-black lines on it.
     mermaid.initialize({
       startOnLoad:false,
       securityLevel:'strict',
-      theme:dark?'dark':'neutral',
+      theme:'dark',
       fontFamily:'inherit',
       flowchart:{htmlLabels:true,curve:'basis',padding:12},
-      themeVariables:dark?{
+      themeVariables:{
         background:'#0a0a0a',
         primaryColor:'#111111',
         primaryTextColor:'#f5f5f5',
@@ -13738,20 +13756,6 @@ function initMermaid(){
         clusterBkg:'rgba(17,17,17,.85)',
         clusterBorder:'rgba(255,255,255,.14)',
         titleColor:'#f5f5f5'
-      }:{
-        background:'#f7f7f5',
-        primaryColor:'#ffffff',
-        primaryTextColor:'#111',
-        primaryBorderColor:'rgba(0,0,0,.16)',
-        secondaryColor:'#f0f0ec',
-        tertiaryColor:'#fff',
-        lineColor:'rgba(0,0,0,.35)',
-        textColor:'#111',
-        mainBkg:'#fff',
-        nodeBorder:'rgba(0,0,0,.16)',
-        clusterBkg:'rgba(0,0,0,.03)',
-        clusterBorder:'rgba(0,0,0,.12)',
-        titleColor:'#111'
       }
     });
     _mermaidReady=true;
