@@ -1262,6 +1262,96 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
     }
 
 
+# Words that can sit in an aggregate ask without naming anything to calculate.
+_ASK_FILLER = frozenset(
+    "what whats what's is are the a an of in on this that it there please give me show tell "
+    "all overall altogether here do we have how many much number count total sum average avg "
+    "mean max min maximum minimum highest lowest largest smallest greatest combined "
+    "rows row records record entries entry lines data sheet sheets spreadsheet table file "
+    "workbook excel for to".split()
+)
+_ROW_WORDS = frozenset("rows row records record entries entry lines".split())
+
+
+def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dict | None:
+    """An aggregate ask that names no column ("What is the total?", "how many rows").
+
+    Retrieval used to hand the model a slice of the rows with "No source mentions:
+    total", so it could add up a fragment and call it the total. A row count needs no
+    column and is computed over every row; any other figure gets a plain question
+    listing the numeric columns. None when the ask names anything else, so ordinary
+    questions about a document that happens to mention "total" still go to retrieval."""
+    try:
+        from rag import sheet_sql
+
+        low = (query or "").lower()
+        agg = next((fn for pat, fn in sheet_sql._AGGS if re.search(pat, low)), None)  # noqa: SLF001
+        if not agg or not by_sheet:
+            return None
+        if [w for w in re.findall(r"[a-z0-9']+", low) if w not in _ASK_FILLER]:
+            return None
+        frames = [(k, df) for k, df in by_sheet.items() if df is not None]
+        if not frames:
+            return None
+        if agg == "COUNT" and (set(re.findall(r"[a-z]+", low)) & _ROW_WORDS or "how many" in low):
+            sheets, lines = [], []
+            for (wb, sheet), df in frames:
+                n = int(len(df))
+                sql = f'SELECT COUNT(*) FROM "{sheet}"'
+                sheets.append({"workbook": wb, "sheet": sheet, "value": n, "rows_matched": n, "rows_total": n, "sql": sql})
+                lines.append(f"{n:,} rows in the {sheet} sheet of {wb}")
+            if len(frames) == 1:
+                head = f"{sheets[0]['value']:,} rows, counted over the whole of the {sheets[0]['sheet']} sheet of {sheets[0]['workbook']}."
+            else:
+                head = "Row counts, every row counted: " + "; ".join(lines) + "."
+            return {
+                "answer": head + "\n\nSQL: `" + "; ".join(s["sql"] for s in sheets) + "`",
+                "citations": [{"path": (owner or {}).get(wb, {}).get("path") or wb, "title": wb, "sheet": sh} for (wb, sh), _df in frames],
+                "sql": "; ".join(s["sql"] for s in sheets),
+                "provenance": {
+                    # Over several sheets the figure is the sum, so the sheets and rows named beside it are all of them.
+                    "workbook": ", ".join(dict.fromkeys(s["workbook"] for s in sheets)),
+                    "sheet": ", ".join(s["sheet"] for s in sheets), "sql": "; ".join(s["sql"] for s in sheets), "operation": "COUNT",
+                    "value": sum(s["value"] for s in sheets),
+                    "rows_matched": sum(s["rows_matched"] for s in sheets), "rows_total": sum(s["rows_total"] for s in sheets),
+                    "abstained": False, "filter": "", "values_used": sum(s["rows_total"] for s in sheets),
+                    "assumed": ["no column was named, so every row was counted"],
+                    "sheets": sheets if len(sheets) > 1 else [],
+                },
+            }
+        parts = []
+        for (wb, sheet), df in frames:
+            nums = [str(c) for c in df.columns if sheet_sql._numeric_ratio(df[c]) >= 0.8]  # noqa: SLF001
+            parts.append(
+                f"{sheet} sheet of {wb}: " + (", ".join(nums) if nums else "no column of numbers")
+            )
+        (wb0, sh0), df0 = frames[0]
+        first_num = ""
+        for _k, _df in frames:
+            _n = [str(c) for c in _df.columns if sheet_sql._numeric_ratio(_df[c]) >= 0.8]  # noqa: SLF001
+            if _n:
+                first_num = {"SUM": "total ", "AVG": "average "}.get(agg, "") + _n[0]
+                break
+        return {
+            "answer": (
+                "Which column do you mean? Your question does not say what to "
+                f"{'add up' if agg == 'SUM' else 'work out'}, so I have not calculated anything. "
+                "These columns hold numbers - " + "; ".join(parts) + ". "
+                "Ask again with the column in the question" + (f", for example \u201c{first_num}\u201d" if first_num else "")
+                + ". You can add a filter too."
+            ),
+            "citations": [{"path": (owner or {}).get(wb, {}).get("path") or wb, "title": wb, "sheet": sh} for (wb, sh), _df in frames],
+            "provenance": {
+                "workbook": wb0, "sheet": sh0, "abstained": True,
+                "abstain_reason": "no column was named",
+                # a row count is only stated when there is one sheet, so it is never "the sheet" of several
+                **({"rows_total": int(len(df0))} if len(frames) == 1 else {}),
+            },
+        }
+    except Exception:
+        return None
+
+
 def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
     try:
@@ -1391,6 +1481,10 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
                     "abstain_reason": "no column or filter could be bound to the question",
                 },
             }
+        # An aggregate ask that names no column at all: count the rows, or ask which.
+        ask = _no_column_ask(query, by_sheet, sheet_owner)
+        if ask:
+            return ask
 
     if not frames:
         return None

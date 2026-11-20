@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-BASE = "http://127.0.0.1:8765"
+BASE = os.environ.get("AIRGPT_BASE", "http://127.0.0.1:8765")
 
 
 def _req(method: str, path: str, body=None, timeout: float = 30.0) -> tuple[int, dict]:
@@ -42,7 +43,7 @@ def d08() -> dict:
     if code != 200 or not space.get("ok"):
         return {"ok": False, "step": "create", "code": code, "body": space}
     sid = int(space["space"]["id"])
-    code, srcs = _req("POST", f"/api/rag/spaces/{sid}/sources", {"paths": [str(src)], "force": True})
+    code, srcs = _req("POST", f"/api/rag/spaces/{sid}/sources", {"paths": [str(src)]})  # adding never clears; the build below re-reads everything
     if code != 200 or not srcs.get("ok"):
         return {"ok": False, "step": "ingest", "code": code, "body": srcs, "sid": sid}
     code, saved = _req(
