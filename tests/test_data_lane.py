@@ -122,6 +122,28 @@ class RestoreIsSafe(unittest.TestCase):
             self.assertEqual(z.read("data/notes.txt"), b"written after the backup")
         self.assertIn(str(safety), out["message"])
 
+    def test_path_tricks_cannot_reach_secret_files(self):  # security.0
+        secrets = ["workspace.json", "auth_tokens.json", "token_session_acl.json", "join_codes.json", "license.json"]
+        for n in secrets:
+            (self.dd / n).write_text("ORIGINAL")
+        blob = self._zip({
+            "data/./workspace.json": "EVIL", "data//auth_tokens.json": "EVIL",
+            "data\\.\\join_codes.json": "EVIL", "data/WORKSPACE.JSON": "EVIL",
+            "data/sub/../license.json": "EVIL", "data/./token_session_acl.json": "EVIL",
+            "data/Auth_Tokens.json": "EVIL", "data/license.json. ": "EVIL", "data/notes.txt": "fine", "data/sub/ok.txt": "fine2",
+        })
+        code, out = clipdrop._restore_package(blob)
+        self.assertEqual(code, 200, out)
+        for n in secrets:
+            self.assertEqual((self.dd / n).read_text(), "ORIGINAL", n)
+        self.assertFalse((self.dd / "WORKSPACE.JSON").exists())
+        self.assertFalse((self.dd / "Auth_Tokens.json").exists())
+        self.assertEqual((self.dd / "notes.txt").read_text(), "fine")
+        self.assertEqual((self.dd / "sub" / "ok.txt").read_text(), "fine2")
+        skipped = {s["file"] for s in out["skipped"]}
+        self.assertEqual(len(skipped), 8, skipped)
+        self.assertEqual(out["restored"], 2)
+
     def test_a_bad_zip_changes_nothing(self):
         (self.dd / "notes.txt").write_text("keep")
         code, out = clipdrop._restore_package(b"not a zip")

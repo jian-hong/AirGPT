@@ -2290,6 +2290,13 @@ body.theme-light .msg-jump-node-btn.on{border-color:#111;background:#111}
 .hub-node.state-limited{border-color:rgba(248,113,113,.7);box-shadow:0 0 0 1px rgba(248,113,113,.25)}
 .btn.danger-wide{background:rgba(180,40,40,.25);border:1px solid rgba(248,113,113,.5);color:#fecaca;width:100%;max-width:420px;padding:12px 16px;border-radius:12px;font-weight:600}
 .btn.danger-wide:hover{background:rgba(180,40,40,.4)}
+body.theme-light .btn.danger-wide{background:rgba(180,40,40,.1);border-color:rgba(160,30,30,.55);color:#8a1c1c}
+body.theme-light .btn.danger-wide:hover{background:rgba(180,40,40,.18)}
+body.theme-light .hub-node,body.theme-light .hub-node.host{background:#fff;border-color:rgba(0,0,0,.16);box-shadow:var(--shadow-soft)}
+body.theme-light .hub-node.host{border-color:rgba(0,0,0,.4)}
+body.theme-light .hub-node-name,body.theme-light .hub-node-icon{color:var(--text)}
+body.theme-light .hub-node-check{color:#146b43}
+body.theme-light .hub-node-menu:hover{color:var(--text);background:rgba(0,0,0,.06)}
 body.ai-lockdown{--danger:#7f1d1d}
 body.ai-lockdown .hub-page,body.ai-lockdown .hub-node{filter:saturate(.15) brightness(.85)}
 body.ai-lockdown .hub-page.lockdown-wash{outline:2px solid rgba(248,113,113,.35)}
@@ -2475,6 +2482,7 @@ body.theme-light .project-ask-cta:hover{background:#222;border-color:#222}
 #settingsModal .settings-cursor .sc-nav-item:hover{background:rgba(255,255,255,.05);color:var(--text)}
 #settingsModal .settings-cursor .sc-nav-item.on{background:rgba(141,180,255,.14);color:var(--text);font-weight:600}
 #settingsModal .settings-cursor .sc-nav-item.sc-star{color:#8db4ff}
+body.theme-light #settingsModal .settings-cursor .sc-nav-item.sc-star{color:#1a3f9e}
 #settingsModal .settings-cursor .sc-nav-gap{height:10px}
 #settingsModal .settings-cursor .sc-nav-foot{padding:10px 12px;border-top:1px solid var(--line);flex-shrink:0}
 #settingsModal .settings-cursor .sc-docs{font-size:12px;color:var(--muted);text-decoration:none}
@@ -2782,6 +2790,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
 </style>
 <link rel="stylesheet" href="/ui/phone.css"/>
+<link rel="stylesheet" href="/ui/touch.css"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" media="print" onload="this.media='all'"/>
 <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/></noscript>
 </head>
@@ -11883,6 +11892,18 @@ function ragMdHtml(md,scope,labels){
   // address the document chose, and the address can carry what the answer knows, so those
   // are never loaded here. Links stay (nothing loads until the person clicks).
   html=html.replace(/<img\b[^>]*>/gi,'(image not shown)').replace(/<\/?(?:video|audio|source|track|picture|svg|image|use)\b[^>]*>/gi,'');
+  // The tag strip above is not enough (a style or a table background loads a picture too), so
+  // parse the result and drop every attribute that can carry an address from any element.
+  try{
+    if(typeof document==='undefined')throw 0; // no page to parse in (tests); the tag strip above still ran
+    const t=document.createElement('template');t.innerHTML=html;
+    t.content.querySelectorAll('*').forEach(el=>{
+      ['background','srcset','poster','ping','lowsrc','dynsrc'].forEach(a=>el.removeAttribute(a));
+      [...el.attributes].forEach(a=>{if(/url\s*\(|image-set\s*\(|@import/i.test(a.value))el.removeAttribute(a.name);});
+    });
+    t.content.querySelectorAll('style,link,object,embed,iframe').forEach(el=>el.remove());
+    html=t.innerHTML;
+  }catch(e){if(e!==0)html=esc(src).replace(/\n/g,'<br>');}
   return scope==null?html:ragLinkCiteChips(html,scope,labels);
 }
 function ragScrollToCite(scope,n){
@@ -13615,7 +13636,14 @@ function setupDropZone(){
 // back to the allow-list cleaner in ui/sanitize.js when the CDN is unreachable.
 function sanitizeHtml(html){
   if(window.DOMPurify){
-    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select'],FORBID_ATTR:['onerror','onload']});
+    // Text from a model, a document or the web must not restyle the page or fetch from an
+    // address it chose: no style attribute, no url-bearing presentation attribute, no value
+    // that carries url( or image-set(. Our own maths and diagrams are put back after this runs.
+    if(!sanitizeHtml._hook){
+      sanitizeHtml._hook=true;
+      DOMPurify.addHook('uponSanitizeAttribute',(node,d)=>{if(/url\s*\(|image-set\s*\(|@import/i.test(d.attrValue||''))d.keepAttr=false;});
+    }
+    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});
   }
   // No cleaner at all: show the text, never the markup.
   return window.AirSanitize?AirSanitize.clean(html):esc(html);
@@ -13658,16 +13686,26 @@ function renderMd(md){
     const i=mermaidBlocks.push(code.replace(/\s+$/,''))-1;
     return `\n\nMMDIAGRAMTOKEN${i}ENDTOKEN\n\n`;
   });
+  // Maths is our own output (it carries style attributes the sanitizer strips), so it is
+  // set aside as a token and put back after sanitizing, like the diagrams.
+  const mathBlocks=[];
+  const mathNonce=Math.random().toString(36).slice(2,10);
+  const mathTok=h=>`KXMATH${mathNonce}T${mathBlocks.push(h)-1}ENDTOKEN`;
   s=s.replace(/\$\$([\s\S]+?)\$\$/g,(m,tex)=>{
-    try{return katex.renderToString(tex,{displayMode:true,throwOnError:false});
-    }catch(e){return `<pre>${esc(tex)}</pre>`}
+    try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false}));
+    }catch(e){return mathTok(`<pre>${esc(tex)}</pre>`)}
   });
   s=s.replace(/\$([^$\n]+?)\$/g,(m,tex)=>{
-    try{return katex.renderToString(tex,{displayMode:false,throwOnError:false});
+    try{return mathTok(katex.renderToString(tex,{displayMode:false,throwOnError:false}));
     }catch(e){return esc(tex)}
   });
   let html=window.marked?marked.parse(s,{breaks:true}):mdFallback(s);
   html=sanitizeHtml(html);
+  if(mathBlocks.length){
+    // Only in text: a token inside a tag (an attribute value) is dropped, never expanded.
+    const re=new RegExp('KXMATH'+mathNonce+'T(\\d+)ENDTOKEN','g');
+    html=html.split(/(<[^>]*>)/).map(p=>p[0]==='<'?p.replace(re,''):p.replace(re,(m,i)=>mathBlocks[+i]||'')).join('');
+  }
   // Reinsert mermaid blocks AFTER sanitizing (we build the node ourselves, escaped).
   html=html.replace(/(?:<p>\s*)?MMDIAGRAMTOKEN(\d+)ENDTOKEN(?:\s*<\/p>)?/g,(m,i)=>{
     const code=mermaidBlocks[+i]||'';
@@ -16442,6 +16480,12 @@ $('plusMenu')?.addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   if(!e.target.closest('.plus-menu-wrap')&&!e.target.closest('#plusMenu')&&e.target!==$('attachBtn'))closePlusMenu();
 });
+// Escape closes the + menu first (and only that), then puts focus back on +. Capture phase,
+// so a modal or an edit under it does not also react. With the menu shut, nothing changes.
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||$('plusMenu')?.hidden!==false)return;
+  e.preventDefault();e.stopPropagation();closePlusMenu();$('attachBtn')?.focus();
+},true);
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='u'){
     e.preventDefault();$('fileIn')?.click();

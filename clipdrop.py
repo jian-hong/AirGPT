@@ -1774,7 +1774,7 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             norm = name.replace("\\", "/")
             if norm.endswith("/") or norm == "MANIFEST.json":
                 continue
-            if ".." in norm.split("/") or norm.startswith("/") or ":" in norm:
+            if any(seg in ("", ".", "..") for seg in norm.split("/")) or norm.startswith("/") or ":" in norm:
                 skipped.append({"file": name, "why": "unsafe path"})
                 continue
             if norm == "env.local":
@@ -1790,8 +1790,9 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             except (ValueError, OSError):
                 skipped.append({"file": name, "why": "outside the data folder"})
                 continue
-            if "/" not in rel and rel in _BACKUP_SECRET_FILES:
-                skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[rel]} stay as they are on this PC"})
+            secret = next((k for k in _BACKUP_SECRET_FILES if k.lower() == rel.rstrip(" .").lower()), None)  # Windows drops trailing dots and spaces
+            if "/" not in rel and secret:
+                skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[secret]} stay as they are on this PC"})
                 continue
             if _is_safety_zip(target):
                 skipped.append({"file": name, "why": "an earlier safety copy"})
