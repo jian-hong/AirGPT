@@ -24,7 +24,7 @@ from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import db
 import vault
@@ -1271,6 +1271,7 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/input-notes", # keystroke-note recorder start/stop/append and the saved notes
     "/api/restart-tunnel",  # drops the tunnel for every phone
     "/api/optimizers/", # pip install of optional packages
+    "/api/space/",      # launch Netie Space on this PC (host only)
     "/api/agents",      # exact path too: "/api/agents/" alone left list + create open
     "/api/export",      # whole-PC backup and history export (host only)
     "/api/import",      # restore: replaces the data folder
@@ -1293,6 +1294,120 @@ def _is_host_only_path(path: str, method: str = "GET") -> bool:
 _INLINE_MIME = frozenset({
     "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "application/pdf", "text/plain",
 })
+
+
+# Office documents iOS Safari previews natively when a tab opens them inline.
+_OFFICE_MIME = {
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+_INLINE_EXT_MIME = {**_OFFICE_MIME, ".pdf": "application/pdf"}
+_RANGE_CHUNK = 64 * 1024
+_RANGE_DIGITS = 18  # anything longer is clamped; keeps int() cheap and arithmetic bounded
+
+
+def _parse_range(header: str | None, size: int):
+    """Resolve an HTTP Range header against a file of `size` bytes.
+
+    Returns None when the whole file should be sent with 200 (no header, another unit,
+    several ranges, or a malformed spec, all of which RFC 9110 lets a server ignore),
+    "unsatisfiable" for a 416, or (start, end) inclusive for a 206.
+    """
+    if not header:
+        return None
+    unit, _, spec = header.strip().partition("=")
+    if unit.strip().lower() != "bytes" or not spec.strip() or "," in spec:
+        return None
+    m = re.fullmatch(r"\s*(\d*)\s*-\s*(\d*)\s*", spec)
+    if not m or (not m.group(1) and not m.group(2)):
+        return None
+    a, b = m.groups()
+    cap = 10 ** _RANGE_DIGITS
+    num = lambda t: min(int(t[:_RANGE_DIGITS + 1] or 0), cap) if len(t) <= _RANGE_DIGITS else cap
+    if not a:  # suffix: the last N bytes
+        n = num(b)
+        if n == 0 or size == 0:
+            return "unsatisfiable"
+        return (max(size - n, 0), size - 1)
+    start = num(a)
+    end = num(b) if b else size - 1
+    if b and end < start:
+        return None
+    if start >= size:
+        return "unsatisfiable"
+    return (start, min(end, size - 1))
+
+
+def _data_response_plan(name: str):
+    """(content type, extra headers) for a stored file served by GET /data/.
+
+    Images, audio, video, PDF, plain text and the Office types may show in place.
+    Anything a browser would run (html, svg, xml, js, ...) is a download, never a page.
+    """
+    ext = os.path.splitext(name)[1].lower()
+    mime = _INLINE_EXT_MIME.get(ext) or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    ascii_name = re.sub(r"[^A-Za-z0-9._-]", "_", name) or "file"
+    star = ""
+    if ascii_name != name:
+        star = "; filename*=UTF-8''" + quote(name, safe="")
+    inline = mime in _INLINE_MIME or mime in _OFFICE_MIME.values() or mime.startswith(("audio/", "video/"))
+    base = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+    if inline:
+        if mime.startswith(("audio/", "video/", "image/")):
+            return mime, base
+        return mime, {**base, "Content-Disposition": f'inline; filename="{ascii_name}"{star}'}
+    return "application/octet-stream", {**base, "Content-Disposition": f'attachment; filename="{ascii_name}"{star}'}
+
+
+def _resolve_space_exe(env=None) -> Path | None:
+    """NetieSpace.exe: NETIE_SPACE_EXE, then %LOCALAPPDATA%, then %ProgramFiles%."""
+    env = os.environ if env is None else env
+    cands = []
+    if env.get("NETIE_SPACE_EXE"):
+        cands.append(Path(env["NETIE_SPACE_EXE"]))
+    if env.get("LOCALAPPDATA"):
+        cands.append(Path(env["LOCALAPPDATA"]) / "NetieSpace" / "NetieSpace.exe")
+    if env.get("ProgramFiles"):
+        cands.append(Path(env["ProgramFiles"]) / "Netie Space" / "NetieSpace.exe")
+    for c in cands:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return None
+
+
+def _open_in_space(rel: str):
+    """Launch Netie Space preview for a stored file. Returns (status, body)."""
+    rel = unquote(str(rel or "")).replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/") or "\0" in rel:
+        return 400, {"error": "bad path"}
+    root = DATA_DIR.resolve()
+    try:
+        target = (root / rel).resolve()
+        target.relative_to(root)
+    except (ValueError, OSError):
+        return 400, {"error": "bad path"}
+    if not target.is_file():
+        return 404, {"error": "missing"}
+    exe = _resolve_space_exe()
+    if exe is None:
+        return 503, {"error": "Netie Space is not installed on this PC (set NETIE_SPACE_EXE)"}
+    flags = (0x00000008 | 0x00000200) if os.name == "nt" else 0
+    try:
+        subprocess.Popen(
+            [str(exe), "--preview", str(target)], shell=False, close_fds=True,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+    except OSError as e:
+        return 502, {"error": "could not start Netie Space: " + str(e)[:120]}
+    return 200, {"ok": True}
 
 
 def _data_file_chats(rel: str) -> set[int]:
@@ -3825,6 +3940,48 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
             return
 
+    def _send_file(self, p: Path, ctype: str, extra: dict):
+        """Stream a stored file, honouring a single Range. Never reads it whole into memory."""
+        try:
+            f = p.open("rb")
+        except OSError:
+            return self._json(404, {"error": "missing"})
+        with f:
+            size = os.fstat(f.fileno()).st_size
+            rng = None if self.headers.get("If-Range") else _parse_range(self.headers.get("Range"), size)
+            hdrs = dict(extra)
+            hdrs["Accept-Ranges"] = "bytes"
+            if rng == "unsatisfiable":
+                hdrs["Content-Range"] = f"bytes */{size}"
+                return self._send(416, b"", ctype, hdrs)
+            code, start, length = 200, 0, size
+            if rng:
+                start, end = rng
+                length = end - start + 1
+                code = 206
+                hdrs["Content-Range"] = f"bytes {start}-{end}/{size}"
+            try:
+                self._drain_request_body()
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                for k, v in hdrs.items():
+                    self.send_header(k, v)
+                self.send_header("Content-Length", str(length))
+                self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
+                self._cors()
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                f.seek(start)
+                left = length
+                while left > 0:
+                    chunk = f.read(min(_RANGE_CHUNK, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                return
+
     def _json(self, code, data):
         body = json.dumps(data).encode()
         headers: dict = {}
@@ -5475,13 +5632,13 @@ class Handler(BaseHTTPRequestHandler):
                 owners = _data_file_chats(inside)
                 if not owners or (gs and int(gs["session_id"]) not in owners):
                     return self._json(404, {"error": "missing"})
-            mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
-            if mime in _INLINE_MIME or mime.startswith(("audio/", "video/")):
-                return self._send(200, p.read_bytes(), mime)
-            # Anything a browser would run (html, svg, xml, js, ...) is a download, never a page.
-            safe = re.sub(r"[^A-Za-z0-9._-]", "_", p.name)
-            return self._send(200, p.read_bytes(), "application/octet-stream",
-                              {"Content-Disposition": f'attachment; filename="{safe}"'})
+            ctype, extra = _data_response_plan(p.name)
+            return self._send_file(p, ctype, extra)
+
+        if path == "/api/space/status":
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"error": "local host only"})
+            return self._json(200, {"available": _resolve_space_exe() is not None})
 
         if path == "/api/access":
             try:
@@ -7251,6 +7408,16 @@ class Handler(BaseHTTPRequestHandler):
             if app_audit:
                 app_audit.log("auth_fail", ip=ip, detail="verify-passcode", ok=False)
             return self._json(200, {"ok": False, "error": "Wrong passcode"})
+
+        if path == "/api/space/open":
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"error": "local host only"})
+            try:
+                data = json.loads(self._body().decode() or "{}")
+            except ValueError:
+                return self._json(400, {"error": "bad json"})
+            code, body = _open_in_space(data.get("path") if isinstance(data, dict) else "")
+            return self._json(code, body)
 
         if path == "/api/restart-tunnel":
             restart_tunnel()
