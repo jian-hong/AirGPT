@@ -180,5 +180,3 @@
   .chat-titlebar-actions .ctools-menu.inline{position:static;min-width:0;padding:0 0 0 30px;border:0;border-radius:0;background:transparent;box-shadow:none}
   .chat-titlebar-actions .ctools-menu.inline[hidden]{display:none}
 }
-/* Glass (no theme class) is see-through by design, but a floating menu over reply text must not be. */
-body:not(.theme-dark):not(.theme-light) .chat-titlebar.more-open .chat-titlebar-actions,body:not(.theme-dark):not(.theme-light) .ctools-menu:not(.inline){background:#161618}

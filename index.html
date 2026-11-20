@@ -1734,6 +1734,8 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .forge-honesty span.warn{border-color:rgba(232,184,74,.35);color:var(--warn);background:rgba(232,184,74,.08)}
 .forge-schematic{min-height:180px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0a0a0a;padding:12px;overflow:auto}
 .forge-schematic svg{max-width:100%;height:auto}
+/* Glass (no theme class) is see-through by design, but a floating menu over reply text must not be. */
+body:not(.theme-dark):not(.theme-light) .chat-titlebar.more-open .chat-titlebar-actions,body:not(.theme-dark):not(.theme-light) .ctools-menu:not(.inline){background:#161618}
 body.theme-light .forge-shell{background:var(--bg)}
 body.theme-light .forge-left,body.theme-light .forge-right{background:var(--surface);border-color:var(--line)}
 body.theme-light .forge-schematic{background:var(--bg);border-color:var(--line)}
