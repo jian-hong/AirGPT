@@ -195,6 +195,19 @@ test("the same file added again is not reported as added", () => {
   assert.equal(again.problems.length, 0);
 });
 
+test("a batch with one new file and one already held counts only the new one", () => {
+  const c = page();
+  // The server reads both and makes pieces for one; the page knows 1 hash is new.
+  const r = c.ragUploadSummary(2, { sources: 2, chunks: 4, skipped: [] }, [], 1);
+  assert.equal(r.added, 1);
+  assert.equal(r.headline, "Added 1 file. 4 searchable pieces made. 1 more was already in this space.");
+  assert.equal(r.problems.length, 0, "a repeated file is not an error");
+  const none = c.ragUploadSummary(2, { sources: 2, chunks: 0, skipped: [] }, [], 0);
+  assert.equal(none.headline, "2 files were already in this space. Nothing new was added.");
+  // when the list could not be read the old wording still holds
+  assert.equal(c.ragUploadSummary(2, { sources: 2, chunks: 4, skipped: [] }, [], null).headline, "Added 2 files. 4 searchable pieces made.");
+});
+
 test("a binary file with an unknown extension is refused, known types and text are not", async () => {
   const c = page();
   const file = (name, bytes) => ({ name, slice: () => ({ arrayBuffer: async () => new Uint8Array(bytes).buffer }) });

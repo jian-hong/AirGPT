@@ -10735,25 +10735,30 @@ async function ragLooksBinary(file){
   if(!file||RAG_KNOWN_BINARY.test(file.name||''))return false;
   try{const buf=new Uint8Array(await file.slice(0,2048).arrayBuffer());return buf.indexOf(0)>=0;}catch(e){return false;}
 }
-function ragUploadSummary(sentCount,j,refused){
+function ragUploadSummary(sentCount,j,refused,fresh){
   j=j||{};
   const skipped=Array.isArray(j.skipped)?j.skipped:[];
-  const added=Number.isFinite(j.sources)?j.sources:0;
+  // The server counts every file it read, including ones the space already held. `fresh` is
+  // how many it did not hold before (from the source list), when the page could work it out.
+  const read=Number.isFinite(j.sources)?j.sources:0;
+  const added=Number.isFinite(fresh)?Math.max(0,Math.min(fresh,read)):read;
+  const known=read-added;
   const chunks=Number.isFinite(j.chunks)?j.chunks:0;
   const problems=[];
   (refused||[]).forEach(n=>problems.push(n+' looks like a program or data file, not a document, so it was not sent.'));
   skipped.forEach(s=>{const nm=String((s&&s.path)||'file').split(/[\\/]/).pop();problems.push(nm+' '+ragSkipReason(nm,s&&s.reason));});
   (Array.isArray(j.failed_urls)?j.failed_urls:[]).forEach(f=>problems.push(String((f&&f.url)||'A link')+' could not be added: '+String((f&&f.reason)||'unknown reason')+'.'));
   if(Number.isFinite(sentCount)){
-    const rest=sentCount-added-skipped.length;
+    const rest=sentCount-read-skipped.length;
     if(rest>0)problems.push(rest+' other file'+(rest===1?'':'s')+' added nothing new.');
   }
   // Same content as before makes no new pieces, and saying "added" would be wrong.
-  let headline=added>0&&chunks===0
-    ?(added+' file'+(added===1?' was':'s were')+' already in this space. Nothing new was added.')
+  let headline=(added>0&&chunks===0&&!Number.isFinite(fresh))||(added===0&&known>0)
+    ?((added||known)+' file'+((added||known)===1?' was':'s were')+' already in this space. Nothing new was added.')
     :added>0
     ?('Added '+added+' file'+(added===1?'':'s')+'. '+chunks.toLocaleString('en-US')+' searchable piece'+(chunks===1?'':'s')+' made.')
     :'Nothing was added.';
+  if(added>0&&known>0)headline+=' '+known+' more '+(known===1?'was':'were')+' already in this space.';
   if(problems.length)headline+=' '+problems.length+' not added:';
   return {headline,problems,added,chunks};
 }
@@ -10766,6 +10771,11 @@ function ragShowUploadReport(rep){
   const el=$('ragUploadReport');if(el)el.innerHTML=ragUploadReportHtml();
 }
 function ragDismissUploadReport(){ragShowUploadReport(null);}
+// Content hashes of what a space holds now; null when the list cannot be read.
+async function ragSourceHashes(sid){
+  try{const d=await api('/api/rag/spaces/'+sid+'/sources').then(r=>r.json());return new Set((d.sources||[]).map(x=>x.content_hash||('id'+x.id)));}
+  catch(e){return null;}
+}
 async function ragUploadFiles(inp){
   const picked=[...(inp.files||[])];inp.value='';
   if(!picked.length)return;
@@ -10779,6 +10789,7 @@ async function ragUploadFiles(inp){
     return;
   }
   if(st)st.textContent='Uploading '+files.length+' file(s)…';
+  const held=await ragSourceHashes(ragState.spaceId);
   try{
     const fd=new FormData();
     files.forEach((f,i)=>fd.append('file'+i,f,f.name||('upload'+i+'.txt')));
@@ -10791,7 +10802,8 @@ async function ragUploadFiles(inp){
     let j={};
     try{j=await r.json()}catch(e){j={error:'non-JSON response ('+r.status+')'}}
     if(r.ok&&j&&j.ok){
-      const rep=ragUploadSummary(files.length,j,refused);
+      const after=await ragSourceHashes(ragState.spaceId);
+      const rep=ragUploadSummary(files.length,j,refused,held&&after?[...after].filter(h=>!held.has(h)).length:null);
       ragShowUploadReport(rep);
       toast(rep.added>0?rep.headline:'Nothing was added. See the list on the Build tab.');
       if(st)st.textContent='';
