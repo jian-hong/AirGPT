@@ -286,3 +286,38 @@ def test_count_by_value_without_naming_a_column(tmp_path):
     assert sheet_sql.answer_filter_aggregate("how many people work in Ops", fr)["value"] == 2
     hit = sheet_sql.answer_filter_aggregate("total salary by dept", fr)
     assert {g["group"]: g["value"] for g in hit["groups"]} == {"Eng": 11000, "Ops": 8500}
+
+
+def _plain(tmp_path):
+    p = tmp_path / "t.csv"
+    p.write_text("Id,Region,Product,Revenue\n1,North,A,10\n2,East,B,500\n3,North,A,20\n4,South,B,30\n")
+    return {("t.csv", k): v for k, v in load_table_file(p).items()}, p
+
+
+@pytest.mark.parametrize("ask", [
+    "total Revenue where Region is Papua",
+    "sum of Revenue where Region = 'nowhere'",
+])
+def test_stated_filter_value_not_in_data_is_not_dropped(tmp_path, ask):
+    fr, _ = _plain(tmp_path)
+    hit = sheet_sql.answer_filter_aggregate(ask, fr)
+    # the unfiltered total is 560; a filter nobody matches must never produce it
+    assert hit is not None and "560" not in hit["answer"]
+    assert "no rows match" in hit["answer"].lower()
+
+
+def test_stated_short_value_and_non_latin_column_are_filters(tmp_path):
+    p = tmp_path / "u.csv"
+    p.write_text("Wilayah,Jualan,产品,数量\nUtara,100,A,1\nSelatan,200,B,2\nUtara,300,A,3\nTimur,400,B,4\n", encoding="utf-8")
+    fr = {("u.csv", k): v for k, v in load_table_file(p).items()}
+    assert sheet_sql.answer_filter_aggregate("sum of 数量 where 产品 is A", fr)["value"] == 1 + 3
+    assert sheet_sql.answer_filter_aggregate("sum of Jualan where 产品 = B", fr)["value"] == 200 + 400
+
+
+def test_catalogue_does_not_answer_which_product_with_an_id(tmp_path):
+    fr, p = _plain(tmp_path)
+    sheets = load_table_file(p)
+    for ask in ("which product has the highest revenue", "highest revenue by region"):
+        assert answer_sqlish(sheets, ask) is None
+    hit = sheet_sql.answer_filter_aggregate("which product has the highest revenue", fr)
+    assert hit["answer"].startswith("B ")  # B = 500 + 30 beats A = 10 + 20

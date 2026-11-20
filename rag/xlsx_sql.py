@@ -126,6 +126,10 @@ def _pick_header_row(rows: list) -> int | None:
     return None
 
 
+def _norm_label(t: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(t).lower())
+
+
 def load_table_file(path: Path) -> dict[str, pd.DataFrame]:
     """Every file the aggregate lane can read: workbooks, plus .csv/.tsv as one sheet.
 
@@ -463,6 +467,12 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
             # order id because column one is the id answered a different question.
             _who = re.search(r"which (category|channel|vendor|region)", q)
             if _who and _who.group(1) not in str(label).lower():
+                continue
+            # "which product ...", "highest revenue by region": the ask names what to
+            # rank. If that is not the label column this branch would answer with an
+            # id; the group-by lane in sheet_sql ranks the right column.
+            _by = re.search(r"\b(?:which|by|per|each)\s+(?:the\s+)?([a-z][a-z_ ]*?)(?:\s+(?:has|have|had|is|are|with|did|does|by)\b|[?.,]|$)", q)
+            if _by and _norm_label(_by.group(1)) not in _norm_label(str(label)):
                 continue
             # idxmax names the biggest single ROW. That is only the biggest label when
             # each label has one row; on a transactions sheet it ignores the total the

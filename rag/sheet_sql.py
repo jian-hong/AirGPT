@@ -452,6 +452,44 @@ def _find_text_filters(
     return [TextFilter(column=c, values=v) for c, v in by_col.items()], ambiguous
 
 
+_STATED_VALUE = re.compile(
+    r"^\s*(?:is|are|=|==|equals?|equal to|:)\s*['\"\u2018\u201c]?(.+?)['\"\u2019\u201d]?"
+    r"\s*(?:$|[?.,;!]|\s+(?:and|or|but|for|in|on|from)\b)",
+    re.I,
+)
+
+
+def _bind_stated_values(q, df, kept, text_filters, filters, metric):
+    """"where Product is Gizmo": the question STATES the value for a text column.
+
+    Values are normally read off the data, which cannot see a value that is not there
+    ("Region is Papua") or one too short to trust on its own (a product called "A"). A
+    stated filter dropped on either would hand back the unfiltered total as the
+    answer. Bind what was stated; a value no row holds then shows as "no rows match".
+    """
+    by_col = {t.column: t for t in text_filters}
+    bound = {f.column for f in filters} | ({metric} if metric else set())
+    for start, end, name in kept:
+        if name in bound or name not in df.columns or _numeric_ratio(df[name]) >= 0.6:
+            continue
+        m = _STATED_VALUE.match(q[end:])
+        if not m:
+            continue
+        said = m.group(1).strip()
+        if not said:
+            continue
+        vals = df[name].dropna().astype(str).str.strip()
+        hit = vals[vals.str.casefold() == said.casefold()]
+        shown = hit.iloc[0] if len(hit) else said
+        tf = by_col.get(name)
+        if tf is None:
+            tf = by_col[name] = TextFilter(column=name, values=[])
+            text_filters = list(text_filters) + [tf]
+        if shown.casefold() not in {v.casefold() for v in tf.values}:
+            tf.values.append(shown)
+    return text_filters
+
+
 def plan_query(
     question: str,
     frames: dict[tuple[str, str], Any],
@@ -560,6 +598,7 @@ def plan_query(
 
         # Words in the question that are values in a text column ("North", "Widget").
         text_filters, ambiguous_values = _find_text_filters(q, df, global_kept, set())
+        text_filters = _bind_stated_values(q, df, kept, text_filters, filters, metric)
 
         # "by region" / "which region has the highest ...": a group-by on a text column.
         group_by, group_lead = "", ""
