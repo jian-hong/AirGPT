@@ -715,7 +715,10 @@ def _left_out_note(left_out, allowed_sessions, sent=()) -> str:
         if fid in seen:
             continue
         seen.add(fid)
-        fm = db.get_message(fid) or {}
+        try:
+            fm = db.get_message(int(fid)) or {}
+        except (TypeError, ValueError, OverflowError):
+            continue  # a junk id is ignored, as _attachment_files does
         if fm.get("kind") != "file" or int(fm.get("session_id") or 0) not in allowed:
             continue
         names.append(str(fm.get("filename") or ("file " + str(fid))))
@@ -732,7 +735,7 @@ def _turn_file_ids(session_id: int, user_msg_id: int) -> list[int]:
     row = db.get_message(user_msg_id)
     if row and row.get("attachment_ids") is not None:
         try:
-            return _clean_attach_ids(json.loads(row["attachment_ids"]))
+            return _clean_attach_ids(json.loads(row["attachment_ids"]), None)  # the left-out tail too
         except (TypeError, ValueError):
             return []
     out: list[int] = []
@@ -3899,6 +3902,7 @@ class Handler(BaseHTTPRequestHandler):
         turn_replies: list[dict] = []
         turn_files: list[int] = []
         turn_note = ""
+        stored_tail: list[int] = []
         claimed_id, claimed_abort = uuid.uuid4().hex, threading.Event()  # the claim made above, reused as the stream
         if regen_id or replace_id:
             turn_sid = int(data.get("session_id", 0) or 0)
@@ -3930,18 +3934,22 @@ class Handler(BaseHTTPRequestHandler):
         context_ids = data.get("context_ids") or []
         attach_ids = data.get("attachment_ids") or []
         if regen_id:  # asked again with exactly the files it had; nothing else rides along
-            attach_ids = turn_files
+            attach_ids = turn_files[:12]
+            turn_note = _left_out_note(turn_files[12:], (session_id, parent_session_id), turn_files[:12])
         elif replace_id:  # the files this question was asked about (if any), then any added with the edit
             all_new = _clean_attach_ids(attach_ids, None)
             new_ids = all_new[:12]
             room = 12 - len(new_ids)
-            kept_old = turn_files[len(turn_files) - room:] if room > 0 else []
-            left_out = turn_files[:len(turn_files) - len(kept_old)] + all_new[12:]
+            old_sent, old_tail = turn_files[:12], turn_files[12:]  # the question stored what it sent, then what it left out
+            kept_old = old_sent[len(old_sent) - room:] if room > 0 else []
+            left_out = old_sent[:len(old_sent) - len(kept_old)] + old_tail + all_new[12:]
             attach_ids = kept_old + new_ids
+            stored_tail = [i for i in left_out if i not in attach_ids]  # kept on the row so regenerate repeats the note
             turn_note = _left_out_note(left_out, (session_id, parent_session_id))  # said in the reply itself
         else:  # a fresh send: files past the cap are named, not dropped silently
             _all = _clean_attach_ids(attach_ids, None)
             turn_note = _left_out_note(_all[12:], (session_id, parent_session_id), _all[:12])
+            stored_tail = _all[12:]
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
@@ -3990,7 +3998,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             db.maybe_set_ai_session_title(session_id, text[:60])
             user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id,
-                                      attachment_ids=_clean_attach_ids(attach_ids))
+                                      attachment_ids=_clean_attach_ids(attach_ids) + stored_tail)
             if replace_id:  # the edited question stands in for the old turn once it is answered
                 turn_replies = [turn_user, *turn_replies]
             bump_sync()
@@ -7165,6 +7173,8 @@ class Handler(BaseHTTPRequestHandler):
                 if aid is None:
                     return self._json(400, {"error": _BAD_ID_SENTENCE})
                 data = json.loads(self._body().decode() or "{}")
+                if not isinstance(data, dict):
+                    return self._json(400, {"error": "Send the request as a JSON object with a prompt."})
                 prompt = str(data.get("prompt") or data.get("text") or "").strip()
                 if not prompt:
                     return self._json(400, {"error": "prompt required"})
@@ -7212,9 +7222,24 @@ class Handler(BaseHTTPRequestHandler):
                     is_subagent=bool(data.get("is_subagent")),
                 )
                 self._sse_begin()
+                final, failed, saw_end = "", "", False
                 for ev in agent_runtime.tail_run(rid):
+                    if ev.get("type") == "token":
+                        final += str(ev.get("text") or "")
+                    elif ev.get("type") == "done":
+                        final, saw_end = str(ev.get("analysis") or final), True
+                    elif ev.get("type") in ("error", "stopped"):
+                        failed, saw_end = str(ev.get("text") or "The agent could not finish."), True
                     if not self._sse_send(ev):
                         break
+                # The line and the answer (or the failure sentence) are saved in the chat, whole, so
+                # they survive a reload. The page shows these rows instead of a copy of its own.
+                chat_line = str(data.get("chat_line") or "").strip()
+                if chat_line and session_id and saw_end and db.get_session(session_id):
+                    um = db.add_message(device_ip="127.0.0.1", device_name="You", text=chat_line, source="ai-chat", session_id=session_id)
+                    am = db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=(failed or final or "The agent finished with nothing to say."), kind="text", source="ai", session_id=session_id)
+                    bump_sync()
+                    self._sse_send({"type": "saved", "messages": [m for m in (um, am) if m]})
                 return self._sse_end()
             except (ValueError, TypeError):  # a body that is not JSON or a number that is not one
                 return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})

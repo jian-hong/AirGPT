@@ -7720,16 +7720,25 @@ async function dispatchAtAgent(name){
   if(!rest)return false;
   try{
     const agents=(await api('/api/agents').then(r=>r.json())).agents||[];
-    const a=agents.find(x=>(x.name||'').toLowerCase()===agentName.toLowerCase())||agents[0];
+    // Only an exact name is a command. '@property versus @classmethod ...' is a question for the model.
+    const a=agents.find(x=>(x.name||'').toLowerCase()===agentName.toLowerCase());
     if(!a)return false;
     toast('Dispatching @'+a.name);
-    runCortexAgentWithPrompt(a.id,rest);
+    if(!currentSession)await ensureChatSession();   // the line and the answer are saved in a chat
+    runCortexAgentWithPrompt(a.id,rest,m);
     return true;
   }catch(e){return false}
 }
-async function runCortexAgentWithPrompt(id,prompt){
+async function runCortexAgentWithPrompt(id,prompt,chatLine){
+  // The typed line never just vanishes: if the run cannot be saved in the chat, it goes back in the box.
+  const giveBack=()=>{
+    const inp=$('input');
+    if(chatLine&&inp&&!inp.value.includes(chatLine)){inp.value=[chatLine,inp.value.trim()].filter(Boolean).join('\n\n');try{autoGrowInput();updateSendVisibility()}catch(e){}}
+  };
+  let saved=false;
   try{
     const body={prompt,session_id:currentSession||0,thinking_mode:cortexThinkingMode};
+    if(chatLine)body.chat_line=chatLine;
     if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
     const r=await fetch(API()+'/api/agents/'+id+'/run',{
       method:'POST',headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId(),'Accept':'text/event-stream'},
@@ -7738,28 +7747,46 @@ async function runCortexAgentWithPrompt(id,prompt){
     if(!r.ok||!r.body){
       const ej=await r.json().catch(()=>({}));
       toast(r.status===403?((ej&&ej.error)||'Only the host computer can run agents.'):'The agent could not start ('+r.status+'). Try again.');
+      giveBack();
       return;
     }
     if(window.bgTasks&&window.bgTasks.nudge)window.bgTasks.nudge();  // the run row exists as soon as the response starts
-    let final='';const reader=r.body.getReader();const dec=new TextDecoder();let buf='';
+    let final='',failed='';const reader=r.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
       const {done,value}=await reader.read();if(done)break;
       buf+=dec.decode(value,{stream:true});
-      for(const chunk of buf.split('\n\n')){
+      const chunks=buf.split('\n\n');buf=chunks.pop();
+      for(const chunk of chunks){
         const line=chunk.split('\n').find(l=>l.startsWith('data:'));
         if(!line)continue;
         let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
         if(j.type==='token')final+=j.text||'';
         if(j.type==='done')final=j.analysis||final;
+        if(j.type==='error'||j.type==='stopped')failed=j.text||'The agent could not finish.';
+        if(j.type==='saved'&&Array.isArray(j.messages)&&sideView==='chats'){
+          // Saved rows are shown whole; the same rows are skipped if the page already drew them.
+          for(const m of j.messages){
+            if(document.getElementById('msg-'+m.id)||m.id<=lastId)continue;
+            indexMsg(m);$('chat')?.querySelector('.empty')?.remove();
+            $('chat')?.insertAdjacentHTML('beforeend',renderMsg(m));lastId=m.id;
+          }
+          saved=true;scrollChatIfPinned(true);
+        }
       }
     }
-    if(final&&sideView==='chats')appendAssistantBubble(final);
+    if(failed)toast(failed);
+    if(!saved){
+      if(failed||final){
+        if(sideView==='chats')appendAssistantBubble(failed||final);
+        if(chatLine&&failed)giveBack();
+      }
+    }
     refreshCortexRight();
-  }catch(e){toast('Could not reach AirGPT. Check the connection and try again.')}
+  }catch(e){toast('Could not reach AirGPT. Check the connection and try again.');if(!saved)giveBack()}
 }
 function appendAssistantBubble(text){
   const chat=$('chat');if(!chat||chat.querySelector('.cortex-page'))return;
-  chat.insertAdjacentHTML('beforeend',`<div class="msg ai"><div class="body">${esc(text.slice(0,8000))}</div></div>`);
+  chat.insertAdjacentHTML('beforeend',`<div class="msg ai"><div class="body">${esc(text)}</div></div>`);
   scrollChatIfPinned(true);
 }
 async function createCortexAgent(){
@@ -14737,10 +14764,10 @@ async function retryFailedSend(){
   sendFailure=null;$('sendFailCard')?.remove();
   if(f.replace){   // the old question is still there: ask the same edit again, with its files
     document.getElementById('pending-user')?.remove();
-    const inp=$('input');if(!inp)return;
-    inp.value=f.text;inp.dispatchEvent(new Event('input'));
+    // Send the failed text itself; what is in the box (waiting lines given back) is left alone.
     resumeEdit(f.replace,f.sid,f.text,f.ids);
-    send();
+    _retrySend=true;
+    send(f.text);
     return;
   }
   retryIds=[...(f.ids||[])];   // the same files go with the same question
@@ -14750,10 +14777,10 @@ async function retryFailedSend(){
   if(id&&msgById[id]&&String(msgById[id].text||'').trim()===f.text.trim()){
     try{const r=await api('/api/messages/'+id,{method:'DELETE'});if(r.ok)mine.remove()}catch(e){}
   }
-  const inp=$('input');if(!inp)return;
-  inp.value=f.text;inp.dispatchEvent(new Event('input'));
-  send();
+  _retrySend=true;
+  send(f.text);
 }
+let _retrySend=false;   // the next send() is Try again: it sends the failed text and keeps the box as it is
 let retryIds=[];   // file ids the next send carries (Try again on a failed send)
 async function reconcileAfterSendFail(errToast){
   restoreUnsentText();
@@ -16192,11 +16219,12 @@ function restoreUnsentText(){
 async function send(forced){
   // `forced` is a queued line being sent for the box: it never touches what is typed now.
   const queued=(typeof forced==='string');
-  const k=draftKey();
+  const k=draftKey(),wasRetry=_retrySend;
   _unsentText=queued?'':($('input')?.value||'');
   try{return await _sendInner(forced)}
   finally{
     _unsentText='';
+    if(wasRetry)retryIds=[];
     if(!queued){
       retryIds=[];
       // A draft that was sent must not come back after a reload; one that was not sent stays.
@@ -16208,6 +16236,7 @@ async function send(forced){
   }
 }
 async function _sendInner(forced){
+  const retrying=_retrySend;_retrySend=false;
   const el=(typeof forced==='string')?{value:forced}:$('input');
   let text=(el?.value||'').trim();
   const hasFiles=stagedFiles.length>0;
@@ -16312,7 +16341,7 @@ async function _sendInner(forced){
   // Files travel with the turn: a retried send brings the ones it had, and an edit that
   // failed after its new file was uploaded brings that file again.
   // A queued line is always a new question: it never inherits an edit or a retry.
-  const queuedLine=(typeof forced==='string');
+  const queuedLine=(typeof forced==='string')&&!retrying;
   if(!queuedLine&&retryIds.length){attachIds=[...retryIds,...attachIds];retryIds=[]}
   const editSess=editingSession,editCarry=editCarryIds;
   if(!queuedLine&&editingMsgId&&editSess===currentSession&&!replyContext&&!contextIds.length&&editCarry.length)attachIds=[...editCarry,...attachIds];
