@@ -331,6 +331,22 @@ class ShareGuestTests(GuestScopeBase):
             clipdrop.Handler._handle_chat_stream = orig
         self.assertEqual((st, out.get("reply")), (200, "pong"))
 
+    def test_view_only_guest_cannot_stop_a_reply_but_a_post_guest_can(self):
+        sid = "feedc0de" * 4
+        run = {"abort": threading.Event(), "session_id": self.sid_a}
+        with clipdrop._chat_streams_lock:
+            clipdrop._chat_streams[sid] = run
+        try:
+            st, out = self.req("POST", "/api/chat/cancel", self.view, {"stream_id": sid})
+            self.assertEqual(st, 403, out)
+            self.assertFalse(run["abort"].is_set(), "a view-only guest must not be able to stop the host's reply")
+            st, out = self.req("POST", "/api/chat/cancel", self.post, {"stream_id": sid})
+            self.assertEqual((st, out.get("stopped")), (200, True))
+            self.assertTrue(run["abort"].is_set())
+        finally:
+            with clipdrop._chat_streams_lock:
+                clipdrop._chat_streams.pop(sid, None)
+
     def test_guest_cannot_write_into_another_chat(self):  # A7.5
         before = len(db.get_messages(session_id=self.sid_b))
         for path in ("/api/messages", "/api/chat/stream"):

@@ -806,7 +806,7 @@ def get_session(session_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def list_sessions(limit: int = 50) -> list[dict]:
+def list_sessions(limit: int = 50, offset: int = 0) -> list[dict]:
     try:
         prune_empty_orphan_sessions()
     except Exception:
@@ -817,10 +817,27 @@ def list_sessions(limit: int = 50) -> list[dict]:
             "(SELECT substr(COALESCE(NULLIF(m2.text,''), m2.filename, ''),1,80) FROM messages m2 "
             " WHERE m2.session_id=s.id ORDER BY m2.id DESC LIMIT 1) as preview "
             "FROM chat_sessions s WHERE COALESCE(s.archived,0)=0 "
-            "ORDER BY COALESCE(s.pinned,0) DESC, s.updated_at DESC LIMIT ?",
-            (limit,),
+            "ORDER BY COALESCE(s.pinned,0) DESC, s.updated_at DESC, s.id DESC LIMIT ? OFFSET ?",
+            (limit, max(0, int(offset))),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def first_session_of_type(capture_type: str) -> dict | None:
+    """The newest chat of a kind (e.g. 'scratch'), however old. list_sessions only sees a page."""
+    with _lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE capture_type=? AND COALESCE(archived,0)=0 "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1", (capture_type,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_sessions() -> int:
+    """Chats that show in the list (the same filter list_sessions uses)."""
+    with _lock, _connect() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM chat_sessions WHERE COALESCE(archived,0)=0").fetchone()
+    return int(row[0] or 0)
 
 
 def _resolve_date_filter(date_filter: str) -> str:
@@ -1213,6 +1230,38 @@ def add_message(
     return _row_to_dict(row)
 
 
+def count_session_messages(session_id: int, before_id: int = 0) -> int:
+    """How many messages a chat holds (only those before `before_id` when given)."""
+    with _lock, _connect() as conn:
+        if before_id:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE session_id=? AND id<?", (session_id, before_id)
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM messages WHERE session_id=?", (session_id,)).fetchone()
+    return int(row["n"] or 0)
+
+
+def get_messages_before(session_id: int, before_id: int, limit: int = 60) -> list[dict]:
+    """The latest `limit` messages of a chat that come before `before_id`, oldest first."""
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?",
+            (session_id, before_id, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in reversed(rows)]
+
+
+def set_message_ai_info(msg_id: int, *, model: str = "", status: str = "") -> None:
+    """Record which model wrote a reply, and whether it was cut short ('stopped')."""
+    with _lock, _connect() as conn:
+        if model:
+            conn.execute("UPDATE messages SET ai_model=? WHERE id=?", (model[:80], msg_id))
+        if status:
+            conn.execute("UPDATE messages SET ai_status=? WHERE id=?", (status[:20], msg_id))
+        conn.commit()
+
+
 def get_media_messages(limit: int = 200) -> list[dict]:
     with _lock, _connect() as conn:
         rows = conn.execute(
@@ -1402,18 +1451,29 @@ def session_latest_id(session_id: int) -> int:
     return int(row[0] or 0)
 
 
-def messages_grouped(since_id: int = 0, limit: int = 500, session_id: int | None = None) -> dict:
-    msgs = (
-        get_messages(since_id=since_id, limit=limit, session_id=session_id)
-        if since_id
-        else get_messages(since_id=0, limit=limit, session_id=session_id)
-    )
+def messages_grouped(since_id: int = 0, limit: int = 500, session_id: int | None = None,
+                     before_id: int = 0) -> dict:
+    """Messages grouped by day. `before_id` (with a session) pages backwards: the latest
+    `limit` messages older than it. `has_more` says whether older ones remain, so the
+    page can offer "Load earlier messages" instead of silently cutting a long chat."""
+    if before_id and session_id:
+        msgs = get_messages_before(session_id, before_id, limit)
+    else:
+        msgs = get_messages(since_id=since_id, limit=limit, session_id=session_id)
+    has_more = False
+    if session_id and msgs and not since_id:
+        with _lock, _connect() as conn:
+            has_more = conn.execute(
+                "SELECT 1 FROM messages WHERE session_id=? AND id<? LIMIT 1",
+                (session_id, int(msgs[0]["id"])),
+            ).fetchone() is not None
     groups: dict[str, list] = {}
     for m in msgs:
         groups.setdefault(m["date"], []).append(m)
     by_date = [{"date": d, "label": _date_label(d), "messages": groups[d]} for d in sorted(groups.keys())]
     lid = session_latest_id(session_id) if session_id else latest_id()
-    return {"messages": msgs, "by_date": by_date, "latest_id": lid, "session_id": session_id or 0}
+    return {"messages": msgs, "by_date": by_date, "latest_id": lid, "session_id": session_id or 0,
+            "has_more": has_more}
 
 
 def _date_label(d: str) -> str:

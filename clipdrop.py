@@ -480,6 +480,18 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "general"
         print(f"[ai] error msg {msg_id}: {e}")
 
 
+def _run_tracked(session_id: int, fn, *args) -> None:
+    """Run a background reply and list its chat as "answering" until it ends, however it ends."""
+    token = uuid.uuid4().hex
+    with _chat_streams_lock:
+        _chat_streams[token] = {"abort": threading.Event(), "session_id": int(session_id or 0), "started": time.time()}
+    try:
+        fn(*args)
+    finally:
+        with _chat_streams_lock:
+            _chat_streams.pop(token, None)
+
+
 def queue_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
     rate_err = _check_ai_rate()
     if rate_err:
@@ -491,6 +503,10 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
         elif msg:
             db.update_ai(msg_id, status="error", analysis=rate_err)
             bump_sync()
+        return
+    sid = int(session_id or 0)
+    if question and sid:  # a question about a screenshot: the reply is being written meanwhile
+        threading.Thread(target=_run_tracked, args=(sid, run_analysis, msg_id, question, mode, session_id, depth), daemon=True).start()
         return
     threading.Thread(target=run_analysis, args=(msg_id, question, mode, session_id, depth), daemon=True).start()
 
@@ -556,7 +572,7 @@ def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, r
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=rate_err, kind="text", source="ai", session_id=session_id)
         bump_sync()
         return
-    threading.Thread(target=run_text_chat, args=(question, mode, session_id, restrict_links, attachments), daemon=True).start()
+    threading.Thread(target=_run_tracked, args=(session_id, run_text_chat, question, mode, session_id, restrict_links, attachments), daemon=True).start()
 
 
 # ---- chat_classifier wiring: one-off small-talk → shared Scratch space, no linkage ----
@@ -566,10 +582,10 @@ _scratch_ids: set[int] = set()
 
 def _get_or_create_scratch_session() -> int:
     try:
-        for s in db.list_sessions(limit=200):
-            if s.get("capture_type") == "scratch":
-                _scratch_ids.add(int(s["id"]))
-                return int(s["id"])
+        s = db.first_session_of_type("scratch")  # not list_sessions: an old Scratch chat is past its first page
+        if s:
+            _scratch_ids.add(int(s["id"]))
+            return int(s["id"])
         sess = db.create_session(_SCRATCH_TITLE, capture_type="scratch")
         _scratch_ids.add(int(sess["id"]))
         return int(sess["id"])
@@ -595,10 +611,10 @@ def _is_scratch_session(sid: int) -> bool:
     if sid in _scratch_ids:
         return True
     try:
-        for s in db.list_sessions(limit=200):
-            if int(s.get("id") or 0) == sid and s.get("capture_type") == "scratch":
-                _scratch_ids.add(sid)
-                return True
+        s = db.get_session(sid)  # by id: the chat may be past the first page of the list
+        if s and s.get("capture_type") == "scratch":
+            _scratch_ids.add(sid)
+            return True
     except Exception:
         pass
     return False
@@ -632,13 +648,80 @@ def _attachment_files(ids, allowed_sessions) -> list[dict]:
     return out
 
 
+# Running chat streams by id, so the Stop button can reach the one it started.
+_chat_streams: dict[str, dict] = {}
+_chat_streams_lock = threading.Lock()
+
+
+def _generating_sessions(only: int | None = None) -> dict[int, float]:
+    """Chats with a reply being written right now: {chat id: when it started}.
+
+    Read-only view of _chat_streams (the server's own record of running streams), so a
+    chat opened on another tab or device can say "still answering" instead of showing a
+    bare question. An entry lives until the reply is saved or the generation fails.
+    """
+    out: dict[int, float] = {}
+    with _chat_streams_lock:
+        for run in _chat_streams.values():
+            sid = int(run.get("session_id") or 0)
+            if sid and (only is None or sid == only):
+                out[sid] = min(out.get(sid, run["started"]), run["started"])
+    return out
+
+
+def _last_turn(session_id: int, user_msg_id: int) -> tuple[dict | None, list[dict], str]:
+    """The last question of a chat and the replies after it, for edit and regenerate.
+
+    Only the last turn can change: older answers were written with the messages before
+    them, and branching to keep both versions is a separate feature. Returns
+    (question, replies, "") or (None, [], why-not).
+    """
+    row = db.get_message(user_msg_id) if (session_id and user_msg_id) else None
+    if not row or int(row.get("session_id") or 0) != session_id:
+        return None, [], "That message is not in this chat."
+    if row.get("source") == "ai" or row.get("kind") != "text":
+        return None, [], "Only a question you typed can be changed."
+    after = db.get_messages(since_id=user_msg_id, limit=50, session_id=session_id)
+    if any(m.get("source") != "ai" or m.get("kind") != "text" for m in after):
+        return None, [], "Only your last question can be changed."
+    return row, after, ""
+
+
+def _forget_turn_memory(session_id: int, question: str) -> None:
+    """A question that was edited away or answered again must not come back as a
+    remembered "Q ... A ..." note in the next prompt, with the answer the person
+    just threw out. Drops this chat's saved gist of that question."""
+    q = (question or "").strip()
+    if not (session_id and q):
+        return
+    try:
+        import memory_index as mi
+
+        for m in mi.list_memories(session_id=session_id, kind="memory", limit=200):
+            if (int(m.get("session_id") or 0) == session_id and m.get("source") == "chat_turn"
+                    and f"Q: {q[:280]}" in str(m.get("body") or "")):
+                mi.delete_memory(int(m["id"]))
+    except Exception as e:
+        print(f"[chat] could not forget the old turn's memory note: {e!r}")
+
+
+# How many of a chat's latest messages are handed over as history. The character
+# budget in ai_engine (HISTORY_BUDGET_CHARS) is what actually trims them.
+CHAT_HISTORY_FETCH = 60
+
+
 def _build_chat_history(
     session_id: int,
     context_ids: list,
     reply_snippet: str,
     *,
     exclude_msg_id: int = 0,
+    before_id: int = 0,
+    counts: dict | None = None,
 ) -> list[dict]:
+    """Earlier turns for the model. `before_id` is the question being asked: it and
+    anything after it is not history. `counts["older"]` gets the number of messages
+    left unread because the chat is longer than CHAT_HISTORY_FETCH."""
     history: list[dict] = []
     if reply_snippet:
         history.append({"role": "assistant", "content": f"[Replying to]: {reply_snippet[:500]}"})
@@ -654,14 +737,20 @@ def _build_chat_history(
         if content:
             history.append({"role": role, "content": content[:2000]})
     if session_id and not _is_scratch_session(session_id):  # Scratch = no linkage
-        for m in db.get_messages(session_id=session_id, limit=24):
+        if before_id:
+            rows = db.get_messages_before(session_id, before_id, CHAT_HISTORY_FETCH)
+        else:
+            rows = db.get_messages(session_id=session_id, limit=CHAT_HISTORY_FETCH)
+        if counts is not None:
+            counts["older"] = max(0, db.count_session_messages(session_id, before_id) - len(rows))
+        for m in rows:
             if exclude_msg_id and int(m.get("id") or 0) == exclude_msg_id:
                 continue
             role = "assistant" if m.get("source") == "ai" else "user"
             content = (m.get("text") or "").strip()
             if content:
                 history.append({"role": role, "content": content[:2000]})
-    return history[-12:]
+    return history
 
 
 def _cortex_prompt_trace(
@@ -674,6 +763,7 @@ def _cortex_prompt_trace(
     web_search: bool,
     chat_block: str = "",
     attach_block: str = "",
+    history_older: int = 0,
 ) -> dict:
     """What AirGPT handed to the Cortex agent loop for this turn.
 
@@ -696,14 +786,15 @@ def _cortex_prompt_trace(
         body = body[: -len(attach_block)]
     prior = body[: max(0, len(body) - len(question))] if sent else ""
     cut = sum(1 for m in sent if len(str(m.get("content") or "").strip()) > 500)
-    note = f"{len(sent)} of {len(usable)} earlier messages sent, each cut to 500 characters."
+    available = len(usable) + max(0, int(history_older or 0))
+    note = f"{len(sent)} of {available} earlier messages sent, each cut to 500 characters."
     if cut:
         note += " 1 was longer and lost its tail." if cut == 1 else f" {cut} were longer and lost their tails."
     _pt.add(trace, "history", "Chat history", prior, note=note)
     trace["history"] = {
-        "available": len(usable),
+        "available": available,
         "sent": len(sent),
-        "dropped": len(usable) - len(sent),
+        "dropped": available - len(sent),
         "compressed": cut,
     }
     _pt.add(trace, "question", "Your message", question)
@@ -731,6 +822,7 @@ def _chat_stream_events(
     thinking: bool = True,
     web_search: bool = False,
     attachments: list[dict] | None = None,
+    history_older: int = 0,
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
@@ -779,7 +871,7 @@ def _chat_stream_events(
     try:
         import cortex_client
 
-        yield {"type": "thinking", "text": "Cortex quality loop…", "session_id": session_id}
+        yield {"type": "thinking", "text": "Checking Cortex…", "session_id": session_id}
         loop_prompt = question or ""
         if history:
             prior = []
@@ -822,7 +914,7 @@ def _chat_stream_events(
         try:
             yield {"type": "prompt_trace", "trace": _cortex_prompt_trace(
                 question or "", history, loop_prompt, mode=mode, tier=model_tier, web_search=web_search,
-                chat_block=chat_block, attach_block=attach_block,
+                chat_block=chat_block, attach_block=attach_block, history_older=history_older,
             )}
         except Exception as e:
             # The answer is in hand. Without a record the panel says "no prompt
@@ -852,9 +944,15 @@ def _chat_stream_events(
     why = ""
     if isinstance(cortex, dict):
         why = str(cortex.get("error") or cortex.get("stop_reason") or "")[:180]
+    # The raw reason is for the log; the person sees what really happens next.
+    print(f"[cortex] quality loop skipped: {why or 'no answer'}")
+    unreachable = isinstance(cortex, dict) and (
+        cortex.get("reason") in ("wrong_surface", "cortex_down") or "offline" in why.lower()
+    )
     yield {
         "type": "thinking",
-        "text": f"Quality loop skipped: {why or 'no answer'}",
+        "text": ("Cortex is not running, so your model is answering directly." if unreachable
+                 else "Cortex could not finish this one, so your model is answering directly."),
         "session_id": session_id,
     }
     if not _is_online():
@@ -878,6 +976,7 @@ def _chat_stream_events(
             thinking=thinking,
             force_web=web_search,
             attachments=attachments,
+            history_older=history_older,
         ):
             if abort.is_set():
                 return
@@ -1157,7 +1256,7 @@ _GUEST_GET: frozenset = frozenset({
 })
 _GUEST_POST: frozenset = frozenset({
     "/api/establish", "/api/messages", "/api/chat/stream", "/api/chat/project-suggest",
-    "/api/chat/prefs", "/api/presence/typing",
+    "/api/chat/prefs", "/api/presence/typing", "/api/chat/cancel",
     "/api/snippets", "/api/snippets/delete",
 })
 _GUEST_PREFIXES: tuple[str, ...] = ("/ui/", "/OpenIDE/ui/", "/data/", "/api/auth/")
@@ -3445,7 +3544,55 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def _json(self, code, data):
-        self._send(code, json.dumps(data).encode(), "application/json; charset=utf-8")
+        body = json.dumps(data).encode()
+        headers: dict = {}
+        # A long chat is half a megabyte of text; send it squeezed when the client allows.
+        # Only whole JSON bodies pass through here. Streams (SSE) write their own chunks
+        # and are never compressed.
+        if len(body) >= 1024 and "gzip" in (self.headers.get("Accept-Encoding", "") or "").lower():
+            import gzip as _gzip
+
+            packed = _gzip.compress(body, 5)
+            if len(packed) < len(body):
+                body, headers = packed, {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
+        self._send(code, body, "application/json; charset=utf-8", headers)
+
+    def _send_static(self, asset: Path, mime: str) -> None:
+        """A script or stylesheet from disk: ETag and Last-Modified so an unchanged file
+        answers 304 once the 60 s cache window ends, and gzip when the client accepts it."""
+        from email.utils import formatdate, parsedate_to_datetime
+
+        body, etag = _cached_asset(asset)
+        mtime = int(asset.stat().st_mtime)
+        lastmod = formatdate(mtime, usegmt=True)
+        inm = self.headers.get("If-None-Match")
+        ims = self.headers.get("If-Modified-Since")
+        fresh = False
+        if inm:
+            fresh = etag in [t.strip().removeprefix("W/") for t in inm.split(",")] or inm.strip() == "*"
+        elif ims:
+            try:
+                fresh = mtime <= parsedate_to_datetime(ims).timestamp()
+            except (TypeError, ValueError):
+                fresh = False
+        if fresh:
+            self.send_response(304)
+        else:
+            squeeze = mime.startswith(("text/", "application/javascript", "application/json", "image/svg"))
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", "") if squeeze else "")
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(payload)))
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+        self.send_header("Cache-Control", "public, max-age=60")
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", lastmod)
+        self.send_header("Vary", "Accept-Encoding")
+        self._cors()
+        self.end_headers()
+        if not fresh:
+            self.wfile.write(payload)
 
     def _sse_begin(self) -> None:
         self._drain_request_body()
@@ -3526,7 +3673,36 @@ class Handler(BaseHTTPRequestHandler):
         out = project_suggest.observe(sid, str(body.get("text") or ""), current)
         return self._json(200, out)
 
+    def _handle_chat_cancel(self) -> None:
+        """Stop button: end the running reply that `stream_id` names. The partial text
+        is saved by the stream itself; this only raises the flag."""
+        try:
+            data = json.loads(self._body().decode() or "{}")
+        except json.JSONDecodeError:
+            return self._json(400, {"error": "invalid json"})
+        with _chat_streams_lock:
+            run = _chat_streams.get(str(data.get("stream_id") or ""))
+        scoped = self._guest_scope()
+        if scoped and scoped.get("acl") == "view":
+            return self._json(403, {"error": "This share is view-only"})
+        if run and scoped and int(scoped["session_id"]) != int(run["session_id"]):
+            run = None  # a share link can only stop a reply in its own chat
+        if run:
+            run["abort"].set()
+        return self._json(200, {"ok": True, "stopped": bool(run)})
+
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
+        # The stream stays on the running list until its reply is saved (or it fails or
+        # is stopped), however this method ends; see _generating_sessions.
+        self._stream_ids: list[str] = []
+        try:
+            return self._handle_chat_stream_run(ip, dname)
+        finally:
+            with _chat_streams_lock:
+                for sid_ in self._stream_ids:
+                    _chat_streams.pop(sid_, None)
+
+    def _handle_chat_stream_run(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
         blocked = _ai_lockdown_block()
@@ -3542,13 +3718,31 @@ class Handler(BaseHTTPRequestHandler):
             )
         rate_err = _check_ai_rate()
         if rate_err:
-            return self._json(429, {"error": rate_err})
+            wait = re.search(r"Wait (\d+)s", rate_err)
+            return self._json(429, {"error": rate_err, "retry_after": int(wait.group(1)) if wait else 60})
         try:
             data = json.loads(self._body().decode() or "{}")
         except json.JSONDecodeError:
             return self._json(400, {"error": "invalid json"})
 
         text = str(data.get("text", "")).strip()
+        # Change the last turn: `regenerate_msg_id` answers that question again,
+        # `replace_msg_id` swaps that question (and its answer) for `text`.
+        try:
+            regen_id = int(data.get("regenerate_msg_id") or 0)
+            replace_id = int(data.get("replace_msg_id") or 0)
+        except (TypeError, ValueError):
+            return self._json(400, {"error": "invalid message id"})
+        turn_user: dict | None = None
+        turn_replies: list[dict] = []
+        if regen_id or replace_id:
+            turn_user, turn_replies, turn_err = _last_turn(
+                int(data.get("session_id", 0) or 0), regen_id or replace_id
+            )
+            if turn_err:
+                return self._json(409, {"error": turn_err})
+            if regen_id:
+                text = str(turn_user.get("text") or "").strip()
         if not text:
             return self._json(400, {"error": "text required"})
 
@@ -3578,7 +3772,9 @@ class Handler(BaseHTTPRequestHandler):
                 reply_snippet = (rm.get("text") or rm.get("ai_analysis") or "")[:500]
 
         parent_id = parent_session_id or session_id
-        if reply_to_id or reply_snippet:
+        if turn_user:
+            reply_snippet = ""  # changing a turn stays in its own chat
+        elif reply_to_id or reply_snippet:
             title = text[:60] or "Reply"
             cat = db.MODE_TO_CATEGORY.get(mode, "general")
             sess = db.create_reply_session(parent_id, title, reply_snippet, category=cat)
@@ -3592,12 +3788,26 @@ class Handler(BaseHTTPRequestHandler):
                 sess = db.create_session("New chat", capture_type="ai", category=cat)
                 session_id = sess["id"]
 
-        db.maybe_set_ai_session_title(session_id, text[:60])
-        user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id)
-        bump_sync()
+        if turn_user:
+            _forget_turn_memory(session_id, str(turn_user.get("text") or ""))
+        if regen_id:
+            user_msg = turn_user  # same question, asked again: no second copy
+        else:
+            db.maybe_set_ai_session_title(session_id, text[:60])
+            user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id)
+            if replace_id:  # the edited question stands in for the old turn
+                for old in [turn_user, *turn_replies]:
+                    db.delete_message(int(old["id"]))
+                turn_replies = []
+            bump_sync()
 
         exclude_id = int(user_msg["id"]) if user_msg else 0
-        history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
+        history_counts: dict = {}
+        history = _build_chat_history(
+            session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id,
+            before_id=exclude_id, counts=history_counts,
+        )
+        history_older = int(history_counts.get("older") or 0)
 
         # Armed skills modify THIS send only. The raw user text is what gets stored
         # above — packs are prepended to the model's copy so the transcript stays
@@ -3626,47 +3836,59 @@ class Handler(BaseHTTPRequestHandler):
             if packs:
                 question = "\n\n".join(packs) + f"\n\n---\n\n{text}"
 
-        # Reserved for explicit cancellation. Deliberately NOT tripped by the client
-        # disconnecting any more — a dropped socket used to abandon generation and
-        # discard a finished answer, which is how an iPad on a flaky tunnel ended up
-        # with its question sitting there unanswered forever.
+        # Set only by the Stop button (POST /api/chat/cancel, keyed by stream_id) and
+        # NOT by the client disconnecting — a dropped socket used to abandon generation
+        # and discard a finished answer, which is how an iPad on a flaky tunnel ended
+        # up with its question sitting there unanswered forever.
         abort = threading.Event()
+        stream_id = uuid.uuid4().hex
+        with _chat_streams_lock:
+            _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
+        self._stream_ids.append(stream_id)
         event_q: queue.Queue = queue.Queue()
-        done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None}
+        done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None, "partial": ""}
+        gate = threading.Lock()  # a Stop and the producer never both touch done_ev
 
         restrict_links = not _is_host_request(self.headers, self.client_address[0])
         attach_files = _attachment_files(attach_ids, attach_sessions)
         cut_note = ai_engine.QUESTION_CUT_NOTE if ai_engine and len(text) > ai_engine.QUESTION_LIMIT else ""
 
         def _producer() -> None:
+            events = None
             try:
                 ai_engine.set_link_fetch_restricted(restrict_links)
                 if cut_note:
                     event_q.put({"type": "token", "text": cut_note + "\n\n"})
-                for ev in _chat_stream_events(
+                    done_ev["partial"] += cut_note + "\n\n"
+                events = _chat_stream_events(
                     question, mode, history, abort,
                     session_id=session_id,
                     model_tier=model_tier,
                     thinking=thinking_flag,
                     web_search=web_search_flag,
                     attachments=attach_files,
-                ):
-                    if abort.is_set():
-                        break
-                    if cut_note and ev.get("type") == "done":
-                        # Said in the reply itself (and saved with it), not only in the prompt panel.
-                        ev = {**ev, "analysis": cut_note + "\n\n" + str(ev.get("analysis") or "")}
-                    if ev.get("type") == "prompt_trace":
-                        # Kept for the reply row; the client reads it back by message id.
-                        done_ev["trace"] = ev.get("trace")
-                        continue
-                    event_q.put(ev)
-                    if ev.get("type") == "done":
-                        done_ev["analysis"] = ev.get("analysis", "")
-                        done_ev["model"] = ev.get("model", "")
-                    elif ev.get("type") == "error":
-                        done_ev["error"] = ev.get("text", "") or ev.get("error", "")
-                        break
+                    history_older=history_older,
+                )
+                for ev in events:
+                    with gate:
+                        if abort.is_set():
+                            break
+                        if cut_note and ev.get("type") == "done":
+                            # Said in the reply itself (and saved with it), not only in the prompt panel.
+                            ev = {**ev, "analysis": cut_note + "\n\n" + str(ev.get("analysis") or "")}
+                        if ev.get("type") == "prompt_trace":
+                            # Kept for the reply row; the client reads it back by message id.
+                            done_ev["trace"] = ev.get("trace")
+                            continue
+                        event_q.put(ev)
+                        if ev.get("type") == "token":
+                            done_ev["partial"] += str(ev.get("text") or "")
+                        elif ev.get("type") == "done":
+                            done_ev["analysis"] = ev.get("analysis", "")
+                            done_ev["model"] = ev.get("model", "")
+                        elif ev.get("type") == "error":
+                            done_ev["error"] = ev.get("text", "") or ev.get("error", "")
+                            break
             except Exception as e:
                 err = str(e)[:400]
                 done_ev["error"] = err
@@ -3675,8 +3897,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             finally:
+                if events is not None:
+                    events.close()  # a Stop reaches the model call: its connection is closed here
                 # Always close the stream so clients never hang waiting for done
-                if not done_ev["error"] and not done_ev["analysis"]:
+                if not done_ev["error"] and not done_ev["analysis"] and not abort.is_set():
                     try:
                         event_q.put({
                             "type": "error",
@@ -3691,7 +3915,7 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(target=_producer, daemon=True).start()
         self._sse_begin()
         # Immediate ack so UI can adopt session before model tokens arrive
-        self._sse_send({"type": "thinking", "text": "Connected - generating...", "session_id": session_id})
+        self._sse_send({"type": "thinking", "text": "Connected - generating...", "session_id": session_id, "stream_id": stream_id})
 
         # A phone on a flaky tunnel drops the stream mid-answer constantly. Losing the
         # socket must stop the WRITING, not the WORK: the model has already been paid
@@ -3703,6 +3927,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 ev = event_q.get(timeout=0.25)
             except queue.Empty:
+                if abort.is_set():
+                    break  # Stopped while the model was silent: do not wait for it
                 idle_ticks += 1
                 # Keepalive every ~2s so proxies/clients don't drop the stream
                 if idle_ticks % 8 == 0 and not client_gone:
@@ -3717,6 +3943,27 @@ class Handler(BaseHTTPRequestHandler):
             if not client_gone and not self._sse_send(ev):
                 client_gone = True
 
+        with gate:  # from here the producer can no longer add to what we save
+            stopped = abort.is_set() and not done_ev["analysis"] and not done_ev["error"]
+            partial = str(done_ev["partial"]).strip()
+        if stopped:
+            # Stop was pressed before the answer finished. What was written so far is
+            # kept, marked stopped; nothing more is generated or saved afterwards.
+            stop_ev: dict = {"type": "stopped", "saved": False, "session_id": session_id}
+            if partial:
+                part_row = db.add_message(
+                    device_ip="127.0.0.1", device_name="AirGPT", text=partial,
+                    kind="text", source="ai", session_id=session_id,
+                )
+                if part_row:
+                    db.set_message_ai_info(int(part_row["id"]), status="stopped")
+                    stop_ev.update(saved=True, message_id=int(part_row["id"]))
+                    for old in turn_replies:  # a stopped regenerate still replaces the old reply
+                        db.delete_message(int(old["id"]))
+                bump_sync()
+            self._sse_send(stop_ev)
+            self._sse_end()
+            return
         # Persist whenever an answer exists. The old condition also required the client
         # to still be attached, so a tunnel hiccup silently discarded a finished reply.
         if done_ev["analysis"] and not done_ev["error"]:
@@ -3728,6 +3975,11 @@ class Handler(BaseHTTPRequestHandler):
                 source="ai",
                 session_id=session_id,
             )
+            if ai_row:
+                if done_ev.get("model"):
+                    db.set_message_ai_info(int(ai_row["id"]), model=str(done_ev["model"]))
+                for old in turn_replies:  # regenerate: the new reply takes the old one's place
+                    db.delete_message(int(old["id"]))
             if ai_row and isinstance(done_ev.get("trace"), dict):
                 try:
                     import prompt_trace
@@ -4180,19 +4432,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = "application/javascript; charset=utf-8" if asset.suffix == ".js" else (
                 "text/css; charset=utf-8" if asset.suffix == ".css"
                 else (mimetypes.guess_type(str(asset))[0] or "application/octet-stream")
             )
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path.startswith("/OpenIDE/ui/") and ".." not in path:
             rel = path.lstrip("/")
@@ -4203,20 +4447,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = mimetypes.guess_type(str(asset))[0] or "application/octet-stream"
             if asset.suffix == ".js":
                 mime = "application/javascript; charset=utf-8"
             elif asset.suffix == ".css":
                 mime = "text/css; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path == "/manifest.json":
             mf = ROOT / "manifest.json"
@@ -4432,6 +4668,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {
                 "sync_version": _sync_version,
                 "latest_id": db.latest_id(),
+                "generating": sorted(_generating_sessions(sid if gs else None)),
                 "new_chat": new_chat,
                 "new_hist": new_hist,
                 "presence": room,
@@ -4710,11 +4947,26 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
+            off = max(0, int(q.get("offset", ["0"])[0] or 0))
             gs = self._guest_scope()
-            rows = db.list_sessions(1_000_000 if gs else lim)  # a guest's old chat must not fall off the limit
+            rows = db.list_sessions(1_000_000 if gs else lim, 0 if gs else off)  # a guest's old chat must not fall off the limit
             if gs:  # a share guest lists its own chat only
                 rows = [s for s in rows if int(s["id"]) == int(gs["session_id"])]
-            return self._json(200, {"sessions": rows})
+            busy = _generating_sessions(int(gs["session_id"]) if gs else None)
+            for r in rows:
+                if int(r["id"]) in busy:
+                    r["generating"] = True
+            total = len(rows) if gs else db.count_sessions()
+            return self._json(200, {"sessions": rows, "total": total, "offset": 0 if gs else off,
+                                    "has_more": (not gs) and off + len(rows) < total})
+
+        m_one = re.fullmatch(r"/api/sessions/(\d+)", path.rstrip("/"))
+        if m_one:  # one chat by id, so an old chat opens even when the list only holds the newest
+            row = db.get_session(int(m_one.group(1)))
+            if not row or int(row.get("archived") or 0):
+                return self._json(404, {"error": "That chat does not exist."})
+            row["msg_count"] = db.count_session_messages(int(row["id"]))
+            return self._json(200, {"session": row})
 
         if path == "/api/search":
             sq = q.get("q", [""])[0]
@@ -4819,7 +5071,15 @@ class Handler(BaseHTTPRequestHandler):
                 if scoped and not _is_local_host(ip):
                     session_id = int(scoped["session_id"])
             if q.get("full", ["0"])[0] == "1":
-                return self._json(200, db.messages_grouped(since_id=since, session_id=session_id))
+                try:  # a page of the chat; the default is the newest 500, as before
+                    page = max(1, min(int(q.get("limit", ["500"])[0] or 500), 500))
+                    before = int(q.get("before_id", ["0"])[0] or 0)
+                except ValueError:
+                    return self._json(400, {"error": "invalid limit or before_id"})
+                grouped = db.messages_grouped(since_id=since, limit=page, session_id=session_id, before_id=before)
+                if session_id:
+                    grouped["generating"] = session_id in _generating_sessions(session_id)
+                return self._json(200, grouped)
             msgs = db.get_messages(since_id=since, session_id=session_id)
             return self._json(200, {"messages": msgs, "latest_id": db.latest_id()})
 
@@ -5864,6 +6124,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/chat/prefs":
             return self._handle_chat_prefs_post()
+
+        if path == "/api/chat/cancel":
+            return self._handle_chat_cancel()
 
         if path == "/api/chat/stream":
             if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):

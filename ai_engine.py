@@ -1652,6 +1652,8 @@ def _session_history_messages(session_id: int, question: str) -> list[dict]:
         return []
     try:
         import db as _db
+        if ((_db.get_session(session_id) or {}).get("capture_type")) == "scratch":
+            return []  # Scratch is "no linkage": every message stands alone
         rows = _db.get_messages(session_id=session_id, limit=60)
     except Exception:
         return []
@@ -1669,9 +1671,12 @@ def _session_history_messages(session_id: int, question: str) -> list[dict]:
         content = "\n".join(parts).strip()
         if not content:
             continue
-        if not is_ai and content.strip() == (question or "").strip():
-            continue
         out.append({"role": role, "content": content, "id": m.get("id"), "vision_cache": m.get("vision_cache", "")})
+    # The question being asked is the newest row and was saved before this ran. Only
+    # that one goes: an earlier, identical message is real history.
+    asked = (question or "").strip()
+    if out and out[-1]["role"] == "user" and asked.endswith(out[-1]["content"].strip()):
+        out.pop()
     return out
 
 
@@ -1821,6 +1826,7 @@ def _prepare_text_chat(
     *,
     session_id: int = 0,
     history: list[dict] | None = None,
+    history_older: int = 0,
     business_require: bool = False,
     force_web: bool = False,
     trace: dict | None = None,
@@ -1845,10 +1851,14 @@ def _prepare_text_chat(
         question = _guard_user_question(gate.get("text") or question or "")
     vault = retrieve_vault_snippets(question, category=mode)
     vault_block = f"\nRelevant vault notes:\n{vault}\n" if vault else ""
-    history_msgs = list(history or [])
-    if not history_msgs and session_id:
+    # `history` is the caller's answer, even when it is empty (a first message, a
+    # Scratch chat). Only a caller that passed none gets the chat read for it.
+    if history is None and session_id:
         history_msgs = _session_history_messages(session_id, question)
-    hist_available = len(history_msgs)
+    else:
+        history_msgs = list(history or [])
+    hist_fed = len(history_msgs)
+    hist_available = hist_fed + max(0, int(history_older or 0))
     if history_msgs:
         try:
             import db as _db
@@ -1947,7 +1957,11 @@ def _prepare_text_chat(
             squeezed = sum(1 for m in history_msgs if m.get("_compressed_for_prompt"))
             hist_note = f"{sent} of {hist_available} earlier messages sent."
             if hist_available > sent:
-                hist_note += f" {hist_available - sent} dropped to fit the budget."
+                hist_note += f" {hist_available - sent} left out."
+                if hist_fed > sent:
+                    hist_note += f" {hist_fed - sent} trimmed to stay under the {HISTORY_BUDGET_CHARS:,} character limit."
+                if hist_available > hist_fed:
+                    hist_note += f" {hist_available - hist_fed} were older than the latest {hist_fed} read."
             if squeezed:
                 hist_note += f" {squeezed} shortened."
             _pt.add(trace, "history", "Chat history", history_block, note=hist_note)
@@ -2212,6 +2226,7 @@ def chat_text_stream(
     thinking: bool = True,
     force_web: bool = False,
     attachments: list[dict] | None = None,
+    history_older: int = 0,
 ) -> Iterator[dict]:
     """Yield SSE-ready dicts: thinking, token, done.
 
@@ -2250,6 +2265,7 @@ def chat_text_stream(
         mode,
         session_id=session_id,
         history=history,
+        history_older=history_older,
         business_require=business_require,
         force_web=force_web,
         trace=trace,

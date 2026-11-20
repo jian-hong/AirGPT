@@ -15,13 +15,16 @@
 <link rel="stylesheet" href="/ui/apple.css"/>
 <link rel="stylesheet" href="/ui/promptlens.css"/>
 <link rel="stylesheet" href="/ui/chattools.css"/>
+<link rel="stylesheet" href="/ui/turnedit.css"/>
 <link rel="stylesheet" href="/ui/codeblocks.css"/>
 <link rel="stylesheet" href="/ui/chatprefs.css"/>
 <link rel="stylesheet" href="/ui/voice.css"/>
 <link rel="stylesheet" href="/ui/snippets.css"/>
 <link rel="stylesheet" href="/ui/palette.css"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<!-- Fonts and maths styling load without blocking: a print-media sheet is not render-blocking and does not hold back the app script; it switches to all when it arrives. A slow or blocked CDN just means system fonts for a while. -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/></noscript>
 <style>
 :root{
   --bg:#0a0a0a;--surface:rgba(17,17,17,.72);--surface2:rgba(28,28,28,.78);--line:rgba(255,255,255,.12);
@@ -843,6 +846,11 @@ body.theme-light .invite-card .inv-ico{background:var(--surface2)}
 }
 .main-chat-col{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .day{text-align:center;margin:20px 0 12px}
+.chat-earlier{display:block;margin:8px auto 4px}
+#historyMore{text-align:center;padding:8px 0 72px}
+#historyMore[hidden]{display:none}
+.gen-note{margin:6px 0 10px 44px;font-size:13px;color:var(--muted);font-family:var(--sans)}
+.sess-gen{font-size:10px;color:var(--muted);margin-left:6px;white-space:nowrap}
 .day span{font-size:11px;color:var(--muted);font-family:var(--sans);padding:4px 10px;border:0;border-radius:0}
 .msg{display:flex;gap:12px;margin-bottom:12px;width:100%;align-items:flex-start}
 .msg.me{flex-direction:row-reverse;justify-content:flex-start}
@@ -2774,7 +2782,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
 </style>
 <link rel="stylesheet" href="/ui/phone.css"/>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" media="print" onload="this.media='all'"/>
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/></noscript>
 </head>
 <body>
 <div class="backdrop" id="backdrop" onclick="closeSide()"></div>
@@ -2935,6 +2944,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
         </div>
         <div class="side-section-body" id="historyBody">
           <div id="historyDays"><div class="empty">Loading…</div></div>
+          <div id="historyMore" hidden><button type="button" class="btn" onclick="showOlderChats()">Show older chats</button></div>
         </div>
       </div>
       <div class="side-section" id="projectsSection" style="display:none" hidden>
@@ -4105,6 +4115,15 @@ function updateCharCount(){
 let lastId=0,lastHistId=0,myName=localStorage.getItem('clipdrop_name')||'';
 let pullGen=0;
 let chatCacheBySession={}; // session_id → {by_date, latest_id} for instant switch paint
+const CHAT_CACHE_MAX=8, chatCacheOrder=[]; // only the last few chats stay in memory
+function chatCachePut(sess,val){
+  chatCacheBySession[sess]=val;
+  const i=chatCacheOrder.indexOf(sess);
+  if(i>=0)chatCacheOrder.splice(i,1);
+  chatCacheOrder.push(sess);
+  while(chatCacheOrder.length>CHAT_CACHE_MAX)delete chatCacheBySession[chatCacheOrder.shift()];
+}
+
 let composerDraftByKey={}; // per-chat / per-new-mode draft text so switching views keeps what you typed
 let curItem=null,tunnelHref='',lanHref='',msgById={},allHistory=[],info={};
 let lastTunnelUrl='',lastKnownLan='',lastNetworkEpoch=0;
@@ -6477,11 +6496,35 @@ async function runOpenForgeDesign(){
     toast(d.simulation_gated?'Sim-gated design':'Template design');
   }catch(e){if(out)out.textContent='Design failed'}
 }
+// A line waiting for the reply to end belongs to the chat it was typed in (sessionGen
+// moves on every chat switch), so it can never land in another chat.
+function purgeStaleQueue(){
+  if(!messageQueue.length)return;
+  const keep=messageQueue.filter(q=>q.gen===sessionGen);
+  if(keep.length===messageQueue.length)return;
+  messageQueue=keep;updateQueueHint();
+  toast('A message that was waiting was not sent because you changed chats.');
+}
 function drainMessageQueue(){
-  if(aiPending||!messageQueue.length)return;
+  purgeStaleQueue();
+  if(aiPending||sendInFlight||!messageQueue.length)return;
   const next=messageQueue.shift();
-  if(!next)return;
-  const el=$('input');if(el){el.value=next;send().then(()=>{setTimeout(drainMessageQueue,300)})}
+  updateQueueHint();
+  if(next&&next.text)send(next.text);
+}
+// The turn that held the queue is over. If it worked, send the next line; if it did not,
+// give the waiting lines back in the box rather than send them behind a failure.
+function settleQueue(ok){
+  if(!messageQueue.length)return;
+  if(ok){setTimeout(drainMessageQueue,0);return}
+  const back=messageQueue.map(q=>q.text);
+  messageQueue=[];updateQueueHint();
+  const inp=$('input');
+  if(inp){
+    inp.value=[...back,inp.value.trim()].filter(Boolean).join('\n\n');
+    try{autoGrowInput();updateSendVisibility()}catch(e){}
+  }
+  toast(back.length>1?'Your waiting messages were not sent. They are back in the box.':'Your waiting message was not sent. It is back in the box.');
 }
 function showSideView(view){
   saveComposerDraft();
@@ -13213,10 +13256,37 @@ async function pruneEmptySessions(sessions){
   const gone=new Set(empties.map(s=>+s.id));
   return (sessions||[]).filter(s=>!gone.has(+s.id));
 }
+// The sidebar holds the newest chats first, 200 at a time; "Show older chats" asks for the next 200.
+let sessionsShown=200,sessionsHasMore=false,sessionsTotal=0;
+async function fetchSessionList(){
+  const seen=new Map();let offset=0,more=false,total=0;
+  while(seen.size<sessionsShown){
+    const d=await api('/api/sessions?limit=200&offset='+offset).then(r=>r.json());
+    const got=d.sessions||[];
+    got.forEach(s=>seen.set(+s.id,s));
+    offset+=got.length;more=!!d.has_more;total=d.total||seen.size;
+    if(!more||!got.length)break;
+  }
+  sessionsHasMore=more;sessionsTotal=total;
+  return {sessions:[...seen.values()]};
+}
+function updateHistoryMore(){
+  const box=$('historyMore');if(!box)return;
+  const left=Math.max(0,sessionsTotal-(cachedSessions||[]).length);
+  box.hidden=!(sessionsHasMore&&left>0);
+  const b=box.querySelector('button');
+  if(b)b.textContent=left===1?'Show 1 older chat':`Show ${Math.min(left,200)} older chats`;
+}
+window.showOlderChats=async()=>{
+  sessionsShown+=200;
+  const b=$('historyMore')?.querySelector('button');if(b)b.disabled=true;
+  try{await loadVaultTree()}catch(e){toast('Could not load older chats')}
+  if(b)b.disabled=false;
+};
 async function loadVaultTree(){
   const [vault,sessData]=await Promise.all([
     api('/api/vault').then(r=>r.json()).catch(()=>({categories:[],recent:[]})),
-    api('/api/sessions').then(r=>r.json()).catch(()=>({sessions:[]})),
+    fetchSessionList().catch(()=>({sessions:[]})),
   ]);
   let allSessions=(sessData.sessions&&sessData.sessions.length)?sessData.sessions:(vault.recent||[]);
   allSessions=await pruneEmptySessions(allSessions);
@@ -13226,6 +13296,8 @@ async function loadVaultTree(){
   renderProjects(vault.categories||[]);
   markSelectedSession(currentSession);
   updateSideNav();
+  updateHistoryMore();
+  applySidebarGenerating(allSessions.filter(x=>x.generating).map(x=>x.id));
 }
 window.toggleRecent=()=>{
   const b=$('recentBody');const c=$('chevRecent');
@@ -13349,7 +13421,8 @@ window.openSession=async id=>{
   // Instant paint from cache — never wipe to "Loading…" (kills flicker)
   const cached=chatCacheBySession[id];
   if(cached&&cached.by_date&&cached.by_date.length){
-    renderChat({by_date:cached.by_date,latest_id:cached.latest_id});
+    renderChat({by_date:cached.by_date,latest_id:cached.latest_id,has_more:cached.has_more});
+    chatDomSess=id;
     if(cached.latest_id)lastId=cached.latest_id;
     $('chat')?.classList.add('chat-switching');
   }else{
@@ -13363,13 +13436,24 @@ window.openSession=async id=>{
   syncChatTitleBar();
   // Defer vault refresh so switch feels snappy
   setTimeout(()=>{loadVaultTree().catch(()=>{})},40);
-  if(currentSession && !sessionExistsInCache(currentSession)){
+  if(currentSession && !(await sessionExists(currentSession))){
     clearMissingSession('That chat is gone');
   }
 };
 function sessionExistsInCache(id){
   if(!id)return false;
   return (cachedSessions||[]).some(s=>+s.id===+id);
+}
+// The sidebar only holds the newest chats, so a chat that is not in it may still exist:
+// ask the server before saying it is gone. Only a clear "no such chat" counts; a failed
+// request leaves the chat alone.
+async function sessionExists(id){
+  if(sessionExistsInCache(id))return true;
+  try{
+    const r=await api('/api/sessions/'+(+id));
+    if(r.status===404)return false;
+    return true;
+  }catch(e){return true}
 }
 function clearMissingSession(msg){
   currentSession=0;
@@ -13957,7 +14041,7 @@ async function deleteHistoryItem(id){
   await api('/api/messages/'+id,{method:'DELETE'});
   delete msgById[id];
   if(curItem&&curItem.id===id)closeModal();
-  pullHistory();pullChat();
+  pullHistory();pullChat({full:true});
 }
 
 /* ===== Presence — who else is in this chat right now =========================
@@ -14075,6 +14159,9 @@ function bindPresenceTyping(){
 }
 window.renderPresence=renderPresence;
 
+// What can change on a message that is already on screen (a screenshot's analysis finishing,
+// an error, a retry). appendChatTail compares it so such a message is redrawn in place.
+function msgSig(m){return `${m.ai_status||''}:${(m.ai_analysis||'').length}:${m.ai_model||''}:${m.ai_category||''}`}
 function renderMsg(m){
   indexMsg(m);
   const isAi=m.source==='ai';
@@ -14097,19 +14184,155 @@ function renderMsg(m){
     else inner+=`<a href="${u}" style="color:var(--accent)">📄 ${esc(m.filename)}</a>`;
   }
   const when=m.time||(m.datetime||'').split(' ').pop()||'';
-  const who=isAi?'Netie Cortex':(m.device_name||'You');
+  const who=isAi?aiWho(m):(m.device_name||'You');
   // Someone else in this session sent this. Say so — alignment alone reads as a
   // formatting quirk, a named chip reads as a person.
   const author=(!isAi&&!me&&dn)
     ? `<div class="msg-author"><span class="msg-author-dot" style="background:${presenceColor(dn)}"></span>${esc(dn)}</div>`
     : '';
-  return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
+  return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}" data-sig="${msgSig(m)}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
     ${author}<div class="meta"><span>${esc(who)} · ${esc(when)}</span>
     <button type="button" class="msg-copy" onclick="event.stopPropagation();copyMessage(${m.id})">Copy</button>
     <button type="button" class="msg-reply" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${window.AirUI?AirUI.msgActionsHtml(m,isAi):''}</div>
     <div class="body">${inner}</div></div></div>`;
 }
 
+// A long chat opens on its newest messages; older ones come in a page at a time.
+const CHAT_PAGE=200;
+function earlierBtnHtml(data){
+  return data&&data.has_more?'<button type="button" id="chatEarlier" class="btn chat-earlier" onclick="loadEarlierMessages()">Load earlier messages</button>':'';
+}
+function renderedMsgIds(){
+  const out=[];
+  $('chat')?.querySelectorAll('.msg[id^="msg-"]').forEach(el=>{const n=+el.id.slice(4);if(n>0)out.push(n)});
+  return out;
+}
+// Only new messages arrived (the usual case after a send): add them to the end instead of
+// rebuilding every message. Returns false when the page does not match the server
+// (another chat, a message was deleted, a gap): the caller then does the full rebuild.
+function appendChatTail(data,sess){
+  const box=$('chat');if(!box||!sess||chatDomSess!==sess)return false;
+  const fetched=[];
+  for(const gr of (data.by_date||[]))for(const m of (gr.messages||[]))fetched.push([m,gr.label]);
+  if(!fetched.length)return false;
+  const have=renderedMsgIds();
+  if(!have.length)return false;
+  // Compare the part both sides cover: from the older of the two starting points.
+  const lo=Math.max(have[0],fetched[0][0].id);
+  const tail=have.filter(id=>id>=lo);
+  const win=fetched.filter(f=>f[0].id>=lo);
+  if(!tail.length||tail.length>win.length)return false;
+  for(let i=0;i<tail.length;i++)if(win[i][0].id!==tail[i])return false;
+  // A message already on screen whose analysis moved on (running to done, error, retry)
+  // is redrawn in place; the rest of the chat is left alone.
+  let redrawn=false;
+  for(let i=0;i<tail.length;i++){
+    const el=document.getElementById('msg-'+tail[i]);
+    if(el&&el.dataset.sig!==msgSig(win[i][0])){el.outerHTML=renderMsg(win[i][0]);redrawn=true}
+  }
+  const fresh=win.slice(tail.length);
+  if(!fresh.length){if(redrawn){wireFollowups();renderMermaidIn(box)}return true}
+  const days=box.querySelectorAll('.day span');
+  let lastLabel=days.length?days[days.length-1].textContent:'';
+  let html='';
+  for(const [m,label] of fresh){
+    if(label!==lastLabel){html+=`<div class="day"><span>${esc(label)}</span></div>`;lastLabel=label}
+    html+=renderMsg(m);
+  }
+  box.querySelector('.empty')?.remove();
+  document.getElementById('gen-note')?.remove();
+  const pendingEl=document.getElementById('pending-user');
+  if(pendingEl&&fresh.some(([m])=>m.source!=='ai'&&m.kind==='text'))pendingEl.remove();
+  if(fresh.some(([m])=>m.source==='ai'))hideThinking();
+  const anchor=document.getElementById('pending-user')||document.getElementById('ai-stream');
+  if(anchor)anchor.insertAdjacentHTML('beforebegin',html);
+  else box.insertAdjacentHTML('beforeend',html);
+  applyCategory(detectCategoryFromMsgs(fetched.map(f=>f[0]))||currentMode());
+  wireFollowups();
+  wireEngagementSignals();
+  renderMermaidIn(box);
+  paintSendFailure();
+  if(chatFreshOpen){chatFreshOpen=false;scrollChatBottomNow()}
+  else scrollChatIfPinned();
+  updateMsgScrollRail();
+  return true;
+}
+// Keep `el` at the same place on screen for a moment: the messages above it settle (code
+// blocks, tables, maths) a little after they are added and would push it away. Stops as
+// soon as the person scrolls.
+let holdAnchorToken=0;
+function holdScrollAnchor(sc,el,y){
+  let stop=false;
+  const mine=++holdAnchorToken;
+  const end=Date.now()+1500;
+  const halt=()=>{stop=true};
+  ['wheel','touchstart','pointerdown','keydown'].forEach(ev=>sc.addEventListener(ev,halt,{once:true,passive:true}));
+  const step=()=>{
+    if(stop||mine!==holdAnchorToken||Date.now()>end||!el.isConnected)return;
+    const d=el.getBoundingClientRect().top-sc.getBoundingClientRect().top-y;
+    if(Math.abs(d)>1)sc.scrollTop+=d;
+    requestAnimationFrame(step);
+  };
+  step();
+}
+let earlierBusy=false;
+let chatDomSess=0; // which chat the messages on screen belong to (0 = the all-chats feed)
+window.loadEarlierMessages=async()=>{
+  const sess=currentSession,box=$('chat'),btn=$('chatEarlier');
+  const first=renderedMsgIds()[0];
+  if(earlierBusy||!sess||!box||!first)return;
+  earlierBusy=true;
+  if(btn){btn.disabled=true;btn.textContent='Loading…'}
+  try{
+    const d=await fetchJson(`/api/messages?full=1&session_id=${sess}&before_id=${first}&limit=${CHAT_PAGE}`);
+    if(sess!==currentSession)return;
+    const g=d.by_date||[];
+    const sc=chatScrollEl();
+    // The message that is at the top now stays where it is on screen while older ones go above it.
+    const anchor=box.querySelector('.msg[id^="msg-"]');
+    const anchorY=anchor&&sc?anchor.getBoundingClientRect().top-sc.getBoundingClientRect().top:0;
+    // The day at the seam is shown once.
+    const seam=box.querySelector('.day span');
+    if(g.length&&seam&&seam.textContent===g[g.length-1].label)seam.parentElement.remove();
+    const html=g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+gr.messages.map(renderMsg).join('')).join('');
+    if(btn)btn.insertAdjacentHTML('afterend',html);else box.insertAdjacentHTML('afterbegin',html);
+    if(sc&&anchor)holdScrollAnchor(sc,anchor,anchorY);
+    userPinnedScroll=true;
+    wireFollowups();
+    renderMermaidIn(box);
+    updateMsgScrollRail();
+    if(btn){if(d.has_more){btn.disabled=false;btn.textContent='Load earlier messages'}else btn.remove()}
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Load earlier messages'}
+    toast('Could not load earlier messages. Try again.');
+  }finally{earlierBusy=false}
+};
+// "AirGPT is still answering": a chat whose reply is being written by the server, seen
+// from a tab that is not showing the live stream (left and came back, or another device).
+function syncGenNote(sess,generating){
+  if(!sess||sess!==currentSession)return;
+  const box=$('chat');if(!box)return;
+  const msgs=box.querySelectorAll('.msg[id^="msg-"]');
+  const last=msgs[msgs.length-1];
+  const own=aiPending&&streamSessionGen===sessionGen;
+  const show=!!generating&&!own&&!!last&&last.dataset.ai!=='1';
+  const note=document.getElementById('gen-note');
+  if(show&&!note){
+    box.insertAdjacentHTML('beforeend','<div id="gen-note" class="gen-note" role="status">AirGPT is still answering…</div>');
+    scrollChatIfPinned();
+  }else if(!show&&note)note.remove();
+}
+function applySidebarGenerating(ids){
+  const on=new Set((ids||[]).map(Number));
+  document.querySelectorAll('#historyDays .session-item[data-sid]').forEach(el=>{
+    const tag=el.querySelector('.sess-gen'),want=on.has(+el.dataset.sid);
+    if(want&&!tag){
+      const row=el.querySelector('.h-title-row');
+      if(row)row.insertAdjacentHTML('beforeend','<span class="sess-gen">Answering…</span>');
+    }else if(!want&&tag)tag.remove();
+  });
+}
+let lastGeneratingIds=[];
 function renderChat(data){
   const g=data.by_date||[];
   const sameStream=aiPending&&streamSessionGen===sessionGen&&(document.getElementById('ai-stream')||document.getElementById('pending-user'));
@@ -14125,10 +14348,10 @@ function renderChat(data){
     const holdStream=streamEl?streamEl.outerHTML:'';
     const hasUserInDb=allMsgs.some(m=>m.source==='ai-chat'||(m.device_name&&m.device_name!=='AirGPT'&&m.text));
     const holdPending=(!hasUserInDb&&pendingEl)?pendingEl.outerHTML:'';
-    $('chat').innerHTML=html+holdPending+holdStream;
+    $('chat').innerHTML=earlierBtnHtml(data)+html+holdPending+holdStream;
     // re-bind stop button
     const stop=$('streamStopBtn');
-    if(stop)stop.onclick=()=>{try{streamAbort?.abort()}catch(e){};toast('Stopped')};
+    if(stop)stop.onclick=stopStream;
     wireFollowups();
     wireEngagementSignals();
     renderMermaidIn($('chat'));
@@ -14155,7 +14378,7 @@ function renderChat(data){
   }
   const allMsgs=g.flatMap(gr=>gr.messages||[]);
   applyCategory(detectCategoryFromMsgs(allMsgs)||currentMode());
-  $('chat').innerHTML=g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+
+  $('chat').innerHTML=earlierBtnHtml(data)+g.map(gr=>`<div class="day"><span>${esc(gr.label)}</span></div>`+
     gr.messages.map(renderMsg).join('')).join('');
   wireFollowups();
   wireEngagementSignals();
@@ -14277,7 +14500,7 @@ function renderStreamBubble(thinking,answer,opts={}){
   // The cot panel already shows the live step. Printing "Netie Cortex is thinking..."
   // underneath it said the same thing a third time and reserved a block of empty
   // height while nothing had streamed. Dots only, and only when there is no step yet.
-  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
+  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Thinking…</span>`;
   else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div>`;
   const emptyCls=(!answer&&!bodyHtml)?' is-empty':'';
   return cot+`<div class="ai-block stream-ans${emptyCls}">${bodyHtml}</div>`;
@@ -14372,14 +14595,23 @@ async function reconcileAfterSendFail(errToast){
   if(errToast)toast(errToast);
 }
 let _pauseRetryTimer=null;
+// A message the server refused to take comes back to the box (ahead of anything typed since).
+function restoreUnsentText(text){
+  const inp=$('input');if(!inp||!text)return;
+  inp.value=[text,inp.value.trim()].filter(Boolean).join('\n\n');
+  try{autoGrowInput();updateSendVisibility()}catch(e){}
+}
 function showComposerPause(msg,retrySec){
   const pill=$('composerPausePill');if(!pill){toast(msg);return}
   const sec=Math.max(1,Number(retrySec)||8);
   pill.dataset.show='1';pill.hidden=false;
   let left=sec;
   const paint=()=>{
-    pill.innerHTML=`<span>${esc(msg)} · retry in ${left}s</span><button type="button" class="btn" id="composerPauseRetry">Retry</button>`;
-    $('composerPauseRetry')?.addEventListener('click',()=>{hideComposerPause();$('input')?.focus();});
+    pill.innerHTML=`<span>${esc(msg)} Your message is back in the box. You can send it again in ${left}s.</span><button type="button" class="btn" id="composerPauseRetry">Send now</button>`;
+    $('composerPauseRetry')?.addEventListener('click',()=>{
+      if(left>0){toast('Please wait '+left+' more seconds.');return}
+      hideComposerPause();send();
+    });
   };
   paint();
   if(_pauseRetryTimer)clearInterval(_pauseRetryTimer);
@@ -14593,6 +14825,27 @@ function wireChatScroll(){
   },{passive:true});
 }
 let streamAbort=null;
+let streamId='',streamStopping=false;
+// Stop: tell the server first, so the model stops too and what was written so far is
+// kept. Closing the connection alone leaves the model running to the end.
+function stopStream(){
+  if(!streamAbort||streamStopping)return;
+  streamStopping=true;
+  const b=$('streamStopBtn');if(b){b.disabled=true;b.textContent='Stopping…'}
+  const hangUp=()=>{try{streamAbort?.abort()}catch(e){}};
+  if(!streamId){hangUp();return}
+  api('/api/chat/cancel',{method:'POST',body:JSON.stringify({stream_id:streamId})})
+    .then(r=>r.json()).then(j=>{if(!j.stopped)hangUp()}).catch(hangUp);
+  setTimeout(hangUp,5000);   // the server never answered: stop listening
+}
+// Who wrote a reply, from the model name the server saved with it.
+function aiWho(m){
+  const k=String((m&&m.ai_model)||'').trim();
+  if(!k||k==='cortex-gate')return 'Assistant';
+  if(k==='cortex-agent'||k==='app_scaffold')return 'Netie Cortex';
+  if(/^(ollama|vllm|sglang|colibri|omniroute)$/i.test(k))return 'Your local model';
+  return k.replace(/^dual:/,'').split('+').pop().slice(0,40);
+}
 let _streamPaintQueued=false,_streamPaintThinking='',_streamPaintTokens='',_streamPaintOpts={};
 function updateStreamUi(thinking,tokens,opts={}){
   _streamPaintThinking=thinking;_streamPaintTokens=tokens;_streamPaintOpts=opts||{};
@@ -14629,10 +14882,10 @@ function beginStreamUi(userText){
   const id='ai-stream';
   document.getElementById(id)?.remove();
   $('chat').insertAdjacentHTML('beforeend',`<div class="msg ai-msg stream-bub" id="${id}" data-ai="1"><div class="av">N</div><div class="bub">
-    <div class="meta"><span>Netie Cortex · responding…</span>
+    <div class="meta"><span>Assistant · responding…</span>
     <button type="button" class="msg-copy" id="streamStopBtn">Stop</button></div>
     <div class="body" id="streamBody">${renderStreamBubble('','',{done:false})}</div></div></div>`);
-  $('streamStopBtn').onclick=()=>{try{streamAbort?.abort()}catch(e){};toast('Stopped')};
+  $('streamStopBtn').onclick=stopStream;
   scrollChatIfPinned(true);
   updateMsgJumpBar();
 }
@@ -14647,13 +14900,14 @@ function adoptSessionId(sid){
   document.body.classList.remove('claude-home');
   syncChatTitleBar();
 }
-async function sendStream(text,extra={}){
+async function sendStream(text,extra={},again=false){
   sendFailure=null;$('sendFailCard')?.remove();
   streamAbort=new AbortController();
+  streamId='';streamStopping=false;
   streamSessionGen=sessionGen;
-  beginStreamUi(text);
+  beginStreamUi(again?'':text);   // asking again: the question is already on screen
   aiPending=true;
-  let thinking='',tokens='',donePayload=null,hadError=false,errMsg='';
+  let thinking='',tokens='',donePayload=null,hadError=false,errMsg='',stoppedPayload=null;
   const thinkSteps=[];let reasonBuf='';
   // Once the stream HTTP response opens, the server has already persisted the
   // user row — never let send() fall through to POST /api/messages after that.
@@ -14675,12 +14929,19 @@ async function sendStream(text,extra={}){
       signal:streamAbort.signal
     });
     if(!r.ok||!r.body){
-      let detail='Stream failed'+(r.status?(' ('+r.status+')'):'');
-      try{const ej=await r.json();if(ej.error)detail=ej.error}catch(e){}
-      // Rate limit / provider busy: keep history, pause this send — never wipe chat or re-POST.
+      let detail='Stream failed'+(r.status?(' ('+r.status+')'):''),retryAfter=0;
+      try{const ej=await r.json();if(ej.error)detail=ej.error;retryAfter=Number(ej.retry_after)||0}catch(e){}
+      // Rate limit / provider busy: the server saved nothing, so the text goes back in
+      // the box and the notice says when it can go. Never wipe chat or re-POST.
       if(r.status===429||/rate|wait|too many|quota/i.test(detail)){
         await reconcileAfterSendFail('');
-        showComposerPause('Rate limited - chat saved', 12);
+        if(!again)restoreUnsentText(text);
+        showComposerPause('Not sent. The free plan allows one question a minute.',retryAfter||60);
+        return {ok:false, opened:false, paused:true};
+      }
+      if(r.status===409){   // the last turn changed under us: say so, keep the text
+        await reconcileAfterSendFail(detail);
+        if(!again)restoreUnsentText(text);
         return {ok:false, opened:false, paused:true};
       }
       await reconcileAfterSendFail(detail);
@@ -14705,6 +14966,8 @@ async function sendStream(text,extra={}){
         if(!data)continue;
         let j={};try{j=JSON.parse(data)}catch(e){continue}
         if(j.session_id)adoptSessionId(j.session_id);
+        if(j.stream_id)streamId=j.stream_id;
+        if(ev==='stopped'||j.type==='stopped'){stoppedPayload=j;continue}
         // One plain event = one step. Concatenating them produced
         // "Connected - generating...Preparing..." as a single unreadable line.
         // kind:"reasoning" events are fragments of ONE trace (the model's own
@@ -14744,6 +15007,17 @@ async function sendStream(text,extra={}){
         }
       }
     }
+    if(stoppedPayload&&!donePayload){
+      // Stop: the server kept what was written (if anything) and marked it stopped.
+      clearReplyContext();clearPendingSkill();contextIds=[];contextLabels={};renderCtx();
+      try{await pullChat()}catch(e){}
+      aiPending=false;
+      document.getElementById('ai-stream')?.remove();
+      document.getElementById('pending-user')?.remove();
+      toast('Stopped');
+      updateQueueHint();updateMsgJumpBar();
+      return {ok:true, opened:true, stopped:true};
+    }
     if(hadError||!donePayload){
       // Tokens arrived but connection dropped before done — still treat as success
       if(!hadError&&(tokens||'').trim()){
@@ -14766,9 +15040,11 @@ async function sendStream(text,extra={}){
       return {ok:false, opened:true};
     }
     if(donePayload?.session_id)adoptSessionId(donePayload.session_id);
-    clearReplyContext();
-    clearPendingSkill();  // armed skills ride one send only — never sticky
-    contextIds=[];contextLabels={};renderCtx();
+    if(!again){
+      clearReplyContext();
+      clearPendingSkill();  // armed skills ride one send only — never sticky
+      contextIds=[];contextLabels={};renderCtx();
+    }
     // Keep stream bubble until pullChat merges — avoids pop/reset flash
     try{await pullChat()}catch(e){}
     aiPending=false;
@@ -14779,7 +15055,6 @@ async function sendStream(text,extra={}){
       try{await pullChat()}catch(e){}
     }
     try{pullHistory();loadVaultTree?.()}catch(e){}
-    drainMessageQueue();
     updateQueueHint();
     updateMsgJumpBar();
     // Off the critical path: the reply is already on screen before we ask.
@@ -14791,6 +15066,7 @@ async function sendStream(text,extra={}){
       document.getElementById('ai-stream')?.remove();
       try{await pullChat()}catch(err){}
       document.getElementById('pending-user')?.remove();
+      if(streamStopping)toast('Stopped');
       return {ok:true, opened:streamOpened};
     }
     console.error(e);
@@ -15283,17 +15559,38 @@ async function pullHistory(){
 }
 
 let syncInFlight=false;
+// How often the page asks the server what changed. Quick (1 s) while something is going
+// on, slower when nothing has happened for a while, slowest when the tab is hidden. Any
+// key, tap or new message speeds it up again, and coming back to the tab asks at once.
+let syncTimer=0,syncDue=0,syncLastAct=Date.now();
+function syncNext(ms){
+  clearTimeout(syncTimer);
+  syncDue=Date.now()+ms;
+  syncTimer=setTimeout(syncLoop,ms);
+}
+function syncDelay(){
+  if(document.hidden)return 15000;
+  const quiet=Date.now()-syncLastAct;
+  return quiet<10000?1000:quiet<30000?2000:4000;
+}
+function syncActivity(){
+  syncLastAct=Date.now();
+  if(syncDue-Date.now()>1000&&!syncInFlight)syncNext(1000);
+}
+['keydown','pointerdown','touchstart'].forEach(ev=>document.addEventListener(ev,syncActivity,{passive:true,capture:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncLastAct=Date.now();syncNext(0)}});
 async function syncLoop(){
-  if(syncInFlight){setTimeout(syncLoop, aiPending?800:400);return}
+  if(syncInFlight){syncNext(aiPending?800:400);return}
   // Soft-pause long-poll while streaming so SSE isn't starved of threads
-  if(aiPending){setTimeout(syncLoop,900);return}
+  if(aiPending){syncNext(900);return}
   syncInFlight=true;
   try{
     const sessAtStart=currentSession;
     const genAtStart=pullGen;
     const sessQ=currentSession?`&session_id=${currentSession}`:'';
     const d=await api(`/api/wait?since=${lastId}&hist_since=${lastHistId}${sessQ}&ver=${syncVer}`,{cache:'no-store'}).then(r=>r.json());
-    if(sessAtStart!==currentSession||genAtStart!==pullGen){setTimeout(syncLoop,200);return}
+    if(sessAtStart!==currentSession||genAtStart!==pullGen){syncNext(200);return}
+    if(d.sync_version!==undefined&&d.sync_version!==syncVer||d.new_chat?.length||d.new_hist?.length||(d.presence||[]).length)syncLastAct=Date.now();
     syncVer=d.sync_version??syncVer;
     try{renderPresence(d.presence)}catch(e){}
     try{if(window.MP&&MP.onWaitPayload)MP.onWaitPayload(d)}catch(e){}
@@ -15308,6 +15605,7 @@ async function syncLoop(){
       for(const m of d.new_chat){
         if(currentSession&&m.session_id&&m.session_id!==currentSession)continue;
         if(m.id>lastId){
+          document.getElementById('gen-note')?.remove();
           if(m.source==='ai')hideThinking();
           const empty=$('chat').querySelector('.empty');
           if(empty)empty.remove();
@@ -15323,30 +15621,40 @@ async function syncLoop(){
       scrollChatIfPinned();
       updateMsgScrollRail();
     }
+    const busyIds=Array.isArray(d.generating)?d.generating:[];
+    if(busyIds.length||lastGeneratingIds.length)applySidebarGenerating(busyIds);
+    lastGeneratingIds=busyIds;
+    if(busyIds.length)syncLastAct=Date.now();
+    syncGenNote(currentSession,busyIds.includes(+currentSession));
     if(d.tunnel_url||d.tunnel_status||d.lan_url){
       info={...info,...d};
       applyTunnelUi(info);
     }
   }catch(e){
-    if(e.message==='auth'){showLogin();setTimeout(syncLoop,3000);return}
-    setTimeout(syncLoop,2000);return;
+    if(e.message==='auth'){showLogin();syncNext(3000);return}
+    syncNext(document.hidden?15000:2000);return;
   }finally{
     syncInFlight=false;
   }
-  setTimeout(syncLoop, aiPending?1000:350);
+  syncNext(aiPending?1000:syncDelay());
 }
 
-async function pullChat(){
+// opts.full forces a rebuild of every message (after a delete); otherwise only new
+// messages are added when the page already shows the same chat.
+async function pullChat(opts){
   const gen=++pullGen;
   const sess=currentSession;
   const sessQ=sess?`&session_id=${sess}`:'';
   try{
-    const d=await fetchJson('/api/messages?since=0&full=1'+sessQ);
+    // A chat is fetched as its newest page, or as many as the page already shows.
+    const lim=sess?`&limit=${Math.min(500,Math.max(CHAT_PAGE,renderedMsgIds().length+40))}`:'';
+    const d=await fetchJson('/api/messages?since=0&full=1'+lim+sessQ);
     if(gen!==pullGen)return; // stale response — ignore
     const payload=d.by_date?d:{by_date:[]};
-    if(sess)chatCacheBySession[sess]={by_date:payload.by_date||[],latest_id:d.latest_id||0};
-    renderChat(payload);
+    if(sess)chatCachePut(sess,{by_date:payload.by_date||[],latest_id:d.latest_id||0,has_more:!!d.has_more});
+    if(!(sess&&!(opts&&opts.full)&&appendChatTail(payload,sess))){renderChat(payload);chatDomSess=sess}
     if(d.latest_id)lastId=d.latest_id;
+    if(sess)syncGenNote(sess,d.generating);
     wireFollowups();
   }catch(e){
     if(gen!==pullGen)return;
@@ -15578,20 +15886,79 @@ function updateQueueHint(){
     const comp=document.querySelector('.composer-wrap')||document.querySelector('.composer');
     if(comp)comp.insertAdjacentHTML('beforebegin','<div class="msg-queue-hint" id="msgQueueHint"></div>');
     h=document.getElementById('msgQueueHint');
+    h?.addEventListener('click',e=>{
+      const b=e.target.closest('button[data-qi]');if(!b)return;
+      messageQueue.splice(+b.dataset.qi,1);updateQueueHint();
+    });
   }
-  if(h)h.textContent=messageQueue.length+' message(s) queued — sends when ready';
+  if(h)h.innerHTML=messageQueue.map((q,i)=>`<span class="queue-chip"><span class="queue-chip-text">Will send when the reply finishes: ${esc(q.text.length>50?q.text.slice(0,50)+'…':q.text)}</span><button type="button" data-qi="${i}" aria-label="Remove this waiting message" title="Remove">×</button></span>`).join('');
 }
-function regenerateLast(){
-  const msgs=Object.values(msgById||{}).filter(m=>m&&m.text).sort((a,b)=>b.id-a.id);
-  const lastUser=msgs.find(m=>!m.ai_analysis&&!m.from_ai);
-  if(!lastUser)return toast('Nothing to regenerate');
-  const inp=$('input');if(inp){inp.value=lastUser.text||'';send()}
+// Waiting messages live in memory only. If the page is closed or reloaded with some
+// still waiting, keep them and hand them back in the box next time, with a word about it.
+window.addEventListener('pagehide',()=>{
+  try{if(messageQueue.length)localStorage.setItem('airgpt.unsentQueue',JSON.stringify(messageQueue.map(q=>q.text)))}catch(e){}
+});
+setTimeout(()=>{
+  try{
+    const raw=localStorage.getItem('airgpt.unsentQueue');if(!raw)return;
+    localStorage.removeItem('airgpt.unsentQueue');
+    const back=(JSON.parse(raw)||[]).filter(t=>typeof t==='string'&&t.trim());
+    if(!back.length)return;
+    restoreUnsentText(back.join('\n\n'));
+    toast(back.length>1?'Your waiting messages were not sent before the page closed. They are back in the box.':'Your waiting message was not sent before the page closed. It is back in the box.');
+  }catch(e){}
+},2500);
+// The last turn of the open chat: its question row and the reply under it.
+function lastTurnIds(){
+  const rows=[...($('chat')?.querySelectorAll('.msg[id^="msg-"]')||[])];
+  const lastAi=rows.length&&rows[rows.length-1].dataset.ai==='1'?rows[rows.length-1]:null;
+  let q=lastAi?rows[rows.length-2]:rows[rows.length-1];
+  if(!q||q.dataset.ai==='1')q=null;
+  const qid=q?parseInt(q.id.slice(4),10):0;
+  const m=qid&&msgById[qid];
+  if(!m||m.source!=='ai-chat'||m.kind!=='text'||!(m.text||'').trim())return {q:0,text:'',ai:0};
+  return {q:qid,text:m.text,ai:lastAi?parseInt(lastAi.id.slice(4),10):0};
+}
+// Regenerate: ask the last question again. The server answers the same question row, so
+// there is no second copy of it, and the old reply goes when the new one is saved.
+async function regenerateLast(){
+  if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  const t=lastTurnIds();
+  if(!t.q||!currentSession)return toast('There is nothing to ask again.');
+  const old=t.ai?document.getElementById('msg-'+t.ai):null;
+  if(old)old.style.display='none';   // pullChat shows it again if the new try fails
+  sendInFlight=true;
+  let ok=false;
+  try{
+    const r=await sendStream(t.text,{regenerate_msg_id:t.q,session_id:currentSession,context_ids:[],skills:[],skill:''},true);
+    ok=!!r.ok;
+    if(!ok&&old)old.style.display='';
+  }finally{sendInFlight=false;settleQueue(ok)}
+}
+// Edit: the question goes back in the box. Sending it swaps the old question and its
+// answer for the new ones; the server does the swap (replace_msg_id).
+let editingMsgId=0,editingSession=0;
+function clearEdit(){editingMsgId=0;editingSession=0;document.getElementById('editChip')?.remove()}
+function syncEditChip(){
+  if(editingMsgId&&editingSession!==currentSession)clearEdit();
+  purgeStaleQueue();
 }
 function editLastUser(){
-  const msgs=Object.values(msgById||{}).filter(m=>m&&m.text).sort((a,b)=>b.id-a.id);
-  const lastUser=msgs.find(m=>!m.ai_analysis&&!m.from_ai);
-  if(!lastUser)return toast('Nothing to edit');
-  const inp=$('input');if(inp){inp.value=lastUser.text||'';inp.focus();toast('Edit and send')}
+  if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  const t=lastTurnIds();
+  if(!t.q||!currentSession)return toast('There is nothing to edit.');
+  const inp=$('input');if(!inp)return;
+  if(inp.value.trim())return toast('Send or clear what is in the box first.');
+  editingMsgId=t.q;editingSession=currentSession;
+  inp.value=t.text;
+  try{autoGrowInput();updateSendVisibility()}catch(e){}
+  inp.focus();
+  document.getElementById('editChip')?.remove();
+  const comp=document.querySelector('.composer-wrap')||document.querySelector('.composer');
+  if(comp)comp.insertAdjacentHTML('beforebegin','<div class="msg-queue-hint edit-chip" id="editChip"><span>Editing your last message. Sending it replaces that message and its answer.</span><button type="button" id="editChipCancel">Cancel</button></div>');
+  document.getElementById('editChipCancel')?.addEventListener('click',()=>{
+    clearEdit();const i=$('input');if(i){i.value='';try{autoGrowInput();updateSendVisibility()}catch(e){}}
+  });
 }
 async function ensureChatSession(){
   if(currentSession)return currentSession;
@@ -15607,25 +15974,38 @@ function restoreUnsentText(){
   const el=$('input');
   if(el&&_unsentText&&!el.value){el.value=_unsentText;try{autoGrowInput();updateSendVisibility()}catch(e){}}
 }
-async function send(){
+async function send(forced){
+  // `forced` is a queued line being sent for the box: it never touches what is typed now.
+  const queued=(typeof forced==='string');
   const k=draftKey();
-  _unsentText=($('input')?.value||'');
-  try{return await _sendInner()}
+  _unsentText=queued?'':($('input')?.value||'');
+  try{return await _sendInner(forced)}
   finally{
     _unsentText='';
-    // A draft that was sent must not come back after a reload; one that was not sent stays.
-    const el=$('input'),cur=draftKey();
-    if(k!==cur)clearComposerDraft(k);
-    if(el&&el.value.trim())saveComposerDraft();else clearComposerDraft(cur);
+    if(!queued){
+      // A draft that was sent must not come back after a reload; one that was not sent stays.
+      const el=$('input'),cur=draftKey();
+      if(k!==cur)clearComposerDraft(k);
+      if(el&&el.value.trim())saveComposerDraft();else clearComposerDraft(cur);
+    }
     updateCharCount();
   }
 }
-async function _sendInner(){
-  if(sendInFlight)return;
-  const el=$('input');
+async function _sendInner(forced){
+  const el=(typeof forced==='string')?{value:forced}:$('input');
   let text=(el?.value||'').trim();
   const hasFiles=stagedFiles.length>0;
   if(!text&&!hasFiles&&!contextIds.length)return;
+  // A reply is still coming: hold the line (and keep it in order) until it ends.
+  if(aiMode&&(aiPending||sendInFlight)&&text&&!hasFiles&&sideView!=='cortex'&&!/^[\/@]/.test(text)){
+    if(editingMsgId){toast('Wait for the reply to finish, then send your edit.');return}
+    messageQueue.push({text,gen:sessionGen});
+    if(typeof forced!=='string'&&el)el.value='';
+    try{autoGrowInput();updateSendVisibility()}catch(e){}
+    toast('Will send when the reply finishes');
+    updateQueueHint();
+    return;
+  }
   const peeled=peelSkillSlash(text);
   if(peeled){
     if(!peeled.pack){
@@ -15680,13 +16060,7 @@ async function _sendInner(){
       hint='Tip: /skill <pack> global|project';
     if(hint){toast(hint);window._cmdHintMute=true;setTimeout(()=>{window._cmdHintMute=false},25000)}
   }
-  if(aiMode&&aiPending&&text&&!hasFiles){
-    messageQueue.push(text);
-    if(el)el.value='';
-    toast('Queued ('+messageQueue.length+')');
-    updateQueueHint();
-    return;
-  }
+  if(sendInFlight){if(hasFiles)toast('Files can be sent when the reply finishes.');return}
   trackPref('project',currentMode(),'use');
   if(text){
     const qIdx=QUESTIONS_OF_THE_DAY.indexOf(text);
@@ -15723,6 +16097,8 @@ async function _sendInner(){
   if(aiMode){
     if(info.online===false&&!info.has_ai_keys){restoreUnsentText();toast('AI needs internet or API keys in Settings');return}
     const extra={};
+    if(editingMsgId&&editingSession===currentSession&&!replyContext&&!contextIds.length)extra.replace_msg_id=editingMsgId;
+    clearEdit();
     if(replyContext){
       extra.reply_to_id=replyContext.msgId;
       extra.reply_snippet=replyContext.snippet;
@@ -15732,8 +16108,10 @@ async function _sendInner(){
     if(contextIds.length)extra.context_ids=contextIds;
     if(attachIds.length)extra.attachment_ids=attachIds;
     sendInFlight=true;
+    let turnOk=false;
     try{
       const streamResult=await sendStream(text,extra);
+      turnOk=!!streamResult.ok;
       // Stream opened ⇒ user row already in DB. Never re-POST the same text.
       // Rate-limit pause ⇒ keep chat history, do not fallback.
       if(streamResult.ok||streamResult.opened||streamResult.paused)return;
@@ -15748,6 +16126,7 @@ async function _sendInner(){
       try{res=await api('/api/messages',{method:'POST',body:JSON.stringify(body)}).then(r=>r.json())}
       catch(e){await reconcileAfterSendFail('Send failed — check connection / API keys');return}
       if(res.error){await reconcileAfterSendFail(res.error);return}
+      turnOk=true;
       if(res.session_id)adoptSessionId(res.session_id);
       markHadSession();
       if(res.ai==='no_context'){hideThinking();document.getElementById('ai-stream')?.remove();toast('No analyzed screenshot in this chat — capture one first');aiPending=false}
@@ -15756,7 +16135,7 @@ async function _sendInner(){
       await pullChat();pullHistory();
       document.getElementById('pending-user')?.remove();
       return;
-    }finally{sendInFlight=false}
+    }finally{sendInFlight=false;settleQueue(turnOk)}
   }
   // Manual: optimistic bubble without AI stream chrome
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page'))$('chat').innerHTML='';
@@ -16174,7 +16553,7 @@ async function bootApp(force){
     loadVaultTree().catch(()=>{$('historyDays').innerHTML='<div class="empty">Sidebar failed — refresh</div>'}),
   ]);
   if(currentSession>0){
-    if(!sessionExistsInCache(currentSession)){
+    if(!(await sessionExists(currentSession))){
       clearMissingSession('Previous chat was removed');
     }else{
       try{await pullChat()}catch(e){
@@ -16265,6 +16644,7 @@ async function tryQrAutoLogin(){
 <script src="/ui/promptlens.js"></script>
 <script src="/ui/phone.js"></script>
 <script src="/ui/chattools.js"></script>
+<script src="/ui/turnedit.js"></script>
 <script src="/ui/codeblocks.js"></script>
 <script src="/ui/chatprefs.js"></script>
 <script src="/ui/voice.js"></script>
@@ -16558,7 +16938,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   function openPanel(v){
     open = v; panel.classList.toggle('open', v);
     if(v) fit();
-    if(v){ poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
+    if(v){ idleFails = 0; poll(); if(!timer) timer = setInterval(poll, POLL_MS); loadPresets(); attachSse(); }
     else { detachSse(); }
   }
 
@@ -16699,15 +17079,24 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(open && (!sse || sseTask !== ((run[0]&&run[0].id)||''))) attachSse();
   }
 
+  // The engine can be down for hours. Each failed or "engine offline" answer doubles the
+  // wait before the next idle check (5 s up to 60 s); an answer from a running engine, or
+  // opening the panel, puts it back to 5 s.
+  var idleFails = 0;
   function poll(){
     fetch('/api/workflows/tasks').then(function(r){
       if(r.status === 403){
         var list = panel.querySelector('#bgTasksList');
         if(list) list.innerHTML = '<div class="bgEmpty">Agents run on the host computer only. Open AirGPT on the computer that runs it to see background tasks.</div>';
+        idleFails = 4;  // host only: nothing will change, so ask rarely
         return null;
       }
       return r.json();
-    }).then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
+    }).then(function(d){
+        if(d === null) return;
+        if(d && d.ok){ render(d); idleFails = d.degraded ? Math.min(idleFails + 1, 4) : 0; }
+        else idleFails = Math.min(idleFails + 1, 4);
+      }).catch(function(){ idleFails = Math.min(idleFails + 1, 4); });
   }
 
   window.bgTasks = {
@@ -16718,7 +17107,20 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     refresh: poll
   };
 
-  setInterval(function(){ if(!open) poll(); }, 5000);
+  // Idle check: slower after failures, and not at all while the tab is hidden.
+  var idleTimer = null;
+  function idleTick(){
+    if(!open && !document.hidden) poll();
+    scheduleIdle();
+  }
+  function scheduleIdle(){
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(idleTick, Math.min(60000, 5000 * Math.pow(2, idleFails)));
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden){ idleFails = 0; poll(); scheduleIdle(); }
+  });
+  scheduleIdle();
   poll();
 })();
 /* ── Background tasks — top-bar entry point badge ─────────────────────────
