@@ -247,3 +247,18 @@ test("code blocks name their language", () => {
   assert.equal(ctx.CodeBlocks.lang({ className: "" }), "");
   assert.equal(ctx.CodeBlocks.lang({ className: 'language-x"><img' }), "x", "only the plain name is taken");
 });
+
+test("Enter never sends while an input method is composing", () => {
+  const ctx = load(["imeBusy"], {});
+  assert.equal(ctx.imeBusy({ isComposing: true, keyCode: 13 }), true);
+  assert.equal(ctx.imeBusy({ isComposing: false, keyCode: 229 }), true, "Safari marks the confirming Enter with 229");
+  assert.equal(ctx.imeBusy({ isComposing: false, keyCode: 13 }), false);
+  // Every Enter handler on a text box goes through it. The exceptions are not text
+  // boxes: the copy-link boxes and chat rows are buttons, and the notes recorder
+  // records keys rather than acting on them.
+  const sites = [...html.matchAll(/key===['"]Enter['"]/g)].map((m) => html.slice(Math.max(0, m.index - 120), m.index + 160));
+  assert.ok(sites.length >= 8, "found the handlers");
+  const notText = /url-box|openSession\(id\)|ch='\\n'/;
+  const bad = sites.filter((s) => !notText.test(s) && !/imeBusy\((e|event)\)/.test(s));
+  assert.deepEqual(bad, [], "an Enter handler that ignores input-method composition");
+});

@@ -853,7 +853,7 @@ function openideShowEmptyHint(show,kind){
 function openidePromptKeydown(event){
   if(event.key!=='Enter')return;
   if(event.shiftKey)return;
-  if(event.isComposing)return;
+  if(event.isComposing||event.keyCode===229)return;  // input method still composing (Safari: 229)
   event.preventDefault();
   runOpenIDEAgent();
 }

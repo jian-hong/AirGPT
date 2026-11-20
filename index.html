@@ -5262,7 +5262,7 @@ async function showProjectFocus(key){
     try{await send?.()}catch(e){}
   };
   sendBtn?.addEventListener('click',doSend);
-  ta?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend()}});
+  ta?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();doSend()}});
   applyPlaceholder({force:true});
   updateProjectBtn?.();
 }
@@ -10494,12 +10494,12 @@ async function ragRenderTab(){
           <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Ingest links</div>
           <p class="rag-url-warn" id="ragUrlWarn" aria-live="polite"></p>
           <div class="rag-url-row" style="margin-bottom:10px">
-            <input id="ragUrlInput" placeholder="YouTube / article / docs URL…" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit" onkeydown="if(event.key==='Enter')ragIngestUrlSmart()"/>
+            <input id="ragUrlInput" placeholder="YouTube / article / docs URL…" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit" onkeydown="if(event.key==='Enter'&&!imeBusy(event))ragIngestUrlSmart()"/>
             <button type="button" class="rag-url-send" id="ragUrlSend" title="Ingest link" onclick="ragIngestUrlSmart()">↗</button>
           </div>
           <div class="hint" style="margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;font-size:10px;opacity:.8">Web search</div>
           <div class="btn-row" style="margin-bottom:8px">
-            <input id="ragWebInput" placeholder="Search free web — e.g. Netie AI startup" onkeydown="if(event.key==='Enter')ragWebSearch()" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit"/>
+            <input id="ragWebInput" placeholder="Search free web — e.g. Netie AI startup" onkeydown="if(event.key==='Enter'&&!imeBusy(event))ragWebSearch()" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:inherit"/>
             <button type="button" class="btn primary" onclick="ragWebSearch()" title="Search the public web and pick pages to index">🔎 Search</button>
           </div>
           <div id="ragWebResults" style="margin-bottom:8px"></div>
@@ -11622,7 +11622,7 @@ function _acOnKey(e){
   if(!_acState.open||e.target!==_acState.el)return;
   if(e.key==='ArrowDown'){e.preventDefault();e.stopPropagation();_acState.active=(_acState.active+1)%_acState.items.length;_acHighlight();}
   else if(e.key==='ArrowUp'){e.preventDefault();e.stopPropagation();_acState.active=(_acState.active-1+_acState.items.length)%_acState.items.length;_acHighlight();}
-  else if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();e.stopPropagation();_acPick(_acState.active);}
+  else if((e.key==='Enter'||e.key==='Tab')&&!imeBusy(e)){e.preventDefault();e.stopPropagation();_acPick(_acState.active);}
   else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_acClose();}
 }
 function wireComposerAutocomplete(el,opts){
@@ -12083,7 +12083,7 @@ $('searchQuery')?.addEventListener('input',()=>{
   clearTimeout(_searchLiveTimer);
   _searchLiveTimer=setTimeout(runSearchLive,70);
 });
-$('searchQuery')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runSearchLive()}});
+$('searchQuery')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!imeBusy(e)){e.preventDefault();runSearchLive()}});
 document.addEventListener('click',e=>{
   if(!e.target.closest?.('#searchFilterMenu'))$('searchFilterMenu')?.classList.remove('open');
 });
@@ -12683,7 +12683,7 @@ function setupRagAskBar(){
   const ta=$('ragAskInput');if(!ta||ta.dataset.wired)return;
   ta.dataset.wired='1';
   ta.addEventListener('keydown',e=>{
-    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ragSend();}
+    if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();ragSend();}
   });
   ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px';});
   // Press = type (focus). Press-and-hold on chrome = record notes.
@@ -13007,6 +13007,9 @@ async function imageFileForShare(blob,name){
   return new File([jb],fname,{type:'image/jpeg',lastModified:Date.now()});
 }
 
+// Enter while an input method (Chinese, Japanese, Korean, Vietnamese...) is composing
+// confirms the candidate; it must not send. Safari marks that Enter with keyCode 229.
+function imeBusy(e){return !!(e&&(e.isComposing||e.keyCode===229))}
 function toast(m){$('toast').textContent=m;$('toast').classList.add('show');const g=toast._g=(toast._g||0)+1;const ms=Math.min(8000,2400+Math.max(0,String(m||'').length-60)*40);setTimeout(()=>{if(g===toast._g)$('toast').classList.remove('show')},ms)}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function withAuthQuery(url){
@@ -15184,7 +15187,7 @@ if($('camIn'))$('camIn').onchange=e=>{
   if(onPhone){sendFiles([...e.target.files]);e.target.value='';return}
   stageFiles([...e.target.files]);e.target.value='';
 };
-$('input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}};
+$('input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();send()}};
 wireComposerAutocomplete($('input'),{});
 $('input').addEventListener('input',()=>{autoGrowInput();updateSendVisibility();saveComposerDraft()});
 $('input').addEventListener('paste',e=>{
