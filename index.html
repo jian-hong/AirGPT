@@ -4174,6 +4174,9 @@ function saveComposerDraft(){
   const k=draftKey(),v=el.value;
   composerDraftByKey[k]=v;
   clearTimeout(_draftTimers[k]);
+  // Text of an Edit is not a draft: after a reload it would come back without the edit chip
+  // and Enter would ask the same question a second time. Nothing is stored for it.
+  if(typeof editingMsgId!=='undefined'&&editingMsgId&&editingSession===currentSession){delete _draftTimers[k];_draftWrite(k,'');return}
   _draftTimers[k]=setTimeout(()=>{delete _draftTimers[k];_draftWrite(k,v)},400);
 }
 function clearComposerDraft(k){
@@ -16015,7 +16018,8 @@ async function regenerateLast(){
   try{
     const r=await sendStream(t.text,{regenerate_msg_id:t.q,session_id:currentSession,context_ids:[],skills:[],skill:''},true);
     ok=!!r.ok;
-    if(!ok&&old)old.style.display='';
+    // Not a saved reply (failed, or stopped before any text): the old answer is still the answer.
+    if(old&&!(r.ok&&!(r.stopped&&!r.saved)))old.style.display='';
   }finally{sendInFlight=false;settleQueue(ok)}
 }
 // Edit: the question goes back in the box. Sending it swaps the old question and its
@@ -16028,6 +16032,11 @@ function syncEditChip(){
     // (Enter on it would ask the same question a second time).
     clearComposerDraft('s:'+editingSession);
     clearEdit();
+  }else if(editingMsgId){
+    // The chat's last question is no longer the one being edited (another tab or device
+    // asked something): drop the chip, keep the text as a plain draft.
+    const rows=document.querySelectorAll('#chat .msg[id^="msg-"]');
+    if(rows.length&&lastTurnIds().q!==editingMsgId){clearEdit();saveComposerDraft()}
   }
   purgeStaleQueue();
 }
@@ -16082,8 +16091,9 @@ async function send(forced){
   _unsentText=queued?'':($('input')?.value||'');
   try{return await _sendInner(forced)}
   finally{
-    _unsentText='';retryIds=[];
+    _unsentText='';
     if(!queued){
+      retryIds=[];
       // A draft that was sent must not come back after a reload; one that was not sent stays.
       const el=$('input'),cur=draftKey();
       if(k!==cur)clearComposerDraft(k);
@@ -16099,7 +16109,7 @@ async function _sendInner(forced){
   if(!text&&!hasFiles&&!contextIds.length)return;
   // A reply is still coming: hold the line (and keep it in order) until it ends.
   if(aiMode&&(aiPending||sendInFlight)&&text&&!hasFiles&&sideView!=='cortex'&&!/^[\/@]/.test(text)){
-    if(editingMsgId){toast('Wait for the reply to finish, then send your edit.');return}
+    if(editingMsgId&&typeof forced!=='string'){toast('Wait for the reply to finish, then send your edit.');return}
     messageQueue.push({text,gen:sessionGen});
     if(typeof forced!=='string'&&el)el.value='';
     try{autoGrowInput();updateSendVisibility()}catch(e){}
@@ -16196,15 +16206,17 @@ async function _sendInner(forced){
   if(!text)return;
   // Files travel with the turn: a retried send brings the ones it had, and an edit that
   // failed after its new file was uploaded brings that file again.
-  if(retryIds.length){attachIds=[...retryIds,...attachIds];retryIds=[]}
+  // A queued line is always a new question: it never inherits an edit or a retry.
+  const queuedLine=(typeof forced==='string');
+  if(!queuedLine&&retryIds.length){attachIds=[...retryIds,...attachIds];retryIds=[]}
   const editSess=editingSession,editCarry=editCarryIds;
-  if(editingMsgId&&editSess===currentSession&&!replyContext&&!contextIds.length&&editCarry.length)attachIds=[...editCarry,...attachIds];
+  if(!queuedLine&&editingMsgId&&editSess===currentSession&&!replyContext&&!contextIds.length&&editCarry.length)attachIds=[...editCarry,...attachIds];
   // Manual mode stays Manual — only AI when toggle is on
   if(aiMode){
     if(info.online===false&&!info.has_ai_keys){restoreUnsentText();toast('AI needs internet or API keys in Settings');return}
     const extra={};
-    if(editingMsgId&&editingSession===currentSession&&!replyContext&&!contextIds.length)extra.replace_msg_id=editingMsgId;
-    clearEdit();
+    if(!queuedLine&&editingMsgId&&editingSession===currentSession&&!replyContext&&!contextIds.length)extra.replace_msg_id=editingMsgId;
+    if(!queuedLine)clearEdit();
     if(replyContext){
       extra.reply_to_id=replyContext.msgId;
       extra.reply_snippet=replyContext.snippet;
