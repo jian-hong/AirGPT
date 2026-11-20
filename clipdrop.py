@@ -629,7 +629,7 @@ def _attachment_files(ids, allowed_sessions) -> list[dict]:
     out: list[dict] = []
     allowed = {int(x) for x in allowed_sessions if x}
     seen: set[int] = set()
-    for raw in list(ids or [])[:12]:
+    for raw in _clean_attach_ids(ids):
         try:
             if int(raw) in seen:
                 continue
@@ -686,22 +686,17 @@ def _last_turn(session_id: int, user_msg_id: int, new_file_ids=()) -> tuple[dict
     if row.get("source") == "ai" or row.get("kind") != "text":
         return None, [], "Only a question you typed can be changed."
     after = db.get_messages(since_id=user_msg_id, limit=50, session_id=session_id)
-    mine = set()
-    for raw in list(new_file_ids or [])[:12]:
-        try:
-            mine.add(int(raw))
-        except (TypeError, ValueError, OverflowError):
-            pass
+    mine = set(_clean_attach_ids(new_file_ids, None))
     after = [m for m in after if not (m.get("kind") == "file" and int(m.get("id") or 0) in mine)]
     if any(m.get("source") != "ai" or m.get("kind") != "text" for m in after):
         return None, [], "Only your last question can be changed."
     return row, after, ""
 
 
-def _clean_attach_ids(ids) -> list[int]:
-    """The attachment ids a request names, as plain ints (at most 12), junk dropped."""
+def _clean_attach_ids(ids, cap: int | None = 12) -> list[int]:
+    """The attachment ids a request names, as plain ints (at most `cap`), junk dropped."""
     out: list[int] = []
-    for raw in (ids if isinstance(ids, list) else [])[:12]:
+    for raw in (ids if isinstance(ids, list) else [])[:cap]:
         try:
             out.append(int(raw))
         except (TypeError, ValueError, OverflowError):
@@ -3778,6 +3773,7 @@ class Handler(BaseHTTPRequestHandler):
         turn_user: dict | None = None
         turn_replies: list[dict] = []
         turn_files: list[int] = []
+        turn_note = ""
         claimed_id, claimed_abort = uuid.uuid4().hex, threading.Event()  # the claim made above, reused as the stream
         if regen_id or replace_id:
             turn_sid = int(data.get("session_id", 0) or 0)
@@ -3791,7 +3787,7 @@ class Handler(BaseHTTPRequestHandler):
                     _chat_streams[claimed_id] = {"abort": claimed_abort, "session_id": turn_sid, "started": time.time()}
                     self._stream_ids.append(claimed_id)
             turn_user, turn_replies, turn_err = _last_turn(
-                turn_sid, regen_id or replace_id, data.get("attachment_ids") or []
+                turn_sid, regen_id or replace_id, data.get("attachment_ids")
             )
             if turn_err:
                 return self._json(409, {"error": turn_err})
@@ -3810,9 +3806,23 @@ class Handler(BaseHTTPRequestHandler):
         attach_ids = data.get("attachment_ids") or []
         if regen_id:  # asked again with exactly the files it had; nothing else rides along
             attach_ids = turn_files
-        elif turn_files:  # the files this question was asked about, then any added with the edit
-            new_ids = list(attach_ids)[:12] if isinstance(attach_ids, list) else []
-            attach_ids = turn_files[-max(0, 12 - len(new_ids)):] + new_ids
+        elif replace_id:  # the files this question was asked about (if any), then any added with the edit
+            all_new = _clean_attach_ids(attach_ids, None)
+            new_ids = all_new[:12]
+            room = 12 - len(new_ids)
+            kept_old = turn_files[len(turn_files) - room:] if room > 0 else []
+            left_out = turn_files[:len(turn_files) - len(kept_old)] + all_new[12:]
+            attach_ids = kept_old + new_ids
+            names = []
+            if left_out:  # said in the reply itself, like a cut question
+                for fid in left_out:
+                    fm = db.get_message(fid) or {}
+                    if fm.get("kind") != "file" or int(fm.get("session_id") or 0) not in (session_id, parent_session_id):
+                        continue  # only this chat's files are named, never another chat's
+                    names.append(str(fm.get("filename") or ("file " + str(fid))))
+            if names:
+                turn_note = ("Only 12 files can go with one question. These were left out: "
+                             + ", ".join(names) + ".\n\n")
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
@@ -3935,6 +3945,7 @@ class Handler(BaseHTTPRequestHandler):
         restrict_links = not _is_host_request(self.headers, self.client_address[0])
         attach_files = _attachment_files(attach_ids, attach_sessions)
         cut_note = ai_engine.QUESTION_CUT_NOTE if ai_engine and len(text) > ai_engine.QUESTION_LIMIT else ""
+        cut_note = turn_note + cut_note
 
         def _producer() -> None:
             events = None

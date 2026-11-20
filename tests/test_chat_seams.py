@@ -97,6 +97,82 @@ class FilesTravelWithTheTurn(SeamsBase):
         self.assertIn("last question", out["error"])
 
 
+class TurnFileEdges(SeamsBase):
+    def test_a_junk_attachment_ids_value_does_not_crash_regenerate_or_edit(self):
+        sid = self.new_chat()
+        u, _ = self.turn(sid)
+        for junk in (5, True, 3.7, "7", {"a": 1}):
+            code, _, out = self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": u["id"],
+                                                          "attachment_ids": junk})
+            self.assertEqual(code, 200, (junk, out))
+            u = [m for m in self.rows(sid) if m["source"] == "ai-chat"][-1]
+            code, _, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                          "replace_msg_id": u["id"], "attachment_ids": junk})
+            self.assertEqual(code, 200, (junk, out))
+            u = [m for m in self.rows(sid) if m["source"] == "ai-chat"][-1]
+
+    def test_edit_with_twelve_new_files_leaves_the_old_ones_out_and_says_so(self):
+        sid = self.new_chat()
+        for n in range(2):
+            self.file_row(sid, f"old{n}.txt", "old")
+        u, _ = self.turn(sid)
+        new = [self.file_row(sid, f"new{n:02d}.txt", "new")["id"] for n in range(12)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(sorted(self.names(self.calls[0])), [f"new{n:02d}.txt" for n in range(12)])
+        blob = repr(evs)
+        self.assertIn("old0.txt", blob)
+        self.assertIn("old1.txt", blob)
+
+    def test_edit_over_the_cap_names_the_files_that_were_left_out(self):
+        sid = self.new_chat()
+        for n in range(2):
+            self.file_row(sid, f"old{n}.txt", "old")
+        u, _ = self.turn(sid)
+        new = [self.file_row(sid, f"new{n:02d}.txt", "new")["id"] for n in range(13)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        got = self.names(self.calls[0])
+        self.assertEqual(len(got), 12)
+        self.assertNotIn("new12.txt", got)
+        self.assertIn("new12.txt", repr(evs))
+
+    def test_edit_under_the_cap_keeps_what_fits_and_says_nothing(self):
+        sid = self.new_chat()
+        self.file_row(sid, "old0.txt", "old")
+        u, _ = self.turn(sid)
+        new = [self.file_row(sid, f"new{n:02d}.txt", "new")["id"] for n in range(3)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(len(self.names(self.calls[0])), 4)
+        self.assertNotIn("left out", repr(evs))
+
+
+class TurnFileEdgesNoOldFiles(SeamsBase):
+    def test_edit_of_a_question_without_files_still_names_files_past_the_cap(self):
+        sid = self.new_chat()
+        u, _ = self.turn(sid)
+        new = [self.file_row(sid, f"new{n:02d}.txt", "new")["id"] for n in range(13)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertIn("new12.txt", repr(evs))
+
+    def test_the_left_out_note_never_names_a_file_of_another_chat(self):
+        a, b = self.new_chat(), self.new_chat()
+        theirs = self.file_row(b, "secret-plan.txt", "not yours")
+        self.file_row(a, "mine.txt", "old")
+        u, _ = self.turn(a)
+        new = [self.file_row(a, f"new{n:02d}.txt", "new")["id"] for n in range(12)] + [theirs["id"]]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": a, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        self.assertNotIn("secret-plan", repr(evs))
+
+
 class FailedEditKeepsTheOldTurn(SeamsBase):
     def broken(self, question, mode, history, abort, **kw):
         yield {"type": "error", "text": "No text LLM available"}

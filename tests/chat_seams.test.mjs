@@ -27,7 +27,7 @@ function page(names, extra = {}) {
   const g = {
     box, toasts: [], sentCalls: [], clearedDrafts: [], currentSession: 7,
     $: (id) => (id === "input" ? box : null),
-    document: { getElementById: () => null, querySelector: () => null },
+    document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
     toast(t) { g.toasts.push(t); },
     autoGrowInput() {}, updateSendVisibility() {},
     clearComposerDraft(k) { g.clearedDrafts.push(k); },
@@ -124,4 +124,88 @@ test("a staged file with a reply running says what happens to the text", async (
   assert.deepEqual(ctx.toasts, ["Your text stays in the box. Send it after this reply, or remove the file to queue it."]);
   assert.equal(ctx.box.value, "QUEUED-WITH-FILE");
   assert.equal(ctx.messageQueue.length, 0);
+});
+
+// ---- last round: queued lines, Stop on Regenerate, the edit chip across reload and tabs ----
+
+function sendPage(extra = {}) {
+  const calls = [];
+  const ctx = page(["_sendInner"], {
+    aiMode: true, aiPending: false, sendInFlight: false, sideView: "chats", stagedFiles: [],
+    contextIds: [], messageQueue: [], sessionGen: 1, window: {}, replyContext: null, info: { online: true },
+    peelSkillSlash: () => null, handleSlashCommand: () => false, dispatchAtAgent: async () => false,
+    trackPref() {}, ensureDeviceName() {}, applyPlaceholder() {}, ensureChatSession: async () => 7,
+    QUESTIONS_OF_THE_DAY: [], settleQueue() {}, resumeEdit() {}, currentMode: () => "general", autoGrowInput() {},
+    clearEdit() { vm.runInContext("editingMsgId=0;editingSession=0;editCarryIds=[];", ctx); },
+    async sendStream(text, extra) { calls.push({ text, extra }); return { ok: true }; },
+    ...extra,
+  });
+  ctx.calls = calls;
+  return ctx;
+}
+
+test("a queued line never inherits an edit: no replace id, no edit files, the edit stays armed", async () => {
+  const ctx = sendPage();
+  vm.runInContext("editingMsgId=41;editingSession=7;editCarryIds=[8];retryIds=[9];", ctx);
+  await ctx._sendInner("QUEUED line");
+  assert.equal(ctx.calls.length, 1);
+  assert.equal(ctx.calls[0].extra.replace_msg_id, undefined, "a queued line is a new question");
+  assert.equal(ctx.calls[0].extra.attachment_ids, undefined, "no files of the edit or a retry ride along");
+  assert.equal(vm.runInContext("editingMsgId", ctx), 41, "the resumed edit is still there for the person");
+});
+
+test("a typed send still carries its edit (the normal Edit keeps working)", async () => {
+  const ctx = sendPage();
+  vm.runInContext("editingMsgId=41;editingSession=7;editCarryIds=[8];", ctx);
+  ctx.box.value = "EDITED";
+  await ctx._sendInner();
+  assert.equal(ctx.calls[0].extra.replace_msg_id, 41);
+  assert.deepEqual([...ctx.calls[0].extra.attachment_ids], [8]);
+  assert.equal(vm.runInContext("editingMsgId", ctx), 0);
+});
+
+test("Stop on Regenerate before any text shows the old answer again", async () => {
+  for (const [res, shown] of [[{ ok: true, stopped: true, saved: false }, true], [{ ok: false }, true], [{ ok: true, saved: true }, false]]) {
+    const old = { style: { display: "none" } };
+    const ctx = page(["regenerateLast"], {
+      aiPending: false, sendInFlight: false, settleQueue() {},
+      lastTurnIds: () => ({ q: 5, text: "Q", ai: 6 }),
+      document: { getElementById: (id) => (id === "msg-6" ? old : null), querySelector: () => null },
+      sendStream: async () => res,
+    });
+    await ctx.regenerateLast();
+    assert.equal(old.style.display, shown ? "" : "none", JSON.stringify(res));
+  }
+});
+
+test("the text of an Edit is never stored as a draft (it would come back without its chip)", () => {
+  const writes = [];
+  const ctx = page(["saveComposerDraft"], {
+    clearTimeout, setTimeout, composerDraftByKey: {}, _draftTimers: {}, draftKey: () => "s:7",
+    _draftWrite: (k, v) => writes.push([k, v]),
+  });
+  ctx.box.value = "edit text";
+  vm.runInContext("editingMsgId=41;editingSession=7;", ctx);
+  ctx.saveComposerDraft();
+  assert.deepEqual(writes, [["s:7", ""]]);
+  assert.deepEqual(Object.keys(ctx._draftTimers), []);
+  vm.runInContext("editingMsgId=0;editingSession=0;", ctx);
+  ctx.saveComposerDraft();
+  assert.deepEqual(Object.keys(ctx._draftTimers), ["s:7"], "a normal draft is still saved");
+  clearTimeout(ctx._draftTimers["s:7"]);
+});
+
+test("when the chat's last question is no longer the edited one, the chip goes and the text stays", () => {
+  const saved = [];
+  const ctx = page(["clearEdit", "syncEditChip"], {
+    purgeStaleQueue() {}, saveComposerDraft() { saved.push(ctx.box.value); },
+    lastTurnIds: () => ({ q: 55, text: "newer", ai: 56 }),
+    document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [{}] },
+  });
+  ctx.box.value = "B EDIT TEXT";
+  vm.runInContext("editingMsgId=41;editingSession=7;", ctx);
+  ctx.syncEditChip();
+  assert.equal(vm.runInContext("editingMsgId", ctx), 0);
+  assert.equal(ctx.box.value, "B EDIT TEXT");
+  assert.deepEqual(saved, ["B EDIT TEXT"]);
 });

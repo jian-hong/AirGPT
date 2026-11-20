@@ -109,3 +109,21 @@ test("a reply is labelled with what wrote it, not always Netie Cortex", () => {
   assert.equal(p.aiWho({ ai_model: "" }), "Assistant");
   assert.equal(p.aiWho({}), "Assistant");
 });
+
+test("waiting messages given back after a failed edit do not ride on the edit", () => {
+  const p = page();
+  p.editingMsgId = 7;
+  p.clearEdit = () => { p.editingMsgId = 0; };
+  p.messageQueue = [{ text: "waiting", gen: 1 }];
+  p.box.value = "EDITED q";
+  p.settleQueue(false);
+  assert.equal(p.editingMsgId, 0, "the edit is not armed over the mixed text");
+  assert.equal(p.box.value, "waiting\n\nEDITED q");
+});
+
+test("a failed turn with no edit armed leaves a missing edit state alone", () => {
+  const p = page();
+  p.messageQueue = [{ text: "waiting", gen: 1 }];
+  p.settleQueue(false);
+  assert.equal(p.box.value, "waiting");
+});
