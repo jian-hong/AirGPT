@@ -10267,7 +10267,7 @@ async function ragCreateSubmit(){
     ragCreateProgress(3,TOTAL,'Attach chats & host path');
     const ids=[...c.chats];const p=hostPath||cfg.host_path||'';
     if(ids.length||p){
-      const body={force:!ingested,async:true};if(ids.length)body.session_ids=ids;if(p)body.path=p;
+      const body={force:false,async:true};if(ids.length)body.session_ids=ids;if(p)body.path=p;
       ragCreateProgress(4,TOTAL,'Chunking & embedding ('+childTok+' tok) — tab stays usable');
       const sr=await api('/api/rag/spaces/'+sid+'/sources',{method:'POST',body:JSON.stringify(body)}).then(x=>x.json()).catch(()=>({}));
       if(sr&&sr.async&&sr.job_id){

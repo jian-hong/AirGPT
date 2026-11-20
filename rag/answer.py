@@ -472,9 +472,7 @@ def grounded_prompt(query: str, context: str, history: str = "") -> tuple[str, s
 
 
 _WEB_CUES = (
-    "web search", "search the web", "search online", "search the internet", "search internet",
-    "from the internet", "from the web", "on the web", "on the internet", "online about",
-    "find online", "google scholar", "latest news", "news about", "browse the web",
+    "web search", "google scholar", "latest news",
 )
 
 
@@ -497,7 +495,12 @@ def wants_web(query: str) -> bool:
         return True
     _SEARCH = r"(?:sear+ch|serach|searhc|lookup|look\s*(?:it\s*)?up|google|find|browse)"
     # "search online", "look it up online", "google it on the web", "find X on the internet"
-    if re.search(rf"\b{_SEARCH}\b.*\b(?:online|the\s+web|the\s+internet|internet)\b", q):
+    # The web word must end the ask ("find X online", "search the web for X"), not start a
+    # noun the user's own files may hold ("online orders", "the web server config").
+    _END = r"(?=\s*(?:$|[.,;:!?)]|\s(?:for|about|and|to|on|in|that|if|whether|what|who|how|when|where|why|please|now|first|then)\b))"
+    if re.search(rf"\b{_SEARCH}\b.*\b(?:online|the\s+web|the\s+internet|internet){_END}", q):
+        return True
+    if re.search(rf"\b(?:from|on)\s+the\s+(?:web|internet){_END}", q):
         return True
     if re.search(r"(?:^|\s)/(?:search|web)\b", q) or re.search(r"\bweb\s*search\b", q):
         return True

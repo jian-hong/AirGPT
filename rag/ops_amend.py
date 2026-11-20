@@ -91,7 +91,7 @@ def _match(rows: list[dict], ask: str) -> tuple[dict | None, str]:
     m = re.search(r"\bE-?\s*(\d{1,5})\b", q, re.I)
     if m:
         eid = f"E-{int(m.group(1)):04d}"
-        cand = next((r for r in rows if str(r.get("Emp ID") or "").upper() == eid), None)
+        cand = next((r for r in rows if str(r.get("Emp ID") or "").strip().upper() == eid), None)
         if cand:
             return cand, "emp_id"
     name_m = re.search(r"for\s+([A-Za-z][A-Za-z0-9 ]{1,40})", q, re.I)
