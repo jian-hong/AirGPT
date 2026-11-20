@@ -7194,6 +7194,9 @@ class Handler(BaseHTTPRequestHandler):
                 updir.mkdir(parents=True, exist_ok=True)
                 saved = []
                 renamed = []
+                # A name clashes only with a file a source in this space still uses. Bytes left
+                # behind by a skipped or removed upload are not a source and are replaced.
+                live = {os.path.normcase(os.path.abspath(x["path"])) for x in rag_store.list_sources(sid)}
                 for key, val in form.items():
                     if isinstance(val, dict) and val.get("data") is not None:
                         fname = Path(str(val.get("filename") or key or "upload.txt")).name
@@ -7203,7 +7206,9 @@ class Handler(BaseHTTPRequestHandler):
                         # with that name is kept beside it as name_2, never over it.
                         first, n = fname, 1
                         while (updir / fname) in saved or (
-                            (updir / fname).exists() and (updir / fname).read_bytes() != val["data"]
+                            (updir / fname).exists()
+                            and os.path.normcase(os.path.abspath(updir / fname)) in live
+                            and (updir / fname).read_bytes() != val["data"]
                         ):
                             n += 1
                             fname = f"{Path(first).stem}_{n}{Path(first).suffix}"
