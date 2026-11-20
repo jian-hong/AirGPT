@@ -111,3 +111,111 @@ def test_import_says_when_a_spreadsheet_could_only_come_back_as_text(space):
     out = export_import.import_pack(export_import.export_space(space, include_chats=False))
     assert out["ok"] and out["spreadsheets_as_text"] == ["staff.csv"]
     assert "cannot be calculated" in out["notice"]
+
+
+# ---- pm-rag.1: a question is merged with the last one only when it reads as a follow-up --
+
+def test_standalone_query_merges_only_real_followups():
+    from rag import answer
+
+    hist = [{"role": "user", "content": "Who manages the warehouse Wang Fang?"}]
+    assert answer.standalone_query("how many pallets in Penang", hist) == "how many pallets in Penang"
+    assert answer.standalone_query("total Amount by Region", hist) == "total Amount by Region"
+    assert "Wang Fang" in answer.standalone_query("and for South?", hist)
+    assert "Wang Fang" in answer.standalone_query("what about it", hist)
+    assert "Wang Fang" in answer.standalone_query("why?", hist)
+
+
+def test_second_question_in_a_chat_answers_like_a_fresh_chat(space):
+    fresh = ask(space, "how many pallets in Penang")
+    assert "4500 pallets" in fresh["answer"] and not fresh["abstained"]
+    hist: list = []
+    first = ask(space, "Who manages the warehouse Wang Fang?", hist)
+    turn(hist, "Who manages the warehouse Wang Fang?", first)
+    second = ask(space, "how many pallets in Penang", hist)
+    assert second["answer"] == fresh["answer"] and not second["abstained"]
+    # and the other way round: the gap note names only words of the question just asked
+    hist = []
+    turn(hist, "how many pallets in Penang", fresh)
+    third = ask(space, "Who manages the warehouse Wang Fang?", hist)
+    alone = ask(space, "Who manages the warehouse Wang Fang?")
+    assert third["answer"] == alone["answer"]
+    assert "many" not in third["answer"].split("Closest")[0]
+
+
+# ---- pm-rag.2: a follow-up that cannot be applied says so ------------------------------
+
+def test_short_followup_after_a_passage_answer_is_not_silently_repeated(space):
+    hist: list = []
+    q1 = "how many pallets in Penang"
+    d1 = ask(space, q1, hist)
+    turn(hist, q1, d1)
+    d2 = ask(space, "and the average?", hist)
+    assert "could not" in d2["answer"].lower() and d2["provenance"].get("followup_not_applied")
+    # a follow-up that does change the answer is not flagged
+    assert not ask(space, "and the warehouse in Penang?", hist)["answer"].lower().startswith("i could not")
+
+
+# ---- pm-rag.3: a ranking carries like a total ------------------------------------------
+
+def test_followup_after_a_ranking_is_calculated(space):
+    sdf = pd.DataFrame(SALES, columns=["Region", "Product", "Month", "Amount"])
+    hist: list = []
+    q1 = "which Product has the highest total Amount in North"
+    d1 = ask(space, q1, hist)
+    north = sdf[sdf.Region == "North"].groupby("Product").Amount.sum()
+    assert north.idxmax() in d1["answer"] and str(int(north.max())) in d1["answer"].replace(",", "")
+    turn(hist, q1, d1)
+    d2 = ask(space, "and for South?", hist)
+    south = sdf[sdf.Region == "South"].groupby("Product").Amount.sum()
+    assert d2.get("lane") == "sql" and not d2["provenance"].get("followup_not_calculated"), d2["answer"]
+    assert south.idxmax() in d2["answer"] and str(int(south.max())) in d2["answer"].replace(",", "")
+    # and a lowest-ranking carries its direction
+    q3 = "which Product has the lowest total Amount in North"
+    d3 = ask(space, q3, [])
+    h3: list = []
+    turn(h3, q3, d3)
+    d4 = ask(space, "and for South?", h3)
+    assert "lowest" in d4["answer"] and south.idxmin() in d4["answer"].split("\n")[0]
+
+
+# ---- pm-rag.4: a blank group key has a name --------------------------------------------
+
+def test_blank_group_is_labelled(space):
+    df = pd.DataFrame(STAFF, columns=["Name", "Dept", "Salary"])
+    blank = int(df[df.Dept == ""].Salary.sum())
+    d = ask(space, "total Salary by Dept")
+    assert f"(blank): {blank}" in d["answer"].replace(",", "")
+    assert ": :" not in d["answer"] and "; :" not in d["answer"]
+    assert {"group": "(blank)", "value": blank} in d["provenance"]["groups"]
+    d = ask(space, "average Salary by Dept")
+    assert "(blank): " in d["answer"]
+
+
+# ---- g-rag.5: 'by X' where X is no column ----------------------------------------------
+
+def test_group_by_a_column_that_does_not_exist_is_said(space):
+    sdf = pd.DataFrame(SALES, columns=["Region", "Product", "Month", "Amount"])
+    north = int(sdf[sdf.Region == "North"].Amount.sum())
+    d = ask(space, "total Amount by Colour in North")
+    assert "no Colour column" in d["answer"]
+    assert "could not group" in d["answer"].lower()
+    assert str(north) in d["answer"].replace(",", "")  # the plain total is still given, labelled
+    # a real column and a real value after 'by' are unaffected
+    assert "no column" not in ask(space, "total Amount by Product in North")["answer"]
+    assert "no column" not in ask(space, "total Amount by Region")["answer"]
+
+
+# ---- pm-rag.6: web goals keep only the user's topic ------------------------------------
+
+@pytest.mark.parametrize("ask_text,want", [
+    ("search the internet for cognition", ["cognition"]),
+    ("look up on the web: world models and cognition in LeCun JEPA", ["world models and cognition in LeCun JEPA"]),
+    ("find online information about the Penang launch and JEPA", ["the Penang launch and JEPA"]),
+    ("Please google JEPA vs transformers and also cognition in infants",
+     ["JEPA vs transformers", "cognition in infants"]),
+])
+def test_web_goals_are_the_users_topic(ask_text, want):
+    from rag import answer
+
+    assert answer.split_web_goals(ask_text) == want

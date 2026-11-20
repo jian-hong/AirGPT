@@ -407,15 +407,17 @@ def standalone_query(query: str, history: list[dict] | None) -> str:
     """Make a short follow-up ("And South?") self-contained for retrieval.
 
     Retrieval only ever saw the new line, so a follow-up searched for almost nothing.
-    When the question is short or leans on a pronoun, the user's previous question is
-    put in front of it. A full, self-standing question is left alone.
+    When the question opens like a follow-up ("and", "what about", "why") or leans on a
+    pronoun, the user's previous question is put in front of it. Length alone is not a
+    signal: "how many pallets in Penang" is a whole question, and merging it with the
+    last one made it be judged on words the user never wrote.
     """
     q = (query or "").strip()
     prev = next((str(m.get("content") or "").strip() for m in reversed(history or []) if m.get("role") == "user"), "")
     if not q or not prev:
         return q
     words = q.split()
-    if len(words) <= 5 or (len(words) <= 12 and (_FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q))):
+    if len(words) <= 12 and (_FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q)):
         return f"{prev[:300]} {q}".strip()
     return q
 
@@ -544,6 +546,16 @@ def web_query_from_ask(query: str) -> str:
         q,
         flags=re.I,
     )
+    # The command words go, the user's topic stays: "search the internet for X",
+    # "look up on the web: X", "find online information about X" are all just "X".
+    q = re.sub(
+        r"\b(?:find|get|show)?\s*(?:me\s+)?online\s+(?:information|info)\s+(?:about|on)\s+"
+        r"|\b(?:(?:search|look\s*up|find|browse|google)\s+(?:(?:on|in|across)\s+)?(?:the\s+)?(?:web|internet|net|online)"
+        r"|(?:on|from)\s+the\s+(?:web|internet))\s*(?:for\s+|about\s+|on\s+)?[:,-]?\s*",
+        "",
+        q,
+        flags=re.I,
+    )
     q = re.sub(
         r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google|searhc|serach)\s+(about\s+|for\s+)?",
         "",
@@ -568,6 +580,8 @@ def _clean_goal(text: str) -> str:
     g = re.sub(r"\s+", " ", (text or "").strip(" ,.-;:"))
     g = _GOAL_FILLER.sub(" ", g)
     g = re.sub(r"\s+", " ", g).strip(" ,.-;:")
+    # A goal cut at "also" or "next" ends on the "and" that joined it to the next one.
+    g = re.sub(r"^(?:and|or|&)\s+|\s+(?:and|or|&)$", "", g, flags=re.I).strip(" ,.-;:")
     return g
 
 
