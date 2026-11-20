@@ -895,6 +895,64 @@ def _flatten_json(obj, prefix: str = "") -> list[str]:
     return lines
 
 
+# Legacy East Asian text. Every one of these codecs accepts almost any pair of high bytes, so
+# "decodes without errors" cannot name the right one. The right one turns the bytes into
+# the everyday characters of a language; the wrong ones give a scatter of rare ones.
+_COMMON_ZH = (
+    "的一是不了人我在有他这這中大来來上国國个個到说說们們为為子和你地出道也时時年得就那要下以生会會自着著去之过過家学學对對可她里裡后後小么麼心多天而能好都然没沒日于於起还還发發成事只作当當想看文无無开開手十用主行方又如前所本见見经經头頭面公同三已老从從动動两兩长長知民样樣现現分将將外但身些与與高意进進把法此实實回二理美点點月明其种種声聲全工己话話儿兒者向情部正名定女问問力机機给給等几幾很业業最间間新什打便位因重被走电電四第门門相次东東政海口使教西再平真听聽世气氣信北少关關并並内內加化由却卻代军軍产產入先山五太水万萬市眼体體别別处處总總才场場师師书書比住员員九笑性通目华華报報立马馬命张張活难難神数數件安表原车車白应應路期叫死常提感金何更反合放做系虽雖带帶界品运運王题題线線"
+    "，。、：；？！（）《》「」“”‘’"
+)
+_COMMON_JA = "日本人年大中出国時会事前後上下的者方何今間見行言思来分生同新手場気合自"
+_COMMON_KO = "이다는을의가에하고로한지어서도리있사기인자대은아시수들것나그제스정주일전보여오부위과외같우비동라미내신마성원방해"
+_EA_CODECS = ("gb18030", "big5", "shift_jis", "euc_jp", "cp949", "utf-16-le", "utf-16-be")
+
+
+def _is_everyday(ch: str) -> bool:
+    return ch in _COMMON_ZH or ch in _COMMON_JA or ch in _COMMON_KO or (
+        "\u3041" <= ch <= "\u30ff" and ch != "\u30fb"
+    )
+
+
+def _east_asian_codec(data: bytes, whole: bool = True):
+    """(codec, "") for legacy CJK text or UTF-16 CJK with no mark; ("", "unsure") when the
+    bytes are valid text in some legacy CJK codec but none is clearly the right one;
+    ("", "") when it is not CJK text at all. A slice may be cut inside a character."""
+    best, best_hit, unsure = "", 0.0, False
+    for codec in _EA_CODECS:
+        wide = codec.startswith("utf-16")
+        if not wide and b"\x00" in data:
+            continue
+        body = data[: len(data) - len(data) % 2] if wide else data
+        try:
+            if whole:
+                text = body.decode(codec)
+            else:
+                text = None
+                for lo in range(0, 4):
+                    try:
+                        text = codecs.getincrementaldecoder(codec)().decode(body[lo:], False)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if text is None:
+                    continue
+        except UnicodeDecodeError:
+            continue
+        far = [c for c in text if ord(c) > 127]
+        if len(far) < 3 or not _mostly_printable(text):
+            continue
+        hit = sum(1 for c in far if _is_everyday(c)) / len(far)
+        if wide and (hit < 0.5 or len(far) < 0.5 * len(text)):
+            continue
+        if hit >= 0.12 and hit > best_hit:
+            best, best_hit = codec, hit
+        elif not wide:
+            unsure = True
+    if best:
+        return best, ""
+    return "", ("unsure" if unsure else "")
+
+
 def _decode(raw: bytes) -> str:
     # utf-8-sig first: plain utf-8 "succeeds" on a BOM and leaves it glued to the
     # first header cell or the opening brace of a JSON file.
@@ -909,7 +967,14 @@ def _decode(raw: bytes) -> str:
             return raw.decode(wide)
         except UnicodeDecodeError:
             pass
-    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    codec = _east_asian_codec(raw[:262144], len(raw) <= 262144)[0]
+    if codec:
+        return raw.decode(codec, errors="replace")
+    for enc in ("cp1252", "latin-1"):
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:
@@ -920,6 +985,7 @@ def _decode(raw: bytes) -> str:
 # Files with their own reader. Everything else is read as text, so it is checked first.
 _OWN_READER = {".pdf", ".xlsx", ".xlsm", ".docx", ".pptx"}
 BINARY_REASON = "Looks like a binary file, not text"
+ENCODING_REASON = "Could not tell which text encoding this file uses. Save it as UTF-8 and add it again."
 _CONTROL = bytes(set(range(32)) - {9, 10, 12, 13, 27} | {127})
 
 
@@ -988,7 +1054,8 @@ def _chunk_is_text(data: bytes, whole: bool, hint: str = "") -> bool:
                 continue
         return False
     if b"\x00" in data:
-        return False
+        # UTF-16 CJK text with no mark has the odd newline's zero byte, nothing like a pattern.
+        return _east_asian_codec(data, whole)[0].startswith("utf-16")
     try:
         if whole:
             text = data.decode("utf-8")
@@ -1001,7 +1068,11 @@ def _chunk_is_text(data: bytes, whole: bool, hint: str = "") -> bool:
         return _mostly_printable(text)
     except UnicodeDecodeError:
         pass
-    # Not UTF-8. Old single-byte text has a few accented letters; a file that is mostly
+    # Not UTF-8. Legacy Chinese, Japanese or Korean text (or UTF-16 CJK with no mark) is
+    # mostly high bytes too, so it is told apart by what it decodes to.
+    if _east_asian_codec(data, whole)[0]:
+        return True
+    # Old single-byte text has a few accented letters; a file that is mostly
     # high bytes is not text.
     if sum(1 for b in data if b >= 0x80) > 0.4 * len(data):
         return False
@@ -1037,6 +1108,25 @@ def looks_binary(path: Path) -> bool:
     whole = len(parts) == 1
     hint = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}.get(parts[0][:2], "")
     return not all(_chunk_is_text(p, whole, hint) for p in parts)
+
+
+def unreadable_reason(path: Path) -> str:
+    """"" when the file can be read as text, else the plain reason it is skipped.
+
+    A file that is valid text in an old East Asian code page, but where none is clearly
+    the right one, is not "binary": say the encoding could not be told.
+    """
+    if not looks_binary(path):
+        return ""
+    try:
+        size = path.stat().st_size
+        if 64 <= size <= 4 * 1024 * 1024:
+            data = path.read_bytes()
+            if _east_asian_codec(data)[1] == "unsure" and not any(b in _CONTROL for b in data):
+                return ENCODING_REASON
+    except OSError:
+        pass
+    return BINARY_REASON
 
 
 def media_mod_suffixes() -> set:
@@ -1290,8 +1380,9 @@ def ingest_paths(
             if gap:
                 skipped.append({"path": path.name, "reason": gap, "lane_unavailable": True})
                 continue
-            if looks_binary(path):
-                skipped.append({"path": path.name, "reason": BINARY_REASON, "lane_unavailable": False})
+            _why = unreadable_reason(path)
+            if _why:
+                skipped.append({"path": path.name, "reason": _why, "lane_unavailable": False})
                 continue
             text, digest = read_text_file(path)
             if not text.strip():
