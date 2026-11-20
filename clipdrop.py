@@ -7091,6 +7091,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not self._sse_send(ev):
                         break
                 return self._sse_end()
+            except (ValueError, TypeError):  # a body that is not JSON or a number that is not one
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
             except Exception:
                 return self._json(500, {"error": _ROUTE_FAIL_SENTENCE})
 
