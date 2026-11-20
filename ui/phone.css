@@ -127,3 +127,24 @@
   .side .session-item:not(.on) .sess-actions-inline button{position:relative}
   .side .session-item:not(.on) .sess-actions-inline button::after{content:"";position:absolute;inset:-11px -4px}
 }
+
+/* Message box on a phone: the + button is always there, and Effort, Web search, Thinking and
+   Instructions live in its sheet. Every target is 44px. */
+@media(max-width:760px){
+  .composer #attachBtn,.composer .phone-attach button{width:44px!important;height:44px!important}
+  .composer .phone-attach button{border-radius:50%}
+  .composer #modelDd,.composer #thinkBtn,.composer .cprefs-btn{display:none!important}
+  html body .plus-menu{
+    left:0;right:0;bottom:0;transform:none;width:auto;max-width:none;flex-direction:column;flex-wrap:nowrap;
+    align-items:stretch;justify-content:flex-start;border-radius:20px 20px 0 0;max-height:75vh;overflow-y:auto;
+    padding:10px 12px calc(14px + env(safe-area-inset-bottom));animation:none;
+  }
+  html body .plus-menu button{width:100%!important;min-height:44px!important;justify-content:flex-start!important;border-radius:12px!important;font-size:15px!important}
+  html body .plus-menu .pm-phone{display:flex}
+  html body .plus-menu .pm-phone[hidden]{display:none!important}
+  html body .plus-menu .pm-effort{align-items:center;gap:6px}
+  html body .plus-menu .pm-effort .pm-lab{min-width:56px;font-size:14px}
+  html body .plus-menu .pm-effort button{flex:1 1 0;width:auto!important;justify-content:center!important}
+  html body .plus-menu .pm-effort button[aria-pressed="true"]{outline:2px solid #3dd68c}
+  .composer-actions{gap:4px}
+}
