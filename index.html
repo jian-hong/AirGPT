@@ -16402,6 +16402,12 @@ $('plusMenu')?.addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   if(!e.target.closest('.plus-menu-wrap')&&!e.target.closest('#plusMenu')&&e.target!==$('attachBtn'))closePlusMenu();
 });
+// Escape closes the + menu first (and only that), then puts focus back on +. Capture phase,
+// so a modal or an edit under it does not also react. With the menu shut, nothing changes.
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||$('plusMenu')?.hidden!==false)return;
+  e.preventDefault();e.stopPropagation();closePlusMenu();$('attachBtn')?.focus();
+},true);
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='u'){
     e.preventDefault();$('fileIn')?.click();
