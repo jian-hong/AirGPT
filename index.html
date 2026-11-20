@@ -10846,7 +10846,7 @@ async function ragRenderTab(){
     let chats=[];try{chats=(await api('/api/rag/spaces/'+sid+'/chats').then(r=>r.json())).chats||[]}catch(e){}
     if(!ragState.chatId){
       const cards=chats.map(c=>{
-        const rough=String(c.summary||c.preview||c.last_answer||'').replace(/\s+/g,' ').trim();
+        const rough=ragPlainPreview(c.summary||c.preview||c.last_answer||'');
         return `<button type="button" class="rag-session-card" onclick="ragOpenChat(${c.id})">
         <h4>${esc(c.title||'Chat')}</h4>
         ${rough?`<div class="rag-sess-preview">${esc(rough.slice(0,160))}</div>`:''}
@@ -11070,6 +11070,20 @@ async function ragRenderTab(){
   }
 }
 
+// A saved answer is Markdown; the chat card shows it as plain words (no #, **, `, links or [1] marks).
+function ragPlainPreview(text){
+  return String(text||'')
+    .replace(/```[a-z0-9]*\n?/gi,' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')
+    .replace(/\[\d+(?:\s*[,\u2013-]\s*\d+)*\]/g,'')
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm,'')
+    .replace(/\|/g,' ')
+    .replace(/(\*\*|__|\*|`|~~)/g,'')
+    .replace(/(^|\s)_(\S[^_]*)_(?=\s|$)/g,'$1$2')
+    .replace(/\s+([.,;:!?])/g,'$1')
+    .replace(/\s+/g,' ').trim();
+}
 // ===== Adding files: say what was added, name every file that was not, and why =====
 function ragSkipReason(name,reason){
   const r=String(reason||'');
@@ -11079,6 +11093,9 @@ function ragSkipReason(name,reason){
     return 'is empty or has no text in it.';
   }
   if(/not a readable PDF/i.test(r))return 'could not be opened as a PDF. The file may be damaged or cut short.';
+  if(/^could not be read/i.test(r))return 'could not be read. The file may be damaged, or it is not really a '+(ext||'document')+' file.';
+  if(/^empty\b/i.test(r))return 'is empty. There is no text in it.';
+  if(/looks like a binary file/i.test(r))return 'looks like a program or data file, not text, so it was not added.';
   if(/^unsupported type/i.test(r))return 'is a kind of file that cannot be read here ('+r.replace(/^unsupported type\s*/i,'')+').';
   return r?('was not added: '+r+'.'):'was not added.';
 }
@@ -11114,11 +11131,13 @@ function ragUploadSummary(sentCount,j,refused,fresh){
     :'Nothing was added.';
   if(added>0&&known>0)headline+=' '+known+' more '+(known===1?'was':'were')+' already in this space.';
   if(problems.length)headline+=' '+problems.length+' not added:';
-  return {headline,problems,added,chunks};
+  // Not a problem, but worth saying: a different file with the same name was already here.
+  const notes=(Array.isArray(j.renamed)?j.renamed:[]).map(x=>'A different file called '+x.from+' was already here, so this one was added as '+x.to+'.');
+  return {headline,problems,added,chunks,notes};
 }
 function ragUploadReportHtml(){
   const r=ragState.uploadReport;if(!r)return'';
-  return `<div class="rag-upreport${r.problems.length||!r.added?' warn':''}" role="status"><div>${esc(r.headline)}</div>${r.problems.length?'<ul>'+r.problems.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':''}<button type="button" class="btn" onclick="ragDismissUploadReport()">Dismiss</button></div>`;
+  return `<div class="rag-upreport${r.problems.length||!r.added?' warn':''}" role="status"><div>${esc(r.headline)}</div>${(r.notes||[]).map(x=>'<div>'+esc(x)+'</div>').join('')}${r.problems.length?'<ul>'+r.problems.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':''}<button type="button" class="btn" onclick="ragDismissUploadReport()">Dismiss</button></div>`;
 }
 function ragShowUploadReport(rep){
   ragState.uploadReport=rep;

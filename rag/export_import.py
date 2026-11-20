@@ -242,7 +242,9 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                                 "role": str(m.get("role") or "user"),
                                 "content": str(m.get("content") or ""),
                                 "depth": str(m.get("depth") or "high"),
-                                "citations": m.get("citations") if isinstance(m.get("citations"), list) else [],
+                                # Citations carry the sender's folders (path_full, and path on
+                                # spreadsheet answers); a pack is shared, so they go as names.
+                                "citations": _clean_citations(m.get("citations")),
                             }
                             for m in msgs
                         ],
@@ -323,6 +325,22 @@ def _strip_abs_paths(obj: Any) -> Any:
     return obj
 
 
+_CITE_TEXT_KEYS = ("text", "snippet", "content", "quote", "sql")
+
+
+def _clean_citations(cites: Any) -> list:
+    """Citations with every absolute folder reduced to a file name (text fields untouched)."""
+    out = []
+    for c in cites if isinstance(cites, list) else []:
+        if isinstance(c, dict):
+            keep = {k: v for k, v in c.items() if k in _CITE_TEXT_KEYS}
+            c = {**_strip_abs_paths({k: v for k, v in c.items() if k not in _CITE_TEXT_KEYS}), **keep}
+        else:
+            c = _strip_abs_paths(c)
+        out.append(c)
+    return out
+
+
 def export_space_to_path(space_id: int, dest: Path, **kw: Any) -> Path:
     dest = Path(dest)
     dest.write_bytes(export_space(space_id, **kw))
@@ -349,6 +367,9 @@ def import_pack(
         modalities = space_meta.get("modalities") if isinstance(space_meta.get("modalities"), list) else ["text"]
         profile = str(space_meta.get("profile") or "local")
         config = space_meta.get("config") if isinstance(space_meta.get("config"), dict) else {}
+        # The summary and ontology in a pack were written by someone else and are shown
+        # to the user as what the space contains. This space builds its own from its own files.
+        config = {k: v for k, v in config.items() if k not in ("corpus_summary", "ontology")}
 
         space = store.create_space(
             space_name,
@@ -465,9 +486,12 @@ def import_pack(
                         cid,
                         str(msg.get("role") or "user"),
                         str(msg.get("content") or ""),
-                        citations=msg.get("citations") if isinstance(msg.get("citations"), list) else None,
+                        citations=_clean_citations(msg.get("citations")) or None,
                         depth=str(msg.get("depth") or "high"),
                         trace_id="",
+                        # Written by someone else: kept to read, never handed to the model
+                        # as this user's own conversation.
+                        imported=True,
                     )
 
         space = store.get_space(new_id) or space

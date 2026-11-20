@@ -4116,6 +4116,7 @@ class Handler(BaseHTTPRequestHandler):
                     chat_id, "assistant", text,
                     citations=citations,
                     depth=depth, trace_id=done.get("trace_id") or "",
+                    provenance=done.get("provenance") or None,
                 )
             except Exception:
                 pass
@@ -7120,15 +7121,22 @@ class Handler(BaseHTTPRequestHandler):
                 updir = rag_store.BLOB_DIR / str(sid) / "uploads"
                 updir.mkdir(parents=True, exist_ok=True)
                 saved = []
+                renamed = []
                 for key, val in form.items():
                     if isinstance(val, dict) and val.get("data") is not None:
                         fname = Path(str(val.get("filename") or key or "upload.txt")).name
                         # Two files with one name in one batch: the second overwrote the
-                        # first on disk and the reply still counted both.
+                        # first on disk and the reply still counted both. The same goes
+                        # for a name an earlier upload already used: a different file
+                        # with that name is kept beside it as name_2, never over it.
                         first, n = fname, 1
-                        while (updir / fname) in saved:
+                        while (updir / fname) in saved or (
+                            (updir / fname).exists() and (updir / fname).read_bytes() != val["data"]
+                        ):
                             n += 1
                             fname = f"{Path(first).stem}_{n}{Path(first).suffix}"
+                        if fname != first:
+                            renamed.append({"from": first, "to": fname})
                         dest = updir / fname
                         dest.write_bytes(val["data"])
                         saved.append(dest)
@@ -7139,6 +7147,8 @@ class Handler(BaseHTTPRequestHandler):
                 # the sources list went on showing the old files. Rebuild is its own route.
                 force = str(form.get("force") or "").strip().lower() in ("1", "true")
                 out = rag_ingest.ingest_paths(sid, saved, force=force)
+                if renamed:
+                    out["renamed"] = renamed
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})

@@ -295,6 +295,20 @@ def _init_schema() -> None:
             """
         )
         _migrate_authority(conn)
+        _migrate_messages(conn)
+
+
+def _migrate_messages(conn: sqlite3.Connection) -> None:
+    """Chat messages keep the calculation behind a number (so a follow-up can reuse it)
+    and whether they came from an imported pack (so they never steer the model)."""
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(rag_messages)")}
+        if "provenance" not in cols:
+            conn.execute("ALTER TABLE rag_messages ADD COLUMN provenance TEXT DEFAULT ''")
+        if "imported" not in cols:
+            conn.execute("ALTER TABLE rag_messages ADD COLUMN imported INTEGER DEFAULT 0")
+    except sqlite3.Error:
+        return
 
 
 def _migrate_authority(conn: sqlite3.Connection) -> None:
@@ -357,6 +371,11 @@ def _row(r: sqlite3.Row | None) -> dict | None:
     if not r:
         return None
     d = dict(r)
+    if isinstance(d.get("provenance"), str):
+        try:
+            d["provenance"] = json.loads(d["provenance"]) if d["provenance"] else {}
+        except Exception:
+            d["provenance"] = {}
     for key in ("modalities", "config", "meta", "metrics", "counts", "citations", "phrases", "headings", "payload"):
         if key in d and isinstance(d[key], str):
             try:
@@ -1216,12 +1235,15 @@ def add_message(
     citations: list | None = None,
     trace_id: str = "",
     depth: str = "high",
+    provenance: dict | None = None,
+    imported: bool = False,
 ) -> dict:
     init()
     now = time.time()
     with _conn() as conn:
         cur = conn.execute(
-            "INSERT INTO rag_messages(chat_id,role,content,citations,trace_id,depth,created_at) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO rag_messages(chat_id,role,content,citations,trace_id,depth,created_at,provenance,imported) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 int(chat_id),
                 (role or "user")[:20],
@@ -1230,6 +1252,8 @@ def add_message(
                 (trace_id or "")[:80],
                 (depth or "high")[:20],
                 now,
+                json.dumps(provenance) if provenance else "",
+                1 if imported else 0,
             ),
         )
         conn.execute("UPDATE rag_chats SET updated_at=? WHERE id=?", (now, int(chat_id)))

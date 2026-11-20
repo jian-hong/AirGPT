@@ -329,7 +329,8 @@ def _xlsx_text(path: Path) -> str:
         return ""
     # Smallest sheets first (KPIs), then large fact tables
     sheets.sort(key=lambda t: (t[0], t[1].casefold()))
-    index_lines = [f"- {title} ({n} rows)" for n, title, _ in sheets]
+    # The first row is the header; the count is the rows of data under it.
+    index_lines = [f"- {title} ({max(n - 1, 0)} rows)" for n, title, _ in sheets]
     out: list[str] = ["## Spreadsheet index\n" + "\n".join(index_lines)]
     for _n, title, rows in sheets:
         out.append(f"## Sheet: {title}\n" + "\n".join(rows))
@@ -367,7 +368,7 @@ def _csv_text(path: Path, raw_text: str, delimiter: str = ",") -> str:
     if not rows:
         return ""
     title = (path.stem or path.name).strip() or "csv"
-    index = f"## Spreadsheet index\n- {title} ({len(rows)} rows)"
+    index = f"## Spreadsheet index\n- {title} ({max(len(rows) - 1, 0)} rows)"
     return f"{index}\n\n## Sheet: {title}\n" + "\n".join(rows)
 
 
@@ -909,6 +910,59 @@ def _decode(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+# Files with their own reader. Everything else is read as text, so it is checked first.
+_OWN_READER = {".pdf", ".xlsx", ".xlsm", ".docx", ".pptx"}
+BINARY_REASON = "Looks like a binary file, not text"
+_CONTROL = bytes(set(range(32)) - {9, 10, 12, 13, 27} | {127})
+
+
+def looks_binary(path: Path) -> bool:
+    """A file that would be read as text but is a program or data blob.
+
+    A zero byte, or a high share of control bytes, in the start of the file. A byte-order
+    mark for UTF-16 is text (its zero bytes are letters). Every other byte string
+    "decodes" as Latin-1, which is how random bytes used to become searchable chunks.
+    """
+    from rag import media as media_mod
+
+    suffix = path.suffix.lower()
+    if suffix in _OWN_READER or suffix in media_mod.IMAGE_SUFFIXES or suffix in (
+        media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES
+    ):
+        return False
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8192)
+    except OSError:
+        return False
+    if not head or head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return False
+    if b"\x00" in head:
+        return True
+    return sum(head.count(bytes([c])) for c in _CONTROL) / len(head) > 0.10
+
+
+def media_mod_suffixes() -> set:
+    from rag import media as media_mod
+
+    return set(media_mod.IMAGE_SUFFIXES | media_mod.VIDEO_SUFFIXES | media_mod.AUDIO_SUFFIXES)
+
+
+def _unreadable_container(path: Path) -> bool:
+    """A .docx/.pptx/.xlsx that is not a valid Office zip (damaged, or another file renamed)."""
+    import zipfile
+
+    need = {".docx": "word/document.xml", ".pptx": "ppt/presentation.xml",
+            ".xlsx": "xl/workbook.xml", ".xlsm": "xl/workbook.xml"}.get(path.suffix.lower())
+    if not need:
+        return False
+    try:
+        with zipfile.ZipFile(path) as z:
+            return need not in z.namelist() or z.testzip() is not None
+    except Exception:
+        return True
+
+
 def read_text_file(path: Path) -> tuple[str, str]:
     """Return (extracted_text, sha256). Applies type-aware normalize after extract."""
     from rag import normalize as norm
@@ -1139,9 +1193,17 @@ def ingest_paths(
             if gap:
                 skipped.append({"path": path.name, "reason": gap, "lane_unavailable": True})
                 continue
+            if looks_binary(path):
+                skipped.append({"path": path.name, "reason": BINARY_REASON, "lane_unavailable": False})
+                continue
             text, digest = read_text_file(path)
             if not text.strip():
                 reason = "no extractable text"
+                _suf = path.suffix.lower()
+                if _unreadable_container(path):
+                    reason = f"could not be read (damaged, or not really a {_suf.lstrip('.')} file)"
+                elif _suf not in (".pdf", ".rtf") and _suf not in media_mod_suffixes():
+                    reason = "empty (no text in the file)"
                 if path.suffix.lower() == ".pdf":
                     reason = (
                         getattr(_pdf_text, "last_error", "")
