@@ -97,6 +97,35 @@ main_idea: Lanes that each passed their own verifier broke where they met, and f
   founder's name was wired in the same way.
 - **Root-cause class:** hard-coded demo topics left where real queries run.
 
+## Finding 8 - our own renderer's output skipped the sanitizer
+
+- **Expected:** no answer can take an id the page uses.
+- **Actual:** Mermaid labels (and later themeCSS plus gantt task names) put
+  `input`, `sendBtn` and `settingsModal` into the chat ahead of the real ones;
+  Enter in the message box then failed until a reload. `<label for>` in a
+  share guest's message could press the page's buttons.
+- **Root-cause class:** output inserted after the sanitizer ran (our own
+  diagrams and maths) is trusted as ours, but it carries text the model chose.
+- **Invariant:** untrusted text is rendered as text; adversary is not the
+  verifier (the lane's own verifier found the themeCSS bypass of its fix).
+
+## Finding 9 - truth kept per browser instead of on the server
+
+- **Expected:** a refused key reads "refused" on every device.
+- **Actual:** the server only said "cooldown"; the laptop remembered the 401
+  in localStorage, the phone said "busy, wait a minute" and the key was never
+  fixed.
+- **Root-cause class:** state the user acts on stored where only one device
+  can see it.
+
+## Final-check shape
+
+Two more adversarial passes (5 local reviewers plus 2 cloud reviews, then 4
+plus 2): 76 findings, 2 critical. 8 + 4 lanes and 2 micro-lanes fixed them;
+their verifiers found 12 more inside the fixes. The founder's own note, typed
+on a phone into a review session, became a lane of its own (title readable,
+compact buttons, one menu).
+
 ## Not verified
 
 Real tunnel, real phone and keyboard, real cloud provider, live Cortex, the

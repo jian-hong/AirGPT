@@ -97,6 +97,22 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `ui/touch.css` -- under `(pointer: coarse)`, small controls keep their
   look and get an invisible 44x44 tap layer. On phones the chat title bar
   folds Background tasks, Export and Share into one menu (`#chatMoreBtn`).
+- Rendering: `renderMd` caps KaTeX (`_KATEX_SAFE`, a TeX length limit,
+  no `\def`-style macros) and runs `cleanMermaidSvg` after Mermaid draws, so
+  labels and themeCSS cannot carry page ids; `sanitizeHtml` also drops
+  `for`, `form*`, `popover*`, `list`, `usemap`, `aria-*` and size attributes.
+- Restore checks each known database by the columns the app needs
+  (`_db_refusal`, `_probe_schema` builds the reference from a fresh app-made
+  database), runs the start-up upgrades after the swap, caps unpacked bytes
+  (`_RESTORE_MIN_CAP`) and refuses over-long paths.
+- `ai_engine` records why a provider is cooling down ("key refused", "rate
+  limited", "unreachable") and puts it in the error text; saving a key in
+  Settings clears that provider's cooldown. The page reads those words.
+- `rag/retrieve.py` cuts Hangul words into 2-character pieces so a stem
+  finds its inflected forms. Packs write formula-looking cells as text.
+- A line starting with `@` runs an agent only when an agent has that exact
+  name (longest match); the line, the answer in full and any failure are
+  saved as chat rows.
 - `tests/devkit/` -- stand-ins for live checks, not product code:
   `stub_llm.py` and `stub_rich.py` (OpenAI-compatible, log every request
   body), `stub_cortex.py` (keywords STUBSLOW, STUBFAIL, STUBEMPTY,

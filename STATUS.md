@@ -25,10 +25,10 @@
    Round 2: PR #90 merged in; RAG totals checked against pandas, packs
    keep calculating, turns keep their files, agents run only their own
    tools, restore all-or-nothing, sanitizer drops styles and page ids,
-   phone title readable, light theme readable. Head `163220e`: 1434
-   passed, 0 failed, 9 skipped; JS 192; browser 27/27; Windows CI green.
-   Not verified: real tunnel, real phone, real provider, live Cortex,
-   Windows restore names. Owner calls: P14-P30.
+   phone title readable, light theme readable. Head `8b10716`: 1488
+   passed, 0 failed, 9 skipped; JS 235; browser 27/27; Windows CI green
+   through `7bf07d6`. Not verified: real tunnel, real phone, real
+   provider, live Cortex, Windows restore names. Owner calls: P14-P31.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
    26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
@@ -42,7 +42,7 @@
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
 2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320; decide P22-P30.
+   reliability epic and `pypdf`; re-score n=320; decide P22-P31.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

@@ -2,6 +2,42 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-20 -- Round 2, final checks: 76 more findings, two critical, fixed and re-verified
+
+- After the round-2 entry below, two more adversarial passes ran on the merged
+  branch (reviewers driving the real page, plus independent cloud reviews):
+  40 findings (1 critical: a line queued during a stopped edit deleted an
+  answered turn), then 36 (1 critical: a Mermaid label could take the page's
+  ids and break the message box). 12 lanes and 2 micro-lanes fixed them, each
+  with an independent verifier, which found and fixed 12 more inside the fixes.
+- **Chat.** A queued line is always a new question. Stop on Regenerate keeps
+  the answer. Edit text is not saved as a draft. Try again keeps the box.
+  Files past 12 are named on every send path and again on Regenerate and
+  Edit. A line starting with @ goes to an agent only when an agent has that
+  name; @Agent lines, full answers and failures are saved in the chat.
+- **RAG.** "and the lowest?" follows the new direction; "by X" and bare-column
+  follow-ups carry; row counts are COUNT(*) wherever they are asked; Korean
+  stems find inflected words; imported packs keep calculating and
+  formula-looking cells stay text; GBK, Big5, Shift-JIS, EUC and UTF-16
+  without a byte-order mark are read, and detection is sampled.
+- **Agents.** The local loop offers only the agent's own tools; @Agent lights
+  Background tasks; a killed run reads interrupted; long answers are kept.
+- **Security.** The sanitizer drops ids, names and attributes that point at
+  page elements (`for`, `form`, `popover`, `list`, `usemap`, `aria-*`);
+  Mermaid output is cleaned after it draws; KaTeX, table and image sizes are
+  capped. Restore skips control files and Windows aliases, checks each
+  database by the columns the app needs (older backups restore and work at
+  once), caps unpacked size, refuses over-long paths, and is all or nothing.
+- **Screens.** On phones the chat title gets the row and its actions sit in
+  one menu; buttons look compact with 44 px tap areas; the report button
+  never covers the gear. Light theme readable on OpenForge, Marketplace,
+  Mermaid lines, the key field, the project-pick card, chips and hints. A
+  refused key and a busy provider each get their own sentence on every device.
+- Parked: P31.
+- Suite: 1488 passed, 0 failed, 9 skipped. JS: 235 passed. Browser: 27 of
+  27. Not verified: real tunnel, real phone, real provider, live Cortex,
+  Windows filesystem behaviour of restore names, Safari and Firefox.
+
 ## 2026-11-20 -- Round 2: RAG numbers you can trust, turns that keep their files, agents that say what happened
 
 - **PR #90 merged in on purpose** (RAG reliability backend: 16 file types,
