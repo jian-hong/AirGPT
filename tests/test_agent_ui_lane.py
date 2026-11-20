@@ -262,7 +262,10 @@ class CardTests(unittest.TestCase):
         card = self._run(steps=steps)
         self.assertEqual(card["totals"]["tools_real"], 1)
         self.assertEqual(card["runner"], "Cortex")
-        self.assertEqual(self._run()["runner"], "local model")
+        # No steps means no runner is named (it used to say "local model" for a run that ran nothing).
+        self.assertEqual(self._run()["runner"], "")
+        local = json.dumps([{"tool": "think", "ok": True, "summary": "Step 1…"}])
+        self.assertEqual(self._run(steps=local)["runner"], "local model")
 
     def test_card_shows_the_users_text_not_the_wrapper_and_flags_a_cut_answer(self):
         wrapped = "Cortex create turn for \u201cX\u201d.\nUser: my own words\n\nPriority order (mandatory): ..."

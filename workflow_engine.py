@@ -104,11 +104,15 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
     # Prefer finished analysis over queued meta JSON for excerpt.
     excerpt = ""
     excerpt_src = ""
+    true_chars = 0
     if panel_st in ("done", "error", "cancelled"):
         excerpt_src = run.get("error") or raw_result or ""
         if meta and excerpt_src.startswith("{"):
             excerpt_src = run.get("error") or ""
         excerpt = excerpt_src[:8000]
+        true_chars = len(excerpt_src)
+        if not run.get("error") and not meta:
+            true_chars = max(true_chars, int(run.get("result_chars") or 0))
     else:
         excerpt = prompt[:400]
     tools = _tool_detail(run)
@@ -116,7 +120,11 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
     thought = " ".join(t.get("summary", "") for t in tools if t.get("tool") == "think")
     runner = ""
     if panel_st in ("done", "error"):
-        runner = "Cortex" if re.search(r"Cortex (quality loop|research brain)", thought) else "local model"
+        # Name a runner only when the steps show one really ran; a run with no answer has none.
+        if re.search(r"Cortex (quality loop|research brain)", thought):
+            runner = "Cortex"
+        elif tools and "No AI model could be reached" not in (run.get("error") or ""):
+            runner = "local model"
     return {
         "id": f"agent_run_{run.get('id')}",
         "name": name,
@@ -153,7 +161,7 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
                         "tools": names,
                         "tool_detail": tools,
                         "excerpt": excerpt,
-                        "excerpt_chars": len(excerpt_src),
+                        "excerpt_chars": true_chars,
                         "error": (run.get("error") or "")[:500],
                         "elapsed": round(elapsed, 1),
                     }
@@ -173,6 +181,9 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
         import cortex_orchestrator
 
         agent_store.init()
+        import agent_runtime
+
+        agent_runtime.close_interrupted()
         agent_store.expire_stale_runs()
         agents = {int(a["id"]): a for a in agent_store.list_agents()}
         pending = cortex_orchestrator.list_pending() or []

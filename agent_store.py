@@ -40,6 +40,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     run_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_runs)").fetchall()}
     if "steps" not in run_cols:
         conn.execute("ALTER TABLE agent_runs ADD COLUMN steps TEXT DEFAULT '[]'")
+    if "result_chars" not in run_cols:
+        # True length of the answer; the saved copy is cut at RESULT_KEEP characters.
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN result_chars INTEGER DEFAULT 0")
+
+
+RESULT_KEEP = 20000
+INTERRUPTED = "Interrupted when the app restarted"
 
 
 def init() -> None:
@@ -260,15 +267,16 @@ def finish_run(
     with _conn() as conn:
         conn.execute(
             # A run the user stopped stays stopped: a late result must not turn it back into done.
-            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=? "
-            "WHERE id=? AND status!='cancelled'",
+            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=?, "
+            "result_chars=? WHERE id=? AND status!='cancelled'",
             (
                 status[:40],
-                (result or "")[:20000],
+                (result or "")[:RESULT_KEEP],
                 (error or "")[:2000],
                 (audit_ref or "")[:200],
                 time.time(),
                 json.dumps(packed)[:20000],
+                len(result or ""),
                 int(run_id),
             ),
         )
@@ -309,6 +317,20 @@ def expire_stale_runs(max_age_sec: float = 3600.0) -> int:
             ("This run was abandoned (the page closed or the app restarted).", time.time(), time.time() - max_age_sec),
         )
         return cur.rowcount
+
+
+def close_interrupted(live_ids=(), min_age: float = 0.0) -> int:
+    """Close runs still 'running' that no thread of this app is working on (the app was
+    restarted, or the row was left behind). Runs in live_ids are never touched."""
+    init()
+    live = [int(i) for i in live_ids]
+    q = "UPDATE agent_runs SET status='error', error=?, finished_at=? WHERE status='running' AND created_at<?"
+    args: list = [INTERRUPTED, time.time(), time.time() - float(min_age)]
+    if live:
+        q += " AND id NOT IN (%s)" % ",".join("?" * len(live))
+        args += live
+    with _conn() as conn:
+        return conn.execute(q, args).rowcount
 
 
 def list_runs(agent_id: int | None = None, limit: int = 50) -> list[dict]:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from typing import Iterator
@@ -21,6 +22,8 @@ WRITE_TOOLS = frozenset({
 })
 FILE_MENTION_RE = re.compile(r"@([\w.\-/\\]+(?:\.\w+)?)")
 CORTEX_RESEARCH_PROMPT_ID = "research.idea_to_paper"
+_log = logging.getLogger("airgpt.agents")
+_NO_MODEL_SENTENCE = "No AI model could be reached. Check your model in Settings."
 
 
 def _think_event(steps: list, text: str) -> dict:
@@ -459,16 +462,21 @@ def run_agent_events(*args, **kwargs) -> Iterator[dict]:
     'running' forever. A run that already finished is left alone."""
     seen_run_id = int(kwargs.get("run_id") or 0)
     inner = _run_agent_events(*args, **kwargs)
+    if seen_run_id:
+        _LIVE.add(seen_run_id)
     try:
         for ev in inner:
             if isinstance(ev, dict) and ev.get("run_id"):
                 seen_run_id = int(ev["run_id"])
+                _LIVE.add(seen_run_id)
             yield ev
     except GeneratorExit:
         inner.close()
         if seen_run_id:
             agent_store.cancel_run(seen_run_id, "The page closed before this run finished.")
         raise
+    finally:
+        _LIVE.discard(seen_run_id)
 
 
 # ---- Runs that outlive the page --------------------------------------------------
@@ -479,6 +487,15 @@ _BG: dict[int, dict] = {}
 _BG_LOCK = threading.Lock()
 _BG_KEEP = 40
 _BG_EVENTS = 3000
+_LIVE: set[int] = set()  # run ids some thread of this app is working on right now
+
+
+def close_interrupted(min_age: float = 3.0) -> int:
+    """Close open runs nothing here is working on. A live run is never closed."""
+    try:
+        return agent_store.close_interrupted(set(_LIVE), min_age)
+    except Exception:
+        return 0
 
 
 def start_background_run(agent_id: int, prompt: str, **kw) -> int:
@@ -489,6 +506,7 @@ def start_background_run(agent_id: int, prompt: str, **kw) -> int:
     run = agent_store.create_run(int(agent_id), (kw.get("task") or "").strip() or prompt)
     rid = int(run["id"])
     kw["run_id"] = rid
+    _LIVE.add(rid)
     slot = {"events": [], "done": False, "cv": threading.Condition()}
     with _BG_LOCK:
         _BG[rid] = slot
@@ -518,6 +536,7 @@ def start_background_run(agent_id: int, prompt: str, **kw) -> int:
                 agent_store.cancel_run(rid, "This run ended before it finished.")
             except Exception:
                 pass
+            _LIVE.discard(rid)
             with slot["cv"]:
                 slot["done"] = True
                 slot["cv"].notify_all()
@@ -704,6 +723,9 @@ def _run_agent_events(
                     ],
                     timeout=180.0,
                 )
+            else:
+                # Every agent sends its own tool list. Cortex is outside this app and may still ignore it.
+                loop_kw["tools"] = _effective_tools(agent)
             cortex = cortex_client.engine_agent_loop(prompt or "", **loop_kw)
         except Exception as e:
             cortex = {"ok": False, "error": str(e)[:200]}
@@ -762,29 +784,25 @@ def _run_agent_events(
                 "quality_passed": cortex.get("quality_passed"),
                 "runner": "agent_task",
                 "model": str(cortex.get("model") or "")[:80],
-                # Cortex is given only the request: it picks its own tools, not this agent's list.
-                "own_tools": not owns,
+                # own_tools: this agent's list was sent. Cortex may still ignore it (it is not run here).
+                "own_tools": True,
+                "tools_sent": list(loop_kw.get("tools") or []),
                 "prompt_id": CORTEX_RESEARCH_PROMPT_ID if owns else "",
                 "steps": packed,
             }
             return
-        why = (cortex or {}).get("error") if isinstance(cortex, dict) else "Cortex down"
+        why = _plain_engine_why(cortex, owns)
         if owns:
             try:
-                agent_store.finish_run(run_id, status="error", error=str(why)[:500])
+                agent_store.finish_run(run_id, status="error", error=why)
             except Exception:
                 pass
-            yield {
-                "type": "error",
-                "text": f"Cortex owns this research agent. Engine refused: {why}",
-            }
+            yield {"type": "error", "text": why, "run_id": run_id, "agent_id": agent_id}
             return
         yield {"type": "status", "text": f"Quality loop skipped: {why}"}
 
-    tools = [t for t in (agent.get("tools") or []) if t in agent_tools.TOOLS]
-    if not tools:
-        # An agent with no tools of its own gets a small offline set, never the web.
-        tools = [t for t in agent_tools.TOOLS if t not in ("web_search", "web_fetch")][:6]
+    # An agent with no tools of its own gets a small offline set, never the web.
+    tools = _effective_tools(agent)
     # Only the agent's own tools run. web_search is used only when the agent was given it.
     # Deep parents may dispatch isolated child runs (Assist = no fan-out; children never recurse)
     allow_subagents = (
@@ -866,13 +884,14 @@ def _run_agent_events(
         model = "agent-local"
         step = 0
         llm_fail_streak = 0
+        no_answer = ""  # plain sentence when no model could answer: the run is failed, not done
         while step < max_steps and tokens_used < token_budget:
             if agent_store.is_cancelled(run_id):
                 yield _stopped_event(run_id, agent_id)
                 return
             step += 1
             if not ai_engine:
-                analysis = f"Completed {len(steps)} tool step(s). LLM unavailable."
+                no_answer = _NO_MODEL_SENTENCE
                 break
 
             yield _think_event(steps, f"Step {step}…")
@@ -915,10 +934,11 @@ def _run_agent_events(
                     text = text or ""
             except Exception as e:
                 llm_fail_streak += 1
-                yield {"type": "status", "text": f"LLM provider failed — trying fallback APIs ({llm_fail_streak})…"}
+                if llm_fail_streak < 3 and goal_driven:
+                    yield {"type": "status", "text": f"The model did not answer. Trying again ({llm_fail_streak})…"}
                 if llm_fail_streak >= 3 or not goal_driven:
-                    analysis = f"LLM error: {e}"
-                    yield {"type": "error", "text": analysis}
+                    _log.warning("agent run %s: no model answered: %s", run_id, str(e)[:500])
+                    no_answer = _NO_MODEL_SENTENCE
                     break
                 continue
 
@@ -972,6 +992,11 @@ def _run_agent_events(
         if agent_store.is_cancelled(run_id):
             yield _stopped_event(run_id, agent_id)
             return
+        if no_answer:
+            agent_store.finish_run(run_id, status="error", error=no_answer)
+            audit.log("agent.run.error", detail=no_answer, ok=False)
+            yield {"type": "error", "text": no_answer, "run_id": run_id, "agent_id": agent_id}
+            return
         if not analysis and steps:
             analysis = f"Finished {len(steps)} tool steps."
 
@@ -1017,6 +1042,37 @@ def _run_agent_events(
         agent_store.finish_run(run_id, status="error", error=str(e)[:500])
         audit.log("agent.run.error", detail=str(e)[:300], ok=False)
         yield {"type": "error", "text": str(e)[:500], "run_id": run_id}
+
+
+def _effective_tools(agent: dict) -> list[str]:
+    """The tools this agent may use: its own list, or a small offline set (never the web)."""
+    tools = [t for t in (agent.get("tools") or []) if t in agent_tools.TOOLS]
+    if not tools:
+        tools = [t for t in agent_tools.TOOLS if t not in ("web_search", "web_fetch")][:6]
+    return tools
+
+
+def _plain_engine_why(cortex, owns: bool = True) -> str:
+    """Engine refusal as a sentence a person can act on. Raw text stays in the server log."""
+    raw = str((cortex or {}).get("error") or "") if isinstance(cortex, dict) else "Cortex down"
+    reason = str((cortex or {}).get("reason") or "") if isinstance(cortex, dict) else ""
+    _log.warning("Cortex engine refused an agent run: %s %s", reason, raw[:300])
+    low = raw.lower()
+    if "not the cortex engine" in low:
+        return "Cortex is running, but it is not the part that runs agents. Check it from Apps."
+    if "loop failed" in low or "model backend" in low:
+        return "Cortex is running, but it could not finish this. Try again."
+    if "timed out" in low or "timeout" in low:
+        return "Cortex took too long to answer. Try again."
+    if "empty answer" in low:
+        return "Cortex sent back an empty answer."
+    if not raw or reason == "wrong_surface" or any(
+        w in low for w in ("offline", "down", "unreachable", "refused", "connect", "not running", "has no /api/engine")
+    ):
+        if not owns:
+            return "Cortex is not running"
+        return "Cortex is not running, so this research agent cannot run. Start it from Apps."
+    return "Cortex could not run this agent. Try again."
 
 
 def _stopped_event(run_id: int, agent_id: int) -> dict:
