@@ -46,8 +46,9 @@ def space(tmp_path, monkeypatch):
     (src / "staff.csv").write_text(
         "Name,Dept,Salary\n" + "\n".join(f"{n},{d},{s}" for n, d, s in STAFF) + "\n", encoding="utf-8")
     (src / "notes.txt").write_text("The warehouse in Penang stores 4500 pallets of rice.\n", encoding="utf-8")
+    (src / "leave.txt").write_text("The leave policy for sick days: staff get 12 days of paid sick leave each year.\n", encoding="utf-8")
     sp = store.create_space("T", depth_default="high")
-    out = ingest.ingest_paths(int(sp["id"]), [src / "sales.xlsx", src / "staff.csv", src / "notes.txt"], force=True)
+    out = ingest.ingest_paths(int(sp["id"]), [src / "sales.xlsx", src / "staff.csv", src / "notes.txt", src / "leave.txt"], force=True)
     assert out.get("ok"), out
     return int(sp["id"])
 
@@ -147,13 +148,16 @@ def test_second_question_in_a_chat_answers_like_a_fresh_chat(space):
 
 def test_short_followup_after_a_passage_answer_is_not_silently_repeated(space):
     hist: list = []
-    q1 = "how many pallets in Penang"
+    q1 = "what is the leave policy for sick days?"
     d1 = ask(space, q1, hist)
+    assert "12 days" in d1["answer"]
     turn(hist, q1, d1)
     d2 = ask(space, "and the average?", hist)
-    assert "could not" in d2["answer"].lower() and d2["provenance"].get("followup_not_applied")
+    assert "could not apply" in d2["answer"] and d2["provenance"].get("followup_not_applied")
+    assert d2["answer"].count("12 days") == d1["answer"].count("12 days")
     # a follow-up that does change the answer is not flagged
-    assert not ask(space, "and the warehouse in Penang?", hist)["answer"].lower().startswith("i could not")
+    d3 = ask(space, "and the warehouse in Penang?", hist)
+    assert "could not apply" not in d3["answer"] and "4500" in d3["answer"]
 
 
 # ---- pm-rag.3: a ranking carries like a total ------------------------------------------

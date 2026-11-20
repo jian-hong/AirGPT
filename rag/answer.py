@@ -1518,6 +1518,7 @@ def _retrieval_chain(query: str, **kw) -> dict:
 
 
 FOLLOWUP_NOT_CALCULATED = "This follow-up was answered from the passages, not calculated."
+FOLLOWUP_NOT_APPLIED = "I could not apply this follow-up to my last answer, so this is the same answer again. Ask the whole question and I will look it up."
 
 
 def answer_events(space_id: int, query: str, *, history: list[dict] | None = None, **kw) -> Iterator[dict]:
@@ -1534,7 +1535,29 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
 
         note = sheet_sql.reads_as_followup(query)
     if not note:
-        yield from _answer_events(space_id, query, history=history, **kw)
+        prev_text = next((str(m.get("content") or "").strip() for m in reversed(history or []) if m.get("role") == "assistant"), "")
+        q = (query or "").strip()
+        opens_as_followup = bool(prev_text) and len(q.split()) <= 12 and bool(
+            _FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q))
+        if not (opens_as_followup and not kw.get("use_llm", True)):
+            yield from _answer_events(space_id, query, history=history, **kw)
+            return
+        # Offline, a short follow-up that finds the same passages prints the same answer
+        # again, as if it had been answered. Hold the events until the answer is known.
+        held = list(_answer_events(space_id, query, history=history, **kw))
+        done = next((e for e in held if e.get("type") == "done"), None)
+        if done is None or str(done.get("answer") or "").strip() != prev_text:
+            yield from held
+            return
+        for ev in held:
+            if ev.get("type") == "delta":
+                continue
+            if ev.get("type") == "done":
+                text = FOLLOWUP_NOT_APPLIED + "\n\n" + str(ev.get("answer") or "")
+                yield {"type": "delta", "text": text}
+                ev = {**ev, "answer": text,
+                      "provenance": {**(ev.get("provenance") or {}), "followup_not_applied": True}}
+            yield ev
         return
     lane, said = "", False
     for ev in _answer_events(space_id, query, history=history, **kw):
