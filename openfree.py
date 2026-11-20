@@ -44,7 +44,7 @@ def _shell() -> str | None:
 def cannot_run() -> str:
     """Why OpenFree cannot start on this computer, in plain words; empty when it can."""
     if _shell() is None:
-        return "OpenFree can't start on this computer (it needs Windows or PowerShell 7). Paste an API key instead."
+        return "OpenFree only runs on Windows for now. Paste an API key instead."
     if not _SCRIPT.is_file():
         return "OpenFree is not part of this copy of AirGPT. Paste an API key instead."
     return ""

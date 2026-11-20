@@ -115,3 +115,24 @@ test("Mermaid palette follows the always-dark diagram panel", async () => {
   const ratioLine = (lum(mix) + 0.05) / (lum(panel) + 0.05);
   assert.ok(ratioLine >= 3, "line colour on the diagram panel is " + ratioLine.toFixed(2));
 });
+
+test("sweep misses: RAG stage link, danger button, add tile, error hints, key manager counts", async () => {
+  await page.evaluate(() => {
+    document.getElementById("ltHost").insertAdjacentHTML("beforeend", `
+      <div class="rag-chat-stage" style="height:auto;min-height:0;animation:none"><button class="rag-back-sessions" id="ltStageBack">All sessions</button><p class="hint" id="ltStageHint">No messages yet</p></div>
+      <button class="btn danger" id="ltDanger">Delete</button>
+      <p class="hint" id="ltErrHint" style="color:#e03131">Could not reach the engine.</p>
+      <p class="cortex-tag"><strong id="ltTagStrong">cpu_gguf</strong></p>
+      <div id="keyVaultModal"><button class="kv-group-btn" id="ltKvBtn">Cloud <span id="ltKvCount" style="opacity:.7">0/7</span></button></div>`);
+  });
+  for (const sel of ["#ltStageBack", "#ltStageHint", "#ltDanger", "#ltErrHint", "#ltTagStrong", "#ltKvCount"]) {
+    const r = await page.evaluate(MEASURE, [sel]);
+    assert.ok(r.ratio >= 4.5, sel + " " + r.ratio);
+  }
+});
+
+test("saving a new key forgets an earlier refusal", () => {
+  const i = html.indexOf("async function saveSettings(");
+  const body = html.slice(i, i + 1500);
+  assert.ok(body.includes("localStorage.removeItem('airgpt_key_refused')"));
+});

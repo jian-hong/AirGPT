@@ -68,6 +68,12 @@ body.theme-light{
 body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
 body.theme-light .field-eye{color:var(--text)}
 body.theme-light .kv-ok .kv-chip{color:var(--ok)}
+body.theme-light [style*="color:#e03131"]{color:var(--fail)!important}
+body.theme-light .btn.danger{color:var(--fail);border-color:rgba(180,35,24,.5)}
+body.theme-light .rag-back-sessions,body.theme-light .rag-chat-stage .hint{color:var(--text)}
+body.theme-light .cortex-tag strong{color:var(--text)}
+html body.theme-light .netie-add-box{color:var(--muted)!important}
+body.theme-light #keyVaultModal .kv-group-btn span,body.theme-light #kvList>p.hint{opacity:1!important}
 body.theme-light .pal-hint-btn{opacity:.9}
 body.theme-light .side-nav .nav-label,body.theme-light .side-section-hdr,body.theme-light .side-section-hdr .chev,body.theme-light .side-section-hdr small{opacity:1}
 body.theme-light .side-nav .nav-label:hover .chev{opacity:1}
@@ -15609,7 +15615,7 @@ async function saveSettings(silent){
   if(_aiAutoDirty&&$('setAiAuto'))body.ai_auto=$('setAiAuto').checked;
   [['DEEPSEEK_API_KEY','setDeepSeek'],['OPENROUTER_API_KEY','setOpenRouter'],['GROQ_API_KEY','setGroq'],['GOOGLE_API_KEY','setGoogle']].forEach(([k,id])=>{
     const v=($(id)&&$(id).value.trim())||'';
-    if(v&&v!==_savedKeys[id])body[k]=v;
+    if(v&&v!==_savedKeys[id]){body[k]=v;try{localStorage.removeItem('airgpt_key_refused')}catch(e){}}   // a new key: forget the old refusal
   });
   const email=$('setEmail')?.value?.trim()||'';
   const emailNew=!!email&&email!==_emailLoaded;
@@ -16858,7 +16864,7 @@ function kvRender(){
       </div>
       <div class="kv-body">
         <p class="hint kv-note">${esc(nm(p.free_note))}</p>
-        <ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>
+        ${isOpenFree&&cantFree?'':`<ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>`}
         <div class="kv-actions">
           ${isOpenFree?(cantFree?`<p class="hint kv-cant">${esc(_kvOpenFree.why)}</p><button type="button" class="btn primary" disabled>Enable OpenFree · auto fallback</button>`:`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`):''}
           ${isOpenVault?`<button type="button" class="btn primary" onclick="event.stopPropagation();kvConnectOpenVault()">Connect OpenVault mesh</button>
