@@ -259,3 +259,10 @@ test("Try again on a failed edit keeps the waiting lines in the box too", async 
   assert.deepEqual(sent, ["edited question"]);
   assert.equal(ctx.box.value, "WAITING LINE\n\nmore");
 });
+
+test("an agent whose name has spaces runs on '@Research Bot ...', and the longer name wins", async () => {
+  const ctx = agentPage([{ id: 1, name: "Research" }, { id: 2, name: "Research Bot" }]);
+  assert.equal(await ctx.dispatchAtAgent("@research bot find the thing"), true);
+  assert.deepEqual(ctx.ran, [[2, "find the thing", "@research bot find the thing"]]);
+  assert.equal(await ctx.dispatchAtAgent("@Researcher find"), false);
+});

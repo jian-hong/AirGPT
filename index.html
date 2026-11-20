@@ -7715,14 +7715,16 @@ function setCortexThinkingMode(mode){
 }
 async function dispatchAtAgent(name){
   const m=(name||'').trim();if(!m.startsWith('@'))return false;
-  const agentName=m.slice(1).split(/\s+/)[0];
-  const rest=m.slice(1+agentName.length).trim();
-  if(!rest)return false;
   try{
     const agents=(await api('/api/agents').then(r=>r.json())).agents||[];
     // Only an exact name is a command. '@property versus @classmethod ...' is a question for the model.
-    const a=agents.find(x=>(x.name||'').toLowerCase()===agentName.toLowerCase());
+    // A name with spaces ('Research Bot') counts too: the longest name the line starts with, then a space.
+    const low=m.slice(1).toLowerCase();
+    const named=x=>{const n=String(x.name||'').trim().toLowerCase();return !!n&&low.startsWith(n)&&/^\s/.test(low.slice(n.length))};
+    const a=agents.filter(named).sort((p,q)=>String(q.name).trim().length-String(p.name).trim().length)[0];
     if(!a)return false;
+    const rest=m.slice(1+String(a.name).trim().length).trim();
+    if(!rest)return false;
     toast('Dispatching @'+a.name);
     if(!currentSession)await ensureChatSession();   // the line and the answer are saved in a chat
     runCortexAgentWithPrompt(a.id,rest,m);
