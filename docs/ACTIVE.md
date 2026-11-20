@@ -72,6 +72,31 @@ What exists in this repo and where. Update when structure changes, not when stat
   citations, web_used, degraded`. `GET /api/rag/passages/<chunk_id>` and
   `GET /api/rag/sources/<id>/file` (script types download only). URL ingest
   runs `_check_public_url` on every redirect hop. `/sources` refuses `force`.
+- A question stores the files sent with it (`messages.attachment_ids`, a
+  JSON list; NULL means saved before this existed and falls back to the
+  file rows right before it). Regenerate and Edit reload exactly those
+  through `_attachment_files`; files past 12 are named in the reply
+  (`_left_out_note`). A queued line is always a new question.
+- Restore (`clipdrop._restore_package`) skips secret and control files
+  (`_BACKUP_SECRET_FILES`, `_RESTORE_CONTROL_PREFIXES`) and Windows aliases
+  (`_alias_reason`), checks every `.db` opens as SQLite, and rolls back
+  from its safety copy on any failure.
+- `sanitizeHtml` drops `style`, url-bearing attributes, `id`, `name` and
+  classes (except `language-*` on code) from model, document and web
+  markup; `renderMd` sets KaTeX and Mermaid output aside with per-render
+  nonce tokens and puts them back only outside tags. KaTeX runs with
+  `maxSize`, `maxExpand`, `trust:false`.
+- RAG packs carry each sheet as a values-only CSV (`table_workbook`,
+  `table_sheet` in the manifest) so an imported space still calculates.
+  `rag/ingest._east_asian_codec` reads GBK, Big5, Shift-JIS, EUC and
+  UTF-16 without a byte-order mark; `looks_binary` decodes instead of
+  peeking; `unreadable_reason` names an encoding it cannot tell.
+- `openfree.py` `cannot_run()` -- OpenFree needs PowerShell (Windows or
+  `pwsh`); elsewhere the key manager says so and the enable route refuses
+  before changing settings.
+- `ui/touch.css` -- under `(pointer: coarse)`, small controls keep their
+  look and get an invisible 44x44 tap layer. On phones the chat title bar
+  folds Background tasks, Export and Share into one menu (`#chatMoreBtn`).
 - `tests/devkit/` -- stand-ins for live checks, not product code:
   `stub_llm.py` and `stub_rich.py` (OpenAI-compatible, log every request
   body), `stub_cortex.py` (keywords STUBSLOW, STUBFAIL, STUBEMPTY,

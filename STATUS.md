@@ -21,16 +21,17 @@
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Prompt lens, fork/export, chat instructions, saved prompts, command
-   box; whole-app audit (156 findings) fixed; cross-site guard, share
-   guests default-deny, one gate for every method. Includes PR #90 since
-   2026-11-20 (code merged clean, full suite green). Not verified: real
-   tunnel, real phone, real provider, live Cortex. Owner calls: P14-P21.
-6. **RAG reliability (PR #90, draft, merged into #91).** Synthetic
-   benches, hash embedder: 16 file types 480/480 top-5 cited; sheet
-   chunks keep headers; 8 languages top-5 26-30 of 30 (Arabic rank-1
-   weak). Chunker changed: index fingerprint schema 2, older scores not
-   comparable; n=320 NOT re-run.
+   Round 1: shell add-ons, prompt lens, whole-app audit (156 findings).
+   Round 2: PR #90 merged in; RAG totals checked against pandas, packs
+   keep calculating, turns keep their files, agents run only their own
+   tools, restore all-or-nothing, sanitizer drops styles and page ids,
+   phone title readable, light theme readable. Head `163220e`: 1434
+   passed, 0 failed, 9 skipped; JS 192; browser 27/27; Windows CI green.
+   Not verified: real tunnel, real phone, real provider, live Cortex,
+   Windows restore names. Owner calls: P14-P30.
+6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
+   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
+   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
 7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
    Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
    branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
@@ -41,7 +42,7 @@
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
 2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320 on the new chunker.
+   reliability epic and `pypdf`; re-score n=320; decide P22-P30.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

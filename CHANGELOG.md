@@ -2,6 +2,82 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-20 -- Round 2: RAG numbers you can trust, turns that keep their files, agents that say what happened
+
+- **PR #90 merged in on purpose** (RAG reliability backend: 16 file types,
+  sheet chunks keep headers, 8 languages, chunker schema 2). Code merged clean.
+- **How it was built.** 9 read-only lenses (RAG, chat logic, message box,
+  agents, data, security, screens); 7 build lanes, two of them in separate
+  cloud sessions, each followed by an independent verifier. A review of the
+  merged tree found 35 defects where lanes met; 4 fix lanes and a gap round
+  fixed them. An adversarial check of the result (5 reviewers on a live app,
+  plus two independent cloud reviews) found 40 more, 1 critical; 6 last lanes
+  and 2 follow-up lanes fixed them. Every lane's verifier found defects inside
+  the fixes (about 35 in all); each is fixed or parked below.
+- **RAG numbers.** Spreadsheet totals use one aggregate path over every row,
+  sheet and CSV, with a provenance line (what was summed, where, which file,
+  sheet and rows). "excluding X", "excl. X", "not in X", "other than X" and
+  "where X is not Y" are real NOT filters (blank cells kept and said); an
+  unknown value is refused in plain words, never dropped. Two sheets or values
+  named are answered per item and combined. Follow-ups ("and for South?", "and
+  the average?") re-run totals, group-bys and rankings; one that cannot be
+  calculated says it was answered from passages. A short question is no longer
+  glued to the previous one. "by X" with no such column says so. Blank groups
+  read "(blank)".
+- **RAG trust.** Cited passages open in a viewer; answers render Markdown with
+  per-passage chips and honesty notes; the upload report names every file not
+  added and why. The server refuses binary files by decoding them, and reads
+  Windows curly quotes and UTF-16 without a byte-order mark. Exported packs
+  carry no host folder (POSIX or Windows) and carry spreadsheets as
+  values-only CSV per sheet, so an imported space still calculates. Imported
+  chats are readable but never sent to the model. Web search uses the user's
+  own words: hard-coded demo goals (the founder's name, JEPA, OpenStax) are
+  gone. URL ingest refuses private addresses, also after redirects.
+- **Chat.** Stop stops the model and keeps the partial. Edit and Regenerate
+  work on the last turn and send exactly the files the question had (stored
+  with the question). A chat that is still answering refuses an edit or
+  regenerate in plain words; the check and the claim are one step. A failed or
+  stopped edit keeps the old answer and brings the edit back. A queued line is
+  always a new question (before, a queued line could replace and delete an
+  answered turn). Files past 12 are named, never dropped silently. Waiting
+  messages survive a reload; drafts are per chat; long chats page; replies
+  compress and static files answer 304.
+- **Message box.** Attached files reach the model as one untrusted block shown
+  in the prompt lens; Word files read without python-docx; phone Return makes a
+  new line; a counter and a cut note for long messages; + menu closes on
+  Escape; voice input; the IME guard.
+- **Agents.** An agent is offered and runs only its own tools, in the local
+  loop and in the Cortex request (the card says Cortex may not follow the
+  list). Runs live on a server thread, survive a reload and stop on Stop. A
+  run no model answered is a failed run with one plain sentence; refusals name
+  no URLs or settings; an empty Cortex answer is a failure; a restart closes
+  open runs as interrupted. Background tasks uses the page's token, says agents
+  are host-only on a phone, lights up as soon as a run starts, and Clear works
+  with Cortex up or down.
+- **Data and security.** Backups are host-only and leave out keys, logins,
+  share and licence files. Restore writes only what the app's own backups
+  contain, all or nothing, names its safety copy, and never touches a secret
+  file whatever the spelling (dot segments, case, trailing dots and spaces,
+  8.3 short names, device names). Deleting a chat removes its memory and vault
+  notes. The sanitizer drops style, url-bearing attributes and page ids from
+  model, document and web markup, so an answer can no longer cover the page,
+  fetch an address or hijack the message box; KaTeX output is size-capped. The
+  RAG view never loads a document's pictures or CSS.
+- **Screens.** Light theme readable in OpenIDE, the Hub, Settings, Mermaid
+  diagrams and the API key field. Touch controls have 44 px hit areas with
+  compact visuals. On phones the chat title is readable and its actions sit in
+  one menu (the founder's note); the report button never covers the gear, text
+  or chips.
+- **Windows CI.** Two new tests could not fail on Windows or failed only there
+  (a raw path searched inside JSON text; a case-variant file name on a
+  case-insensitive disk). Both now check every spelling and were proven to
+  fail with the protection switched off.
+- Parked: P22-P30.
+- Suite: 1434 passed, 0 failed, 9 skipped. JS: 192 passed. Browser: 27 of
+  27. Windows CI green on 163220e. Not verified: real tunnel, real phone,
+  real provider, live Cortex, Windows filesystem behaviour of restore names,
+  Safari and Firefox.
+
 ## 2026-11-13 -- Independent branch review, failed replies explained, code copy
 
 - Fresh review of the whole branch: four reviewers by area, every finding
