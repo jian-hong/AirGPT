@@ -146,3 +146,14 @@ def test_a_second_followup_after_the_note_still_gets_the_note(monkeypatch):
     history2 = history + [{"role": "user", "content": "q"}, {"role": "assistant", "content": "x", "provenance": {}}]
     evs = _run(monkeypatch, "and the Discount column?", history2)
     assert next(e for e in evs if e["type"] == "done")["answer"] == "Part one. Part two."
+
+
+def test_followup_after_a_ranking_says_it_was_not_calculated(monkeypatch):
+    # A ranking is calculated (it has its SQL) but leaves no carry; "and for South?" cannot
+    # repeat it and must not read like a calculation.
+    history = [
+        {"role": "user", "content": "which product has the highest total Amount in North"},
+        {"role": "assistant", "content": "x", "provenance": {"sql": "SELECT Product, SUM(Amount) FROM shop GROUP BY Product"}},
+    ]
+    evs = _run(monkeypatch, "and for South?", history)
+    assert next(e for e in evs if e["type"] == "done")["answer"].startswith(answer.FOLLOWUP_NOT_CALCULATED)

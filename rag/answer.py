@@ -1508,7 +1508,8 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
     note = False
     # A follow-up that already got the note leaves no carry behind, so the next one
     # ("and for South?") is still a follow-up to a calculation that was not repeated.
-    if isinstance(prev, dict) and (prev.get("carry") or prev.get("followup_not_calculated")):
+    # A ranking is calculated too (it has the statement) but has no carry to repeat.
+    if isinstance(prev, dict) and (prev.get("carry") or prev.get("sql") or prev.get("followup_not_calculated")):
         from rag import sheet_sql
 
         note = sheet_sql.reads_as_followup(query)
