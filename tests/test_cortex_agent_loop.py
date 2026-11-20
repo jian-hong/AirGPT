@@ -193,7 +193,7 @@ class CortexAgentLoopTests(unittest.TestCase):
                             )
         texts = [e.get("text") or "" for e in evs]
         self.assertTrue(any("Quality loop skipped" in t for t in texts))
-        self.assertTrue(any("offline" in t.lower() for t in texts))
+        self.assertTrue(any("cortex is not running" in t.lower() for t in texts))
 
     def test_research_agent_sends_prompt_id(self):
         seen = {}
@@ -259,7 +259,8 @@ class CortexAgentLoopTests(unittest.TestCase):
         texts = [e.get("text") or "" for e in evs]
         types = [e.get("type") for e in evs]
         self.assertIn("error", types)
-        self.assertTrue(any("Cortex owns this research agent" in t for t in texts))
+        # Plain words now (the engine's raw refusal stays in the server log).
+        self.assertTrue(any("Cortex is not running" in t and "research agent" in t for t in texts))
         self.assertFalse(any("Quality loop skipped" in t for t in texts))
         self.assertNotIn("done", types)
 

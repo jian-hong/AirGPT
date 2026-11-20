@@ -5327,6 +5327,7 @@ class Handler(BaseHTTPRequestHandler):
                 after = int((q.get("after") or ["0"])[0] or 0)
                 tail = agent_runtime.tail_run(rid, after)
                 if tail is None:
+                    agent_runtime.close_interrupted()  # an open row nothing here is running
                     row = next((r for r in agent_store.list_runs(None, 200) if int(r["id"]) == rid), None)
                     if not row:
                         return self._json(404, {"error": "run not found"})
@@ -8958,6 +8959,11 @@ def main():
             print(f"[license] sku={hb.get('sku')} online={hb.get('online', 'n/a')}")
     except Exception as e:
         print(f"[license] heartbeat skip: {e}")
+    try:
+        import agent_runtime
+        agent_runtime.close_interrupted(0)  # runs left open by the last run of the app
+    except Exception as e:
+        print(f"[agents] close-interrupted skip: {e}")
     threading.Thread(target=clipboard_loop, daemon=True).start()
     threading.Thread(target=screenshot_loop, daemon=True).start()
     _boot_tunnel_threads()
