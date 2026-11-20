@@ -169,11 +169,17 @@ class OpenInSpaceTests(GuestScopeBase):
         cls.pdf = clipdrop.post_message("1.1.1.1", "d", file_data=b"%PDF-1.4 " + os.urandom(16), filename="s.pdf", session_id=cls.sid_a, auto_analyze=False)
 
     def fake_exe(self, tmp):
+        """A recorder that writes its argv, one per line. A .cmd on Windows, a shell script elsewhere."""
         out = os.path.join(tmp, "argv.txt")
-        exe = os.path.join(tmp, "NetieSpace.exe")
-        with open(exe, "w") as f:
-            f.write('#!/bin/sh\nprintf "%%s\\n" "$@" > "%s"\n' % out)
-        os.chmod(exe, os.stat(exe).st_mode | stat.S_IXUSR)
+        if os.name == "nt":
+            exe = os.path.join(tmp, "NetieSpace.cmd")
+            with open(exe, "w") as f:
+                f.write('@echo off\r\n>>"%s" echo %%~1\r\n>>"%s" echo %%~2\r\nif not "%%~3"=="" >>"%s" echo EXTRA\r\n' % (out, out, out))
+        else:
+            exe = os.path.join(tmp, "NetieSpace.exe")
+            with open(exe, "w") as f:
+                f.write('#!/bin/sh\nprintf "%%s\\n" "$@" > "%s"\n' % out)
+            os.chmod(exe, os.stat(exe).st_mode | stat.S_IXUSR)
         return exe, out
 
     def post_open(self, path, tok, remote, rel):
@@ -181,8 +187,6 @@ class OpenInSpaceTests(GuestScopeBase):
 
     def test_host_launches_with_list_argv(self):
         import tempfile
-        if os.name == "nt":
-            self.skipTest("fake exe is a shell script")
         with tempfile.TemporaryDirectory() as tmp:
             exe, out = self.fake_exe(tmp)
             with mock.patch.dict(os.environ, {"NETIE_SPACE_EXE": exe}):
@@ -190,13 +194,13 @@ class OpenInSpaceTests(GuestScopeBase):
                 self.assertEqual((st, body), (200, {"available": True}))
                 st, body = self.post_open("/api/space/open", self.host_tok, False, self.pdf["filepath"])
                 self.assertEqual((st, body.get("ok")), (200, True), body)
-                for _ in range(50):
-                    if os.path.isfile(out) and os.path.getsize(out):
+                for _ in range(100):
+                    if os.path.isfile(out) and open(out).read().count("\n") >= 2:
                         break
                     time.sleep(0.1)
-                argv = open(out).read().split("\n")[:2]
-            self.assertEqual(argv[0], "--preview")
-            self.assertEqual(argv[1], str((DATA_DIR / self.pdf["filepath"]).resolve()))
+                argv = [x.strip() for x in open(out).read().splitlines()]
+            self.assertEqual(argv[:2], ["--preview", str((DATA_DIR / self.pdf["filepath"]).resolve())])
+            self.assertEqual([x for x in argv[2:] if x], [])  # exactly two arguments
 
     def test_phone_and_tunnel_get_403_and_nothing_launches(self):
         import tempfile
