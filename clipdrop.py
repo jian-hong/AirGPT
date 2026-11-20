@@ -1818,14 +1818,54 @@ def _export_package() -> bytes:
     return buf.getvalue()
 
 
-# Tables a restored database must have, by path inside the data folder. A valid SQLite file with
-# other tables would be swapped in and break chats until the next fix-up, so it is refused first.
-_RESTORE_DB_TABLES = {
-    "clipdrop.db": ("messages", "devices", "chat_sessions"),
-    "agents.db": ("agents", "agent_runs"),
-    "rag/rag.db": ("knowledge_spaces", "sources", "chunks"),
-    "memory/index.db": ("memories",),
-}
+# Known databases, by path inside the data folder. A restore checks each one against what the app
+# itself builds: the app's own start-up code (CREATE TABLE and ALTER TABLE) is run on a copy in a
+# temporary folder, so there is no hand-kept list of columns to drift.
+_RESTORE_DB_PATHS = ("clipdrop.db", "agents.db", "rag/rag.db", "memory/index.db")
+_SCHEMA_PROBE = r"""
+import json, sqlite3, sys
+sys.path.insert(0, sys.argv[1])
+import importlib
+out = {"errors": {}, "schema": {}}
+# Some modules build their tables when first imported, so a bad database can fail at import.
+for rel, mod, fn, attr in (("clipdrop.db", "db", "init_db", "DB_PATH"), ("agents.db", "agent_store", "init", "DB_PATH"),
+                           ("rag/rag.db", "rag.store", "init", "DB_PATH"), ("memory/index.db", "memory_index", "init", "DB_PATH")):
+    m = None
+    try:
+        m = importlib.import_module(mod)
+        getattr(m, fn)(**({"force": True} if mod == "rag.store" else {}))
+    except Exception as e:
+        out["errors"][rel] = str(e)
+    if m is None:
+        continue
+    try:
+        con = sqlite3.connect(str(getattr(m, attr)))
+        out["schema"][rel] = {t: [c[1] for c in con.execute(f'PRAGMA table_info("{t}")')]
+                              for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        con.close()
+    except Exception as e:
+        out["errors"].setdefault(rel, str(e))
+print(json.dumps(out))
+"""
+_schema_reference: dict = {}
+
+
+def _probe_schema(seed: Path | None, rel: str) -> dict:
+    """Run the app's own start-up on a temporary data folder (holding a copy of `seed` at `rel`)."""
+    import sys, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        if seed is not None:
+            dest = Path(td) / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(seed, dest)
+        env = dict(os.environ, AIRGPT_DATA_DIR=td, AIRGPT_NO_BROWSER="1")
+        r = subprocess.run([sys.executable, "-c", _SCHEMA_PROBE, str(Path(__file__).resolve().parent)],
+                           capture_output=True, text=True, timeout=120, env=env)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr[-300:])
+        return json.loads(r.stdout.strip().splitlines()[-1])
+
+
 # One backup may not unpack to more than this: the larger of 1 GiB and four times the data folder.
 _RESTORE_MIN_CAP = 1 << 30
 _RESTORE_CAP_FACTOR = 4
@@ -1834,23 +1874,40 @@ _RESTORE_MAX_SEGMENT = 255
 
 
 def _db_refusal(path: Path, rel: str) -> str:
-    """'' when the database file is sound and has the tables the app needs, else a short reason."""
+    """'' when the database file is sound and fits what the app needs, else a short reason.
+    Missing tables are fine (the app creates them at start). A known table that is present must
+    end up with every column the app gives it, once the app's own upgrade steps have run."""
     try:
         with open(path, "rb") as fh:
             if fh.read(16) != b"SQLite format 3\x00":
                 return "it is not a database file"
         con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
         try:
-            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            miss = [t for t in _RESTORE_DB_TABLES.get(rel.lower(), ()) if t not in have]
-            if miss:
-                return "it is missing " + ", ".join(miss)
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 return "it is damaged"
+            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         finally:
             con.close()
     except Exception:
         return "it is not a working database"
+    key = next((k for k in _RESTORE_DB_PATHS if k == rel.lower()), None)
+    if key is None:
+        return ""
+    try:
+        if "ref" not in _schema_reference:
+            _schema_reference["ref"] = _probe_schema(None, key)["schema"]
+        ref = _schema_reference["ref"].get(key, {})
+        known = [t for t in have if t in ref]
+        if not known:
+            return "it has none of the tables this app uses"
+        got = _probe_schema(path, key)
+    except Exception:
+        return "it could not be checked against this app"
+    if key in got["errors"]:
+        return "its tables do not have the columns this app needs"
+    bad = [t for t in known if not set(ref[t]) <= set(got["schema"].get(key, {}).get(t, []))]
+    if bad:
+        return "its table " + ", ".join(sorted(bad)) + " does not have the columns this app needs"
     return ""
 
 

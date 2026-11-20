@@ -38,6 +38,19 @@ def _db(path: Path, tables) -> bytes:
     return b
 
 
+def app_db(rel: str, scratch: Path) -> bytes:
+    """A database exactly as the app creates it, made by the app's own start-up code."""
+    import subprocess
+    d = scratch / "fresh"
+    d.mkdir(exist_ok=True)
+    code = ("import db, agent_store, memory_index\nfrom rag import store\n"
+            "db.init_db(); agent_store.init(); memory_index.init(); store.init(force=True)")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {root!r})\n" + code],
+                   check=True, env=dict(os.environ, AIRGPT_DATA_DIR=str(d)), capture_output=True)
+    return (d / rel).read_bytes()
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -69,21 +82,63 @@ class Base(unittest.TestCase):
 
 class WrongTables(Base):
     def test_valid_sqlite_with_wrong_tables_is_refused(self):
-        self.refuse(_zip({"data/clipdrop.db": _db(self.scratch / "a.db", ["x"])}), "messages")
+        self.refuse(_zip({"data/clipdrop.db": _db(self.scratch / "a.db", ["x"])}), "none of the tables")
 
     def test_corrupt_and_empty_are_refused(self):
         self.refuse(_zip({"data/clipdrop.db": b"SQLite format 3\x00" + b"\xff" * 5000}))
         self.refuse(_zip({"data/clipdrop.db": b""}))
 
     def test_other_databases_are_checked(self):
-        self.refuse(_zip({"data/agents.db": _db(self.scratch / "b.db", ["x"])}), "agents")
-        self.refuse(_zip({"data/rag/rag.db": _db(self.scratch / "c.db", ["x"])}), "knowledge_spaces")
+        self.refuse(_zip({"data/agents.db": _db(self.scratch / "b.db", ["x"])}), "none of the tables")
+        self.refuse(_zip({"data/rag/rag.db": _db(self.scratch / "c.db", ["x"])}), "none of the tables")
 
     def test_a_real_database_still_restores(self):
-        good = _db(self.scratch / "d.db", ["messages", "devices", "chat_sessions", "seen_hashes"])
-        code, out = clipdrop._restore_package(_zip({"data/clipdrop.db": good, "data/rag/rag.db": _db(self.scratch / "e.db", ["knowledge_spaces", "sources", "chunks"])}))
+        good = app_db("clipdrop.db", self.scratch)
+        code, out = clipdrop._restore_package(_zip({"data/clipdrop.db": good, "data/rag/rag.db": app_db("rag/rag.db", self.scratch)}))
         self.assertEqual(code, 200, out)
         self.assertEqual((self.dd / "clipdrop.db").read_bytes(), good)
+
+
+class SchemaByNeed(Base):
+    """A database is judged by what the app needs, not by an exact list of tables."""
+
+    def _make(self, name, sql):
+        p = self.scratch / name
+        con = sqlite3.connect(p)
+        con.executescript(sql)
+        con.commit()
+        con.close()
+        b = p.read_bytes()
+        p.unlink()
+        return b
+
+    def test_older_backup_missing_tables_restores(self):
+        old = self._make("o.db", "create table messages(id integer primary key autoincrement, device_ip text, device_name text not null, "
+                         "text text, kind text not null default 'text', filename text, filepath text, thumb text, mime text, "
+                         "size integer, created_at real not null);"
+                         "create table chat_sessions(id integer primary key autoincrement, title text not null, "
+                         "created_at real not null, updated_at real not null);")
+        code, out = clipdrop._restore_package(_zip({"data/clipdrop.db": old}))
+        self.assertEqual(code, 200, out)
+        self.assertEqual((self.dd / "clipdrop.db").read_bytes(), old)
+
+    def test_made_up_columns_are_refused(self):
+        bad = self._make("b.db", "create table messages(id, x); create table devices(id, x); create table chat_sessions(id, x);")
+        self.refuse(_zip({"data/clipdrop.db": bad}), "columns")
+
+    def test_agents_and_memory_with_wrong_columns_are_refused(self):
+        self.refuse(_zip({"data/agents.db": self._make("c.db", "create table agents(id, x);")}), "columns")
+        self.refuse(_zip({"data/memory/index.db": self._make("d.db", "create table memories(id, x);")}), "columns")
+
+    def test_app_made_databases_restore(self):
+        files = {f"data/{r}": app_db(r, self.scratch) for r in ("clipdrop.db", "agents.db", "rag/rag.db", "memory/index.db")}
+        code, out = clipdrop._restore_package(_zip(files))
+        self.assertEqual(code, 200, out)
+
+    def test_damaged_database_is_refused(self):
+        good = bytearray(app_db("clipdrop.db", self.scratch))
+        good[len(good) // 2: len(good) // 2 + 3000] = b"\xff" * 3000
+        self.refuse(_zip({"data/clipdrop.db": bytes(good)}))
 
 
 class SizeCap(Base):

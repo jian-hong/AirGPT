@@ -66,8 +66,12 @@ class SecurityControlFiles(Base):
         (self.dd / "clipdrop.db").write_bytes(b"")
         con = sqlite3.connect(self.dd / "clipdrop.db")
         # A backup made by the app always carries the app's own tables; a database without them is refused.
-        for t in ("messages", "devices", "chat_sessions"):
-            con.execute(f"create table {t}(a)")
+        con.executescript("create table messages(id integer primary key autoincrement, device_ip text, device_name text not null, "
+                          "text text, kind text not null default 'text', filename text, filepath text, thumb text, mime text, "
+                          "size integer, created_at real not null);"
+                          "create table devices(ip text primary key, name text, user_agent text, last_seen real);"
+                          "create table chat_sessions(id integer primary key autoincrement, title text not null, "
+                          "created_at real not null, updated_at real not null);")
         con.execute("create table t(a)")
         con.execute("insert into t values (1)")
         con.commit()
