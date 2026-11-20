@@ -11851,6 +11851,17 @@ function ragMdHtml(md,scope,labels){
   // address the document chose, and the address can carry what the answer knows, so those
   // are never loaded here. Links stay (nothing loads until the person clicks).
   html=html.replace(/<img\b[^>]*>/gi,'(image not shown)').replace(/<\/?(?:video|audio|source|track|picture|svg|image|use)\b[^>]*>/gi,'');
+  // The tag strip above is not enough (a style or a table background loads a picture too), so
+  // parse the result and drop every attribute that can carry an address from any element.
+  try{
+    const t=document.createElement('template');t.innerHTML=html;
+    t.content.querySelectorAll('*').forEach(el=>{
+      ['background','srcset','poster','ping','lowsrc','dynsrc'].forEach(a=>el.removeAttribute(a));
+      [...el.attributes].forEach(a=>{if(/url\s*\(|image-set\s*\(|@import/i.test(a.value))el.removeAttribute(a.name);});
+    });
+    t.content.querySelectorAll('style,link,object,embed,iframe').forEach(el=>el.remove());
+    html=t.innerHTML;
+  }catch(e){html=esc(src).replace(/\n/g,'<br>');}
   return scope==null?html:ragLinkCiteChips(html,scope,labels);
 }
 function ragScrollToCite(scope,n){
@@ -13583,7 +13594,14 @@ function setupDropZone(){
 // back to the allow-list cleaner in ui/sanitize.js when the CDN is unreachable.
 function sanitizeHtml(html){
   if(window.DOMPurify){
-    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select'],FORBID_ATTR:['onerror','onload']});
+    // Text from a model, a document or the web must not restyle the page or fetch from an
+    // address it chose: no style attribute, no url-bearing presentation attribute, no value
+    // that carries url( or image-set(. Our own maths and diagrams are put back after this runs.
+    if(!sanitizeHtml._hook){
+      sanitizeHtml._hook=true;
+      DOMPurify.addHook('uponSanitizeAttribute',(node,d)=>{if(/url\s*\(|image-set\s*\(|@import/i.test(d.attrValue||''))d.keepAttr=false;});
+    }
+    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});
   }
   // No cleaner at all: show the text, never the markup.
   return window.AirSanitize?AirSanitize.clean(html):esc(html);
@@ -13626,16 +13644,21 @@ function renderMd(md){
     const i=mermaidBlocks.push(code.replace(/\s+$/,''))-1;
     return `\n\nMMDIAGRAMTOKEN${i}ENDTOKEN\n\n`;
   });
+  // Maths is our own output (it carries style attributes the sanitizer strips), so it is
+  // set aside as a token and put back after sanitizing, like the diagrams.
+  const mathBlocks=[];
+  const mathTok=h=>`KXMATHTOKEN${mathBlocks.push(h)-1}ENDTOKEN`;
   s=s.replace(/\$\$([\s\S]+?)\$\$/g,(m,tex)=>{
-    try{return katex.renderToString(tex,{displayMode:true,throwOnError:false});
-    }catch(e){return `<pre>${esc(tex)}</pre>`}
+    try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false}));
+    }catch(e){return mathTok(`<pre>${esc(tex)}</pre>`)}
   });
   s=s.replace(/\$([^$\n]+?)\$/g,(m,tex)=>{
-    try{return katex.renderToString(tex,{displayMode:false,throwOnError:false});
+    try{return mathTok(katex.renderToString(tex,{displayMode:false,throwOnError:false}));
     }catch(e){return esc(tex)}
   });
   let html=window.marked?marked.parse(s,{breaks:true}):mdFallback(s);
   html=sanitizeHtml(html);
+  if(mathBlocks.length)html=html.replace(/KXMATHTOKEN(\d+)ENDTOKEN/g,(m,i)=>mathBlocks[+i]||'');
   // Reinsert mermaid blocks AFTER sanitizing (we build the node ourselves, escaped).
   html=html.replace(/(?:<p>\s*)?MMDIAGRAMTOKEN(\d+)ENDTOKEN(?:\s*<\/p>)?/g,(m,i)=>{
     const code=mermaidBlocks[+i]||'';
