@@ -2080,13 +2080,24 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             return 500, {"error": (f"The restore failed part way ({e}). " + ("Everything was put back as it was. " if back_ok else
                          "Some files could not be put back, so open the safety copy to recover them. ") + f"Your data from before is saved in {safety}."),
                          "safety_copy": str(safety)}
+    # An older backup may lack tables or columns the app adds at start-up. The app is already running, so
+    # run those steps now on the restored files (otherwise chats answer 500 until the next restart).
+    upgrade_note = ""
+    try:
+        db.init_db()
+        import agent_store, memory_index
+        agent_store.init()
+        memory_index.init()
+    except Exception as e:
+        print(f"[restore] upgrade after restore failed: {e}")
+        upgrade_note = "Restart the app so it can finish updating the restored data. "
     return 200, {
         "ok": True,
         "restored": len(tmps),
         "skipped": skipped,
         "safety_copy": str(safety),
         "message": (
-            f"Restored {len(tmps)} files. Chats made after this backup were replaced. "
+            f"Restored {len(tmps)} files. Chats made after this backup were replaced. " + upgrade_note
             + (f"Skipped {len(skipped)} (see the list). " if skipped else "")
             + f"Your data from before was saved to {safety}."
         ),

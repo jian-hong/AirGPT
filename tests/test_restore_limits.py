@@ -122,6 +122,26 @@ class SchemaByNeed(Base):
         self.assertEqual(code, 200, out)
         self.assertEqual((self.dd / "clipdrop.db").read_bytes(), old)
 
+    def test_old_backup_works_in_the_running_app_after_restore(self):
+        """The app is already running when a backup is restored, so the restore must run the start-up upgrade."""
+        import db
+        old = self._make("o2.db", "create table messages(id integer primary key autoincrement, device_ip text, device_name text not null, "
+                         "text text, kind text not null default 'text', filename text, filepath text, thumb text, mime text, "
+                         "size integer, created_at real not null);"
+                         "create table chat_sessions(id integer primary key autoincrement, title text not null, "
+                         "created_at real not null, updated_at real not null);")
+        saved = db.DB_PATH
+        db.DB_PATH = self.dd / "clipdrop.db"
+        try:
+            code, out = clipdrop._restore_package(_zip({"data/clipdrop.db": old}))
+            self.assertEqual(code, 200, out)
+            with db._connect() as con:
+                con.execute("select source, ai_category, attachment_ids from messages").fetchall()
+                con.execute("select project_id from chat_sessions").fetchall()
+                con.execute("select * from devices").fetchall()
+        finally:
+            db.DB_PATH = saved
+
     def test_made_up_columns_are_refused(self):
         bad = self._make("b.db", "create table messages(id, x); create table devices(id, x); create table chat_sessions(id, x);")
         self.refuse(_zip({"data/clipdrop.db": bad}), "columns")
