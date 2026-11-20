@@ -10,6 +10,7 @@ import mimetypes
 import os
 import queue
 import re
+import sqlite3
 import secrets
 import shutil
 import socket
@@ -1723,6 +1724,31 @@ _BACKUP_SECRET_FILES: dict[str, str] = {
     "license.json": "the licence key",
 }
 _BACKUP_ENV_REASON = "your API keys (env.local)"
+# Files that decide who may reach this PC or where approvals are asked. A backup can be handed
+# round or doctored, so a restore never replaces these (a backup made here still carries them).
+# Chosen over an allow-list of folders: the data folder holds many kinds of user content
+# (chats, files, apps, skills, memory...) and a list of names would silently drop new ones.
+_RESTORE_CONTROL_PREFIXES = ("access_policy", "openvault", "cortex_settings", "network", "admin_state",
+                             "host_routines", "audit", "env.", ".env")
+_WIN_DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", *(f"COM{i}" for i in range(1, 10)),
+                *(f"LPT{i}" for i in range(1, 10)), "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3"}
+
+
+def _alias_reason(rel: str) -> str:
+    """Why a path inside the data folder could land on a different file on Windows ('' if fine)."""
+    low = rel.lower()
+    if re.search(r"%(2e|2f|5c|00)", low):
+        return "a name with an escaped slash or dot"
+    for seg in rel.split("/"):
+        if seg != seg.rstrip(" .") or not seg.strip(" ."):
+            return "a name Windows reads as a different file (ends in a dot or space)"
+        if any(ord(c) < 32 or c in '<>"|?*' for c in seg):
+            return "a name Windows does not allow"
+        if re.search(r"~[0-9]+(\.|$)", seg):
+            return "a short Windows name that can point at another file"
+        if seg.split(".")[0].rstrip(" ").upper() in _WIN_DEVICES:
+            return "a reserved Windows device name"
+    return ""
 
 
 def _backup_left_out() -> list[dict]:
@@ -1803,9 +1829,16 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             except (ValueError, OSError):
                 skipped.append({"file": name, "why": "outside the data folder"})
                 continue
+            why = _alias_reason(rel)
+            if why:
+                skipped.append({"file": name, "why": why})
+                continue
             secret = next((k for k in _BACKUP_SECRET_FILES if k.lower() == rel.rstrip(" .").lower()), None)  # Windows drops trailing dots and spaces
             if "/" not in rel and secret:
                 skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[secret]} stay as they are on this PC"})
+                continue
+            if "/" not in rel and rel.casefold().startswith(_RESTORE_CONTROL_PREFIXES):
+                skipped.append({"file": name, "why": "it controls who can reach this PC, so it stays as it is here"})
                 continue
             if _is_safety_zip(target):
                 skipped.append({"file": name, "why": "an earlier safety copy"})
@@ -1813,6 +1846,15 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             plan.append((name, target))
         if not plan:
             return 400, {"error": "That backup has no data to restore.", "skipped": skipped}
+        # A file and a folder with one name cannot both be restored, here or against what is on disk.
+        names = {t.relative_to(DATA_DIR).as_posix().lower() for _, t in plan}
+        for _, t in plan:
+            r = t.relative_to(DATA_DIR)
+            clash = any("/".join(r.parts[:i]).lower() in names for i in range(1, len(r.parts))) \
+                or (t.is_dir() and not t.is_symlink()) \
+                or any(a.is_file() for a in t.parents if a != DATA_DIR and DATA_DIR in a.parents)
+            if clash:
+                return 400, {"error": f"This backup cannot be restored: \"{r.as_posix()}\" is a file in one place and a folder in another. Nothing was changed.", "skipped": skipped}
         # Room first: the safety copy plus the restored files must fit on the disk.
         need = sum(zf.getinfo(n).file_size for n, _ in plan)
         try:
@@ -1839,26 +1881,77 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
                 pass
             return 500, {"error": f"Could not save a copy of your current data first, so nothing was changed ({e})."}
         tmps: list[tuple[Path, Path]] = []
-        try:
-            for name, target in plan:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                tmp = target.with_name(target.name + ".restoring")
-                tmps.append((tmp, target))
-                with zf.open(name) as src, open(tmp, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-        except Exception as e:
+        made_dirs: list[Path] = []
+        swapped: list[tuple[str, Path, bool]] = []
+
+        def _undo_stage():
             for tmp, _ in tmps:
                 try:
                     tmp.unlink()
                 except OSError:
                     pass
-            return 500, {"error": f"Restore stopped before changing anything ({e}).", "safety_copy": str(safety)}
-    with db._lock:
-        for tmp, target in tmps:
-            if app_auth:
-                app_auth._swap(tmp, target)
-            else:
-                os.replace(tmp, target)
+            for d in reversed(made_dirs):
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
+        try:
+            for name, target in plan:
+                missing = [a for a in reversed(target.parents) if a != DATA_DIR and DATA_DIR in a.parents and not a.exists()]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                made_dirs.extend(missing)
+                tmp = target.with_name(target.name + ".restoring")
+                tmps.append((tmp, target))
+                with zf.open(name) as src, open(tmp, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                if target.suffix.lower() in (".db", ".sqlite", ".sqlite3"):
+                    try:
+                        with open(tmp, "rb") as fh:
+                            if fh.read(16) != b"SQLite format 3\x00":
+                                raise ValueError("header")
+                        con = sqlite3.connect(f"file:{tmp.as_posix()}?mode=ro", uri=True)
+                        try:
+                            con.execute("SELECT count(*) FROM sqlite_master").fetchone()
+                        finally:
+                            con.close()
+                    except Exception:
+                        _undo_stage()
+                        return 400, {"error": f"\"{name}\" in this backup is not a working database, so nothing was changed. "
+                                              f"Your data was also saved to {safety}.", "safety_copy": str(safety), "skipped": skipped}
+        except Exception as e:
+            _undo_stage()
+            return 500, {"error": f"Restore stopped before changing anything ({e}). Your data was also saved to {safety}.", "safety_copy": str(safety)}
+        try:
+            with db._lock:
+                for (tmp, target), (name, _) in zip(tmps, plan):
+                    existed = target.is_file()
+                    if app_auth:
+                        app_auth._swap(tmp, target)
+                    else:
+                        os.replace(tmp, target)
+                    swapped.append((name, target, existed))
+        except Exception as e:
+            # Put every file already swapped back from the safety copy, remove what was new.
+            back_ok = True
+            try:
+                with zipfile.ZipFile(safety) as sz:
+                    for name, target, existed in swapped:
+                        try:
+                            if existed:
+                                tmp = target.with_name(target.name + ".restoring")
+                                with sz.open("data/" + target.relative_to(DATA_DIR).as_posix()) as src, open(tmp, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                                (app_auth._swap if app_auth else os.replace)(tmp, target)
+                            else:
+                                target.unlink()
+                        except Exception:
+                            back_ok = False
+            except Exception:
+                back_ok = False
+            _undo_stage()
+            return 500, {"error": (f"The restore failed part way ({e}). " + ("Everything was put back as it was. " if back_ok else
+                         "Some files could not be put back, so open the safety copy to recover them. ") + f"Your data from before is saved in {safety}."),
+                         "safety_copy": str(safety)}
     return 200, {
         "ok": True,
         "restored": len(tmps),

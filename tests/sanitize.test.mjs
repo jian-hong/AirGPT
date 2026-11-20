@@ -135,3 +135,10 @@ test("data-call dispatcher refuses browser built-ins such as eval", async () => 
   }, m[0]);
   assert.deepEqual(r, [null, null, null, true, null]);
 });
+
+test("fallback cleaner drops id, name and page classes, keeps the code language", async () => {
+  const out = await clean('<div id="input" class="modal-backdrop">a</div><a name="x" id="y">b</a><code class="language-js evil">c</code><span class="modal-backdrop">d</span>');
+  assert.ok(!/\s(id|name)=/.test(out), out);
+  assert.ok(!/modal-backdrop|evil/.test(out), out);
+  assert.match(out, /<code class="language-js">c<\/code>/);
+});

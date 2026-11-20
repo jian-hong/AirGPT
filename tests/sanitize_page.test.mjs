@@ -38,7 +38,7 @@ before(async () => {
     window.katex = { renderToString: (t, o) => `<span class="katex" style="height:1em;color:red"><span style="top:-3px">${window.esc(t)}</span></span>` };
   });
   const src = ["sanitizeHtml", "mdFallback", "renderMd", "ragSafeMoney", "ragLinkCiteChips", "ragMdHtml"].filter((n) => new RegExp("^function " + n + "\\(", "m").test(html)).map(grab).join("\n");
-  await page.addScriptTag({ content: src + "\nwindow.sanitizeHtml=sanitizeHtml;window.renderMd=renderMd;window.ragMdHtml=ragMdHtml;" });
+  await page.addScriptTag({ content: /^const _KATEX_SAFE=.*$/m.exec(html)[0] + "\n" + src + "\nwindow.sanitizeHtml=sanitizeHtml;window.renderMd=renderMd;window.ragMdHtml=ragMdHtml;" });
 });
 after(async () => { await browser.close(); });
 
