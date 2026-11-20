@@ -495,7 +495,7 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
     threading.Thread(target=run_analysis, args=(msg_id, question, mode, session_id, depth), daemon=True).start()
 
 
-def run_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False) -> None:
+def run_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False, attachments: list | None = None) -> None:
     if ai_engine:
         ai_engine.set_link_fetch_restricted(restrict_links)
     blocked = _ai_lockdown_block()
@@ -524,7 +524,9 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0, res
         return
     try:
         business = bool((app_license.get_status() if app_license else {}).get("business_features"))
-        result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business)
+        result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business, attachments=attachments)
+        if len(question or "") > ai_engine.QUESTION_LIMIT and result.get("analysis"):
+            result["analysis"] = ai_engine.QUESTION_CUT_NOTE + "\n\n" + result["analysis"]
         if result.get("error") == "ai_lockdown":
             db.add_message(
                 device_ip="127.0.0.1",
@@ -548,13 +550,13 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0, res
     bump_sync()
 
 
-def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False) -> None:
+def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False, attachments: list | None = None) -> None:
     rate_err = _check_ai_rate()
     if rate_err:
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=rate_err, kind="text", source="ai", session_id=session_id)
         bump_sync()
         return
-    threading.Thread(target=run_text_chat, args=(question, mode, session_id, restrict_links), daemon=True).start()
+    threading.Thread(target=run_text_chat, args=(question, mode, session_id, restrict_links, attachments), daemon=True).start()
 
 
 # ---- chat_classifier wiring: one-off small-talk → shared Scratch space, no linkage ----
@@ -602,6 +604,34 @@ def _is_scratch_session(sid: int) -> bool:
     return False
 
 
+def _attachment_files(ids, allowed_sessions) -> list[dict]:
+    """Stored non-image files the client says belong to this question.
+
+    Only files that live in this chat (or the chat it replies to) are read, so a guest
+    cannot ask the model to read a file from someone else's chat by guessing an id.
+    """
+    out: list[dict] = []
+    allowed = {int(x) for x in allowed_sessions if x}
+    seen: set[int] = set()
+    for raw in list(ids or [])[:12]:
+        try:
+            if int(raw) in seen:
+                continue
+            seen.add(int(raw))
+            m = db.get_message(int(raw))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not m or m.get("kind") != "file" or not m.get("filepath"):
+            continue
+        if int(m.get("session_id") or 0) not in allowed:
+            continue
+        path = (db.DATA_DIR / str(m["filepath"])).resolve()
+        if db.FILES.resolve() not in path.parents:
+            continue
+        out.append({"name": m.get("filename") or path.name, "path": path})
+    return out
+
+
 def _build_chat_history(
     session_id: int,
     context_ids: list,
@@ -643,6 +673,7 @@ def _cortex_prompt_trace(
     tier: str,
     web_search: bool,
     chat_block: str = "",
+    attach_block: str = "",
 ) -> dict:
     """What AirGPT handed to the Cortex agent loop for this turn.
 
@@ -661,6 +692,8 @@ def _cortex_prompt_trace(
         if isinstance(m, dict) and str(m.get("content") or "").strip()
     ]
     body = loop_prompt[len(chat_block):] if chat_block and loop_prompt.startswith(chat_block) else loop_prompt
+    if attach_block and body.endswith(attach_block):
+        body = body[: -len(attach_block)]
     prior = body[: max(0, len(body) - len(question))] if sent else ""
     cut = sum(1 for m in sent if len(str(m.get("content") or "").strip()) > 500)
     note = f"{len(sent)} of {len(usable)} earlier messages sent, each cut to 500 characters."
@@ -674,6 +707,7 @@ def _cortex_prompt_trace(
         "compressed": cut,
     }
     _pt.add(trace, "question", "Your message", question)
+    _pt.add(trace, "attachments", "Attached files", attach_block)
     _pt.add(trace, "chat_instructions", "Chat instructions", chat_block)
     if web_search:
         trace["notes"].append("Tools requested from Cortex: web_search, web_fetch.")
@@ -696,6 +730,7 @@ def _chat_stream_events(
     model_tier: str = "high",
     thinking: bool = True,
     web_search: bool = False,
+    attachments: list[dict] | None = None,
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
@@ -757,6 +792,11 @@ def _chat_stream_events(
                     prior.append(f"{role}: {content}")
             if prior:
                 loop_prompt = "Prior turns:\n" + "\n".join(prior) + "\n\nUser:\n" + loop_prompt
+        attach_block = ""
+        if attachments and ai_engine:
+            attach_block, _rep = ai_engine._attachments_block(attachments)
+            loop_prompt += "\n" + attach_block
+            attach_block = "\n" + attach_block
         chat_block = ""
         if session_id:
             try:
@@ -782,7 +822,7 @@ def _chat_stream_events(
         try:
             yield {"type": "prompt_trace", "trace": _cortex_prompt_trace(
                 question or "", history, loop_prompt, mode=mode, tier=model_tier, web_search=web_search,
-                chat_block=chat_block,
+                chat_block=chat_block, attach_block=attach_block,
             )}
         except Exception as e:
             # The answer is in hand. Without a record the panel says "no prompt
@@ -837,6 +877,7 @@ def _chat_stream_events(
             model_tier=model_tier,
             thinking=thinking,
             force_web=web_search,
+            attachments=attachments,
         ):
             if abort.is_set():
                 return
@@ -3417,6 +3458,8 @@ class Handler(BaseHTTPRequestHandler):
         reply_to_id = int(data.get("reply_to_id", 0) or 0)
         reply_snippet = str(data.get("reply_snippet", ""))[:500]
         context_ids = data.get("context_ids") or []
+        attach_ids = data.get("attachment_ids") or []
+        attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
             model_tier = "high"
@@ -3492,19 +3535,27 @@ class Handler(BaseHTTPRequestHandler):
         done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None}
 
         restrict_links = not _is_host_request(self.headers, self.client_address[0])
+        attach_files = _attachment_files(attach_ids, attach_sessions)
+        cut_note = ai_engine.QUESTION_CUT_NOTE if ai_engine and len(text) > ai_engine.QUESTION_LIMIT else ""
 
         def _producer() -> None:
             try:
                 ai_engine.set_link_fetch_restricted(restrict_links)
+                if cut_note:
+                    event_q.put({"type": "token", "text": cut_note + "\n\n"})
                 for ev in _chat_stream_events(
                     question, mode, history, abort,
                     session_id=session_id,
                     model_tier=model_tier,
                     thinking=thinking_flag,
                     web_search=web_search_flag,
+                    attachments=attach_files,
                 ):
                     if abort.is_set():
                         break
+                    if cut_note and ev.get("type") == "done":
+                        # Said in the reply itself (and saved with it), not only in the prompt panel.
+                        ev = {**ev, "analysis": cut_note + "\n\n" + str(ev.get("analysis") or "")}
                     if ev.get("type") == "prompt_trace":
                         # Kept for the reply row; the client reads it back by message id.
                         done_ev["trace"] = ev.get("trace")
@@ -5742,10 +5793,17 @@ class Handler(BaseHTTPRequestHandler):
                         if not sid:
                             daily = db.get_or_create_daily_image_session() if is_img else db.get_or_create_daily_text_session()
                             sid = daily["id"]
+                        # A document attached to a question must be in THIS chat, even when the same
+                        # file was added to another chat before (otherwise the model never reads it).
                         msg = post_message(
                             ip, dname, text=text, file_data=fdata, filename=up.get("filename"),
                             source="chat", session_id=sid, auto_analyze=not skip_ai, auto_clipboard=auto_clip,
+                            allow_duplicate=not is_img,
                         )
+                        if not msg and not is_img:
+                            msg = db.message_by_hash_in_session(hashlib.sha256(fdata).hexdigest(), sid)
+                            if msg:
+                                return self._json(200, {"ok": True, "duplicate": True, "message": msg})
                 elif text.strip():
                     if not sid:
                         daily = db.get_or_create_daily_text_session()
@@ -5807,7 +5865,11 @@ class Handler(BaseHTTPRequestHandler):
                     if target and (target.get("vision_cache") or target.get("ai_analysis")):
                         queue_analysis(int(target["id"]), text, mode=mode, session_id=sid, depth=depth)
                         return self._json(200, {"ok": True, "message": user_msg, "ai": "queued", "context_id": target["id"], "session_id": sid})
-                    queue_text_chat(text, mode=mode, session_id=sid, restrict_links=not _is_host_request(self.headers, self.client_address[0]))
+                    queue_text_chat(
+                        text, mode=mode, session_id=sid,
+                        restrict_links=not _is_host_request(self.headers, self.client_address[0]),
+                        attachments=_attachment_files(data.get("attachment_ids") or [], (sid, parent_session_id)),
+                    )
                     return self._json(200, {"ok": True, "message": user_msg, "ai": "queued_text", "session_id": sid})
                 if not sid:
                     daily = db.get_or_create_daily_text_session()
@@ -5815,7 +5877,17 @@ class Handler(BaseHTTPRequestHandler):
                 msg = post_message(ip, dname, text=text, source="chat", session_id=sid)
             if not msg:
                 return self._json(200, {"ok": True, "duplicate": True})
-            return self._json(200, {"ok": True, "message": msg})
+            out = {"ok": True, "message": msg}
+            if msg.get("kind") == "file" and ai_engine and msg.get("filepath"):
+                # Tell the client now whether the model will be able to read this file.
+                text, why = ai_engine.extract_attachment_text(db.DATA_DIR / msg["filepath"], msg.get("filename") or "")
+                out["attach"] = {
+                    "readable": not why,
+                    "reason": why,
+                    "chars": min(len(text), ai_engine.ATTACH_MAX_CHARS_FILE),
+                    "cut": len(text) > ai_engine.ATTACH_MAX_CHARS_FILE,
+                }
+            return self._json(200, out)
 
         if path == "/api/clipboard":
             data = json.loads(self._body().decode() or "{}")

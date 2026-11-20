@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="/ui/chattools.css"/>
 <link rel="stylesheet" href="/ui/codeblocks.css"/>
 <link rel="stylesheet" href="/ui/chatprefs.css"/>
+<link rel="stylesheet" href="/ui/voice.css"/>
 <link rel="stylesheet" href="/ui/snippets.css"/>
 <link rel="stylesheet" href="/ui/palette.css"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -246,7 +247,6 @@ body{background:var(--bg)}
   body.phone-client .menu-btn{width:40px;height:40px;font-size:18px;color:#fff}
   body.phone-client .send{width:44px;height:44px;font-size:18px;border-radius:50%}
   body.phone-client .phone-attach{display:flex!important}
-  body.phone-client #attachBtn{display:none!important}
   body.phone-client .composer{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
   body.phone-client .composer-inner{padding:6px 12px 8px;border-radius:0;gap:8px;min-height:0}
   body.phone-client .composer textarea{font-size:16px;min-height:24px;padding:6px 4px}
@@ -2323,6 +2323,20 @@ body.theme-light .reply-tile .stage-x{background:rgba(0,0,0,.08);color:var(--tex
 .plus-menu button .pm-kbd{margin-left:4px;font-size:10px;color:var(--muted);font-weight:500}
 .plus-menu button .pm-check{margin-left:2px;color:#60a5fa;font-size:13px}
 .plus-menu .pm-sep{display:none}
+.plus-menu .pm-phone{display:none}
+.char-count{width:100%;text-align:right;font-size:12px;color:var(--muted);padding:0 6px;font-variant-numeric:tabular-nums}
+.char-count[hidden]{display:none}
+.char-count.over{color:#e5484d;font-weight:600}
+.upload-prog{width:100%;padding:4px 8px;font-size:12px;color:var(--text)}
+.upload-prog[hidden]{display:none}
+.upload-prog .up-bar{height:4px;border-radius:2px;background:rgba(128,128,128,.25);margin-top:4px;overflow:hidden}
+.upload-prog .up-bar i{display:block;height:100%;width:0;background:#3dd68c;transition:width .15s}
+.upload-prog.warn{color:#e5484d}
+.upload-prog .up-x{display:inline-grid;width:44px;height:28px;margin-left:6px;font-size:14px;border-radius:8px}
+.proj-compose-row .proj-attach{margin-right:auto}
+.proj-stage{font-size:12px;color:var(--muted);padding:4px 2px}
+.proj-count{font-size:12px;color:var(--muted);text-align:right;padding:2px 4px}
+.proj-count.over{color:#e5484d;font-weight:600}
 body.theme-light .plus-menu{background:rgba(255,255,255,.96);border-color:rgba(0,0,0,.1);box-shadow:0 16px 40px rgba(0,0,0,.14)}
 body.theme-light .plus-menu button{background:rgba(0,0,0,.04)!important;color:var(--text)!important}
 body.theme-light .plus-menu button:hover{background:rgba(0,0,0,.08)!important}
@@ -2952,6 +2966,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <p class="cortex-wire-hint" id="cortexWireHint" hidden></p>
             <p class="manual-note" id="manualNote" role="status" hidden>Manual mode: the AI will not reply. Switch to AI (top right) to get an answer.</p>
             <button type="button" class="web-chip" id="webChip" hidden title="Turn web search off">Web search is on. Tap to turn off.</button>
+            <div class="upload-prog" id="uploadProg" role="status" aria-live="polite" hidden></div>
+            <div class="char-count" id="charCount" role="status" aria-live="polite" hidden></div>
             <div class="composer-row">
               <div class="phone-attach" id="phoneAttach">
                 <button type="button" id="camBtn" title="Take photo">📷</button>
@@ -2965,9 +2981,17 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
                   <button type="button" role="menuitem" data-pm="research"><span class="pm-ico">🔎</span> Research</button>
                   <button type="button" role="menuitem" data-pm="skills"><span class="pm-ico">📜</span> Skills</button>
                   <button type="button" role="menuitem" data-pm="connectors"><span class="pm-ico">▦</span> Connectors</button>
+                  <div class="pm-phone pm-effort" id="pmEffort" role="group" aria-label="Effort">
+                    <span class="pm-lab">Effort</span>
+                    <button type="button" data-pm-tier="basic">Basic</button>
+                    <button type="button" data-pm-tier="high">High</button>
+                    <button type="button" data-pm-tier="max">Max</button>
+                  </div>
+                  <button type="button" role="menuitem" class="pm-phone" data-pm="think" id="pmThink"><span class="pm-ico">✦</span> Thinking <span class="pm-check" id="pmThinkCheck" hidden>✓</span></button>
+                  <button type="button" role="menuitem" class="pm-phone" data-pm="prefs" id="pmPrefs"><span class="pm-ico">☰</span> Instructions</button>
                 </div>
               </div>
-              <textarea id="input" rows="1" placeholder=""></textarea>
+              <textarea id="input" rows="1" placeholder="" enterkeyhint="send" aria-label="Message"></textarea>
               <div class="composer-actions">
                 <div class="model-dd fab-hide" id="modelDd">
                   <button type="button" class="model-dd-btn" id="modelBtn" title="Effort: how much the AI thinks. Tap to choose." aria-label="Effort" aria-haspopup="menu" onclick="modelBtnClick()">
@@ -2985,7 +3009,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
                 <button type="button" class="send" id="sendBtn" title="Send">↑</button>
               </div>
             </div>
-            <input type="file" id="fileIn" accept="image/*,video/*,.pdf,.txt,.md,.zip,.doc,.docx,.ppt,.pptx" multiple/>
+            <input type="file" id="fileIn" accept="image/*,video/*,.pdf,.txt,.md,.csv,.json,.xlsx,.zip,.doc,.docx,.ppt,.pptx" multiple/>
             <input type="file" id="camIn" accept="image/*" capture="environment" style="display:none"/>
           </div>
         </div>
@@ -4020,6 +4044,23 @@ async function joinWaitlist(){
 }
 function autoGrowInput(){
   const t=$('input');t.style.height='auto';t.style.height=Math.min(t.scrollHeight,160)+'px';
+  updateCharCount();
+}
+// The model reads at most this many characters of one message (ai_engine.QUESTION_LIMIT).
+const INPUT_LIMIT=6000;
+const INPUT_WARN_AT=5000;
+function coarsePointer(){try{return matchMedia('(pointer:coarse)').matches}catch(e){return false}}
+// Return sends on a desktop. On a touch screen it is a new line; the Send button sends.
+function enterSends(e){return e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)&&!coarsePointer()}
+function charCountText(n){
+  if(n<INPUT_WARN_AT)return '';
+  const f=x=>x.toLocaleString('en-US');
+  return n<=INPUT_LIMIT?`${f(n)} / ${f(INPUT_LIMIT)}`:`${f(n)} / ${f(INPUT_LIMIT)}. Only the first ${f(INPUT_LIMIT)} will be read.`;
+}
+function updateCharCount(){
+  const el=$('input'),c=$('charCount');if(!el||!c)return;
+  const n=Array.from((el.value||'').trim()).length,t=charCountText(n); // characters, as the server counts them
+  c.textContent=t;c.hidden=!t;c.classList.toggle('over',n>INPUT_LIMIT);
 }
 let lastId=0,lastHistId=0,myName=localStorage.getItem('clipdrop_name')||'';
 let pullGen=0;
@@ -4053,14 +4094,31 @@ const MODE_BLURBS={
 };
 const OLD_MODES=['engineering','ml','finance'];
 function draftKey(){return currentSession?('s:'+currentSession):('new:'+(typeof currentMode==='function'?currentMode():'general'))}
+// Unsent drafts also live in localStorage (one key per chat) so a reload or a closed tab keeps them.
+const DRAFT_PREFIX='airgpt_draft:',DRAFT_MAX=200000;
+const _draftTimers={};
+function _draftWrite(k,v){
+  try{if(v)localStorage.setItem(DRAFT_PREFIX+k,String(v).slice(0,DRAFT_MAX));else localStorage.removeItem(DRAFT_PREFIX+k)}catch(e){}
+}
+function _draftRead(k){try{return localStorage.getItem(DRAFT_PREFIX+k)}catch(e){return null}}
 function saveComposerDraft(){
   const el=$('input');if(!el)return;
-  composerDraftByKey[draftKey()]=el.value;
+  const k=draftKey(),v=el.value;
+  composerDraftByKey[k]=v;
+  clearTimeout(_draftTimers[k]);
+  _draftTimers[k]=setTimeout(()=>{delete _draftTimers[k];_draftWrite(k,v)},400);
 }
+function clearComposerDraft(k){
+  clearTimeout(_draftTimers[k]);delete _draftTimers[k];
+  delete composerDraftByKey[k];_draftWrite(k,'');
+}
+window.addEventListener('pagehide',()=>{for(const k of Object.keys(_draftTimers)){clearTimeout(_draftTimers[k]);_draftWrite(k,composerDraftByKey[k])}});
 function restoreComposerDraft(){
   const el=$('input');if(!el)return;
-  const v=composerDraftByKey[draftKey()];
-  if(typeof v==='string')el.value=v;
+  const k=draftKey();
+  let v=composerDraftByKey[k];
+  if(typeof v!=='string'){v=_draftRead(k);if(typeof v==='string')composerDraftByKey[k]=v}
+  el.value=typeof v==='string'?v:''; // the chat being opened shows its own draft, not the last chat's
   try{autoGrowInput();updateSendVisibility()}catch(e){}
 }
 const MODEL_TIERS=['basic','high','max'];
@@ -4244,7 +4302,12 @@ function composerHasContent(){
   const t=($('input')?.value||'').trim();
   return !!(t||stagedFiles.length||contextIds.length);
 }
+function syncProjStage(){
+  const el=$('projStage');if(!el)return;
+  el.textContent=stagedFiles.length?('Attached: '+stagedFiles.map(f=>f.name||'file').join(', ')):'';
+}
 function updateSendVisibility(){
+  syncProjStage();
   const btn=$('sendBtn');
   if(!btn)return;
   btn.classList.toggle('visible',composerHasContent());
@@ -4330,13 +4393,26 @@ window.removeStagedFile=i=>{
   renderStageBar();
   renderFileCtxChips();
 };
+const MAX_UPLOAD_BYTES=100*1024*1024; // the server refuses a bigger file (clipdrop.MAX_BYTES)
+const MAX_STAGED_FILES=12;
 function stageFiles(files){
   const list=[...files].filter(Boolean);
   if(!list.length)return;
-  stagedFiles=stagedFiles.concat(list).slice(0,12);
+  const names=a=>a.slice(0,2).map(f=>shortFileName(f.name||'file')).join(', ')+(a.length>2?' and '+(a.length-2)+' more':'');
+  const empty=list.filter(f=>f.size===0);
+  const big=list.filter(f=>f.size>MAX_UPLOAD_BYTES);
+  const fit=list.filter(f=>f.size>0&&f.size<=MAX_UPLOAD_BYTES);
+  const kept=fit.slice(0,Math.max(0,MAX_STAGED_FILES-stagedFiles.length));
+  const dropped=fit.length-kept.length;
+  stagedFiles=stagedFiles.concat(kept);
   renderStageBar();
   renderFileCtxChips();
-  toast(`${list.length} file${list.length>1?'s':''} ready · tap send`);
+  const say=[];
+  if(kept.length)say.push(`${kept.length} file${kept.length>1?'s':''} ready. Tap send.`);
+  if(big.length)say.push(`${names(big)} ${big.length>1?'are':'is'} over 100 MB, so not added.`);
+  if(empty.length)say.push(`${names(empty)} ${empty.length>1?'are':'is'} empty, so not added.`);
+  if(dropped)say.push(`One message holds ${MAX_STAGED_FILES} files. ${dropped} not added.`);
+  toast(say.join(' ')||'No files added');
 }
 function renderFileCtxChips(){
   const bar=$('ctxBar');if(!bar)return;
@@ -5194,8 +5270,12 @@ async function showProjectFocus(key){
         <h1 class="proj-title">${esc(label)}</h1>
         <p class="proj-sub">${esc(blurb)}</p>
         <div class="proj-compose">
-          <textarea id="projComposeInput" rows="2" placeholder="Write a message…"></textarea>
+          <textarea id="projComposeInput" rows="2" placeholder="Write a message…" aria-label="Message" enterkeyhint="send"></textarea>
+          <div class="proj-count" id="projCount" role="status" aria-live="polite" hidden></div>
+          <div class="proj-stage" id="projStage" aria-live="polite"></div>
           <div class="proj-compose-row">
+            <button type="button" class="btn proj-attach" id="projAttach" aria-label="Attach files">📎 Attach</button>
+            <input type="file" id="projFileIn" multiple hidden accept="image/*,video/*,.pdf,.txt,.md,.csv,.json,.xlsx,.zip,.doc,.docx,.ppt,.pptx"/>
             <button type="button" class="btn primary" id="projComposeSend">Send</button>
           </div>
         </div>
@@ -5262,11 +5342,32 @@ async function showProjectFocus(key){
     if(!q){ta?.focus();return}
     await beginProjectAsk(key);
     const inp=$('input');
+    // The main box may hold something the user was typing there. Borrow it for the send, then give it back.
+    const prev=inp?inp.value:'';
     if(inp){inp.value=q;inp.dispatchEvent(new Event('input'));}
+    if(prev&&inp){
+      const t0=Date.now(),iv=setInterval(()=>{
+        if(inp.value!==q||Date.now()-t0>8000){
+          clearInterval(iv);
+          if(inp.value===''||inp.value===q){inp.value=prev;inp.dispatchEvent(new Event('input'))}
+        }
+      },40);
+    }
     try{await send?.()}catch(e){}
   };
   sendBtn?.addEventListener('click',doSend);
-  ta?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();doSend()}});
+  ta?.addEventListener('keydown',e=>{if(enterSends(e)){e.preventDefault();doSend()}});
+  if(ta){
+    ta.setAttribute('enterkeyhint',coarsePointer()?'enter':'send');
+    wireComposerAutocomplete(ta,{});
+    ta.addEventListener('input',()=>{
+      const c=$('projCount'),n=Array.from(ta.value.trim()).length,t=charCountText(n);
+      if(c){c.textContent=t;c.hidden=!t;c.classList.toggle('over',n>INPUT_LIMIT)}
+    });
+  }
+  $('projAttach')?.addEventListener('click',()=>$('projFileIn')?.click());
+  $('projFileIn')?.addEventListener('change',e=>{stageFiles([...e.target.files]);e.target.value=''});
+  syncProjStage();
   applyPlaceholder({force:true});
   updateProjectBtn?.();
 }
@@ -11752,17 +11853,24 @@ function ragDiagnoseImprove(){
 // ===== Global @ / slash autocomplete for every composer =====
 // @ → /api/mentions/suggest (memory · rag · project · chat · file + live spaces/sources)
 // / → /api/commands (slash registry). Insertion-only; navigation slashes act via handleSlashCommand().
-const _acState={el:null,opts:null,trigger:'',start:0,items:[],active:0,open:false,timer:null};
+const _acState={el:null,opts:null,trigger:'',start:0,items:[],active:0,open:false,timer:null,nav:false};
 function _acMenu(){
   let m=document.getElementById('composerAc');
   if(!m){
-    m=document.createElement('div');m.id='composerAc';
+    m=document.createElement('div');m.id='composerAc';m.setAttribute('role','listbox');m.setAttribute('aria-label','Suggestions');
     m.style.cssText='position:absolute;z-index:99999;display:none;max-height:280px;overflow:auto;min-width:240px;max-width:440px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.4);padding:4px;font-size:13px';
     document.body.appendChild(m);
   }
   return m;
 }
-function _acClose(){const m=document.getElementById('composerAc');if(m)m.style.display='none';_acState.open=false;_acState.items=[];}
+function _acAria(){
+  const el=_acState.el;if(!el)return;
+  el.setAttribute('aria-controls','composerAc');
+  el.setAttribute('aria-expanded',_acState.open?'true':'false');
+  if(_acState.open&&_acState.items.length)el.setAttribute('aria-activedescendant','acOpt'+_acState.active);
+  else el.removeAttribute('aria-activedescendant');
+}
+function _acClose(){const m=document.getElementById('composerAc');if(m)m.style.display='none';_acState.open=false;_acState.items=[];_acAria();}
 function _acDetect(el){
   const val=el.value||'';const pos=el.selectionStart||0;
   const m=/(^|\s)([@\/])([^\s@\/]*)$/.exec(val.slice(0,pos));
@@ -11790,6 +11898,7 @@ function _acRender(){
   m.innerHTML='';
   _acState.items.forEach((it,i)=>{
     const row=document.createElement('div');
+    row.id='acOpt'+i;row.setAttribute('role','option');row.setAttribute('aria-selected',i===_acState.active?'true':'false');
     row.style.cssText='padding:6px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'+(i===_acState.active?'background:var(--accent,#2b6cb0);color:#fff':'color:inherit');
     row.innerHTML='<span style="font-weight:600">'+esc(it.label)+'</span>'+(it.desc?' <span style="opacity:.62;font-size:12px">'+esc(it.desc)+'</span>':'');
     row.onmousedown=(e)=>{e.preventDefault();_acPick(i);};
@@ -11804,11 +11913,12 @@ function _acRender(){
   const mh=m.offsetHeight;
   const flipUp=(window.innerHeight-r.bottom)<(mh+10)&&r.top>(mh+10);
   m.style.top=(window.scrollY+(flipUp?r.top-mh-4:r.bottom+4))+'px';
-  m.style.visibility='visible';_acState.open=true;
+  m.style.visibility='visible';_acState.open=true;_acAria();
 }
 function _acHighlight(){
   const m=document.getElementById('composerAc');if(!m)return;
-  [...m.children].forEach((row,i)=>{row.style.background=(i===_acState.active)?'var(--accent,#2b6cb0)':'';row.style.color=(i===_acState.active)?'#fff':'inherit';});
+  [...m.children].forEach((row,i)=>{row.setAttribute('aria-selected',i===_acState.active?'true':'false');row.style.background=(i===_acState.active)?'var(--accent,#2b6cb0)':'';row.style.color=(i===_acState.active)?'#fff':'inherit';});
+  _acAria();
 }
 function _acPick(i){
   const it=_acState.items[i];const el=_acState.el;if(!it||!el)return;
@@ -11830,13 +11940,19 @@ async function _acOnInput(el,opts){
   await new Promise(r=>_acState.timer=setTimeout(r,140));
   const d2=_acDetect(el);if(!d2||d2.start!==det.start)return;
   _acState.items=await _acFetch(det.trigger,d2.token,_acState.opts);
-  _acState.active=0;_acRender();
+  _acState.active=0;_acState.nav=false;_acRender();
 }
 function _acOnKey(e){
   if(!_acState.open||e.target!==_acState.el)return;
-  if(e.key==='ArrowDown'){e.preventDefault();e.stopPropagation();_acState.active=(_acState.active+1)%_acState.items.length;_acHighlight();}
-  else if(e.key==='ArrowUp'){e.preventDefault();e.stopPropagation();_acState.active=(_acState.active-1+_acState.items.length)%_acState.items.length;_acHighlight();}
-  else if((e.key==='Enter'||e.key==='Tab')&&!imeBusy(e)){e.preventDefault();e.stopPropagation();_acPick(_acState.active);}
+  if(e.key==='ArrowDown'){_acState.nav=true;e.preventDefault();e.stopPropagation();_acState.active=(_acState.active+1)%_acState.items.length;_acHighlight();}
+  else if(e.key==='ArrowUp'){_acState.nav=true;e.preventDefault();e.stopPropagation();_acState.active=(_acState.active-1+_acState.items.length)%_acState.items.length;_acHighlight();}
+  else if(e.key==='Tab'&&!imeBusy(e)){e.preventDefault();e.stopPropagation();_acPick(_acState.active);}
+  else if(e.key==='Enter'&&!imeBusy(e)){
+    // Enter picks a suggestion only after an arrow key, or when the / or @ word starts the box.
+    // In "please explain the /rag" it is the user sending their message, not choosing a command.
+    if(_acState.nav||!(_acState.el.value||'').slice(0,_acState.start).trim()){e.preventDefault();e.stopPropagation();_acPick(_acState.active);}
+    else _acClose();
+  }
   else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();_acClose();}
 }
 function wireComposerAutocomplete(el,opts){
@@ -12787,6 +12903,7 @@ async function loadSessions(){
 }
 async function newChat(){
   saveComposerDraft();
+  {const box=$('input');if(box)box.value=''} // the old chat's draft is saved above; a new chat starts empty
   try{streamAbort?.abort()}catch(e){};aiPending=false;sendInFlight=false;sessionGen++;document.getElementById('ai-stream')?.remove();document.getElementById('pending-user')?.remove();
   currentSession=0;
   localStorage.setItem('clipdrop_session','0');
@@ -12802,6 +12919,7 @@ async function newChat(){
   showCenterProjects({asChats:true,forceWelcome:true,keepSession:false});
   loadVaultTree();
   syncChatTitleBar();
+  restoreComposerDraft();
   toast('New chat');
 }
 window.openSession=async id=>{
@@ -12897,8 +13015,9 @@ function setupRagAskBar(){
   const ta=$('ragAskInput');if(!ta||ta.dataset.wired)return;
   ta.dataset.wired='1';
   ta.addEventListener('keydown',e=>{
-    if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();ragSend();}
+    if(enterSends(e)){e.preventDefault();ragSend();}
   });
+  ta.setAttribute('enterkeyhint',coarsePointer()?'enter':'send');
   ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px';});
   // Press = type (focus). Press-and-hold on chrome = record notes.
   let _ragHold=0,_ragHeld=false;
@@ -13835,6 +13954,7 @@ async function retryFailedSend(){
   send();
 }
 async function reconcileAfterSendFail(errToast){
+  restoreUnsentText();
   hideThinking();
   document.getElementById('ai-stream')?.remove();
   const pending=document.getElementById('pending-user');
@@ -15084,7 +15204,26 @@ async function ensureChatSession(){
   }catch(e){}
   return 0;
 }
+// Text of the send in flight. If the send fails, the text goes back in the box instead of vanishing.
+let _unsentText='';
+function restoreUnsentText(){
+  const el=$('input');
+  if(el&&_unsentText&&!el.value){el.value=_unsentText;try{autoGrowInput();updateSendVisibility()}catch(e){}}
+}
 async function send(){
+  const k=draftKey();
+  _unsentText=($('input')?.value||'');
+  try{return await _sendInner()}
+  finally{
+    _unsentText='';
+    // A draft that was sent must not come back after a reload; one that was not sent stays.
+    const el=$('input'),cur=draftKey();
+    if(k!==cur)clearComposerDraft(k);
+    if(el&&el.value.trim())saveComposerDraft();else clearComposerDraft(cur);
+    updateCharCount();
+  }
+}
+async function _sendInner(){
   if(sendInFlight)return;
   const el=$('input');
   let text=(el?.value||'').trim();
@@ -15173,18 +15312,19 @@ async function send(){
   applyPlaceholder();
   updateSendVisibility();
   if(!replyContext)await ensureChatSession();
+  let attachIds=[];
   if(hasFiles){
     const files=[...stagedFiles];
     stagedFiles.forEach(f=>{if(f&&f._previewUrl){try{URL.revokeObjectURL(f._previewUrl)}catch(e){}}});
     stagedFiles=[];
     renderStageBar();
-    await sendFiles(files);
+    attachIds=(await sendFiles(files)).ids;
     if(!text)return;
   }
   if(!text)return;
   // Manual mode stays Manual — only AI when toggle is on
   if(aiMode){
-    if(info.online===false&&!info.has_ai_keys){toast('AI needs internet or API keys in Settings');return}
+    if(info.online===false&&!info.has_ai_keys){restoreUnsentText();toast('AI needs internet or API keys in Settings');return}
     const extra={};
     if(replyContext){
       extra.reply_to_id=replyContext.msgId;
@@ -15193,6 +15333,7 @@ async function send(){
       extra.session_id=0;
     }
     if(contextIds.length)extra.context_ids=contextIds;
+    if(attachIds.length)extra.attachment_ids=attachIds;
     sendInFlight=true;
     try{
       const streamResult=await sendStream(text,extra);
@@ -15202,6 +15343,7 @@ async function send(){
       const body={text,device_name:myName,session_id:replyContext?0:currentSession,mode:currentMode(),ai_mode:true,model_tier:currentModelTier(),thinking:isThinkingOn()};
       if(extra.reply_to_id){body.reply_to_id=extra.reply_to_id;body.reply_snippet=extra.reply_snippet;body.parent_session_id=extra.parent_session_id}
       if(contextIds.length)body.context_ids=contextIds;
+      if(attachIds.length)body.attachment_ids=attachIds;
       beginStreamUi(text);
       aiPending=true;showThinking();
       contextIds=[];contextLabels={};renderCtx();clearReplyContext();
@@ -15281,17 +15423,52 @@ function viaTunnel(){
     return /trycloudflare\.com|loca\.lt|lhr\.life|serveo\.net|localhost\.run/i.test(h)||!!(tunnelHref&&location.origin&&tunnelHref.includes(location.host));
   }catch(e){return false}
 }
+function uploadXhr(fd,{onProgress,timeoutMs}){
+  // fetch cannot report upload progress, so files go through XMLHttpRequest with the same headers api() sends.
+  return new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();
+    x.open('POST',API()+'/api/messages');
+    x.setRequestHeader('X-AirGPT-Token',authToken);
+    x.setRequestHeader('X-Device-Id',getDeviceId());
+    x.setRequestHeader('X-Device-Name',(typeof myName!=='undefined'&&myName)?myName:(localStorage.getItem('clipdrop_name')||''));
+    if(sessionNonce)x.setRequestHeader('X-AirGPT-Session-Nonce',sessionNonce);
+    x.timeout=timeoutMs;
+    x.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total)};
+    x.onload=()=>{let d={};try{d=JSON.parse(x.responseText||'{}')}catch(e){}resolve({ok:x.status>=200&&x.status<300,status:x.status,data:d})};
+    x.onerror=()=>reject(new Error('network'));
+    x.ontimeout=()=>{const e=new Error('timed out');e.name='AbortError';reject(e)};
+    x.send(fd);
+  });
+}
+function showUploadProgress(name,i,n,frac){
+  const el=$('uploadProg');if(!el)return;
+  const pct=Math.round(Math.max(0,Math.min(1,frac||0))*100);
+  el.classList.remove('warn');el.hidden=false;
+  el.innerHTML=`<span>Adding ${n>1?i+' of '+n+': ':''}${esc(shortFileName(name))} · ${pct}%</span><div class="up-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div>`;
+}
+function showUploadNotes(lines){
+  const el=$('uploadProg');if(!el)return;
+  if(!lines.length){el.hidden=true;el.innerHTML='';return}
+  el.classList.add('warn');el.hidden=false;
+  el.innerHTML=lines.map(l=>`<div>${esc(l)}</div>`).join('')+'<button type="button" class="up-x" aria-label="Dismiss" onclick="showUploadNotes([])">×</button>';
+}
+// Returns {ids}: the stored message id of each document that was added, so the question can name them.
 async function sendFiles(files){
-  if(!files.length)return;
+  const result={ids:[]};
+  if(!files.length)return result;
   ensureDeviceName();
   const btns=[$('attachBtn'),$('camBtn'),$('libBtn')].filter(Boolean);
   btns.forEach(b=>{b.disabled=true});
   if($('attachBtn'))$('attachBtn').textContent='…';
   const tunnel=viaTunnel()||onPhone;
-  toast(tunnel?'Compressing & uploading…':'Uploading…');
   let sent=0, dup=0, failed=0, lastErr='';
+  const notes=[];
+  showUploadProgress(files[0].name||'file',1,files.length,0);
   try{
+    let n=0;
     for(const raw of files){
+      n++;
+      const name=raw.name||'file';
       const f=tunnel?await compressImageForTunnel(raw):raw;
       const fd=new FormData();
       fd.append('file',f,f.name||('photo.'+((f.type||'').split('/')[1]||'jpg')));
@@ -15299,32 +15476,47 @@ async function sendFiles(files){
       fd.append('session_id',String(currentSession||0));
       if(onPhone||!aiMode)fd.append('no_ai','1');
       if(onPhone)fd.append('auto_clipboard','1');
-      const ctrl=new AbortController();
-      const timer=setTimeout(()=>ctrl.abort(),tunnel?180000:90000);
+      showUploadProgress(name,n,files.length,0);
       try{
-        const r=await api('/api/messages',{method:'POST',body:fd,signal:ctrl.signal});
-        clearTimeout(timer);
-        const d=await r.json().catch(()=>({}));
-        if(!r.ok){failed++;lastErr=d.error||('HTTP '+r.status);continue}
-        if(d.duplicate)dup++;
-        else if(d.ok)sent++;
-        else{failed++;lastErr=d.error||'rejected'}
+        let r=await uploadXhr(fd,{timeoutMs:tunnel?180000:90000,onProgress:fr=>showUploadProgress(name,n,files.length,fr)});
+        if(r.status===401||r.status===403){
+          // the session needs to be re-established: api() knows how
+          const rr=await api('/api/messages',{method:'POST',body:fd});
+          r={ok:rr.ok,status:rr.status,data:await rr.json().catch(()=>({}))};
+        }
+        const d=r.data||{};
+        if(!r.ok){failed++;lastErr=d.error||('HTTP '+r.status);notes.push(`${name} was not added: ${lastErr}.`);continue}
+        if(d.duplicate){
+          dup++;
+          // the same file is already in this chat: the question can still use it
+          if(d.message&&d.message.kind==='file'&&d.message.id)result.ids.push(d.message.id);
+          else notes.push(`${name} was already added once, so it was skipped. The AI reads a file only when it is in this chat.`);
+        }
+        else if(d.ok){
+          sent++;
+          if(d.message&&d.message.kind==='file'&&d.message.id)result.ids.push(d.message.id);
+          if(d.attach&&!d.attach.readable&&aiMode)notes.push(`${name} is in the chat, but the AI cannot read it: ${d.attach.reason}.`);
+          else if(d.attach&&d.attach.cut&&aiMode)notes.push(`${name} is long. The AI will read the first ${d.attach.chars.toLocaleString('en-US')} characters.`);
+        }
+        else{failed++;lastErr=d.error||'rejected';notes.push(`${name} was not added: ${lastErr}.`)}
       }catch(e){
-        clearTimeout(timer);
         failed++;
         lastErr=e?.name==='AbortError'?'timed out (tunnel slow)':(e?.message||'network');
+        notes.push(`${name} was not added: ${lastErr}.`);
         console.error('upload',e);
       }
     }
-    if(sent)toast(`Sent ${sent} file${sent>1?'s':''} to PC`);
+    if(sent)toast(`Added ${sent} file${sent>1?'s':''} to this chat`);
     else if(dup&&!failed)toast('Already in this chat (not added again)');
-    else if(failed)toast('Upload failed'+(lastErr?': '+lastErr:' — check tunnel/WiFi'));
+    else if(failed)toast('Upload failed'+(lastErr?': '+lastErr:'. Check the tunnel or WiFi.'));
     pullChat();pullHistory();
   }finally{
+    showUploadNotes(notes);
     btns.forEach(b=>{b.disabled=false});
     if($('attachBtn'))$('attachBtn').textContent='+';
     updateSendVisibility();
   }
+  return result;
 }
 
 $('sendBtn').onclick=send;
@@ -15344,6 +15536,14 @@ function closePlusMenu(){
   if(m){m.classList.remove('open');m.hidden=true}
   if(b)b.setAttribute('aria-expanded','false');
 }
+function syncPlusSheet(){
+  const manual=!aiMode;
+  ['pmEffort','pmThink','pmPrefs'].forEach(id=>{const el=$(id);if(el)el.hidden=manual});
+  document.querySelectorAll('#pmEffort [data-pm-tier]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pmTier===modelTier?'true':'false'));
+  const t=$('pmThink');
+  if(t){const ok=thinkingAllowed();t.disabled=!ok;const c=$('pmThinkCheck');if(c)c.hidden=!(ok&&thinkingEnabled)}
+  const p=$('pmPrefs');if(p)p.hidden=manual||!document.querySelector('.cprefs-btn');
+}
 function togglePlusMenu(force){
   const m=$('plusMenu'),b=$('attachBtn');if(!m||!b)return;
   const open=typeof force==='boolean'?force:!m.classList.contains('open');
@@ -15355,12 +15555,14 @@ function togglePlusMenu(force){
   }
   m.classList.toggle('open',open);m.hidden=!open;
   b.setAttribute('aria-expanded',open?'true':'false');
-  if(open){syncPlusWebCheck();try{$('projectDd')?.classList.remove('open')}catch(e){}}
+  if(open){syncPlusWebCheck();syncPlusSheet();try{$('projectDd')?.classList.remove('open')}catch(e){}}
 }
 $('attachBtn').onclick=e=>{e.stopPropagation();togglePlusMenu()};
 $('webChip').onclick=()=>{setWebSearch(false);toast('Web search off')};
 syncPlusWebCheck();
 $('plusMenu')?.addEventListener('click',e=>{
+  const tierBtn=e.target.closest('button[data-pm-tier]');
+  if(tierBtn){setModelTier(tierBtn.dataset.pmTier);syncPlusSheet();return}
   const btn=e.target.closest('button[data-pm]');if(!btn)return;
   const act=btn.dataset.pm;
   closePlusMenu();
@@ -15380,6 +15582,11 @@ $('plusMenu')?.addEventListener('click',e=>{
   }else if(act==='skills'){
     const el=$('input');if(el){el.value='/skill ';el.focus();el.dispatchEvent(new Event('input'))}
     toast('Cortex auto-wires. Type /skill <pack> to force.');
+  }else if(act==='think'){
+    toggleThinking();
+    toast(thinkingEnabled?'Thinking is on':'Thinking is off');
+  }else if(act==='prefs'){
+    document.querySelector('.cprefs-btn')?.click();
   }else if(act==='connectors'){
     toast('Connectors are in Settings, under Tools & MCPs');
     openSettings('tools');
@@ -15401,9 +15608,26 @@ if($('camIn'))$('camIn').onchange=e=>{
   if(onPhone){sendFiles([...e.target.files]);e.target.value='';return}
   stageFiles([...e.target.files]);e.target.value='';
 };
-$('input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!imeBusy(e)){e.preventDefault();send()}};
+$('input').onkeydown=e=>{if(enterSends(e)){e.preventDefault();send()}};
+$('input').setAttribute('enterkeyhint',coarsePointer()?'enter':'send');
 wireComposerAutocomplete($('input'),{});
 $('input').addEventListener('input',()=>{autoGrowInput();updateSendVisibility();saveComposerDraft()});
+if(!$('input').value)restoreComposerDraft();
+// The floating report button must never sit on Send, however tall the box grows.
+function keepBugFabOffComposer(){
+  const b=$('bugReportBtn'),c=$('composerChrome');
+  if(!b||!c||innerWidth<=760)return; // the phone layout parks it with --phone-fab-b
+  const f=b.getBoundingClientRect(),r=c.getBoundingClientRect();
+  if(!r.width||!r.height)return;
+  if(f.right>r.left&&f.left<r.right&&f.bottom>r.top&&f.top<r.bottom){
+    b.style.top=Math.max(8,Math.round(r.top-f.height-8))+'px'; // not saved: a spot the user picked is theirs
+  }
+}
+try{
+  if(window.ResizeObserver)new ResizeObserver(keepBugFabOffComposer).observe($('composerChrome'));
+  window.addEventListener('resize',()=>setTimeout(keepBugFabOffComposer,0));
+  setTimeout(keepBugFabOffComposer,800);
+}catch(e){}
 $('input').addEventListener('paste',e=>{
   const files=[...e.clipboardData.files];
   if(files.length){e.preventDefault();stageFiles(files)}
@@ -15646,6 +15870,7 @@ async function tryQrAutoLogin(){
 <script src="/ui/chattools.js"></script>
 <script src="/ui/codeblocks.js"></script>
 <script src="/ui/chatprefs.js"></script>
+<script src="/ui/voice.js"></script>
 <script src="/ui/snippets.js"></script>
 <script src="/ui/palette.js"></script>
 <script>
