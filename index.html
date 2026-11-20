@@ -467,6 +467,8 @@ body.theme-light .connect-col .conn-card.is-qr-focus{outline-color:rgba(0,0,0,.1
   background:var(--surface);color:var(--text);font:inherit;font-size:12px;cursor:pointer;
 }
 .chat-share-btn:hover,.chat-title-more:hover{background:var(--surface2)}
+/* Phones fold these buttons into the one ... button (ui/phone.css); a laptop never sees it. */
+.chat-more-btn,.cta-lab{display:none}
 .chat-share-btn svg{width:15px;height:15px;display:block}
 /* ---- Presence: who else is in this chat right now ---------------------------- */
 .presence-stack{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:8px}
@@ -2989,9 +2991,11 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <span class="chat-titlebar-badge" id="chatTitleBadge" hidden></span>
           </div>
           <div class="presence-stack" id="presenceStack" hidden aria-label="People in this chat"></div>
-          <div class="chat-titlebar-actions">
+          <button type="button" class="chat-more-btn" id="chatMoreBtn" title="More" aria-label="More" aria-haspopup="menu" aria-expanded="false" aria-controls="chatTitleActions"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg></button>
+          <div class="chat-titlebar-actions" id="chatTitleActions">
             <button type="button" class="chat-share-btn bgtasks-title-btn" id="bgTasksTitleBtn" title="Background tasks" aria-label="Background tasks" onclick="if(window.bgTasks&&window.bgTasks.open)window.bgTasks.open()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5 12 21l8-4.5"/></svg>
+              <span class="cta-lab">Background tasks</span>
               <span class="bgtasks-title-dot" id="bgTasksTitleDot" hidden>0</span>
             </button>
             <button type="button" class="chat-share-btn" id="chatShareBtn" title="Share this chat" aria-label="Share this chat" onclick="shareChatFromHeader()">
@@ -14797,7 +14801,8 @@ function updateMsgJumpBar(){
   const nodes=aiMsgNodes().filter(m=>m.id!=='ai-stream');
   const n=nodes.length;
   if(countEl)countEl.textContent=n?String(n):'0';
-  if(n<1){bar.hidden=true;track.querySelectorAll('.msg-jump-node-btn').forEach(b=>b.remove());return}
+  // The reply rail belongs to a chat: not on OpenIDE, and not once another page has replaced the messages.
+  if(n<1||document.body.classList.contains('openide-mode')){bar.hidden=true;track.querySelectorAll('.msg-jump-node-btn').forEach(b=>b.remove());track.dataset.sig='';return}
   bar.hidden=false;
   // Rebuild only when count/ids change (keeps hover smooth)
   const sig=nodes.map(m=>m.id).join('|');
@@ -14821,6 +14826,13 @@ function updateMsgJumpBar(){
   }
   paintJumpNodes();
 }
+(function(){
+  // Re-check the rail when a page swaps what #chat holds or the page changes mode.
+  const c=$('chat');if(!c||!window.MutationObserver)return;
+  let raf=0;const q=()=>{if(!raf)raf=requestAnimationFrame(()=>{raf=0;updateMsgJumpBar()})};
+  new MutationObserver(q).observe(c,{childList:true});
+  new MutationObserver(q).observe(document.body,{attributes:true,attributeFilter:['class']});
+})();
 function currentAiJumpIndex(){
   const nodes=aiMsgNodes().filter(m=>m.id!=='ai-stream');
   if(!nodes.length)return -1;
