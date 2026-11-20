@@ -259,7 +259,9 @@ def finish_run(
         )
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=? WHERE id=?",
+            # A run the user stopped stays stopped: a late result must not turn it back into done.
+            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=? "
+            "WHERE id=? AND status!='cancelled'",
             (
                 status[:40],
                 (result or "")[:20000],
@@ -272,6 +274,14 @@ def finish_run(
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
+
+
+def is_cancelled(run_id: int) -> bool:
+    """True once the user pressed Stop on this run (the loop checks this between steps)."""
+    init()
+    with _conn() as conn:
+        row = conn.execute("SELECT status FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
+        return bool(row) and row["status"] == "cancelled"
 
 
 _OPEN_RUN_STATES = ("running", "queued", "claimed", "awaiting_human")

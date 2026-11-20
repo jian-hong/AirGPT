@@ -11,6 +11,7 @@ preset workflows.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -69,7 +70,10 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
     aid = int(run.get("agent_id") or 0)
     agent = agents_by_id.get(aid) or {}
     name = (agent.get("name") or f"Agent #{aid}")[:80]
-    prompt = (run.get("prompt") or "")[:400]
+    prompt = (run.get("prompt") or "")
+    # Older runs kept the page's long wrapper; show only what the person typed.
+    wrapped = re.match(r"Cortex \w+ turn for [^\n]*\nUser: ([^\n]*)", prompt)
+    prompt = (wrapped.group(1) if wrapped else prompt).strip()[:400]
     st = (run.get("status") or "queued").lower()
     if st in ("done", "completed", "finished"):
         panel_st = "done"
@@ -99,14 +103,20 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
     kind = "Subagent" if is_sub else "Agent"
     # Prefer finished analysis over queued meta JSON for excerpt.
     excerpt = ""
+    excerpt_src = ""
     if panel_st in ("done", "error", "cancelled"):
-        excerpt = (run.get("error") or raw_result or "")[:1200]
-        if meta and excerpt.startswith("{"):
-            excerpt = (run.get("error") or "")[:1200]
+        excerpt_src = run.get("error") or raw_result or ""
+        if meta and excerpt_src.startswith("{"):
+            excerpt_src = run.get("error") or ""
+        excerpt = excerpt_src[:8000]
     else:
         excerpt = prompt[:400]
     tools = _tool_detail(run)
     names = [t["tool"] for t in tools if t.get("tool")]
+    thought = " ".join(t.get("summary", "") for t in tools if t.get("tool") == "think")
+    runner = ""
+    if panel_st in ("done", "error"):
+        runner = "Cortex" if re.search(r"Cortex (quality loop|research brain)", thought) else "local model"
     return {
         "id": f"agent_run_{run.get('id')}",
         "name": name,
@@ -116,11 +126,13 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
         "elapsed": round(elapsed, 1),
         "tokens_estimated": True,
         "source": "cortex_agent",
+        "runner": runner,
         "totals": {
             "agents": 1,
             "agents_done": 1 if panel_st in ("done", "error", "cancelled") else 0,
             "tokens": 0,
             "tools": len(tools),
+            "tools_real": len([t for t in tools if t.get("tool") != "think"]),
             "phases_done": 1 if panel_st in ("done", "error", "cancelled") else 0,
             "phases_total": 1,
             "cost_myr": 0,
@@ -141,6 +153,7 @@ def _agent_card(run: dict, agents_by_id: dict[int, dict]) -> dict:
                         "tools": names,
                         "tool_detail": tools,
                         "excerpt": excerpt,
+                        "excerpt_chars": len(excerpt_src),
                         "error": (run.get("error") or "")[:500],
                         "elapsed": round(elapsed, 1),
                     }
