@@ -144,6 +144,22 @@ def _is_unseg(token: str) -> bool:
     return bool(token) and bool(_UNSEG_RE.match(token[0]))
 
 
+_HANGUL_RE = re.compile(r"[\uac00-\ud7af]")
+
+
+def _script_tokens(text: str) -> list[str]:
+    """Pieces for the script lane: Chinese/Japanese/Thai pieces as sira cuts them, and
+    Hangul words cut into overlapping 2-character pieces, so a stem ("창고") finds the
+    word with its ending attached ("창고에는")."""
+    out: list[str] = []
+    for t in sira.tokenize(fold_text(text)):
+        if _is_unseg(t):
+            out.append(t)
+        elif _HANGUL_RE.match(t[:1]) and t not in QUESTION_FLUFF:
+            out.extend(t[i : i + 2] for i in range(len(t) - 1))
+    return out
+
+
 def _script_index(conn, space_id: int) -> tuple[dict[str, set[int]] | None, int]:
     """(token -> ids of the chunks holding it, number of chunks), unsegmented tokens only."""
     sig = tuple(
@@ -162,11 +178,10 @@ def _script_index(conn, space_id: int) -> tuple[dict[str, set[int]] | None, int]
     post: dict[str, set[int]] = defaultdict(set)
     for r in conn.execute("SELECT id, text FROM chunks WHERE space_id=? AND kind='child'", (int(space_id),)):
         text = r["text"] or ""
-        if not _UNSEG_RE.search(text):
+        if not (_UNSEG_RE.search(text) or _HANGUL_RE.search(text)):
             continue
-        for t in set(sira.tokenize(fold_text(text))):
-            if _is_unseg(t):
-                post[t].add(int(r["id"]))
+        for t in set(_script_tokens(text)):
+            post[t].add(int(r["id"]))
     if len(_script_cache) >= 8:
         _script_cache.pop(next(iter(_script_cache)))
     _script_cache[key] = (sig, post)
@@ -174,7 +189,7 @@ def _script_index(conn, space_id: int) -> tuple[dict[str, set[int]] | None, int]
 
 
 def _script_query_tokens(query: str) -> list[str]:
-    return [t for t in sira.tokenize(fold_text(query)) if _is_unseg(t) and t not in QUESTION_FLUFF]
+    return [t for t in _script_tokens(query) if t not in QUESTION_FLUFF]
 
 
 def _chunk_rows(conn, ids: list[int]) -> dict[int, Any]:
