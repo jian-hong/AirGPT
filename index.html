@@ -13429,6 +13429,9 @@ function bindPresenceTyping(){
 }
 window.renderPresence=renderPresence;
 
+// What can change on a message that is already on screen (a screenshot's analysis finishing,
+// an error, a retry). appendChatTail compares it so such a message is redrawn in place.
+function msgSig(m){return `${m.ai_status||''}:${(m.ai_analysis||'').length}:${m.ai_model||''}:${m.ai_category||''}`}
 function renderMsg(m){
   indexMsg(m);
   const isAi=m.source==='ai';
@@ -13457,7 +13460,7 @@ function renderMsg(m){
   const author=(!isAi&&!me&&dn)
     ? `<div class="msg-author"><span class="msg-author-dot" style="background:${presenceColor(dn)}"></span>${esc(dn)}</div>`
     : '';
-  return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
+  return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}" data-sig="${msgSig(m)}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
     ${author}<div class="meta"><span>${esc(who)} · ${esc(when)}</span>
     <button type="button" class="msg-copy" onclick="event.stopPropagation();copyMessage(${m.id})">Copy</button>
     <button type="button" class="msg-reply" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${window.AirUI?AirUI.msgActionsHtml(m,isAi):''}</div>
@@ -13490,8 +13493,15 @@ function appendChatTail(data,sess){
   const win=fetched.filter(f=>f[0].id>=lo);
   if(!tail.length||tail.length>win.length)return false;
   for(let i=0;i<tail.length;i++)if(win[i][0].id!==tail[i])return false;
+  // A message already on screen whose analysis moved on (running to done, error, retry)
+  // is redrawn in place; the rest of the chat is left alone.
+  let redrawn=false;
+  for(let i=0;i<tail.length;i++){
+    const el=document.getElementById('msg-'+tail[i]);
+    if(el&&el.dataset.sig!==msgSig(win[i][0])){el.outerHTML=renderMsg(win[i][0]);redrawn=true}
+  }
   const fresh=win.slice(tail.length);
-  if(!fresh.length)return true;
+  if(!fresh.length){if(redrawn){wireFollowups();renderMermaidIn(box)}return true}
   const days=box.querySelectorAll('.day span');
   let lastLabel=days.length?days[days.length-1].textContent:'';
   let html='';

@@ -164,3 +164,16 @@ test("the 'still answering' note shows only for a question with no reply and no 
   ctx.syncGenNote(6, true);
   assert.equal(box.added, 1, "another chat's note is not drawn here");
 });
+
+test("a message already on screen whose analysis finished is redrawn in place", () => {
+  const box = fakeChat([1, 2]);
+  const els = { "msg-1": { dataset: { sig: ":0::" }, outerHTML: "old1" }, "msg-2": { dataset: { sig: "done:5::" }, outerHTML: "old2" } };
+  const { ctx } = appendCtx(box, { document: { getElementById: (id) => els[id] || null } });
+  vm.runInContext(grab("msgSig"), ctx);
+  const m1 = { id: 1, source: "chat", kind: "image", ai_status: "done", ai_analysis: "FINAL TEXT" };
+  const m2 = { id: 2, source: "ai", kind: "text", ai_status: "done", ai_analysis: "xxxxx" };
+  assert.equal(ctx.appendChatTail(payload(m1, m2), 7), true);
+  assert.equal(els["msg-1"].outerHTML, "<m1>", "the changed message is redrawn");
+  assert.equal(els["msg-2"].outerHTML, "old2", "an unchanged one is left alone");
+  assert.equal(box.inserted.length, 0);
+});
