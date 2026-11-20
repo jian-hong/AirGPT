@@ -933,7 +933,9 @@ def _chat_tool_defs(task: str) -> list[dict]:
     The `router` task picks a route and must answer in one hop; handing it tools
     would let a routing decision fan out into real work.
     """
-    if task == "router" or not _chat_tools_enabled():
+    # "agent": the local agent loop has its own tool protocol and its own per-agent
+    # tool list (agent_runtime). The generic chat tools must never ride along.
+    if task in ("router", "agent") or not _chat_tools_enabled():
         return []
     try:
         import chat_tools

@@ -3135,6 +3135,19 @@ class _HttpError(Exception):
 MAX_BODY = int(os.environ.get("AIRGPT_MAX_BODY_MB", "200") or 200) * 1024 * 1024
 
 
+_BAD_ID_SENTENCE = "That id is not valid."
+_ROUTE_FAIL_SENTENCE = "That did not work. Try again."
+
+
+def _route_int(raw, *, lo: int = 0, hi: int = 2**62) -> int | None:
+    """A whole number from a URL or body, or None. Strings, negatives and huge values are None."""
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if lo <= n <= hi else None
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
@@ -5413,12 +5426,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import agent_runtime
                 import agent_store
-                try:
-                    rid = int(path.split("/")[4])
-                except ValueError:
-                    return self._json(400, {"error": "bad run id"})
+                rid = _route_int(path.split("/")[4])
                 q = parse_qs(urlparse(self.path).query)
-                after = int((q.get("after") or ["0"])[0] or 0)
+                after = _route_int((q.get("after") or ["0"])[0] or 0)
+                if rid is None or after is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 tail = agent_runtime.tail_run(rid, after)
                 if tail is None:
                     agent_runtime.close_interrupted()  # an open row nothing here is running
@@ -5431,16 +5443,18 @@ class Handler(BaseHTTPRequestHandler):
                     if not self._sse_send(ev):
                         break
                 return self._sse_end()
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path.startswith("/api/agents/") and path.endswith("/runs"):
             try:
                 import agent_store
-                aid = int(path.split("/")[-2])
+                aid = _route_int(path.split("/")[-2], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 return self._json(200, {"runs": agent_store.list_runs(aid)})
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/agents/links":
             try:
@@ -7011,16 +7025,20 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import agent_store
 
-                aid = int(path.split("/")[3])
+                aid = _route_int(path.split("/")[3], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 return self._json(200, agent_store.delete_agent(aid))
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path.startswith("/api/agents/") and path.endswith("/run"):
             try:
                 import agent_runtime
                 import cortex_orchestrator
-                aid = int(path.rstrip("/").split("/")[-2])
+                aid = _route_int(path.rstrip("/").split("/")[-2], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 data = json.loads(self._body().decode() or "{}")
                 prompt = str(data.get("prompt") or data.get("text") or "").strip()
                 if not prompt:
@@ -7073,8 +7091,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not self._sse_send(ev):
                         break
                 return self._sse_end()
-            except Exception as e:
-                return self._json(500, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(500, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/agents/link":
             try:
@@ -8608,23 +8626,23 @@ class Handler(BaseHTTPRequestHandler):
                         breadth=int(data.get("breadth") or 3),
                     ),
                 )
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/cancel":
             try:
                 import workflow_engine
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, workflow_engine.cancel(str(data.get("task_id") or "")))
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/clear":
             try:
                 import workflow_engine
                 return self._json(200, workflow_engine.clear_finished())
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(500, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/recognize":
             try:
