@@ -65,7 +65,7 @@ class HubAccessBarHonestyStaticTest(unittest.TestCase):
 
     def test_host_only_prefixes_stay_closed(self):
         self.assertIn("/api/rag", clipdrop._HOST_ONLY_PREFIXES)
-        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 22)
+        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 24)  # + /api/export, /api/import
 
     def test_min_tests_stays_380(self):
         wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")

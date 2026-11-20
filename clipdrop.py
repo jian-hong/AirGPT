@@ -1073,6 +1073,8 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/restart-tunnel",  # drops the tunnel for every phone
     "/api/optimizers/", # pip install of optional packages
     "/api/agents",      # exact path too: "/api/agents/" alone left list + create open
+    "/api/export",      # whole-PC backup and history export (host only)
+    "/api/import",      # restore: replaces the data folder
 )
 
 # A machine-level write that only the host may do, while a read stays open (the page
@@ -1437,6 +1439,11 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
         else:
             h = hashlib.sha256(file_data).hexdigest()
         hash_preclaimed = False
+        # A file or screenshot attached in a chat is checked against that chat only:
+        # the same document in a second chat is normal use, not a duplicate. The
+        # global first-publisher-wins check stays for clipboard / drop capture.
+        if source == "chat" and session_id:
+            allow_duplicate = True
         if allow_duplicate and session_id:
             if db.hash_seen_in_session(h, session_id):
                 return None
@@ -1468,7 +1475,8 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
             return None
         msg = db.add_message(
             device_ip=device_ip, device_name=device_name, text=text, kind="text",
-            source=source, content_hash=h, session_id=session_id,
+            # Typed chat text is never a duplicate ("yes please" twice is two messages).
+            source=source, content_hash=None if source == "chat" else h, session_id=session_id,
         )
         if msg:
             bump_sync()
@@ -1525,19 +1533,152 @@ def _add_waitlist(email: str, reason: str, tier: str = "pro") -> dict:
     return {"ok": True, "message": "Added to waitlist — we'll email you at launch"}
 
 
+# What a backup never contains, and why. Login, passcode and share files would hand
+# whoever holds the zip the keys to every paired phone; env.local holds the API keys.
+_BACKUP_SECRET_FILES: dict[str, str] = {
+    "auth_tokens.json": "login tokens of paired phones",
+    "token_meta.json": "login tokens of paired phones",
+    "token_session_acl.json": "login tokens of share guests",
+    "workspace.json": "the passcode (hashed)",
+    "workspace.json.bad": "the passcode (hashed)",
+    "session_shares.json": "share links",
+    "project_shares.json": "share links",
+    "join_codes.json": "join codes",
+    "license.json": "the licence key",
+}
+_BACKUP_ENV_REASON = "your API keys (env.local)"
+
+
+def _backup_left_out() -> list[dict]:
+    out = [{"file": n, "why": w} for n, w in _BACKUP_SECRET_FILES.items()]
+    out.append({"file": "env.local", "why": _BACKUP_ENV_REASON})
+    return out
+
+
+def _is_safety_zip(p: Path) -> bool:
+    return p.name.startswith("pre-restore-") and p.suffix == ".zip"
+
+
+def _zip_data_folder(zf, *, for_backup: bool) -> list[str]:
+    """Add the data folder to zf as data/... Returns the names added.
+    A backup leaves out secrets and safety copies; a safety copy keeps everything."""
+    added: list[str] = []
+    data_dir = DATA_DIR
+    if not data_dir.is_dir():
+        return added
+    for p in data_dir.rglob("*"):
+        if not p.is_file() or _is_safety_zip(p) or p.name.endswith((".tmp", ".restoring")):
+            continue
+        rel = p.relative_to(data_dir)
+        if for_backup and len(rel.parts) == 1 and p.name in _BACKUP_SECRET_FILES:
+            continue
+        name = (Path("data") / rel).as_posix()
+        zf.write(p, name)
+        added.append(name)
+    return added
+
+
 def _export_package() -> bytes:
     import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        data_dir = DATA_DIR
-        if data_dir.is_dir():
-            for p in data_dir.rglob("*"):
-                if p.is_file():
-                    zf.write(p, Path("data") / p.relative_to(data_dir))
-        env = ROOT / "env.local"
-        if env.is_file():
-            zf.write(env, "env.local")
+        added = _zip_data_folder(zf, for_backup=True)
+        zf.writestr("MANIFEST.json", json.dumps({
+            "app": "AirGPT backup",
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "files": len(added),
+            "left_out": _backup_left_out(),
+            "note": "Login tokens, the passcode, share links, the licence key and API keys are "
+                    "never put in a backup. Set them up again on the new PC.",
+        }, indent=2))
     return buf.getvalue()
+
+
+def _restore_package(blob: bytes) -> tuple[int, dict]:
+    """Restore a backup zip into DATA_DIR. Returns (http status, answer).
+    Plans first (nothing written), saves the current data as pre-restore-<time>.zip,
+    writes every file to a temporary name, then renames them into place."""
+    import zipfile
+    data_root = DATA_DIR.resolve()
+    skipped: list[dict] = []
+    plan: list[tuple[str, Path]] = []
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        return 400, {"error": "That file is not a backup zip."}
+    with zf:
+        for name in zf.namelist():
+            norm = name.replace("\\", "/")
+            if norm.endswith("/") or norm == "MANIFEST.json":
+                continue
+            if ".." in norm.split("/") or norm.startswith("/") or ":" in norm:
+                skipped.append({"file": name, "why": "unsafe path"})
+                continue
+            if norm == "env.local":
+                skipped.append({"file": name, "why": "API keys are never restored from a backup; yours here stay as they are"})
+                continue
+            if not norm.startswith("data/"):
+                skipped.append({"file": name, "why": "not part of the data folder"})
+                continue
+            rel = norm[len("data/"):]
+            target = DATA_DIR / rel
+            try:
+                target.resolve().relative_to(data_root)
+            except (ValueError, OSError):
+                skipped.append({"file": name, "why": "outside the data folder"})
+                continue
+            if "/" not in rel and rel in _BACKUP_SECRET_FILES:
+                skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[rel]} stay as they are on this PC"})
+                continue
+            if _is_safety_zip(target):
+                skipped.append({"file": name, "why": "an earlier safety copy"})
+                continue
+            plan.append((name, target))
+        if not plan:
+            return 400, {"error": "That backup has no data to restore.", "skipped": skipped}
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        safety = DATA_DIR / f"pre-restore-{stamp}.zip"
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(safety, "w", zipfile.ZIP_DEFLATED) as sz:
+                _zip_data_folder(sz, for_backup=False)
+        except Exception as e:
+            try:
+                safety.unlink()
+            except OSError:
+                pass
+            return 500, {"error": f"Could not save a copy of your current data first, so nothing was changed ({e})."}
+        tmps: list[tuple[Path, Path]] = []
+        try:
+            for name, target in plan:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_name(target.name + ".restoring")
+                tmp.write_bytes(zf.read(name))
+                tmps.append((tmp, target))
+        except Exception as e:
+            for tmp, _ in tmps:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            return 500, {"error": f"Restore stopped before changing anything ({e}).", "safety_copy": str(safety)}
+    with db._lock:
+        for tmp, target in tmps:
+            if app_auth:
+                app_auth._swap(tmp, target)
+            else:
+                os.replace(tmp, target)
+    return 200, {
+        "ok": True,
+        "restored": len(tmps),
+        "skipped": skipped,
+        "safety_copy": str(safety),
+        "message": (
+            f"Restored {len(tmps)} files. Chats made after this backup were replaced. "
+            + (f"Skipped {len(skipped)} (see the list). " if skipped else "")
+            + f"Your data from before was saved to {safety}."
+        ),
+    }
 
 
 # The Windows clipboard is a single global lock held per-thread. The 0.35s
@@ -5702,19 +5843,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(bad[0], {"error": bad[1]})
             try:
                 forked = db.fork_session(sid, mid)
-                # A copy that answers differently is not a copy: carry the chat's own
-                # instructions over. If that fails the fork still exists, and the
-                # response says the instructions did not come with it.
-                try:
-                    import chat_prefs
-
-                    text = chat_prefs.get(sid)
-                    if text:
-                        chat_prefs.set(int(forked["session"]["id"]), text)
-                        forked["instructions_copied"] = True
-                except Exception as e:
-                    forked["instructions_copied"] = False
-                    forked["instructions_error"] = str(e)[:160]
                 return self._json(200, forked)
             except LookupError as e:
                 return self._json(404, {"error": str(e)})
@@ -7928,33 +8056,12 @@ class Handler(BaseHTTPRequestHandler):
             up = form.get("file")
             if not isinstance(up, dict) or not up.get("data"):
                 return self._json(400, {"error": "no file"})
-            import zipfile
-            root_resolved = ROOT.resolve()
-            _blocked = {"env.local", ".env", "license.json", "clipdrop.py", "config.py"}
-            try:
-                with zipfile.ZipFile(io.BytesIO(up["data"])) as zf:
-                    for name in zf.namelist():
-                        norm = name.replace("\\", "/")
-                        if ".." in norm.split("/") or norm.startswith("/") or ":" in norm:
-                            continue
-                        target = (ROOT / norm.replace("/", os.sep))
-                        # Zip-slip guard: resolved path must stay inside ROOT
-                        try:
-                            resolved = target.resolve()
-                            resolved.relative_to(root_resolved)
-                        except (ValueError, OSError):
-                            continue
-                        if resolved.name in _blocked:
-                            continue
-                        if name.endswith("/"):
-                            target.mkdir(parents=True, exist_ok=True)
-                        else:
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(zf.read(name))
+            if str(form.get("confirm") or "") != "1":
+                return self._json(400, {"error": "Restoring replaces the data on this PC. Confirm first."})
+            code, out = _restore_package(up["data"])
+            if code == 200:
                 bump_sync()
-                return self._json(200, {"ok": True, "message": "Import complete — refresh page"})
-            except Exception as e:
-                return self._json(400, {"error": f"import failed: {e}"})
+            return self._json(code, out)
 
         return self._json(404, {"error": "not found"})
 
