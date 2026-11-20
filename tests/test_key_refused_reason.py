@@ -89,6 +89,24 @@ class KeyRefusedReasonTest(unittest.TestCase):
         self.assertEqual(text, "hello")
         self.assertEqual(calls, ["Bearer gsk_new"])
 
+    def test_first_send_keeps_the_first_failure_reason(self):
+        # A local engine answers 401. The chat tries its stream first, then the buffered
+        # chain in the SAME send; the second look must still say why, not just "cooldown".
+        self.env = {"OLLAMA_BASE_URL": "http://127.0.0.1:9", "OLLAMA_MODEL": "m"}
+        def stream(url, headers, body, timeout=45):
+            raise _http_error(401)
+            yield ""  # pragma: no cover
+        with mock.patch.object(ai_engine, "_endpoint_reachable", lambda u: True), \
+             mock.patch.object(ai_engine, "_http_post_stream", stream), self._fail(401):
+            it, _ref = ai_engine._standard_llm_stream("hi", "")
+            try:
+                list(it)   # the stream falls back to the buffered chain and fails too
+            except RuntimeError:
+                pass
+            msg = self._err()
+        self.assertIn("ollama(key refused)", msg)
+        self.assertNotIn("ollama(cooldown)", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

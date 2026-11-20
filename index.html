@@ -67,6 +67,7 @@ body.theme-light{
 /* Light theme contrast: dark-only colours that sat on beige or white. */
 body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
 body.theme-light .field-eye{color:var(--text)}
+body.theme-light input::placeholder,body.theme-light textarea::placeholder{color:#646464;opacity:1}
 body.theme-light .mp-logo{background:rgba(0,0,0,.08);color:var(--text)}
 body.theme-light .kv-ok .kv-chip{color:var(--ok)}
 body.theme-light [style*="color:#e03131"]{color:var(--fail)!important}
@@ -963,6 +964,7 @@ body.phone-client .stage-tile{width:48px;height:48px;border-radius:10px}
 .btn-row{display:flex;gap:6px;flex-wrap:wrap}
 .btn{flex:1;min-width:70px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px;cursor:pointer;font-weight:500}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg,#0a0a0a)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 :root{--accent-fg:#0a0a0a}
 .hint{font-size:10px;color:var(--muted);margin-top:8px;line-height:1.45}
 .dev{padding:7px 9px;background:var(--bg);border:1px solid var(--line);border-radius:7px;font-size:11px;display:flex;justify-content:space-between;margin-bottom:5px}
@@ -5875,14 +5877,14 @@ function sessionShortDate(s){
   if(!ts)return '';
   return new Date(ts*1000).toLocaleDateString([],{month:'short',day:'numeric'});
 }
-function sessionCompactTitle(s){
+function sessionCompactTitle(s,full){
   const t=s.capture_type||'';
   const d=sessionShortDate(s);
   if(t==='daily_clipboard_text')return d?`Text ${d}`:'Text';
   if(t==='daily_clipboard_image')return d?`Image ${d}`:'Image';
   if(t==='daily_clipboard')return d?`Clipboard ${d}`:'Clipboard';
   if(t==='daily_ai_screenshot'||t==='screenshot')return d?`AI Screenshot ${d}`:'AI Screenshot';
-  return summarizeChatTitle(s.title||s.summary||s.preview||'New chat');
+  return summarizeChatTitle(s.title||s.summary||s.preview||'New chat',full);
 }
 function relativeTimeShort(ts){
   const t=(typeof ts==='number'?ts:(Date.parse(ts)/1000))||0;
@@ -6437,19 +6439,19 @@ function markSelectedSession(id){
   });
   syncChatTitleBar();
 }
-function summarizeChatTitle(raw){
+function summarizeChatTitle(raw,full){   // full: the chat title bar keeps the whole title and lets CSS cut it to fit
   let t=mdPlain(raw);  // first message text becomes the title; "Say **hi**" reads "Say hi"
   if(!t)return 'New chat';
   // Drop date-prefixed daily labels into a short readable form
   t=t.replace(/^(Text|Images|AI Screenshot Chat|Clipboard|Screenshot|Photo|Capture)\s*[·\-]\s*/i,'').trim()||t;
-  if(t.length>36)t=t.slice(0,34).replace(/\s+\S*$/,'')+'…';
+  if(!full&&t.length>36)t=t.slice(0,34).replace(/\s+\S*$/,'')+'…';
   return t;
 }
-function sessionTitleForId(id){
+function sessionTitleForId(id,full){
   const n=parseInt(id,10)||0;
   if(!n)return '';
   const hit=(cachedSessions||[]).find(s=>+s.id===n);
-  if(hit)return sessionCompactTitle(hit);
+  if(hit)return sessionCompactTitle(hit,full);
   return 'Chat #'+n;
 }
 function syncChatTitleBar(){
@@ -6462,7 +6464,7 @@ function syncChatTitleBar(){
   if(show){bar.hidden=false;bar.removeAttribute('hidden');bar.classList.add('show')}
   else{bar.hidden=true;bar.setAttribute('hidden','');bar.classList.remove('show');return}
   const hit=(cachedSessions||[]).find(s=>+s.id===sid);
-  titleEl.textContent=sessionTitleForId(sid)||'New chat';
+  titleEl.textContent=sessionTitleForId(sid,true)||'New chat';
   titleEl.title=hit?.title||titleEl.textContent;
   const cat=(hit?.category||currentMode?.()||'').toString();
   if(badge){
@@ -14696,7 +14698,7 @@ function noteSendFailure(text,msg,extra){sendFailure={sid:0,text:String(text||''
 // Google(no key)". Read that list so a refused key and a cooling-down provider are told
 // apart from "no key at all".
 function sendFailureCopy(msg){
-  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree']];
+  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree'],[/^ollama/i,'Ollama']];
   // provider -> when its key was last refused. The server then says only "cooldown" for a few
   // minutes, which would read as "busy" without this. Kept per browser, so a reload does not lose it.
   let seen={};try{seen=JSON.parse(localStorage.getItem('airgpt_key_refused')||'{}')||{}}catch(e){}
@@ -16962,7 +16964,7 @@ function kvRender(){
         <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):(isOpenFree&&cantFree?'not available':'not set')}</span>
       </div>
       <div class="kv-body">
-        <p class="hint kv-note">${esc(nm(p.free_note))}</p>
+        ${isOpenFree&&cantFree?'':`<p class="hint kv-note">${esc(nm(p.free_note))}</p>`}
         ${isOpenFree&&cantFree?'':`<ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>`}
         <div class="kv-actions">
           ${isOpenFree?(cantFree?`<p class="hint kv-cant">${esc(_kvOpenFree.why)}</p><button type="button" class="btn primary" disabled>Enable OpenFree · auto fallback</button>`:`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`):''}
