@@ -34,8 +34,12 @@ def write_drawer(
     body: str,
     room: str = "general",
     source: str = "cortex",
+    session_id: int = 0,
 ) -> str:
-    """Write a verbatim memory drawer. Returns path relative to data/."""
+    """Write a verbatim memory drawer. Returns path relative to data/.
+
+    session_id (when the drawer was written from a chat) goes into the front matter so
+    deleting that chat can find and remove the note."""
     folder = wing_room_dir(project, room)
     now = datetime.now()
     fname = f"{now.strftime('%Y%m%d_%H%M%S')}-{slugify(title)[:36]}.md"
@@ -45,7 +49,8 @@ def write_drawer(
         f"project: {project}\n"
         f"room: {room}\n"
         f"source: {source}\n"
-        f"created: {now.strftime('%Y-%m-%d %H:%M')}\n"
+        + (f"session_id: {int(session_id)}\n" if session_id else "")
+        + f"created: {now.strftime('%Y-%m-%d %H:%M')}\n"
         f"---\n\n"
     )
     path.write_text(fm + f"# {title}\n\n{(body or '').strip()}\n", encoding="utf-8")
@@ -312,3 +317,47 @@ def parse_vault_metadata(analysis: str) -> dict[str, str]:
         if dm:
             out["project"] = dm.group(1).strip().split("(")[0].strip()
     return out
+
+
+_SID_LINE = re.compile(r"^session_id:\s*(\d+)\s*$", re.M)
+
+
+def delete_session_notes(session_ids: "set[int] | None", bodies: "list[str] | None" = None) -> list[str]:
+    """Remove vault notes that were written from the given chats (None = every chat).
+
+    Notes written now carry `session_id:` in their front matter. Older notes do not, so
+    they are matched by what is knowable: the file name `...-turn-<id>.md` and
+    `...-session-<id>-feedback.md`, and a note whose text ends with the body of a memory
+    row of that chat (bodies). Returns the relative paths removed."""
+    if not VAULT.is_dir():
+        return []
+    removed: list[str] = []
+    ids = None if session_ids is None else {int(i) for i in session_ids if int(i) > 0}
+    if ids is not None and not ids:
+        return []
+    bodies = [b.strip() for b in (bodies or []) if b and len(b.strip()) >= 8]
+    legacy = re.compile(r"-(?:turn-(\d+)|session-(\d+)-feedback)\.md$")
+    for path in list(VAULT.rglob("*.md")):
+        try:
+            head = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        hit = False
+        m = _SID_LINE.search(head[:600])
+        if m and int(m.group(1)) > 0:
+            hit = ids is None or int(m.group(1)) in ids
+        else:
+            lm = legacy.search(path.name)
+            if lm:
+                n = int(lm.group(1) or lm.group(2))
+                hit = n > 0 and (ids is None or n in ids)
+            if not hit and bodies:
+                tail = head.rstrip()
+                hit = any(tail.endswith(b) for b in bodies)
+        if hit:
+            try:
+                path.unlink()
+                removed.append(str(path.relative_to(DATA_DIR)).replace("\\", "/"))
+            except OSError:
+                pass
+    return removed

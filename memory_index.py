@@ -197,6 +197,7 @@ def add_memory(
                 body=body,
                 room=folder or ("goals" if kind == "global_goal" else "general"),
                 source="memory_index",
+                session_id=int(session_id or 0),
             )
         except Exception:
             pass
@@ -216,6 +217,36 @@ def delete_memory(mid: int) -> dict:
         conn.execute("DELETE FROM memories WHERE id=?", (mid,))
     _embed_delete(mid)
     return {"ok": True}
+
+
+def forget_session(session_ids: "set[int] | None") -> dict:
+    """Remove everything the given chats left in memory: their rows, search entries,
+    embeddings, folders and the vault notes written from them. None = every chat.
+    Used when a chat is deleted or history is cleared, so nothing from it reaches
+    the model again."""
+    init()
+    ids = None if session_ids is None else sorted({int(i) for i in session_ids if int(i) > 0})
+    if ids is not None and not ids:
+        return {"ok": True, "memories": 0, "notes": 0}
+    with _conn() as conn:
+        if ids is None:
+            rows = conn.execute("SELECT id, body FROM memories WHERE session_id>0").fetchall()
+        else:
+            q = ",".join("?" * len(ids))
+            rows = conn.execute(f"SELECT id, body FROM memories WHERE session_id IN ({q})", ids).fetchall()
+    mids = [int(r["id"]) for r in rows]
+    bodies = [r["body"] or "" for r in rows]
+    for mid in mids:
+        delete_memory(mid)
+    with _conn() as conn:
+        if ids is None:
+            conn.execute("DELETE FROM chat_folders WHERE session_id>0")
+        else:
+            conn.execute(f"DELETE FROM chat_folders WHERE session_id IN ({q})", ids)
+    import vault as vault_mod
+
+    notes = vault_mod.delete_session_notes(None if ids is None else set(ids), bodies)
+    return {"ok": True, "memories": len(mids), "notes": len(notes)}
 
 
 def update_memory(mid: int, **fields: Any) -> dict:

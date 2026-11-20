@@ -3221,6 +3221,7 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
             <p class="hint" id="tasteLine" style="margin-bottom:8px">Learns what you reopen — stays on this PC only.</p>
             <button type="button" class="btn" style="border-radius:999px" onclick="resetTastePrefs()">Reset taste data</button>
           </div>
+          <p class="hint" id="backupHint">A backup holds your chats and files. It never holds your passcode, logins, share links or API keys. Restoring replaces what is on this PC now.</p>
           <div class="modal-actions">
             <button class="btn" onclick="exportPackage()">Export all</button>
             <button class="btn" onclick="importPackage()">Import</button>
@@ -3922,6 +3923,7 @@ async function checkAuth(){
   try{
     const st=await fetch(API()+'/api/auth/status').then(r=>r.json());
     if(!st.initialized){authToken='';localStorage.removeItem('airgpt_token')}
+    if(st.damaged&&isLocal)toast(st.damaged_reason);
     if(!st.needs_auth){await ensureEstablish();return true}
     if(authToken){
       const t=await fetch(API()+'/api/info',{headers:{'X-AirGPT-Token':authToken}});
@@ -3986,22 +3988,24 @@ async function exportHistory(){
 async function exportPackage(){
   try{
     const r=await api('/api/export?package=1');
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast(e.error||'Export failed');return}
     const blob=await r.blob();
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download='airgpt-export-'+new Date().toISOString().slice(0,10)+'.zip';
     a.click();URL.revokeObjectURL(a.href);
-    toast('Package exported');
+    toast('Backup saved. It leaves out your passcode, logins, share links and API keys.');
   }catch(e){toast('Export failed')}
 }
 function importPackage(){$('importFile').click()}
 async function doImport(el){
   const f=el.files?.[0];if(!f)return;
-  const fd=new FormData();fd.append('file',f);
+  if(!confirm('Restore this backup? Chats and files made after the backup will be replaced. A copy of what is here now is saved first.')){el.value='';return}
+  const fd=new FormData();fd.append('file',f);fd.append('confirm','1');
   try{
     const r=await fetch(API()+'/api/import',{method:'POST',headers:{'X-AirGPT-Token':authToken},body:fd});
     const d=await r.json();
-    if(d.ok){toast('Import OK — reloading');setTimeout(()=>location.reload(),800)}
+    if(d.ok){toast(d.message||'Restored');setTimeout(()=>location.reload(),4000)}
     else toast(d.error||'Import failed');
   }catch(e){toast('Import failed')}
   el.value='';
@@ -12651,13 +12655,13 @@ function clearMissingSession(msg){
   if(msg)toast(msg);
 }
 window.deleteSession=async id=>{
-  if(!confirm('Delete this chat?'))return;
+  if(!confirm('Delete this chat? What the app remembered from it is deleted too.'))return;
   await api('/api/sessions/'+id,{method:'DELETE'});
   if(currentSession===id){currentSession=0;localStorage.setItem('clipdrop_session','0');lastId=0}
   loadVaultTree();pullChat();
 };
 async function clearAllHistory(){
-  if(!confirm('Delete ALL history, files, and cache?'))return;
+  if(!confirm('Delete ALL history, files, cache and what the app remembered from your chats?'))return;
   const r=await api('/api/messages',{method:'DELETE'}).catch(()=>null);
   if(!r||!r.ok){toast('Could not clear history');return}
   lastId=0;lastHistId=0;msgById={};
@@ -14172,7 +14176,7 @@ async function openSettings(panel){
   if($('setAiAuto')){$('setAiAuto').checked=!!s.ai_auto;_aiAutoDirty=false}
   if($('setLoginHostPane'))$('setLoginHostPane').style.display=st.initialized?'none':'block';
   if($('setLoginJoinPane'))$('setLoginJoinPane').style.display=st.initialized?'block':'none';
-  if($('authStatusLine'))$('authStatusLine').textContent=st.initialized
+  if($('authStatusLine'))$('authStatusLine').textContent=st.damaged?st.damaged_reason:st.initialized
     ?(authToken?'✓ Signed in':'Workspace ready — use passcode to join from phone')
     :'Do this once on this PC. Phones cannot connect until you do.';
   renderPasscodeGate(st);
@@ -15103,7 +15107,7 @@ async function sendFiles(files){
       }
     }
     if(sent)toast(`Sent ${sent} file${sent>1?'s':''} to PC`);
-    else if(dup&&!failed)toast('Already on PC (duplicate skipped)');
+    else if(dup&&!failed)toast('Already in this chat (not added again)');
     else if(failed)toast('Upload failed'+(lastErr?': '+lastErr:' — check tunnel/WiFi'));
     pullChat();pullHistory();
   }finally{

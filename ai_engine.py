@@ -2003,6 +2003,7 @@ def persist_turn_memory(
                 body=f"{q[:200]}\n\n{a[:1200]}",
                 room="session",
                 source="chat",
+                session_id=int(session_id or 0),
             )
     except Exception:
         pass
@@ -2344,6 +2345,7 @@ def _finish_chat_side_effects(
                 body=answer[:1500],
                 room="feedback",
                 source="dual_brain",
+                session_id=int(session_id or 0),
             )
     except Exception:
         pass
