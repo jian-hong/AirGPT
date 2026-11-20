@@ -37,6 +37,46 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `ui/promptlens.js` + `ui/promptlens.css` -- the panel and composer meter.
   `window.PromptLens.open(messageId)`. Hook in `index.html` is one button in
   `renderMsg` plus the two asset tags.
+- Chat stream lifecycle (`clipdrop.py`): the first SSE event carries
+  `stream_id`; `POST /api/chat/cancel {stream_id}` stops it (a view-only share
+  guest gets 403, a share link only reaches its own chat). The partial is
+  saved with `ai_status='stopped'` and the stream ends with
+  `{"type":"stopped","saved":bool}`; closing the browser alone does not cancel.
+  `_chat_streams` plus `_run_tracked` feed `_generating_sessions()`, shown as
+  `generating` on `/api/messages?full=1`, `/api/wait` and `/api/sessions` rows.
+- Edit and regenerate: the stream request takes `replace_msg_id` or
+  `regenerate_msg_id` (last turn only, anything else 409). Page side
+  `ui/turnedit.js` + `.css`; waiting messages and per-chat drafts live in
+  `index.html` `send()` / `_sendInner()` (drafts in localStorage).
+- Attachments: the stream request takes `attachment_ids` (files in this chat
+  only); `ai_engine._attachments_block` adds one fenced untrusted block, traced
+  as `attachments`. The upload reply carries `attach{readable,reason,chars,cut}`.
+  Word files are read by `rag.ingest._docx_text` (no python-docx).
+  `QUESTION_LIMIT` cuts a long message and the reply says so.
+- Paging: `/api/messages?full=1&limit=&before_id=` (`has_more`),
+  `/api/sessions?offset=` (`total`, `has_more`), `GET /api/sessions/<id>`.
+  `_json` gzips bodies of 1 KB or more; `/ui` and `/OpenIDE/ui` go through
+  `_send_static` (ETag, 304, gzip).
+- `ui/voice.js` + `.css` -- voice input in the message box.
+- Agent runs live on a server thread (`agent_runtime.start_background_run`,
+  `tail_run`): `POST /api/agents/<id>/run` watches, `GET
+  /api/agents/runs/<id>/events` re-attaches, the Stop flag is checked between
+  steps, the done event carries `runner`, `model`, `own_tools`.
+- Backup and restore: `/api/export` and `/api/import` are host-only. Backups
+  leave out `env.local` and the login, passcode, share and licence files
+  (`_BACKUP_SECRET_FILES`, listed in `MANIFEST.json`). Restore plans first,
+  checks free space, writes `pre-restore-<time>.zip`, needs `confirm=1`.
+- `memory_index.forget_session` -- deleting a chat removes its memory rows,
+  embeddings, chat folders and vault notes.
+- RAG answer shape: stream meta/done carry `goal, lane, sql, provenance,
+  citations, web_used, degraded`. `GET /api/rag/passages/<chunk_id>` and
+  `GET /api/rag/sources/<id>/file` (script types download only). URL ingest
+  runs `_check_public_url` on every redirect hop. `/sources` refuses `force`.
+- `tests/devkit/` -- stand-ins for live checks, not product code:
+  `stub_llm.py` and `stub_rich.py` (OpenAI-compatible, log every request
+  body), `stub_cortex.py` (keywords STUBSLOW, STUBFAIL, STUBEMPTY,
+  STUBTOOLFAIL), `run_app.py` (any port, own data folder), `integ.js` (27
+  browser checks), `composer.js`.
 - `commands.py` `peel_skill_slash` — `/skill`, `/skill:`, `/skill-`,
   `/anthropic-skills:` arm a pack; remainder is the job (SHELL-03).
 - `openpyxl` and `pandas` are product xlsx deps (`rag/ingest.py`,
@@ -92,7 +132,9 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `rag/xlsx_orch.py` — F15 / EPIC-D04 AirGPT half: identify ingested xlsx +
   structured Copilot prompt pack + honest DMS handoff/reveal. Does not paste
   or drive Copilot (`paste_owner=pointer`, `cross_check_owner=dms`).
-- `rag/sheet_sql.py` — schema-aware filter+aggregate over those frames.
+- `rag/sheet_sql.py` — schema-aware filter+aggregate over those frames: bare aggregates,
+  text filters read off the data, group-by and ranking over every sheet and
+  csv, with provenance.
 - `rag/answer.py` `_try_hybrid_sql_lane` — wires both into the ask path.
 - `tests/RAG/oracle_bench.py --variants sira_max,hybrid_max` — F13 A/B on one
   generated question set; CI smoke `tests/RAG/results/oracle_cross_latest.json`
