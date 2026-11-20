@@ -250,6 +250,10 @@ def test_group_by_a_column_that_does_not_exist_is_said(space):
     ("find online information about the Penang launch and JEPA", ["the Penang launch and JEPA"]),
     ("Please google JEPA vs transformers and also cognition in infants",
      ["JEPA vs transformers", "cognition in infants"]),
+    # words of the topic that look like command words are kept
+    ("look up the web server nginx config", ["the web server nginx config"]),
+    ("what does the document say about search on the web page layout",
+     ["what does the document say search on the web page layout"]),
 ])
 def test_web_goals_are_the_users_topic(ask_text, want):
     from rag import answer

@@ -550,8 +550,9 @@ def web_query_from_ask(query: str) -> str:
     # "look up on the web: X", "find online information about X" are all just "X".
     q = re.sub(
         r"\b(?:find|get|show)?\s*(?:me\s+)?online\s+(?:information|info)\s+(?:about|on)\s+"
-        r"|\b(?:(?:search|look\s*up|find|browse|google)\s+(?:(?:on|in|across)\s+)?(?:the\s+)?(?:web|internet|net|online)"
-        r"|(?:on|from)\s+the\s+(?:web|internet))\s*(?:for\s+|about\s+|on\s+)?[:,-]?\s*",
+        r"|\b(?:search|look\s*up|find|browse|google)\s+(?:(?:on|in|across)\s+)?(?:the\s+)?(?:web|internet|net|online)"
+        r"(?:\s+(?:for|about|on)\b\s*[:,-]?|\s*[:,-]|\s*$)\s*"
+        r"|\b(?:on|from)\s+the\s+(?:web|internet)\s*[:,-]\s*",
         "",
         q,
         flags=re.I,
