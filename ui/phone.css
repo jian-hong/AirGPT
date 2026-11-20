@@ -6,12 +6,12 @@
   /* Top bar buttons were 36px (switch 24px tall). */
   .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.topbar #aiSwitchBtn,
   /* Composer buttons were 34px tall. */
-  .composer #attachBtn,.composer #modelBtn,.composer #thinkBtn,
+  .composer #attachBtn,
   /* Copy, Reply and Prompt under each message were 20px to 28px tall. */
   .msg .msg-copy,.msg .msg-reply,.msg .msg-lens{position:relative}
   .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after{content:"";position:absolute;inset:-6px}
   .topbar #aiSwitchBtn::after{content:"";position:absolute;inset:-12px -3px}
-  .composer #attachBtn::after,.composer #modelBtn::after,.composer #thinkBtn::after{content:"";position:absolute;inset:-7px}
+  .composer #attachBtn::after{content:"";position:absolute;inset:-7px}
   .msg .msg-copy::after,.msg .msg-reply::after,.msg .msg-lens::after{content:"";position:absolute;inset:-14px -3px}
 
   /* Drawer rows were 30px to 35px tall. */
@@ -78,6 +78,8 @@
   /* Any open sheet hides it, not a list of the sheets that existed when this was
      written: it sat on the Edit button in the saved-prompts sheet. Every add-on
      sheet is a dialog with aria-modal that takes .open; the command box opens on its root. */
+  /* OpenIDE on a phone: the button covered the end of the app chip row (openfree:20128) and, at 320px, the page body. */
+  body.openide-mode #bugReportBtn{display:none!important}
   body:has(.side.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn,
   body:has([aria-modal="true"].open) #bugReportBtn,body:has(.pal-root.open) #bugReportBtn{display:none}
 }
@@ -92,11 +94,11 @@
 @media(max-width:760px){
   .modal .btn,.modal-actions .btn,#settingsModal .modal-actions .btn,#bugDialog .btn{min-height:44px}
   /* Small buttons keep their look; an invisible layer makes the tap area 44px. */
-  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,.banner-x,
-  #bgTasksPanel .bgHead button,#bgTasksPanel .bgFoot button{position:relative}
+  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,
+  #bgTasksPanel .bgFoot button{position:relative}
   .modal .kv-group-btn::after,.search-filter-chip::after{content:"";position:absolute;inset:-8px 0}
-  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,.banner-x::after,
-  #bgTasksPanel .bgHead button::after,#bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
+  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,
+  #bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
   /* Settings checkbox rows were 17px to 34px tall. */
   #settingsModal .settings-check{min-height:44px}
 }
@@ -149,4 +151,29 @@
   html body .plus-menu .pm-effort button{flex:1 1 0;width:auto!important;justify-content:center!important}
   html body .plus-menu .pm-effort button[aria-pressed="true"]{outline:2px solid #3dd68c}
   .composer-actions{gap:4px}
+}
+
+/* Chat title bar: the title gets the row (one line, 16px). Background tasks, Export and Share
+   fold into one small ... button (phone.js opens and closes the list); the button keeps its small
+   look and an invisible layer makes the tap area 44px. */
+@media(max-width:760px){
+  .chat-titlebar{position:relative;gap:8px}
+  .chat-titlebar-title{font-size:16px;max-width:none}
+  .chat-titlebar.more-open{z-index:30} /* above the reply rail (22) so the open menu is never under it */
+  .chat-more-btn{
+    display:inline-flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;
+    width:32px;height:32px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--text);cursor:pointer;
+  }
+  .chat-more-btn svg{width:20px;height:20px;display:block}
+  .chat-more-btn::after{content:"";position:absolute;inset:-6px}
+  .chat-titlebar-actions{display:none}
+  .chat-titlebar.more-open .chat-titlebar-actions{
+    display:flex;flex-direction:column;align-items:stretch;gap:2px;position:absolute;right:12px;top:calc(100% - 4px);
+    z-index:40;min-width:220px;padding:6px;border-radius:14px;border:1px solid var(--line);
+    background:var(--surface);box-shadow:0 10px 28px rgba(0,0,0,.35);
+  }
+  html body .chat-titlebar-actions .chat-share-btn{height:44px;justify-content:flex-start;gap:12px;padding:0 12px;border:0;background:transparent;box-shadow:none;font-size:15px}
+  html body .chat-titlebar-actions .chat-share-btn:hover,html body .chat-titlebar-actions .chat-share-btn:focus-visible{background:var(--surface2)}
+  .chat-titlebar-actions .chat-share-btn svg{width:18px;height:18px}
+  .chat-titlebar-actions .cta-lab{display:inline}
 }
