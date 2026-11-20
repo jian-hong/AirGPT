@@ -1005,7 +1005,13 @@ def _chunk_is_text(data: bytes, whole: bool, hint: str = "") -> bool:
     # high bytes is not text.
     if sum(1 for b in data if b >= 0x80) > 0.4 * len(data):
         return False
-    return _mostly_printable(data.decode("latin-1"), 0.97)
+    # Windows text uses 0x80-0x9F for curly quotes and dashes (cp1252); in Latin-1 those are
+    # control characters, so judge by cp1252 and fall back to Latin-1 for its few holes.
+    try:
+        text = data.decode("cp1252")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+    return _mostly_printable(text, 0.97)
 
 
 def looks_binary(path: Path) -> bool:

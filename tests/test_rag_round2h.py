@@ -280,6 +280,7 @@ def test_junk_is_refused_as_binary(tmp_path, name, data):
     ("big_cjk_utf8.txt", ("本季度收入增长，槟城仓库出货四千五百托盘。\n" * 120000).encode("utf-8")),
     ("big_cjk_utf16.txt", ("今季の売上は伸びた。倉庫は四千五百パレットを出荷した。" * 60000).encode("utf-16")),
     ("big_utf16_nobom.txt", (_SENTENCE * 40000).encode("utf-16-le")),
+    ("cp1252_curly.txt", ("\u201cQuoted\u201d \u2013 the manager\u2019s note, caf\u00e9 \u20ac5\n" * 100).encode("cp1252")),
     ("tiny.txt", b"hi"),
     ("empty.txt", b""),
 ])
