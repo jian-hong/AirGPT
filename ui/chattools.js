@@ -125,6 +125,8 @@
     });
     document.addEventListener('click',function(e){if(!menu.hidden&&!menu.contains(e.target))closeMenu(false)});
     window.addEventListener('resize',function(){closeMenu(false)});
+    var tb=document.getElementById('chatTitleBar');   // closing the ... list closes the formats too
+    if(tb)new MutationObserver(function(){if(!tb.classList.contains('more-open'))closeMenu(false)}).observe(tb,{attributes:true,attributeFilter:['class']});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&!menu.hidden){e.preventDefault();e.stopPropagation();closeMenu(true)}
     },true);

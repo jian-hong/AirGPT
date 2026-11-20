@@ -63,3 +63,12 @@ for (const w of [320, 390]) {
     }
   });
 }
+
+test("closing the ... list also closes the Export formats", async () => {
+  const { ctx, page } = await open("light", 390);
+  await page.click("#chatExportBtn");
+  await page.click("#chatMoreBtn");
+  const r = await page.evaluate(() => ({ hidden: document.querySelector(".ctools-menu").hidden, ex: document.getElementById("chatExportBtn").getAttribute("aria-expanded") }));
+  await ctx.close();
+  assert.deepEqual(r, { hidden: true, ex: "false" });
+});
