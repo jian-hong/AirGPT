@@ -67,6 +67,7 @@ body.theme-light{
 /* Light theme contrast: dark-only colours that sat on beige or white. */
 body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
 body.theme-light .field-eye{color:var(--text)}
+body.theme-light .mp-logo{background:rgba(0,0,0,.08);color:var(--text)}
 body.theme-light .kv-ok .kv-chip{color:var(--ok)}
 body.theme-light [style*="color:#e03131"]{color:var(--fail)!important}
 body.theme-light .btn.danger{color:var(--fail);border-color:rgba(180,35,24,.5)}
@@ -1733,6 +1734,12 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .forge-honesty span.warn{border-color:rgba(232,184,74,.35);color:var(--warn);background:rgba(232,184,74,.08)}
 .forge-schematic{min-height:180px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0a0a0a;padding:12px;overflow:auto}
 .forge-schematic svg{max-width:100%;height:auto}
+body.theme-light .forge-shell{background:var(--bg)}
+body.theme-light .forge-left,body.theme-light .forge-right{background:var(--surface);border-color:var(--line)}
+body.theme-light .forge-schematic{background:var(--bg);border-color:var(--line)}
+body.theme-light .forge-honesty span{border-color:var(--line)}
+body.theme-light .forge-honesty span.ok{background:rgba(22,122,76,.1);border-color:rgba(22,122,76,.4)}
+body.theme-light .forge-honesty span.warn{background:rgba(138,98,0,.1);border-color:rgba(138,98,0,.4)}
 body.openforge-mode .composer,body.openforge-mode .ctx-bar,body.openforge-mode .project-rail{display:none!important}
 body.openforge-mode .connect-col,body.openforge-mode .connect-collapse-btn{display:none!important}
 @media(max-width:900px){.forge-shell{grid-template-columns:1fr}}
@@ -7024,7 +7031,7 @@ async function renderHubPage(){
       <button type="button" class="btn primary" onclick="hubCreateJoinCode()">Team code</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'view')">QR View</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'post')">QR Write</button>
-      <span class="hint" id="hubJoinCodeHint">${d.join_code?`Code: <strong style="color:#fff">${esc(d.join_code)}</strong>`:''}</span>
+      <span class="hint" id="hubJoinCodeHint">${d.join_code?`Code: <strong style="color:var(--text)">${esc(d.join_code)}</strong>`:''}</span>
     </div>
     <div class="hub-graph">
       <div class="hub-host">${hubNodeHtml(host)}</div>
@@ -7052,7 +7059,7 @@ async function hubCreateJoinCode(){
     const r=await api('/api/hub/join-code',{method:'POST',body:JSON.stringify({access_level:level})}).then(x=>x.json());
     if(r.ok){
       toast('Join code: '+r.code);
-      const hint=$('hubJoinCodeHint');if(hint)hint.innerHTML=`Code: <strong style="color:#fff">${esc(r.code)}</strong> (${hubAccessLabel(r.access_level)})`;
+      const hint=$('hubJoinCodeHint');if(hint)hint.innerHTML=`Code: <strong style="color:var(--text)">${esc(r.code)}</strong> (${hubAccessLabel(r.access_level)})`;
     }else toast(r.error||'Failed');
   }catch(e){toast('Join code failed')}
 }
@@ -8636,7 +8643,7 @@ async function renderMarketplace(){
   }).join('')||'<p class="hint">No suitable models or tools for this profile. Try Use auto-detect or Show all.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Marketplace</h2>
-    <p class="cortex-tag">App Store style — press Install, auto-download + integrate. Curated models + Netie modules. Profile: <strong style="color:#fff">${esc(prof.profile||'?')}</strong>.</p>
+    <p class="cortex-tag">App Store style — press Install, auto-download + integrate. Curated models + Netie modules. Profile: <strong style="color:var(--text)">${esc(prof.profile||'?')}</strong>.</p>
     <div class="cortex-grid">
       <div class="cortex-card"><h3>This laptop</h3><p>${esc(ram)} · ${esc(vram)} · ${esc(disk)}</p>
         <p style="margin-top:8px">${opts||''}</p>
