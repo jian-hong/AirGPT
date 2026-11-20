@@ -209,7 +209,7 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
             integrity_files[pack_path] = digest
             meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
             # Drop host-local blob path from exported meta
-            meta_out = {k: v for k, v in meta.items() if k != "blob"}
+            meta_out = _strip_abs_paths({k: v for k, v in meta.items() if k not in ("blob", "docs_path")})
             manifest_sources.append(
                 {
                     "pack_path": pack_path,
@@ -272,7 +272,13 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 "depth_default": str(space.get("depth_default") or "high"),
                 "modalities": space.get("modalities") if isinstance(space.get("modalities"), list) else ["text"],
                 "profile": str(space.get("profile") or "local"),
-                "config": space.get("config") if isinstance(space.get("config"), dict) else {},
+                # The ontology is built from the sender's own files (absolute paths, the
+                # sender's space id); the importing space rebuilds its own.
+                "config": _strip_abs_paths(
+                    {k: v for k, v in (space.get("config") or {}).items() if k != "ontology"}
+                )
+                if isinstance(space.get("config"), dict)
+                else {},
                 "original_id": int(space.get("id") or space_id),
             },
             "options": {"include_chats": bool(include_chats), "include_chunks": False},
@@ -292,6 +298,8 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 "AirGPT RAG pack (airgpt-rag-pack v1).\n"
                 "Import via RAG library → Import, or POST /api/rag/spaces/import.\n"
                 "Index rebuilds on import; vectors are not included.\n"
+                "Spreadsheets travel as plain text, so after import their tables are searched\n"
+                "like text. Counts and totals need the original file added again.\n"
             ).encode("utf-8"),
         )
 
@@ -299,6 +307,20 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
     if len(out) > MAX_PACK_BYTES:
         raise ValueError("pack exceeds size cap")
     return out
+
+
+_ABS_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|/)")
+
+
+def _strip_abs_paths(obj: Any) -> Any:
+    """A pack is shared with other people: no folder of the sender's machine may be in it."""
+    if isinstance(obj, dict):
+        return {k: _strip_abs_paths(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_abs_paths(v) for v in obj]
+    if isinstance(obj, str) and _ABS_PATH.match(obj.strip()):
+        return Path(obj.strip().replace("\\", "/")).name
+    return obj
 
 
 def export_space_to_path(space_id: int, dest: Path, **kw: Any) -> Path:

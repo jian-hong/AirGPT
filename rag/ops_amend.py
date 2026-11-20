@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OPS_DIR = ROOT / "tests" / "RAG" / "results" / "ops"
 OPS_DIR.mkdir(parents=True, exist_ok=True)
 
+PAYROLL_SHEET = "Payroll_RAW"
+KEY_HEADER = "Emp ID"
 SALARY_HEADER = "Base Salary"
 NOTES_HEADER = "Notes"
 SHORTLIST_N = 5
@@ -32,7 +34,9 @@ def _load_payroll(path: Path) -> tuple[list[str], list[dict]]:
 
     wb = openpyxl.load_workbook(path, data_only=True)
     try:
-        ws = wb[wb.sheetnames[0]]
+        # The sheet read here is the sheet written later: it is named in every row
+        # (`_sheet`) and stored in the pending record.
+        ws = wb[PAYROLL_SHEET if PAYROLL_SHEET in wb.sheetnames else wb.sheetnames[0]]
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return [], []
@@ -41,6 +45,7 @@ def _load_payroll(path: Path) -> tuple[list[str], list[dict]]:
         for i, row in enumerate(rows[1:], start=2):
             d = {hdr[j]: row[j] if j < len(row) else None for j in range(len(hdr))}
             d["_row"] = i
+            d["_sheet"] = ws.title
             out.append(d)
         return hdr, out
     finally:
@@ -86,7 +91,7 @@ def _match(rows: list[dict], ask: str) -> tuple[dict | None, str]:
     m = re.search(r"\bE-?\s*(\d{1,5})\b", q, re.I)
     if m:
         eid = f"E-{int(m.group(1)):04d}"
-        cand = next((r for r in rows if str(r.get("Emp ID") or "").upper() == eid), None)
+        cand = next((r for r in rows if str(r.get("Emp ID") or "").strip().upper() == eid), None)
         if cand:
             return cand, "emp_id"
     name_m = re.search(r"for\s+([A-Za-z][A-Za-z0-9 ]{1,40})", q, re.I)
@@ -108,6 +113,20 @@ def identify_employee(path: str | Path, ask: str, *, chain_id: str = "", prev_to
         return {"ok": False, "error": "payroll sheet has no data rows"}
 
     cand, basis = _match(rows, ask)
+    if cand is not None:
+        # The row is found again by its key when the cell is written, so the key must
+        # point at exactly one row; two rows with one Emp ID cannot be told apart.
+        key = str(cand.get(KEY_HEADER) or "").strip()
+        same = [r for r in rows if key and str(r.get(KEY_HEADER) or "").strip().upper() == key.upper()]
+        if key and len(same) > 1:
+            return {
+                "ok": False,
+                "error": (
+                    f"{KEY_HEADER} {key} appears on more than one row "
+                    f"({', '.join(str(r['_row']) for r in same)}), so I cannot tell which employee you mean. "
+                    "Nothing was changed. Fix the duplicate in the sheet and try again."
+                ),
+            }
     if cand is None:
         # Nothing matched. Do not dress the first row up as a find (R-0011): say so,
         # and hand back a shortlist the founder can pick from by Emp ID.
@@ -133,7 +152,7 @@ def identify_employee(path: str | Path, ask: str, *, chain_id: str = "", prev_to
         "chain_id": chain_id or token,
         "prev_token": prev_token,
         "path": str(p.resolve()),
-        "sheet": "Payroll_RAW",
+        "sheet": cand.get("_sheet"),
         "header": header,
         "row": cand.get("_row"),
         "emp_id": cand.get("Emp ID"),
@@ -222,13 +241,30 @@ def confirm_amend(token: str, yes: bool) -> dict:
     path = Path(pending["path"])
     wb = openpyxl.load_workbook(path)
     try:
-        ws = wb[pending.get("sheet") or wb.sheetnames[0]]
-        header = pending.get("header") or [
-            str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))
-        ]
+        sheet = pending.get("sheet")
+        if sheet not in wb.sheetnames:
+            return {"ok": False, "error": f"Sheet {sheet!r} is no longer in the file. Nothing was changed."}
+        ws = wb[sheet]
+        # Read the header and find the employee in the sheet as it is NOW. The row
+        # number from identify time is only a hint: rows move when someone edits the file.
+        header = [str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))]
         salary_col = _column_index(header, SALARY_HEADER)
         notes_col = _column_index(header, NOTES_HEADER)
-        row = int(pending["row"])
+        key_col = _column_index(header, KEY_HEADER)
+        key = str(pending.get("emp_id") or "").strip().upper()
+        found = [
+            r for r in range(2, ws.max_row + 1)
+            if key and str(ws.cell(r, key_col).value or "").strip().upper() == key
+        ]
+        if not found:
+            return {"ok": False, "error": f"{KEY_HEADER} {pending.get('emp_id')} was not found in sheet {sheet!r} any more. Nothing was changed."}
+        if len(found) > 1:
+            return {
+                "ok": False,
+                "error": f"{KEY_HEADER} {pending.get('emp_id')} now appears on more than one row in sheet {sheet!r}. Nothing was changed.",
+            }
+        row = found[0]
+        pending["row"] = row
         stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
         ws.cell(row, salary_col).value = float(pending["proposed_salary"])
         ws.cell(row, notes_col).value = f"amended {stamp} (confirmed, token {pending['token']})"

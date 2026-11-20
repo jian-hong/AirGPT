@@ -549,7 +549,81 @@ def delete_source(source_id: int) -> dict:
             "UPDATE knowledge_spaces SET updated_at=? WHERE id=?",
             (time.time(), int(src["space_id"])),
         )
-        return {"ok": True, "space_id": int(src["space_id"]), "chunks_removed": len(ids)}
+        # A summary that names the deleted file and an ontology built from its tables
+        # kept answering questions about a document the user had removed.
+        row = conn.execute("SELECT config FROM knowledge_spaces WHERE id=?", (int(src["space_id"]),)).fetchone()
+        try:
+            cfg = json.loads((row["config"] if row else "") or "{}")
+        except Exception:
+            cfg = {}
+        if cfg.pop("corpus_summary", None) is not None or cfg.pop("ontology", None) is not None:
+            cfg.pop("ontology", None)
+            conn.execute(
+                "UPDATE knowledge_spaces SET config=? WHERE id=?", (json.dumps(cfg), int(src["space_id"]))
+            )
+    files_removed = _remove_source_files(int(src["space_id"]), _row(src))  # type: ignore[arg-type]
+    return {"ok": True, "space_id": int(src["space_id"]), "chunks_removed": len(ids), "files_removed": files_removed}
+
+
+def _remove_source_files(space_id: int, src: dict) -> int:
+    """Unlink a deleted source's stored files, only ever inside that space's own folder."""
+    root = (BLOB_DIR / str(int(space_id))).resolve()
+    meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+    cands = [src.get("path"), meta.get("blob"), meta.get("docs_path"), meta.get("original_path")]
+    cands += list(meta.get("original_paths") or [])
+    n = 0
+    for raw in cands:
+        if not raw:
+            continue
+        try:
+            p = Path(str(raw)).resolve()
+            p.relative_to(root)
+        except Exception:
+            continue  # outside the space folder: the user's own file, never ours to delete
+        try:
+            if p.is_file():
+                p.unlink()
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def delete_space(space_id: int) -> dict:
+    """Delete a space for good: its rows, vectors, chats, traces and every file on disk."""
+    import shutil
+
+    init()
+    sid = int(space_id)
+    if not get_space(sid):
+        return {"ok": False, "error": "space not found"}
+    try:  # dense vectors, including a Qdrant collection when that profile is in use
+        from rag import vector_backends
+
+        vector_backends.clear_space(sid)
+    except Exception:
+        pass
+    with _conn() as conn:
+        ids = [int(r["id"]) for r in conn.execute("SELECT id FROM chunks WHERE space_id=?", (sid,))]
+        _delete_fts_by_ids(conn, "chunks_fts", "chunk_id", ids)
+        fids = [int(r["id"]) for r in conn.execute("SELECT id FROM file_index WHERE space_id=?", (sid,))]
+        _delete_fts_by_ids(conn, "file_index_fts", "file_id", fids)
+        for tbl in ("chunks", "file_index", "sources", "revisions", "ingest_jobs", "traces"):
+            conn.execute(f"DELETE FROM {tbl} WHERE space_id=?", (sid,))
+        conn.execute(
+            "DELETE FROM rag_messages WHERE chat_id IN (SELECT id FROM rag_chats WHERE space_id=?)", (sid,)
+        )
+        conn.execute("DELETE FROM rag_chats WHERE space_id=?", (sid,))
+        conn.execute("DELETE FROM knowledge_spaces WHERE id=?", (sid,))
+    root = BLOB_DIR / str(sid)
+    shutil.rmtree(root, ignore_errors=True)
+    return {"ok": True, "space_id": sid, "chunks_removed": len(ids), "folder_removed": not root.exists()}
+
+
+def get_chat(chat_id: int) -> dict | None:
+    init()
+    with _conn() as conn:
+        return _row(conn.execute("SELECT * FROM rag_chats WHERE id=?", (int(chat_id),)).fetchone())
 
 
 def purge_chat_sources(space_id: int) -> dict:
