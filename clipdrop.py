@@ -6785,8 +6785,8 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self._body().decode() or "{}")
             out = app_settings.update_settings(data)
             try:  # a new key means the old refusal no longer applies: try it for real
-                import ai_engine
-                ai_engine.clear_cooldown_for_keys(data)
+                import ai_engine as _ae
+                _ae.clear_cooldown_for_keys(data)
             except Exception:
                 pass
             return self._json(200, out)

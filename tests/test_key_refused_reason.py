@@ -110,3 +110,12 @@ class KeyRefusedReasonTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SettingsRouteTest(unittest.TestCase):
+    def test_settings_post_handler_still_uses_the_module_level_ai_engine(self):
+        # `import ai_engine` inside do_POST made the name local for the whole handler and
+        # broke every other route that uses it (guest file post answered 500).
+        import re
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clipdrop.py"), encoding="utf-8").read()
+        self.assertLessEqual(len(re.findall(r"^\s+import ai_engine\s*$", src, re.M)), 1, "one function-level import already existed at 32beaca")
