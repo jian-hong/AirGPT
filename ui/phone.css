@@ -6,12 +6,12 @@
   /* Top bar buttons were 36px (switch 24px tall). */
   .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.topbar #aiSwitchBtn,
   /* Composer buttons were 34px tall. */
-  .composer #attachBtn,.composer #modelBtn,.composer #thinkBtn,
+  .composer #attachBtn,
   /* Copy, Reply and Prompt under each message were 20px to 28px tall. */
   .msg .msg-copy,.msg .msg-reply,.msg .msg-lens{position:relative}
   .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after{content:"";position:absolute;inset:-6px}
   .topbar #aiSwitchBtn::after{content:"";position:absolute;inset:-12px -3px}
-  .composer #attachBtn::after,.composer #modelBtn::after,.composer #thinkBtn::after{content:"";position:absolute;inset:-7px}
+  .composer #attachBtn::after{content:"";position:absolute;inset:-7px}
   .msg .msg-copy::after,.msg .msg-reply::after,.msg .msg-lens::after{content:"";position:absolute;inset:-14px -3px}
 
   /* Drawer rows were 30px to 35px tall. */
@@ -95,10 +95,10 @@
   .modal .btn,.modal-actions .btn,#settingsModal .modal-actions .btn,#bugDialog .btn{min-height:44px}
   /* Small buttons keep their look; an invisible layer makes the tap area 44px. */
   .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,.banner-x,
-  #bgTasksPanel .bgHead button,#bgTasksPanel .bgFoot button{position:relative}
+  #bgTasksPanel .bgFoot button{position:relative}
   .modal .kv-group-btn::after,.search-filter-chip::after{content:"";position:absolute;inset:-8px 0}
   .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,.banner-x::after,
-  #bgTasksPanel .bgHead button::after,#bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
+  #bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
   /* Settings checkbox rows were 17px to 34px tall. */
   #settingsModal .settings-check{min-height:44px}
 }

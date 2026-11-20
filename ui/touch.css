@@ -1,10 +1,8 @@
-/* touch.css: 44px controls on touch screens at any width (tablets included). Loaded after phone.css. */
-/* Touch screens (any width, tablets too): the controls themselves are at least 44px, measured
-   as boxes, not just by an invisible layer. A mouse keeps the compact sizes. */
+/* touch.css: 44px tap areas on touch screens at any width (tablets included). Loaded after phone.css. */
+/* Touch screens (any width, tablets too). Buttons that sit in a row or a bar keep their small look:
+   an invisible 44x44 layer (below) makes the tap area. A mouse keeps the compact sizes. */
 @media(pointer:coarse){
-  .composer #attachBtn,.topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn{min-width:44px;min-height:44px}
-  .chat-titlebar-actions .chat-share-btn{min-width:44px;min-height:44px}
-  .msg .meta button,.msg .cb-copy{min-width:44px;min-height:44px}
+  .composer #attachBtn{min-width:44px;min-height:44px}
   /* The project tab above the message box reads its height from this one variable. */
   :root{--bump-height:44px}
   /* The AI switch keeps its small pill; the button around it is 44px and draws it. */
@@ -16,4 +14,41 @@
   body.theme-light #aiSwitchBtn.on::before{background:var(--accent);border-color:var(--accent)}
   #aiSwitchBtn .ai-switch-thumb{top:12px;left:6px}
   #aiSwitchBtn.on .ai-switch-thumb{left:24px}
+}
+
+/* The invisible layer: centred on the control, never smaller than 44x44, never changes the layout.
+   :where() keeps position:relative from beating any control that is already positioned. */
+@media(pointer:coarse){
+  :where(#sideToggleTop,#modelBtn,#thinkBtn,#micBtn,.cprefs-btn,.plens-meter,
+    .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.chat-titlebar-actions .chat-share-btn,.chat-more-btn,
+    .msg .meta button,.msg .cb-copy,.queue-chip button,.edit-chip button,
+    .rag-back,.rag-tabs .btn,.rag-back-sessions,.hub-share-row .btn,#hubLockdownBtn,.openide-empty-ctas button,
+    .send-fail-acts .btn,#bgTasksPanel .bgFoot button,.ds-ico){position:relative}
+  #sideToggleTop::after,#modelBtn::after,#thinkBtn::after,#micBtn::after,.cprefs-btn::after,.plens-meter::after,
+  .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after,.chat-titlebar-actions .chat-share-btn::after,.chat-more-btn::after,
+  .msg .meta button::after,.msg .cb-copy::after,.queue-chip button::after,.edit-chip button::after,
+  .rag-back::after,.rag-tabs .btn::after,.rag-back-sessions::after,.hub-share-row .btn::after,#hubLockdownBtn::after,.openide-empty-ctas button::after,
+  .send-fail-acts .btn::after,#bgTasksPanel .bgFoot button::after,.ds-ico::after{
+    content:"";position:absolute;left:50%;top:50%;right:auto;bottom:auto;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%);
+  }
+  /* The waiting-message x and the edit Cancel were 36px boxes: small again, same tap area. */
+  .msg-queue-hint .queue-chip button,.msg-queue-hint.edit-chip button{min-width:0;min-height:24px}
+  /* Lists and fields: a taller row is the honest fix there (nothing sits beside them to crowd). */
+  .plus-menu button{min-height:44px}
+  select[data-skill-scope]{min-height:44px}
+  /* A checkbox is 13px: its label is the tap area, 44 tall and reaching 16px past each side. Margins cancel the padding. */
+  .settings-check,.hub-demo-toggle{min-height:44px;align-items:center;padding-left:16px;padding-right:16px;margin-left:-16px;margin-right:-16px;box-sizing:border-box}
+  /* Close and refresh in Background tasks are bare glyphs: a 44px box is the tap area; negative margins keep the header the same height. */
+  #bgTasksPanel .bgHead button{min-width:44px;min-height:44px;margin:-10px -4px}
+  /* Banner dismiss is a bare x: a 44px box in the banner's corner. Docs is a text link in the footer. */
+  .banner-x{min-width:44px;min-height:44px;top:0;right:0;padding:0}
+  .sc-docs{display:inline-flex;align-items:center;min-height:44px;min-width:44px}
+  .composer-actions{gap:8px}
+  .msg-queue-hint.edit-chip{padding-bottom:18px}
+  .openide-empty-ctas{row-gap:10px}
+  .rag-tabs{row-gap:16px}
+  .rag-space-head{margin-bottom:16px}
+  #settingsModal .settings-cursor .sc-search{min-height:44px}
+  /* Buttons stacked 8px apart would share their layers: 12px keeps each tap area its own. */
+  .hub-share-row{row-gap:12px}
 }
