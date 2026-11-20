@@ -778,6 +778,8 @@ def plan_query(
                 continue
             if metric is None:
                 fn = _agg_before(q, start, prev_end)
+                if fn == "COUNT" and row_count and _numeric_ratio(df[name]) < 0.6 and _GROUP_LEAD.search(q[max(0, start - 16):start]):
+                    continue  # "how many rows in Q1 by region": Region is the group, not a column to count
                 if fn and (fn == "COUNT" or _numeric_ratio(df[name]) >= 0.6):
                     metric, metric_agg = name, fn
 

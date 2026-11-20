@@ -298,3 +298,14 @@ def test_legacy_korean_file_with_long_ascii_head_is_still_text(tmp_path):
     assert ingest.unreadable_reason(p) == ""
     text, _ = ingest.read_text_file(p)
     assert "창고에는 팔레트가" in text
+
+
+@pytest.mark.parametrize("q,frame,col", [
+    ("how many rows in Q1 by region", Q1, "Region"),
+    ("number of rows by product in Q2", Q2, "Product"),
+    ("row count by region in Q1", Q1, "Region"),
+])
+def test_row_count_by_a_column_is_split_by_it(space, q, frame, col):
+    d = ask(space, q)
+    for k, v in frame.groupby(col).size().items():
+        assert f"{k}: {v}" in nums(d["answer"])
