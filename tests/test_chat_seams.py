@@ -225,6 +225,59 @@ class FreshSendOverTheCap(SeamsBase):
         self.assertTrue(any("left out: f12.txt, f13.txt." in (t or "") for t in saved), saved)
 
 
+class LeftOutNoteSurvivesAgain(SeamsBase):
+    """The question stores every file it was sent with, so regenerate and edit repeat the note."""
+
+    def _fresh14(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"g{n:02d}.txt", "w")["id"] for n in range(14)]
+        code, _, out = self.post("/api/chat/stream", {"session_id": sid, "text": "list them", "attachment_ids": ids})
+        self.assertEqual(code, 200, out)
+        q = [m for m in self.rows(sid) if m["source"] == "ai-chat"][-1]
+        return sid, ids, q
+
+    def _ai_texts(self, sid):
+        return [m["text"] or "" for m in self.rows(sid) if m["source"] == "ai"]
+
+    def test_regenerate_repeats_the_left_out_note(self):
+        sid, ids, q = self._fresh14()
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": q["id"]})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[-1])), 12)
+        self.assertIn("left out: g12.txt, g13.txt.", repr(evs))
+        self.assertTrue(any("left out: g12.txt, g13.txt." in t for t in self._ai_texts(sid)))
+
+    def test_edit_repeats_the_left_out_note(self):
+        sid, ids, q = self._fresh14()
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited", "replace_msg_id": q["id"]})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[-1])), 12)
+        self.assertIn("left out: g12.txt, g13.txt.", repr(evs))
+
+    def test_regenerate_twice_still_names_them(self):
+        sid, ids, q = self._fresh14()
+        for _ in range(2):
+            code, evs, _o = self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": q["id"]})
+            self.assertIn("left out: g12.txt, g13.txt.", repr(evs))
+
+    def test_twelve_files_say_nothing_on_regenerate(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"h{n:02d}.txt", "w")["id"] for n in range(12)]
+        self.post("/api/chat/stream", {"session_id": sid, "text": "q", "attachment_ids": ids})
+        q = [m for m in self.rows(sid) if m["source"] == "ai-chat"][-1]
+        code, evs, _o = self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": q["id"]})
+        self.assertNotIn("left out", repr(evs))
+
+    def test_a_huge_id_past_the_twelfth_is_ignored_not_a_500(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"i{n:02d}.txt", "w")["id"] for n in range(12)] + [10 ** 30]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "q", "attachment_ids": ids})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertTrue([m for m in self.rows(sid) if m["source"] == "ai-chat"])
+        self.assertEqual(clipdrop._left_out_note([10 ** 30, "x", None], (sid,)), "")
+
+
 class FailedEditKeepsTheOldTurn(SeamsBase):
     def broken(self, question, mode, history, abort, **kw):
         yield {"type": "error", "text": "No text LLM available"}

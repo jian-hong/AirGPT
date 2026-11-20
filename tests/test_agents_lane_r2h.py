@@ -128,6 +128,40 @@ class OddIdRouteTests(unittest.TestCase):
             self.assertEqual(status, 400, path)
             self.assertEqual(json.loads(out)["error"], "That id is not valid.")
 
+    def test_a_body_that_is_not_an_object_is_a_400_with_a_sentence(self):
+        for body in (b"[]", b'"s"', b"null", b"123"):
+            status, out = self._req("POST", "/api/agents/1/run", body=body)
+            self.assertEqual(status, 400, (body, out))
+            self.assertIn("JSON object", json.loads(out)["error"])
+
+    def _run_with(self, events, session_id, chat_line="@Scout go"):
+        import db
+        ag = agent_store.create_agent("R2K scout", tools=[], kind="custom")
+        body = {"prompt": "go", "session_id": session_id, "chat_line": chat_line}
+        with mock.patch.object(agent_runtime, "start_background_run", lambda *a, **k: 4242), \
+             mock.patch.object(agent_runtime, "tail_run", lambda rid, *a, **k: iter(events)):
+            status, out = self._req("POST", "/api/agents/%d/run" % ag["id"], body=json.dumps(body).encode())
+        self.assertEqual(status, 200, out)
+        rows = [json.loads(l[5:]) for l in out.splitlines() if l.startswith("data:")]
+        return rows, db.get_messages(since_id=0, limit=500, session_id=session_id) if session_id else []
+
+    def test_a_30000_character_answer_and_the_line_are_saved_whole_in_the_chat(self):
+        import db
+        sid = db.create_session("R2K chat", capture_type="ai")["id"]
+        rows, saved = self._run_with([{"type": "done", "analysis": "w" * 30000}], sid)
+        got = [m for m in saved if m["source"] == "ai"]
+        self.assertEqual(len(got[-1]["text"]), 30000)
+        self.assertEqual([m["text"] for m in saved if m["source"] == "ai-chat"], ["@Scout go"])
+        self.assertEqual([r for r in rows if r["type"] == "saved"][0]["messages"][1]["id"], got[-1]["id"])
+
+    def test_a_failed_run_saves_the_line_and_the_failure_sentence(self):
+        import db
+        sid = db.create_session("R2K chat 2", capture_type="ai")["id"]
+        sentence = "No AI model could be reached. Check your model in Settings."
+        rows, saved = self._run_with([{"type": "error", "text": sentence}], sid)
+        self.assertIn(sentence, [m["text"] for m in saved if m["source"] == "ai"])
+        self.assertEqual([m["text"] for m in saved if m["source"] == "ai-chat"], ["@Scout go"])
+
 
 if __name__ == "__main__":
     unittest.main()

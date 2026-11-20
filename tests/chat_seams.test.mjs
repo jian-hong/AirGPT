@@ -35,7 +35,7 @@ function page(names, extra = {}) {
     ...extra,
   };
   const ctx = vm.createContext(g);
-  const src = "let editingMsgId=0,editingSession=0,editCarryIds=[];let retryIds=[];let sendFailure=null;\n"
+  const src = "let editingMsgId=0,editingSession=0,editCarryIds=[];let retryIds=[];let _retrySend=false;let sendFailure=null;\n"
     + names.map(grab).join("\n");
   vm.runInContext(src, ctx);
   return ctx;
@@ -70,24 +70,25 @@ test("the failure record keeps the files and the edited question's id", () => {
 test("Try again sends the question with the files it had", async () => {
   const ctx = page(["retryFailedSend"], {
     api: async () => ({ ok: true }), msgById: {},
-    send() { ctx.seen = vm.runInContext("JSON.stringify(retryIds)", ctx); },
+    send(t) { ctx.seen = vm.runInContext("JSON.stringify(retryIds)", ctx); ctx.sentText = t; },
   });
   vm.runInContext("sendFailure={sid:7,text:'FAILQ',msg:'x',ids:[5,6],replace:0};", ctx);
   await ctx.retryFailedSend();
   assert.deepEqual(JSON.parse(ctx.seen), [5, 6]);
-  assert.equal(ctx.box.value, "FAILQ");
+  assert.equal(ctx.sentText, "FAILQ");   // sent as its own text; the box is not used for it
+  assert.equal(ctx.box.value, "");
 });
 
 test("Try again on a failed edit asks the same edit again and keeps the old question", async () => {
   const calls = [];
   const ctx = page(["retryFailedSend", "resumeEdit", "showEditChip"], {
     api: async (...a) => { calls.push(a); return { ok: true }; }, msgById: {},
-    send() { ctx.seen = vm.runInContext("JSON.stringify([editingMsgId,editingSession,editCarryIds])", ctx); },
+    send(t) { ctx.sentText = t; ctx.seen = vm.runInContext("JSON.stringify([editingMsgId,editingSession,editCarryIds])", ctx); },
   });
   vm.runInContext("sendFailure={sid:7,text:'edited',msg:'x',ids:[8],replace:41};", ctx);
   await ctx.retryFailedSend();
   assert.deepEqual(JSON.parse(ctx.seen), [41, 7, [8]]);
-  assert.equal(ctx.box.value, "edited");
+  assert.equal(ctx.sentText, "edited");
   assert.deepEqual(calls, [], "the old question must not be deleted");
 });
 
@@ -208,4 +209,60 @@ test("when the chat's last question is no longer the edited one, the chip goes a
   assert.equal(vm.runInContext("editingMsgId", ctx), 0);
   assert.equal(ctx.box.value, "B EDIT TEXT");
   assert.deepEqual(saved, ["B EDIT TEXT"]);
+});
+
+// ---- final round: @Agent line, Try again keeps the box ----
+
+function agentPage(agents, extra = {}) {
+  const ran = [];
+  const ctx = page(["dispatchAtAgent"], {
+    api: async () => ({ json: async () => ({ agents }) }),
+    ensureChatSession: async () => 7,
+    runCortexAgentWithPrompt: (id, prompt, line) => ran.push([id, prompt, line]),
+    ...extra,
+  });
+  ctx.ran = ran;
+  return ctx;
+}
+
+test("'@property versus @classmethod ...' is a question, not an agent command", async () => {
+  const ctx = agentPage([{ id: 1, name: "RAG" }, { id: 2, name: "Scout" }]);
+  assert.equal(await ctx.dispatchAtAgent("@property versus @classmethod in Python, which for a factory?"), false);
+  assert.deepEqual(ctx.ran, []);
+  assert.deepEqual(ctx.toasts, []);
+});
+
+test("an exact agent name (any case) still runs that agent with the rest of the line and the whole line", async () => {
+  const ctx = agentPage([{ id: 1, name: "RAG" }, { id: 2, name: "Scout" }]);
+  assert.equal(await ctx.dispatchAtAgent("@scout find the thing"), true);
+  assert.deepEqual(ctx.ran, [[2, "find the thing", "@scout find the thing"]]);
+});
+
+test("Try again sends the failed text on its own and leaves the waiting lines in the box", async () => {
+  const sent = [];
+  const ctx = page(["retryFailedSend"], { send: (t) => sent.push(t), api: async () => ({ ok: true }), msgById: {} });
+  vm.runInContext("sendFailure={text:'second question',ids:[3]};", ctx);
+  ctx.box.value = "WAITING LINE ONE";
+  await ctx.retryFailedSend();
+  assert.deepEqual(sent, ["second question"]);
+  assert.equal(ctx.box.value, "WAITING LINE ONE");
+  assert.equal(vm.runInContext("_retrySend", ctx), true);
+  assert.equal(vm.runInContext("JSON.stringify(retryIds)", ctx), "[3]");
+});
+
+test("Try again on a failed edit keeps the waiting lines in the box too", async () => {
+  const sent = [];
+  const ctx = page(["retryFailedSend"], { send: (t) => sent.push(t), resumeEdit() {} });
+  vm.runInContext("sendFailure={text:'edited question',replace:41,sid:7,ids:[]};", ctx);
+  ctx.box.value = "WAITING LINE\n\nmore";
+  await ctx.retryFailedSend();
+  assert.deepEqual(sent, ["edited question"]);
+  assert.equal(ctx.box.value, "WAITING LINE\n\nmore");
+});
+
+test("an agent whose name has spaces runs on '@Research Bot ...', and the longer name wins", async () => {
+  const ctx = agentPage([{ id: 1, name: "Research" }, { id: 2, name: "Research Bot" }]);
+  assert.equal(await ctx.dispatchAtAgent("@research bot find the thing"), true);
+  assert.deepEqual(ctx.ran, [[2, "find the thing", "@research bot find the thing"]]);
+  assert.equal(await ctx.dispatchAtAgent("@Researcher find"), false);
 });
