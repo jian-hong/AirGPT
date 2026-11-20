@@ -176,7 +176,7 @@ def test_followup_after_a_ranking_is_calculated(space):
     h3: list = []
     turn(h3, q3, d3)
     d4 = ask(space, "and for South?", h3)
-    assert "lowest" in d4["answer"] and south.idxmin() in d4["answer"].split("\n")[0]
+    assert f"{south.idxmin()} has the lowest" in d4["answer"] and str(int(south.min())) in d4["answer"].replace(",", "")
 
 
 # ---- pm-rag.4: a blank group key has a name --------------------------------------------
@@ -204,6 +204,9 @@ def test_group_by_a_column_that_does_not_exist_is_said(space):
     # a real column and a real value after 'by' are unaffected
     assert "no column" not in ask(space, "total Amount by Product in North")["answer"]
     assert "no column" not in ask(space, "total Amount by Region")["answer"]
+    # 'by' with a cell value or arithmetic is ordinary text, not a missing column
+    assert "no Fay column" not in ask(space, "total Salary entered by Fay")["answer"]
+    assert "column" not in ask(space, "total Amount multiplied by two")["answer"].split("\n")[0]
 
 
 # ---- pm-rag.6: web goals keep only the user's topic ------------------------------------

@@ -1457,7 +1457,8 @@ def _answer_group(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
             "sheets": sheets,
         }
     order = grouped.sort_values(ascending=(plan.rank == "asc"), kind="stable")
-    table = [(first_label.get(k, k), float(v)) for k, v in order.items()]
+    # A group with no name in its cell is a group all the same: "(blank)", not an empty label.
+    table = [(first_label.get(k, k) or "(blank)", float(v)) for k, v in order.items()]
     if not plan.rank:
         table.sort(key=lambda kv: kv[0].casefold())
     shown_rows = "; ".join(f"{k}: {_round(v)}" for k, v in table[:25])
@@ -1496,9 +1497,9 @@ def _answer_group(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
         "filter": where,
         "group_by": gname,
         "groups": [{"group": k, "value": round(v, 4)} for k, v in table[:50]],
-        # A ranking ("which has the highest") is a different shape of answer; only the
-        # plain by-group table is repeated for a follow-up ("and for South?").
-        **({} if plan.rank else {"carry": {**_carry(plan), "group_by": gname}}),
+        # What a follow-up ("and for South?") repeats: the group, the measure and, for a
+        # ranking, its direction (top one, highest or lowest).
+        "carry": {**_carry(plan), "group_by": gname, **({"rank": plan.rank} if plan.rank else {})},
         "assumed": plan.assumed,
         "sheets": sheets,
         "linked": {"sheet": plan.sheet, "workbook": plan.workbook, "metric": plan.metric,
@@ -1524,6 +1525,11 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
     if not hit and len(sibs) > 1 and not plan.all_numeric and not plan.group_by:
         hit = _answer_multi(plan, sibs, frames)
     hit = hit or _answer_single(plan, frames)
+    ghost = _missing_group_column(question, frames) if hit and not hit.get("group_by") else ""
+    if ghost and hit.get("answer") and not hit.get("abstained"):
+        # "by Colour" on a table with no Colour column: said, not dropped.
+        hit["answer"] = f"There is no {ghost} column, so I could not group by it. Here is the answer without it:\n\n{hit['answer']}"
+        hit["no_group_column"] = ghost
     # "North and South" where one of them cannot take the question (no such column):
     # say which was left out instead of answering as if it had not been asked for.
     answered = {c.sheet for c, _nm in sibs} | {str(hit.get("sheet") or "")}
@@ -1533,6 +1539,48 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         head, sep, tail = str(hit["answer"]).partition("\n\nSQL:")
         hit["answer"] = f"{head}\n\n{note}{sep}{tail}"
     return hit
+
+
+_BY_WORD = re.compile(r"(?<![\w])(?:(\w+)\s+)?by\s+(?:the\s+)?([A-Za-z][A-Za-z_-]*)", re.I)
+_NOT_A_GROUP_BY = {
+    "multiplied", "divided", "increased", "decreased", "increase", "decrease", "grew", "grow", "rose", "fell",
+    "up", "down", "followed", "close", "closer", "side", "step", "far", "growing", "rising", "falling",
+}
+
+
+def _missing_group_column(question: str, frames: dict[tuple[str, str], Any]) -> str:
+    """The word after "by" in "total Amount by Colour" when no table has such a column.
+
+    Empty when there is no such phrase, when the word is a column, a sheet or a cell value
+    (so "sold by Alice" and "by Region" are untouched), or when "by" is arithmetic.
+    """
+    for m in _BY_WORD.finditer(question or ""):
+        lead, word = (m.group(1) or "").lower(), m.group(2)
+        if lead in _NOT_A_GROUP_BY or word.casefold() in _STOP_BY_WORDS:
+            continue
+        key = _norm(word)
+        found = False
+        for (_wb, sheet), df in frames.items():
+            if df is None or df.empty:
+                continue
+            named = key == _norm(sheet) or any(
+                key == _norm(str(c))
+                or any(a < m.end(2) and m.start(2) < b for a, b in _mentions(question, str(c)))
+                for c in df.columns
+            )
+            is_value = not named and any(
+                not str(df[c].dtype).startswith(("int", "float")) and df[c].astype(str).str.strip().str.casefold().eq(word.casefold()).any()
+                for c in df.columns
+            )
+            if named or is_value:
+                found = True
+                break
+        if not found:
+            return word
+    return ""
+
+
+_STOP_BY_WORDS = {"the", "a", "an", "each", "all", "every", "this", "that", "next", "last", "now", "then", "default"}
 
 
 def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
@@ -1664,7 +1712,12 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
     if op == "COUNT" and not metric:
         out = "how many rows"
-    if prev.get("group_by"):
+    if prev.get("group_by") and prev.get("rank") in ("desc", "asc"):
+        word = "highest" if prev["rank"] == "desc" else "lowest"
+        out = f"which {prev['group_by']} has the {word} {_OP_WORD.get(op, 'total')} {metric}".strip()
+        if op == "COUNT" and not metric:
+            out = f"which {prev['group_by']} has the {word} number of rows"
+    elif prev.get("group_by"):
         out += f" by {prev['group_by']}"
     if target_sheet and not wb_name.lower().endswith((".csv", ".tsv")):
         out += f" in the {target_sheet} sheet"
