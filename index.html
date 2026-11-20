@@ -11493,6 +11493,10 @@ function ragMdHtml(md,scope,labels){
   let html;
   try{html=(typeof renderMd==='function')?renderMd(src):esc(src).replace(/\n/g,'<br>');}
   catch(e){html=esc(src).replace(/\n/g,'<br>');}
+  // The text comes from documents or the web. A picture or media tag would fetch from an
+  // address the document chose, and the address can carry what the answer knows, so those
+  // are never loaded here. Links stay (nothing loads until the person clicks).
+  html=html.replace(/<img\b[^>]*>/gi,'(image not shown)').replace(/<\/?(?:video|audio|source|track|picture|svg|image|use)\b[^>]*>/gi,'');
   return scope==null?html:ragLinkCiteChips(html,scope,labels);
 }
 function ragScrollToCite(scope,n){

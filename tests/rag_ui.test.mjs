@@ -195,6 +195,14 @@ test("the same file added again is not reported as added", () => {
   assert.equal(again.problems.length, 0);
 });
 
+test("answers and summaries never load a picture or media from an address a document chose", () => {
+  // renderMd (DOMPurify) keeps <img>; the page must drop it so nothing is fetched.
+  const c = page({ renderMd: (m) => m });
+  const out = c.ragMdHtml('<p>a <img alt="x" src="https://evil.example/leak?q=1"> b</p><video src="https://evil.example/v"></video><svg><image href="https://evil.example/i"/></svg><a href="https://ok.example">link</a>', "s1", []);
+  assert.ok(!/<img|<video|<svg|<image|evil\.example\/(leak|v|i)/.test(out), out);
+  assert.ok(out.includes("(image not shown)") && out.includes('<a href="https://ok.example">link</a>'));
+});
+
 test("a batch with one new file and one already held counts only the new one", () => {
   const c = page();
   // The server reads both and makes pieces for one; the page knows 1 hash is new.
