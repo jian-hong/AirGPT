@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -1193,6 +1194,14 @@ def create_chat(space_id: int, title: str = "New chat") -> dict:
         return _row(conn.execute("SELECT * FROM rag_chats WHERE id=?", (cur.lastrowid,)).fetchone())  # type: ignore[return-value]
 
 
+def _cut_summary(text: str, limit: int = 220) -> str:
+    """First `limit` characters, never ending inside a citation mark like "[1", "[1, 2" or "[W1"."""
+    cut = text[:limit]
+    if len(text) > limit:
+        cut = re.sub(r"\s*\[[A-Za-z]{0,2}[0-9,\s]*$", "", cut)
+    return cut
+
+
 def list_chats(space_id: int) -> list[dict]:
     """Chats for a space, plus a rough preview for the Chats tab cards.
 
@@ -1222,7 +1231,7 @@ def list_chats(space_id: int) -> list[dict]:
             prev = str(d.get("preview") or "").strip()
             ans = str(d.get("last_answer") or "").strip()
             rough = (ans or prev).replace("\n", " ").strip()
-            d["summary"] = rough[:220] if rough else ""
+            d["summary"] = _cut_summary(rough)
             out.append(d)
         return out
 

@@ -89,3 +89,17 @@ def test_force_still_rebuilds_when_asked(server):
     _upload(base, sid, {"second.md": "# Two\n\nThe Brelkin invoice is paid.\n"}, {"force": "1"})
     assert _found(sid, "Brelkin")
     assert not _found(sid, "Zorvath")
+
+
+def test_same_name_clash_looks_at_sources_not_leftover_files(server):
+    base, store = server
+    sid = int(store.create_space("clash")["id"])
+    # An empty file is skipped (no source) but its bytes stay in the uploads folder.
+    first = _upload(base, sid, {"notes.md": ""})
+    assert first["sources"] == 0
+    second = _upload(base, sid, {"notes.md": "# Notes\n\nThe Zorvath contract is void.\n"})
+    assert second["ok"] and "renamed" not in second
+    assert [s["title"] for s in store.list_sources(sid)] == ["notes.md"]
+    # a different file with the name of a live source is still kept beside it
+    third = _upload(base, sid, {"notes.md": "# Other\n\nThe Brelkin invoice is paid.\n"})
+    assert third["renamed"] == [{"from": "notes.md", "to": "notes_2.md"}]

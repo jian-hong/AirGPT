@@ -557,11 +557,9 @@ def web_query_from_ask(query: str) -> str:
 
 
 _GOAL_FILLER = re.compile(
-    r"\b(help\s+me|find|who\s+is|the\s+best\s+ppl|people|about|also|hmm+|maybe|next|"
-    r"explain|thne|then|bro|check|what\s+is|that\s+file\s+mentioning|searhc|serach|"
-    r"search\s+for\s+it|athen|do\s+you\s+think|i\s+can\s+get\s+rich|what\s+product|"
-    r"can\s+i\s+ma?ke|from\s+this\s+rag|ensure|auot|auto|distirbution|distribution|"
-    r"and\s+rich|ad|ppl)\b",
+    r"\b(help\s+me|find|who\s+is|people|about|also|hmm+|maybe|next|"
+    r"explain|thne|then|bro|check|what\s+is|searhc|serach|"
+    r"search\s+for\s+it|athen|do\s+you\s+think)\b",
     re.I,
 )
 
@@ -599,7 +597,7 @@ def _goal_ok(goal: str) -> bool:
         return False
     # Reject junk single-token / symbol goals that DDG interprets as "+" or "hong"
     toks = _lex_tokens(g)
-    if len(toks) < 2 and g not in ("JEPA", "Netie", "Cortex"):
+    if len(toks) < 2:
         return False
     if g in {"+", "-", "&", "hong", "ad", "hmm", "bro", "next", "then"}:
         return False
@@ -641,35 +639,7 @@ def split_web_goals(query: str, *, max_goals: int = 6) -> list[str]:
         if len(goals) >= max_goals:
             break
 
-    # Named entities first — replace noisy mega-goals when entities are present
-    q_cf = (query or "").casefold()
-    entity_goals = [
-        ("jian hong", "Jian Hong Netie AI founder"),
-        ("yanlecun", "Yann LeCun papers publications"),
-        ("yann lecun", "Yann LeCun papers publications"),
-        ("lecun", "Yann LeCun Google Scholar papers"),
-        ("jepa", "JEPA vs transfer learning Yann LeCun"),
-        ("cognition", "what is cognition psychology OpenStax"),
-        ("netie", "Netie AI startup"),
-    ]
-    entity_out: list[str] = []
-    for needle, goal in entity_goals:
-        if needle in q_cf and goal.casefold() not in {g.casefold() for g in entity_out}:
-            if needle == "lecun" and any("lecun" in g.casefold() for g in entity_out):
-                continue
-            entity_out.append(goal)
-    if entity_out:
-        extra: list[str] = []
-        for g in goals:
-            gl = g.casefold()
-            if any(n in gl for n, _ in entity_goals):
-                continue
-            if any(x in gl for x in ("rich", "product", "distir", "distribut", "money", "rag to")):
-                continue
-            if _goal_ok(g):
-                extra.append(g)
-        goals = entity_out + extra
-    elif not goals and q:
+    if not goals and q:
         fallback = _clean_goal(q[:90]) or q[:90]
         if _goal_ok(fallback):
             goals = [fallback]
@@ -1527,7 +1497,48 @@ def _retrieval_chain(query: str, **kw) -> dict:
         return {"lane": "retrieval", "steps": [], "text": "", "error": str(e)[:160]}
 
 
-def answer_events(
+FOLLOWUP_NOT_CALCULATED = "This follow-up was answered from the passages, not calculated."
+
+
+def answer_events(space_id: int, query: str, *, history: list[dict] | None = None, **kw) -> Iterator[dict]:
+    """Same events as _answer_events. When the last answer was calculated from a table and
+    this follow-up could not be carried over, the answer opens by saying nothing was
+    calculated (live and saved), and provenance.followup_not_calculated is set."""
+    prev = next((m.get("provenance") for m in reversed(history or []) if m.get("role") == "assistant"), None)
+    note = False
+    # A follow-up that already got the note leaves no carry behind, so the next one
+    # ("and for South?") is still a follow-up to a calculation that was not repeated.
+    # A ranking is calculated too (it has the statement) but has no carry to repeat.
+    if isinstance(prev, dict) and (prev.get("carry") or prev.get("sql") or prev.get("followup_not_calculated")):
+        from rag import sheet_sql
+
+        note = sheet_sql.reads_as_followup(query)
+    if not note:
+        yield from _answer_events(space_id, query, history=history, **kw)
+        return
+    lane, said = "", False
+    for ev in _answer_events(space_id, query, history=history, **kw):
+        t = ev.get("type")
+        if t == "meta":
+            lane = str(ev.get("lane") or "")
+        if lane == "sql":  # it was calculated: nothing to say
+            yield ev
+            continue
+        if t == "delta" and not said:
+            said = True
+            yield {"type": "delta", "text": FOLLOWUP_NOT_CALCULATED + "\n\n"}
+        elif t == "done":
+            if not said:
+                yield {"type": "delta", "text": FOLLOWUP_NOT_CALCULATED + "\n\n"}
+            ev = {
+                **ev,
+                "answer": FOLLOWUP_NOT_CALCULATED + "\n\n" + str(ev.get("answer") or ""),
+                "provenance": {**(ev.get("provenance") or {}), "followup_not_calculated": True},
+            }
+        yield ev
+
+
+def _answer_events(
     space_id: int,
     query: str,
     *,
