@@ -174,6 +174,40 @@ def validate_pack(zf: zipfile.ZipFile) -> dict:
     return manifest
 
 
+_TABLE_SUFFIXES = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv")
+
+
+def _sheet_csvs(src: dict) -> list[tuple[str, bytes]]:
+    """(sheet name, CSV bytes) for a spreadsheet source whose original file is still here.
+
+    Cell values only: no author, comments, formulas or other workbook metadata ever
+    reach the pack. Empty list means "pack the extracted text instead".
+    """
+    meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+    if not meta.get("table"):
+        return []
+    try:
+        import csv
+
+        from rag import reveal
+        from rag.xlsx_sql import load_table_file
+
+        path, _origin = reveal.resolve_source_path(src)
+        if not path or not path.lower().endswith(_TABLE_SUFFIXES):
+            return []
+        out: list[tuple[str, bytes]] = []
+        for name, df in load_table_file(Path(path)).items():
+            buf = io.StringIO()
+            w = csv.writer(buf, lineterminator="\n")
+            w.writerow([str(c) for c in df.columns])
+            for row in df.itertuples(index=False):
+                w.writerow(["" if v is None or v != v else v for v in row])
+            out.append((str(name), buf.getvalue().encode("utf-8")))
+        return out
+    except Exception:
+        return []
+
+
 def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
     """Build zip bytes for one knowledge space. Raises ValueError if missing."""
     space = store.get_space(int(space_id))
@@ -188,13 +222,47 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
     manifest_sources: list[dict[str, Any]] = []
     integrity_files: dict[str, str] = {}
     skipped = 0
+    as_text: list[str] = []  # spreadsheets that could only be packed as text
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for i, src in enumerate(sources, start=1):
+        member_no = 0
+        for src in sources:
+            # A spreadsheet travels as one CSV per sheet (cell values only), so the
+            # importing space can still calculate from it. Anything else, or a sheet
+            # file that is gone from this machine, travels as its extracted text.
+            sheet_files = _sheet_csvs(src)
+            if sheet_files:
+                meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+                meta_out = _strip_abs_paths({k: v for k, v in meta.items() if k not in ("blob", "docs_path", "table")})
+                for sheet, data in sheet_files:
+                    member_no += 1
+                    pack_path = f"sources/{member_no:04d}__{_safe_title(str(src.get('title') or 'sheet'))}__{_safe_title(sheet, fallback='sheet')}.csv"
+                    digest = _sha256_bytes(data)
+                    zf.writestr(pack_path, data)
+                    integrity_files[pack_path] = digest
+                    manifest_sources.append(
+                        {
+                            "pack_path": pack_path,
+                            "title": str(src.get("title") or sheet),
+                            "content_hash": digest,
+                            "mime": "text/csv",
+                            "bytes": len(data),
+                            "original_path": Path(str(src.get("title") or src.get("path") or sheet)).name,
+                            "table_workbook": str(src.get("title") or sheet),
+                            "table_sheet": sheet,
+                            "authority": store.source_authority(int(src.get("id") or 0)),
+                            "meta": meta_out,
+                        }
+                    )
+                continue
             blob = _resolve_source_blob(int(space_id), src)
             if not blob:
                 skipped += 1
                 continue
+            member_no += 1
+            i = member_no
+            if (src.get("meta") or {}).get("table"):
+                as_text.append(str(src.get("title") or blob.name))
             title = _safe_title(str(src.get("title") or blob.name))
             # Packed sources are extracted text; carry .txt so import re-ingests
             # them as text rather than re-running a binary extractor.
@@ -288,6 +356,7 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
             "stats": {
                 "source_count": len(manifest_sources),
                 "skipped": skipped,
+                "spreadsheets_as_text": as_text,
                 "chat_count": chat_count,
                 "message_count": message_count,
             },
@@ -300,8 +369,10 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 "AirGPT RAG pack (airgpt-rag-pack v1).\n"
                 "Import via RAG library → Import, or POST /api/rag/spaces/import.\n"
                 "Index rebuilds on import; vectors are not included.\n"
-                "Spreadsheets travel as plain text, so after import their tables are searched\n"
-                "like text. Counts and totals need the original file added again.\n"
+                "Spreadsheets travel as one CSV per sheet (cell values only), so counts and\n"
+                "totals still work after import. A spreadsheet listed under\n"
+                "stats.spreadsheets_as_text travelled as plain text and cannot be calculated\n"
+                "from; add the original file again.\n"
             ).encode("utf-8"),
         )
 
@@ -390,7 +461,15 @@ def import_pack(
             if not pack_path:
                 continue
             title = _safe_title(str(entry.get("title") or Path(pack_path).name))
-            if not title.lower().endswith(".txt"):
+            sheet = entry.get("table_sheet")
+            if isinstance(sheet, str) and sheet and pack_path.lower().endswith(".csv"):
+                # One sheet of a spreadsheet: a real .csv again, so the calculation lane
+                # reads it. A workbook with several sheets gets one file per sheet.
+                if not title.lower().endswith((".csv", ".tsv")):
+                    title = _safe_title(f"{title}__{sheet}")
+                if not title.lower().endswith(".csv"):
+                    title = f"{title}.csv"
+            elif not title.lower().endswith(".txt"):
                 title = f"{title}.txt"
             target = dest_dir / title
             # Avoid collisions
@@ -454,6 +533,11 @@ def import_pack(
                 orig = str(entry.get("original_path") or "").strip()
                 if orig:
                     meta["original_path"] = Path(orig).name
+                if entry.get("table_sheet") and entry.get("table_workbook"):
+                    # Names the original file and sheet in the answer's provenance.
+                    meta["table_workbook"] = str(entry["table_workbook"])[:200]
+                    meta["table_sheet"] = str(entry["table_sheet"])[:200]
+                    meta["table"] = True
                 store.update_source_status(
                     int(src["id"]), str(src.get("status") or "ready"), meta=meta
                 )
@@ -495,13 +579,22 @@ def import_pack(
                     )
 
         space = store.get_space(new_id) or space
-        return {
+        as_text = [str(n) for n in ((manifest.get("stats") or {}).get("spreadsheets_as_text") or [])][:50]
+        out = {
             "ok": True,
             "space": space,
             "sources": len(extracted),
             "chunks": int(ingest_out.get("chunks") or 0),
             "chats": chats_imported,
         }
+        if as_text:
+            # Said, not skipped: these tables are searchable text now, not calculable.
+            out["spreadsheets_as_text"] = as_text
+            out["notice"] = (
+                "These spreadsheets came back as text and cannot be calculated: " + ", ".join(as_text)
+                + ". Add the original files again to get totals and counts."
+            )
+        return out
 
 
 def import_pack_file(path: Path, **kw: Any) -> dict:

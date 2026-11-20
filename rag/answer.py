@@ -1367,10 +1367,16 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
         # Display name is the source's own title - the Docs copy is content-hashed,
         # and "32f5d4ec_frtr_00027..." is not what the founder called the file.
         wb_name = str(src.get("title") or p.name)
+        _meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
         if p.suffix.lower() in (".csv", ".tsv") and len(sheets) == 1:
             # The Docs copy is content-hashed; the table is named after the file the
             # founder uploaded, not "b8b19340_orders".
             sheets = {Path(wb_name).stem: next(iter(sheets.values()))}
+            if _meta.get("table_workbook") and _meta.get("table_sheet"):
+                # One sheet that came in with an imported pack: it still answers as
+                # the original workbook and sheet.
+                wb_name = str(_meta["table_workbook"])
+                sheets = {str(_meta["table_sheet"]): next(iter(sheets.values()))}
         for _k, _df in sheets.items():
             by_sheet[(wb_name, _k)] = _df
         sheet_owner[wb_name] = {"path": path, "title": wb_name}

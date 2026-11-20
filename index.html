@@ -10411,7 +10411,7 @@ async function ragDoImport(el){
   try{
     const r=await fetch(API()+'/api/rag/spaces/import',{method:'POST',headers:{'X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId()},body:fd});
     const d=await r.json();
-    if(d&&d.ok&&d.space){toast('Imported '+(d.sources||0)+' sources');ragOpenSpace(d.space.id);}
+    if(d&&d.ok&&d.space){toast('Imported '+(d.sources||0)+' sources'+(d.notice?('. '+d.notice):''));ragOpenSpace(d.space.id);}
     else toast((d&&d.error)||'Import failed');
   }catch(e){toast('Import failed')}
 }
