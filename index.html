@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/ui/apple.css"/>
 <link rel="stylesheet" href="/ui/promptlens.css"/>
 <link rel="stylesheet" href="/ui/chattools.css"/>
+<link rel="stylesheet" href="/ui/turnedit.css"/>
 <link rel="stylesheet" href="/ui/codeblocks.css"/>
 <link rel="stylesheet" href="/ui/chatprefs.css"/>
 <link rel="stylesheet" href="/ui/snippets.css"/>
@@ -6324,11 +6325,35 @@ async function runOpenForgeDesign(){
     toast(d.simulation_gated?'Sim-gated design':'Template design');
   }catch(e){if(out)out.textContent='Design failed'}
 }
+// A line waiting for the reply to end belongs to the chat it was typed in (sessionGen
+// moves on every chat switch), so it can never land in another chat.
+function purgeStaleQueue(){
+  if(!messageQueue.length)return;
+  const keep=messageQueue.filter(q=>q.gen===sessionGen);
+  if(keep.length===messageQueue.length)return;
+  messageQueue=keep;updateQueueHint();
+  toast('A message that was waiting was not sent because you changed chats.');
+}
 function drainMessageQueue(){
-  if(aiPending||!messageQueue.length)return;
+  purgeStaleQueue();
+  if(aiPending||sendInFlight||!messageQueue.length)return;
   const next=messageQueue.shift();
-  if(!next)return;
-  const el=$('input');if(el){el.value=next;send().then(()=>{setTimeout(drainMessageQueue,300)})}
+  updateQueueHint();
+  if(next&&next.text)send(next.text);
+}
+// The turn that held the queue is over. If it worked, send the next line; if it did not,
+// give the waiting lines back in the box rather than send them behind a failure.
+function settleQueue(ok){
+  if(!messageQueue.length)return;
+  if(ok){setTimeout(drainMessageQueue,0);return}
+  const back=messageQueue.map(q=>q.text);
+  messageQueue=[];updateQueueHint();
+  const inp=$('input');
+  if(inp){
+    inp.value=[...back,inp.value.trim()].filter(Boolean).join('\n\n');
+    try{autoGrowInput();updateSendVisibility()}catch(e){}
+  }
+  toast(back.length>1?'Your waiting messages were not sent. They are back in the box.':'Your waiting message was not sent. It is back in the box.');
 }
 function showSideView(view){
   saveComposerDraft();
@@ -13367,7 +13392,7 @@ function renderMsg(m){
     else inner+=`<a href="${u}" style="color:var(--accent)">📄 ${esc(m.filename)}</a>`;
   }
   const when=m.time||(m.datetime||'').split(' ').pop()||'';
-  const who=isAi?'Netie Cortex':(m.device_name||'You');
+  const who=isAi?aiWho(m):(m.device_name||'You');
   // Someone else in this session sent this. Say so — alignment alone reads as a
   // formatting quirk, a named chip reads as a person.
   const author=(!isAi&&!me&&dn)
@@ -13398,7 +13423,7 @@ function renderChat(data){
     $('chat').innerHTML=html+holdPending+holdStream;
     // re-bind stop button
     const stop=$('streamStopBtn');
-    if(stop)stop.onclick=()=>{try{streamAbort?.abort()}catch(e){};toast('Stopped')};
+    if(stop)stop.onclick=stopStream;
     wireFollowups();
     wireEngagementSignals();
     renderMermaidIn($('chat'));
@@ -13547,7 +13572,7 @@ function renderStreamBubble(thinking,answer,opts={}){
   // The cot panel already shows the live step. Printing "Netie Cortex is thinking..."
   // underneath it said the same thing a third time and reserved a block of empty
   // height while nothing had streamed. Dots only, and only when there is no step yet.
-  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Netie Cortex is thinking…</span>`;
+  else if(waiting&&!cot) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div><span class="ai-pending">Thinking…</span>`;
   else if(waiting) bodyHtml=`<div class="ai-thinking"><span></span><span></span><span></span></div>`;
   const emptyCls=(!answer&&!bodyHtml)?' is-empty':'';
   return cot+`<div class="ai-block stream-ans${emptyCls}">${bodyHtml}</div>`;
@@ -13641,14 +13666,23 @@ async function reconcileAfterSendFail(errToast){
   if(errToast)toast(errToast);
 }
 let _pauseRetryTimer=null;
+// A message the server refused to take comes back to the box (ahead of anything typed since).
+function restoreUnsentText(text){
+  const inp=$('input');if(!inp||!text)return;
+  inp.value=[text,inp.value.trim()].filter(Boolean).join('\n\n');
+  try{autoGrowInput();updateSendVisibility()}catch(e){}
+}
 function showComposerPause(msg,retrySec){
   const pill=$('composerPausePill');if(!pill){toast(msg);return}
   const sec=Math.max(1,Number(retrySec)||8);
   pill.dataset.show='1';pill.hidden=false;
   let left=sec;
   const paint=()=>{
-    pill.innerHTML=`<span>${esc(msg)} · retry in ${left}s</span><button type="button" class="btn" id="composerPauseRetry">Retry</button>`;
-    $('composerPauseRetry')?.addEventListener('click',()=>{hideComposerPause();$('input')?.focus();});
+    pill.innerHTML=`<span>${esc(msg)} Your message is back in the box. You can send it again in ${left}s.</span><button type="button" class="btn" id="composerPauseRetry">Send now</button>`;
+    $('composerPauseRetry')?.addEventListener('click',()=>{
+      if(left>0){toast('Please wait '+left+' more seconds.');return}
+      hideComposerPause();send();
+    });
   };
   paint();
   if(_pauseRetryTimer)clearInterval(_pauseRetryTimer);
@@ -13862,6 +13896,27 @@ function wireChatScroll(){
   },{passive:true});
 }
 let streamAbort=null;
+let streamId='',streamStopping=false;
+// Stop: tell the server first, so the model stops too and what was written so far is
+// kept. Closing the connection alone leaves the model running to the end.
+function stopStream(){
+  if(!streamAbort||streamStopping)return;
+  streamStopping=true;
+  const b=$('streamStopBtn');if(b){b.disabled=true;b.textContent='Stopping…'}
+  const hangUp=()=>{try{streamAbort?.abort()}catch(e){}};
+  if(!streamId){hangUp();return}
+  api('/api/chat/cancel',{method:'POST',body:JSON.stringify({stream_id:streamId})})
+    .then(r=>r.json()).then(j=>{if(!j.stopped)hangUp()}).catch(hangUp);
+  setTimeout(hangUp,5000);   // the server never answered: stop listening
+}
+// Who wrote a reply, from the model name the server saved with it.
+function aiWho(m){
+  const k=String((m&&m.ai_model)||'').trim();
+  if(!k||k==='cortex-gate')return 'Assistant';
+  if(k==='cortex-agent'||k==='app_scaffold')return 'Netie Cortex';
+  if(/^(ollama|vllm|sglang|colibri|omniroute)$/i.test(k))return 'Your local model';
+  return k.replace(/^dual:/,'').split('+').pop().slice(0,40);
+}
 let _streamPaintQueued=false,_streamPaintThinking='',_streamPaintTokens='',_streamPaintOpts={};
 function updateStreamUi(thinking,tokens,opts={}){
   _streamPaintThinking=thinking;_streamPaintTokens=tokens;_streamPaintOpts=opts||{};
@@ -13898,10 +13953,10 @@ function beginStreamUi(userText){
   const id='ai-stream';
   document.getElementById(id)?.remove();
   $('chat').insertAdjacentHTML('beforeend',`<div class="msg ai-msg stream-bub" id="${id}" data-ai="1"><div class="av">N</div><div class="bub">
-    <div class="meta"><span>Netie Cortex · responding…</span>
+    <div class="meta"><span>Assistant · responding…</span>
     <button type="button" class="msg-copy" id="streamStopBtn">Stop</button></div>
     <div class="body" id="streamBody">${renderStreamBubble('','',{done:false})}</div></div></div>`);
-  $('streamStopBtn').onclick=()=>{try{streamAbort?.abort()}catch(e){};toast('Stopped')};
+  $('streamStopBtn').onclick=stopStream;
   scrollChatIfPinned(true);
   updateMsgJumpBar();
 }
@@ -13916,13 +13971,14 @@ function adoptSessionId(sid){
   document.body.classList.remove('claude-home');
   syncChatTitleBar();
 }
-async function sendStream(text,extra={}){
+async function sendStream(text,extra={},again=false){
   sendFailure=null;$('sendFailCard')?.remove();
   streamAbort=new AbortController();
+  streamId='';streamStopping=false;
   streamSessionGen=sessionGen;
-  beginStreamUi(text);
+  beginStreamUi(again?'':text);   // asking again: the question is already on screen
   aiPending=true;
-  let thinking='',tokens='',donePayload=null,hadError=false,errMsg='';
+  let thinking='',tokens='',donePayload=null,hadError=false,errMsg='',stoppedPayload=null;
   const thinkSteps=[];let reasonBuf='';
   // Once the stream HTTP response opens, the server has already persisted the
   // user row — never let send() fall through to POST /api/messages after that.
@@ -13944,12 +14000,19 @@ async function sendStream(text,extra={}){
       signal:streamAbort.signal
     });
     if(!r.ok||!r.body){
-      let detail='Stream failed'+(r.status?(' ('+r.status+')'):'');
-      try{const ej=await r.json();if(ej.error)detail=ej.error}catch(e){}
-      // Rate limit / provider busy: keep history, pause this send — never wipe chat or re-POST.
+      let detail='Stream failed'+(r.status?(' ('+r.status+')'):''),retryAfter=0;
+      try{const ej=await r.json();if(ej.error)detail=ej.error;retryAfter=Number(ej.retry_after)||0}catch(e){}
+      // Rate limit / provider busy: the server saved nothing, so the text goes back in
+      // the box and the notice says when it can go. Never wipe chat or re-POST.
       if(r.status===429||/rate|wait|too many|quota/i.test(detail)){
         await reconcileAfterSendFail('');
-        showComposerPause('Rate limited - chat saved', 12);
+        if(!again)restoreUnsentText(text);
+        showComposerPause('Not sent. The free plan allows one question a minute.',retryAfter||60);
+        return {ok:false, opened:false, paused:true};
+      }
+      if(r.status===409){   // the last turn changed under us: say so, keep the text
+        await reconcileAfterSendFail(detail);
+        if(!again)restoreUnsentText(text);
         return {ok:false, opened:false, paused:true};
       }
       await reconcileAfterSendFail(detail);
@@ -13974,6 +14037,8 @@ async function sendStream(text,extra={}){
         if(!data)continue;
         let j={};try{j=JSON.parse(data)}catch(e){continue}
         if(j.session_id)adoptSessionId(j.session_id);
+        if(j.stream_id)streamId=j.stream_id;
+        if(ev==='stopped'||j.type==='stopped'){stoppedPayload=j;continue}
         // One plain event = one step. Concatenating them produced
         // "Connected - generating...Preparing..." as a single unreadable line.
         // kind:"reasoning" events are fragments of ONE trace (the model's own
@@ -14013,6 +14078,17 @@ async function sendStream(text,extra={}){
         }
       }
     }
+    if(stoppedPayload&&!donePayload){
+      // Stop: the server kept what was written (if anything) and marked it stopped.
+      clearReplyContext();clearPendingSkill();contextIds=[];contextLabels={};renderCtx();
+      try{await pullChat()}catch(e){}
+      aiPending=false;
+      document.getElementById('ai-stream')?.remove();
+      document.getElementById('pending-user')?.remove();
+      toast('Stopped');
+      updateQueueHint();updateMsgJumpBar();
+      return {ok:true, opened:true, stopped:true};
+    }
     if(hadError||!donePayload){
       // Tokens arrived but connection dropped before done — still treat as success
       if(!hadError&&(tokens||'').trim()){
@@ -14035,9 +14111,11 @@ async function sendStream(text,extra={}){
       return {ok:false, opened:true};
     }
     if(donePayload?.session_id)adoptSessionId(donePayload.session_id);
-    clearReplyContext();
-    clearPendingSkill();  // armed skills ride one send only — never sticky
-    contextIds=[];contextLabels={};renderCtx();
+    if(!again){
+      clearReplyContext();
+      clearPendingSkill();  // armed skills ride one send only — never sticky
+      contextIds=[];contextLabels={};renderCtx();
+    }
     // Keep stream bubble until pullChat merges — avoids pop/reset flash
     try{await pullChat()}catch(e){}
     aiPending=false;
@@ -14048,7 +14126,6 @@ async function sendStream(text,extra={}){
       try{await pullChat()}catch(e){}
     }
     try{pullHistory();loadVaultTree?.()}catch(e){}
-    drainMessageQueue();
     updateQueueHint();
     updateMsgJumpBar();
     // Off the critical path: the reply is already on screen before we ask.
@@ -14060,6 +14137,7 @@ async function sendStream(text,extra={}){
       document.getElementById('ai-stream')?.remove();
       try{await pullChat()}catch(err){}
       document.getElementById('pending-user')?.remove();
+      if(streamStopping)toast('Stopped');
       return {ok:true, opened:streamOpened};
     }
     console.error(e);
@@ -14847,20 +14925,64 @@ function updateQueueHint(){
     const comp=document.querySelector('.composer-wrap')||document.querySelector('.composer');
     if(comp)comp.insertAdjacentHTML('beforebegin','<div class="msg-queue-hint" id="msgQueueHint"></div>');
     h=document.getElementById('msgQueueHint');
+    h?.addEventListener('click',e=>{
+      const b=e.target.closest('button[data-qi]');if(!b)return;
+      messageQueue.splice(+b.dataset.qi,1);updateQueueHint();
+    });
   }
-  if(h)h.textContent=messageQueue.length+' message(s) queued — sends when ready';
+  if(h)h.innerHTML=messageQueue.map((q,i)=>`<span class="queue-chip"><span class="queue-chip-text">Will send when the reply finishes: ${esc(q.text.length>50?q.text.slice(0,50)+'…':q.text)}</span><button type="button" data-qi="${i}" aria-label="Remove this waiting message" title="Remove">×</button></span>`).join('');
 }
-function regenerateLast(){
-  const msgs=Object.values(msgById||{}).filter(m=>m&&m.text).sort((a,b)=>b.id-a.id);
-  const lastUser=msgs.find(m=>!m.ai_analysis&&!m.from_ai);
-  if(!lastUser)return toast('Nothing to regenerate');
-  const inp=$('input');if(inp){inp.value=lastUser.text||'';send()}
+// The last turn of the open chat: its question row and the reply under it.
+function lastTurnIds(){
+  const rows=[...($('chat')?.querySelectorAll('.msg[id^="msg-"]')||[])];
+  const lastAi=rows.length&&rows[rows.length-1].dataset.ai==='1'?rows[rows.length-1]:null;
+  let q=lastAi?rows[rows.length-2]:rows[rows.length-1];
+  if(!q||q.dataset.ai==='1')q=null;
+  const qid=q?parseInt(q.id.slice(4),10):0;
+  const m=qid&&msgById[qid];
+  if(!m||m.source!=='ai-chat'||m.kind!=='text'||!(m.text||'').trim())return {q:0,text:'',ai:0};
+  return {q:qid,text:m.text,ai:lastAi?parseInt(lastAi.id.slice(4),10):0};
+}
+// Regenerate: ask the last question again. The server answers the same question row, so
+// there is no second copy of it, and the old reply goes when the new one is saved.
+async function regenerateLast(){
+  if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  const t=lastTurnIds();
+  if(!t.q||!currentSession)return toast('There is nothing to ask again.');
+  const old=t.ai?document.getElementById('msg-'+t.ai):null;
+  if(old)old.style.display='none';   // pullChat shows it again if the new try fails
+  sendInFlight=true;
+  let ok=false;
+  try{
+    const r=await sendStream(t.text,{regenerate_msg_id:t.q,session_id:currentSession,context_ids:[],skills:[],skill:''},true);
+    ok=!!r.ok;
+    if(!ok&&old)old.style.display='';
+  }finally{sendInFlight=false;settleQueue(ok)}
+}
+// Edit: the question goes back in the box. Sending it swaps the old question and its
+// answer for the new ones; the server does the swap (replace_msg_id).
+let editingMsgId=0,editingSession=0;
+function clearEdit(){editingMsgId=0;editingSession=0;document.getElementById('editChip')?.remove()}
+function syncEditChip(){
+  if(editingMsgId&&editingSession!==currentSession)clearEdit();
+  purgeStaleQueue();
 }
 function editLastUser(){
-  const msgs=Object.values(msgById||{}).filter(m=>m&&m.text).sort((a,b)=>b.id-a.id);
-  const lastUser=msgs.find(m=>!m.ai_analysis&&!m.from_ai);
-  if(!lastUser)return toast('Nothing to edit');
-  const inp=$('input');if(inp){inp.value=lastUser.text||'';inp.focus();toast('Edit and send')}
+  if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  const t=lastTurnIds();
+  if(!t.q||!currentSession)return toast('There is nothing to edit.');
+  const inp=$('input');if(!inp)return;
+  if(inp.value.trim())return toast('Send or clear what is in the box first.');
+  editingMsgId=t.q;editingSession=currentSession;
+  inp.value=t.text;
+  try{autoGrowInput();updateSendVisibility()}catch(e){}
+  inp.focus();
+  document.getElementById('editChip')?.remove();
+  const comp=document.querySelector('.composer-wrap')||document.querySelector('.composer');
+  if(comp)comp.insertAdjacentHTML('beforebegin','<div class="msg-queue-hint edit-chip" id="editChip"><span>Editing your last message. Sending it replaces that message and its answer.</span><button type="button" id="editChipCancel">Cancel</button></div>');
+  document.getElementById('editChipCancel')?.addEventListener('click',()=>{
+    clearEdit();const i=$('input');if(i){i.value='';try{autoGrowInput();updateSendVisibility()}catch(e){}}
+  });
 }
 async function ensureChatSession(){
   if(currentSession)return currentSession;
@@ -14870,12 +14992,22 @@ async function ensureChatSession(){
   }catch(e){}
   return 0;
 }
-async function send(){
-  if(sendInFlight)return;
-  const el=$('input');
+async function send(forced){
+  // `forced` is a queued line being sent for the box: it never touches what is typed now.
+  const el=(typeof forced==='string')?{value:forced}:$('input');
   let text=(el?.value||'').trim();
   const hasFiles=stagedFiles.length>0;
   if(!text&&!hasFiles&&!contextIds.length)return;
+  // A reply is still coming: hold the line (and keep it in order) until it ends.
+  if(aiMode&&(aiPending||sendInFlight)&&text&&!hasFiles&&sideView!=='cortex'&&!/^[\/@]/.test(text)){
+    if(editingMsgId){toast('Wait for the reply to finish, then send your edit.');return}
+    messageQueue.push({text,gen:sessionGen});
+    if(typeof forced!=='string'&&el)el.value='';
+    try{autoGrowInput();updateSendVisibility()}catch(e){}
+    toast('Will send when the reply finishes');
+    updateQueueHint();
+    return;
+  }
   const peeled=peelSkillSlash(text);
   if(peeled){
     if(!peeled.pack){
@@ -14930,13 +15062,7 @@ async function send(){
       hint='Tip: /skill <pack> global|project';
     if(hint){toast(hint);window._cmdHintMute=true;setTimeout(()=>{window._cmdHintMute=false},25000)}
   }
-  if(aiMode&&aiPending&&text&&!hasFiles){
-    messageQueue.push(text);
-    if(el)el.value='';
-    toast('Queued ('+messageQueue.length+')');
-    updateQueueHint();
-    return;
-  }
+  if(sendInFlight){if(hasFiles)toast('Files can be sent when the reply finishes.');return}
   trackPref('project',currentMode(),'use');
   if(text){
     const qIdx=QUESTIONS_OF_THE_DAY.indexOf(text);
@@ -14972,6 +15098,8 @@ async function send(){
   if(aiMode){
     if(info.online===false&&!info.has_ai_keys){toast('AI needs internet or API keys in Settings');return}
     const extra={};
+    if(editingMsgId&&editingSession===currentSession&&!replyContext&&!contextIds.length)extra.replace_msg_id=editingMsgId;
+    clearEdit();
     if(replyContext){
       extra.reply_to_id=replyContext.msgId;
       extra.reply_snippet=replyContext.snippet;
@@ -14980,8 +15108,10 @@ async function send(){
     }
     if(contextIds.length)extra.context_ids=contextIds;
     sendInFlight=true;
+    let turnOk=false;
     try{
       const streamResult=await sendStream(text,extra);
+      turnOk=!!streamResult.ok;
       // Stream opened ⇒ user row already in DB. Never re-POST the same text.
       // Rate-limit pause ⇒ keep chat history, do not fallback.
       if(streamResult.ok||streamResult.opened||streamResult.paused)return;
@@ -14995,6 +15125,7 @@ async function send(){
       try{res=await api('/api/messages',{method:'POST',body:JSON.stringify(body)}).then(r=>r.json())}
       catch(e){await reconcileAfterSendFail('Send failed — check connection / API keys');return}
       if(res.error){await reconcileAfterSendFail(res.error);return}
+      turnOk=true;
       if(res.session_id)adoptSessionId(res.session_id);
       markHadSession();
       if(res.ai==='no_context'){hideThinking();document.getElementById('ai-stream')?.remove();toast('No analyzed screenshot in this chat — capture one first');aiPending=false}
@@ -15003,7 +15134,7 @@ async function send(){
       await pullChat();pullHistory();
       document.getElementById('pending-user')?.remove();
       return;
-    }finally{sendInFlight=false}
+    }finally{sendInFlight=false;settleQueue(turnOk)}
   }
   // Manual: optimistic bubble without AI stream chrome
   if($('chat')?.querySelector('.center-empty,.project-focus,.empty,.cortex-page'))$('chat').innerHTML='';
@@ -15430,6 +15561,7 @@ async function tryQrAutoLogin(){
 <script src="/ui/promptlens.js"></script>
 <script src="/ui/phone.js"></script>
 <script src="/ui/chattools.js"></script>
+<script src="/ui/turnedit.js"></script>
 <script src="/ui/codeblocks.js"></script>
 <script src="/ui/chatprefs.js"></script>
 <script src="/ui/snippets.js"></script>
