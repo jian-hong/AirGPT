@@ -921,7 +921,9 @@ def _east_asian_codec(data: bytes, whole: bool = True):
     if whole and len(data) > 262144:
         # Score on a small sample: decoding a whole 4 MB file once per codec is seconds and
         # hundreds of MB. The chosen codec decodes the full file once, later.
-        data, whole = data[:262144], False
+        # Start at the first non-ASCII byte: a long ASCII head says nothing about the codec.
+        first = len(data) - len(data.lstrip(bytes(range(128))))
+        data, whole = data[first : first + 262144], False
     for codec in _EA_CODECS:
         wide = codec.startswith("utf-16")
         if not wide and b"\x00" in data:
@@ -975,7 +977,7 @@ def _decode(raw: bytes) -> str:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         pass
-    codec = _east_asian_codec(raw[:262144], len(raw) <= 262144)[0]
+    codec = _east_asian_codec(raw)[0]  # samples a window of a big file itself
     if codec:
         return raw.decode(codec, errors="replace")
     for enc in ("cp1252", "latin-1"):

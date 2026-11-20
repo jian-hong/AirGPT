@@ -286,3 +286,15 @@ def test_four_megabyte_legacy_file_is_checked_fast(tmp_path, name, raw):
     ingest.looks_binary(p)
     ingest.unreadable_reason(p)
     assert time.perf_counter() - t < 3.0
+
+
+def test_legacy_korean_file_with_long_ascii_head_is_still_text(tmp_path):
+    """The codec is scored on a sample; a 300 KB ASCII head must not hide the Korean after it."""
+    from rag import ingest
+
+    raw = b"id,name,note\n" * 25_000 + ("서울 창고에는 팔레트가 있습니다.\n" * 20_000).encode("cp949")
+    p = tmp_path / "log.txt"
+    p.write_bytes(raw)
+    assert ingest.unreadable_reason(p) == ""
+    text, _ = ingest.read_text_file(p)
+    assert "창고에는 팔레트가" in text
