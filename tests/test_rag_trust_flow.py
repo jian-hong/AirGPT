@@ -13,7 +13,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from test_rag_core_data import _call, _found, _upload, server  # noqa: F401  (server is a fixture)
+from test_rag_core_data import _call, _found, _leaks, _upload, server  # noqa: F401  (server is a fixture)
 
 REG = ["North", "South"]
 
@@ -129,7 +129,7 @@ def test_export_pack_has_no_host_folder_anywhere(server, tmp_path):
         r = answer.answer(sid, q, chat_id=chat, use_llm=False)
         assert r["ok"]
     saw = json.dumps([m["citations"] for m in store.list_messages(chat)])
-    assert str(tmp_path) in saw, "setup: the saved citations should carry host paths"
+    assert _leaks(tmp_path, saw), "setup: the saved citations should carry host paths"
     with urllib.request.urlopen(f"{base}/api/rag/spaces/{sid}/export", timeout=60) as r:
         blob = r.read()
     zf = zipfile.ZipFile(io.BytesIO(blob))
@@ -138,10 +138,12 @@ def test_export_pack_has_no_host_folder_anywhere(server, tmp_path):
     for name in zf.namelist():
         text = zf.read(name).decode("utf-8", "replace")
         for prefix in (data_root, str(home), str(tmp_path), "/alice/"):
-            assert prefix not in text, f"{prefix} leaked in {name}"
+            assert not _leaks(prefix, text), f"{prefix} leaked in {name}"
     chats = json.loads(zf.read("chats.json"))
     cites = [c for ch in chats["chats"] for m in ch["messages"] for c in m["citations"]]
-    assert cites and all("path_full" not in c or not str(c["path_full"]).startswith("/") for c in cites)
+    from rag.export_import import _ABS_PATH
+
+    assert cites and all(not _ABS_PATH.match(str(c.get("path_full") or "")) for c in cites)
     names = {Path(str(c.get("path") or "")).name for c in cites}
     assert "sales.xlsx" in " ".join(names) or any("sales" in n for n in names)
 

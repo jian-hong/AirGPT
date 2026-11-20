@@ -208,6 +208,19 @@ def test_delete_space_removes_everything(server):
     con.close()
 
 
+def _path_forms(p) -> set:
+    """Every spelling a folder can take inside a file on Linux, macOS or Windows: as
+    written, with either slash, and JSON-escaped (json.dumps doubles a backslash, so a
+    Windows path written raw is never found in JSON text and a leak check could not fail)."""
+    p = str(p)
+    forms = {p, p.replace("\\", "/"), p.replace("/", "\\")}
+    return forms | {json.dumps(f)[1:-1] for f in forms}
+
+
+def _leaks(prefix, text: str) -> bool:
+    return any(f in text for f in _path_forms(prefix))
+
+
 # --- exported pack leaks no host paths (rag-server.6) ---------------------------------
 
 def test_export_pack_has_no_absolute_host_paths(server, tmp_path):
@@ -227,8 +240,8 @@ def test_export_pack_has_no_absolute_host_paths(server, tmp_path):
     zf = zipfile.ZipFile(io.BytesIO(blob))
     for name in zf.namelist():
         text = zf.read(name).decode("utf-8", "replace")
-        assert str(tmp_path) not in text, f"host path leaked in {name}"
-        assert "/uploads/" not in text and "/Docs/" not in text, f"host folder leaked in {name}"
+        assert not _leaks(tmp_path, text), f"host path leaked in {name}"
+        assert not _leaks("/uploads/", text) and not _leaks("/Docs/", text), f"host folder leaked in {name}"
     manifest = json.loads(zf.read("manifest.json"))
     assert "ontology" not in manifest["space"]["config"]
     # the pack still imports and answers
