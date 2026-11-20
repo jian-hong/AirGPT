@@ -1100,7 +1100,16 @@ def _drop_chat_prefs(conn, session_id: int) -> None:
         pass  # table never created: nothing to remove
 
 
+def _forget_chat_memory(session_ids) -> None:
+    """Memory rows, embeddings and vault notes a chat left behind go with it. A failure
+    is raised, not swallowed: a chat that looks deleted but is still quoted is the bug."""
+    import memory_index
+
+    memory_index.forget_session(session_ids)
+
+
 def delete_session(session_id: int) -> bool:
+    _forget_chat_memory({int(session_id)})
     with _lock, _connect() as conn:
         ids = [int(r[0]) for r in conn.execute("SELECT id FROM messages WHERE session_id=?", (session_id,)).fetchall()]
     for mid in ids:
@@ -1113,6 +1122,7 @@ def delete_session(session_id: int) -> bool:
 
 
 def clear_all_messages() -> int:
+    _forget_chat_memory(None)
     with _lock, _connect() as conn:
         ids = [int(r[0]) for r in conn.execute("SELECT id FROM messages").fetchall()]
     for mid in ids:
@@ -1296,6 +1306,17 @@ def fork_session(session_id: int, upto_message_id: int) -> dict:
     nid = int(new["id"])
     if src.get("project_id"):
         update_session_meta(nid, project_id=int(src["project_id"]))
+    # A copy that answers differently is not a copy: standing instructions come along.
+    import chat_prefs
+
+    prefs_note: dict = {}
+    try:
+        text = chat_prefs.get(int(session_id))
+        if text:
+            chat_prefs.set(nid, text)
+            prefs_note["instructions_copied"] = True
+    except Exception as e:  # the fork exists; say the instructions did not come with it
+        prefs_note = {"instructions_copied": False, "instructions_error": str(e)[:160]}
     for m in rows:
         c = add_message(
             device_ip=m.get("device_ip") or "", device_name=m.get("device_name") or "",
@@ -1314,7 +1335,7 @@ def fork_session(session_id: int, upto_message_id: int) -> dict:
             )
             conn.commit()
     sess = get_session(nid) or new
-    return {"session": sess, "copied": len(rows)}
+    return {"session": sess, "copied": len(rows), **prefs_note}
 
 
 def export_session(session_id: int, fmt: str = "md") -> tuple[str, str, str]:
@@ -1611,6 +1632,7 @@ def index_important_from_ditch(
                     body=body[:1500],
                     room="carry",
                     source="dsa",
+                    session_id=int(session_id or 0),
                 )
                 saved += 1
             except Exception:
