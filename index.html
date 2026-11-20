@@ -11863,6 +11863,7 @@ function ragMdHtml(md,scope,labels){
   // The tag strip above is not enough (a style or a table background loads a picture too), so
   // parse the result and drop every attribute that can carry an address from any element.
   try{
+    if(typeof document==='undefined')throw 0; // no page to parse in (tests); the tag strip above still ran
     const t=document.createElement('template');t.innerHTML=html;
     t.content.querySelectorAll('*').forEach(el=>{
       ['background','srcset','poster','ping','lowsrc','dynsrc'].forEach(a=>el.removeAttribute(a));
@@ -11870,7 +11871,7 @@ function ragMdHtml(md,scope,labels){
     });
     t.content.querySelectorAll('style,link,object,embed,iframe').forEach(el=>el.remove());
     html=t.innerHTML;
-  }catch(e){html=esc(src).replace(/\n/g,'<br>');}
+  }catch(e){if(e!==0)html=esc(src).replace(/\n/g,'<br>');}
   return scope==null?html:ragLinkCiteChips(html,scope,labels);
 }
 function ragScrollToCite(scope,n){
