@@ -172,3 +172,37 @@ def test_group_values_have_no_float_noise():
         want = round(sum(r["Revenue"] for r in rows if r["Product"] == g["group"]), 4)
         assert g["value"] == want
         assert len(repr(g["value"])) <= 10, g["value"]
+
+
+@pytest.mark.parametrize("q", [
+    "total salary EXCLUDING HR",
+    "total salary excl. HR",
+    "total salary excl HR",
+    "total salary not in HR",
+])
+def test_negation_more_phrasings(frames, q):
+    want = total(STAFF, "Salary", lambda r: r["Dept"] != "HR")
+    hit = ask(frames, q)
+    assert hit and not hit.get("abstained"), hit
+    assert hit["value"] == pytest.approx(want)
+
+
+@pytest.mark.parametrize("q", [
+    "total salary excluding Eng and Hrr",
+    "total salary excluding Eng, Hrr",
+    "total salary excluding 2021",
+])
+def test_negation_with_an_unmatched_item_abstains_whole(frames, q):
+    # one real value and one that is not: never apply half the list, never drop it
+    hit = ask(frames, q)
+    assert hit and hit["abstained"] is True, hit
+    assert hit.get("value") is None
+    assert "I did not calculate anything" in hit["answer"]
+
+
+def test_negation_list_of_real_values_and_following_words_still_work(frames):
+    hit = ask(frames, "total salary excluding HR and Ops by dept")
+    assert hit and not hit.get("abstained"), hit
+    hit = ask(frames, "total salary excluding Eng, Ops and HR")
+    assert hit["value"] == pytest.approx(
+        total(STAFF, "Salary", lambda r: r["Dept"] not in ("Eng", "Ops", "HR")))

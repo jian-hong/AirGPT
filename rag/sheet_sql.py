@@ -487,9 +487,9 @@ def _find_text_filters(
 
 # "excluding", "except (for)", "without", "other than", "not" ... right in front of a value.
 _NEG_CUE = re.compile(
-    r"(?:\b(?:excluding|excludes?|except(?:\s+for)?|without|other\s+than|apart\s+from|"
+    r"(?:\b(?:excl(?:uding|udes?)?\b\.?|except(?:\s+for)?|without|other\s+than|apart\s+from|"
     r"aside\s+from|besides|but\s+not|ignoring|minus|not|neither)|n['’]t|!=|<>)"
-    r"[\s:]*(?:(?:the|any|all|of)\s+)?$"
+    r"[\s:]*(?:(?:the|any|all|of|in)\s+)?$"
 )
 _LIST_GAP = re.compile(r"^\s*(?:,|,?\s*(?:and|or|nor))\s*(?:not\s+)?$")
 # A word after a cue that makes it something other than a value ("not above 5").
@@ -513,7 +513,7 @@ def _unmatched_negation(q: str, frames: dict, spans: list[tuple[int, int, str]])
     """
     low = q.lower()
     cues = list(re.finditer(
-        r"\b(?:excluding|excludes?|except(?:\s+for)?|without|other\s+than|apart\s+from|aside\s+from|"
+        r"\b(?:excl(?:uding|udes?)?|except(?:\s+for)?|without|other\s+than|apart\s+from|aside\s+from|"
         r"besides|but\s+not|ignoring|minus|not)\b|!=|<>", low))
     if not cues:
         return ""
@@ -531,8 +531,11 @@ def _unmatched_negation(q: str, frames: dict, spans: list[tuple[int, int, str]])
                     values.setdefault(v.casefold(), (str(col), v))
     for m in cues:
         rest = low[m.end():]
-        rest = re.sub(r"^[\s:]*(?:(?:the|any|all|of)\s+)?", "", rest)
-        if not rest or _NEG_SKIP.match(rest):
+        rest = re.sub(r"^[\s:.]*(?:(?:the|any|all|of|in)\s+)?", "", rest)
+        if not rest:
+            continue
+        strong = not m.group(0).startswith(("not", "but", "!=", "<>"))
+        if _NEG_SKIP.match(rest) and not (strong and re.match(r"[\d$€£]", rest)):
             continue
         start = m.end() + (len(low[m.end():]) - len(rest))
         on_col = next(((cs, ce) for cs, ce, _n in spans if cs <= start < ce), None)
@@ -548,7 +551,34 @@ def _unmatched_negation(q: str, frames: dict, spans: list[tuple[int, int, str]])
         word = re.match(r"[a-z0-9À-￿'_-]+", rest)
         if not word or word.group(0) in _STOPWORDS or word.group(0) in _NOT_VALUES:
             continue
-        if any(rest.startswith(k) and not (rest[len(k):len(k) + 1].isalnum()) for k in values if len(k) >= 1):
+        held = [k for k in values if rest.startswith(k) and not rest[len(k):len(k) + 1].isalnum()]
+        if held:
+            k = max(held, key=len)
+            if len(k) < 2:
+                return (
+                    f'I could not apply "{q[m.start():m.end()].strip()} {values[k][1]}": a one-letter value is '
+                    "too short for me to match safely. I did not calculate anything."
+                )
+            # "excluding Eng and Hrr": the first item is real, so check the rest of the list.
+            tail = rest[len(k):]
+            while True:
+                lg = re.match(r"\s*(?:,|,?\s*(?:and|or|nor))\s*(?:not\s+)?", tail)
+                if not lg:
+                    break
+                tail = tail[lg.end():]
+                nxt = [k2 for k2 in values if tail.startswith(k2) and not tail[len(k2):len(k2) + 1].isalnum()]
+                if nxt:
+                    tail = tail[len(max(nxt, key=len)):]
+                    continue
+                w = re.match(r"[a-z0-9À-￿'_-]+", tail)
+                near2 = difflib.get_close_matches(w.group(0), list(values), n=1, cutoff=0.75) if w else []
+                if near2:
+                    return (
+                        f'I could not apply "{q[m.start():m.end()].strip()} ... {w.group(0)}": there is no such '
+                        f"value in {values[near2[0]][0]}. Did you mean {values[near2[0]][1]}? "
+                        "I did not calculate anything. Check the spelling and ask again."
+                    )
+                break
             continue
         # Not a value we hold: name the phrase, and the closest real value if there is one.
         pm = _NEG_PHRASE.match(q[start:])
