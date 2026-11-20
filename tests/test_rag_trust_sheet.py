@@ -224,3 +224,33 @@ def test_followup_between_sheets_of_one_workbook_still_carries(frames):
     assert q2 and "South sheet" in q2
     hit = ask(frames, q2)
     assert hit["value"] == pytest.approx(total(SOUTH, "Revenue", lambda r: r["Status"] == "Paid"))
+
+
+def _with_discount():
+    east = [dict(r, Discount=i % 4) for i, r in enumerate(NORTH[:12])]
+    for r in east:
+        r["Region"] = "East"
+    return east, {
+        ("sales.xlsx", "North"): pd.DataFrame(NORTH),
+        ("sales.xlsx", "East"): pd.DataFrame(east),
+    }
+
+
+def test_plain_is_number_is_an_equals_filter_not_dropped():
+    east, fr = _with_discount()
+    hit = ask(fr, "total revenue where Discount is 2 in East")
+    want = total(east, "Revenue", lambda r: r["Discount"] == 2)
+    assert hit["value"] == pytest.approx(want)
+    assert "Discount = 2" in hit["sql"]
+    assert fmt(total(east, "Revenue", lambda r: True)) not in hit["answer"].split("SQL:")[0]
+
+
+def test_named_sheet_that_cannot_take_the_question_is_said_to_be_left_out():
+    east, fr = _with_discount()
+    hit = ask(fr, "total revenue where Discount > 1 in North and East")
+    want = total(east, "Revenue", lambda r: r["Discount"] > 1)
+    assert hit["value"] == pytest.approx(want)
+    assert "I left out North" in hit["answer"]
+    # nothing is said when every named sheet answered
+    both = ask(fr, "total revenue in North and East")
+    assert "left out" not in both["answer"]

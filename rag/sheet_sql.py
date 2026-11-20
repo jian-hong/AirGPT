@@ -35,7 +35,7 @@ _CMPS: list[tuple[str, str]] = [
     (r"less than or equal to|no more than|at most|<=", "<="),
     (r"greater than|more than|larger than|higher than|above|over|exceeds?|>", ">"),
     (r"less than|fewer than|smaller than|lower than|below|under|<", "<"),
-    (r"equal to|equals|is exactly|==|=", "="),
+    (r"equal to|equals|is exactly|==|=|(?:is|are|was)(?=\s*-?\d)", "="),
 ]
 
 _NUM = r"(-?\d+(?:\.\d+)?)"
@@ -155,6 +155,8 @@ class Plan:
     # Plain-words reason the ask cannot be run as written (a negated value that is not in
     # the data). Non-empty means: say it, calculate nothing.
     refuse: str = ""
+    # Sheets the ask named when it named more than one ("North and South").
+    named_sheets: list[str] = field(default_factory=list)
 
     def _where(self) -> str:
         parts = [f.sql() for f in self.filters] + [t.sql() for t in self.text_filters]
@@ -917,6 +919,7 @@ def plan_query(
             assumed=assumed,
             ambiguous=ambiguous_values,
             ambiguous_kind="value" if ambiguous_values else "column",
+            named_sheets=sorted(named_set) if len(named_set) > 1 else [],
         )
         if collect is not None:
             collect.append(cand)
@@ -1512,15 +1515,21 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
     if plan is None:
         return None
     sibs = _siblings(plan, cands, frames)
+    hit = None
     if plan.group_by and not plan.ambiguous:
         hit = _answer_group(plan, sibs, frames)
-        if hit:
-            return hit
-    if len(sibs) > 1 and not plan.all_numeric and not plan.group_by:
+    if not hit and len(sibs) > 1 and not plan.all_numeric and not plan.group_by:
         hit = _answer_multi(plan, sibs, frames)
-        if hit:
-            return hit
-    return _answer_single(plan, frames)
+    hit = hit or _answer_single(plan, frames)
+    # "North and South" where one of them cannot take the question (no such column):
+    # say which was left out instead of answering as if it had not been asked for.
+    answered = {c.sheet for c, _nm in sibs} | {str(hit.get("sheet") or "")}
+    left = [n for n in plan.named_sheets if n not in answered]
+    if hit and left and hit.get("answer") and not hit.get("abstained"):
+        note = f"I left out {', '.join(left)}: {'it does' if len(left) == 1 else 'they do'} not have the columns this needs."
+        head, sep, tail = str(hit["answer"]).partition("\n\nSQL:")
+        hit["answer"] = f"{head}\n\n{note}{sep}{tail}"
+    return hit
 
 
 def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
