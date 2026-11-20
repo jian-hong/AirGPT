@@ -13,6 +13,7 @@ provenance for the founder, not something we execute against a database.
 """
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +30,7 @@ _AGGS: list[tuple[str, str]] = [
 
 # Comparison wording -> SQL operator. Longer phrases first, again.
 _CMPS: list[tuple[str, str]] = [
+    (r"!=|<>|not equal to|does not equal|doesn't equal", "!="),
     (r"greater than or equal to|no less than|at least|>=", ">="),
     (r"less than or equal to|no more than|at most|<=", "<="),
     (r"greater than|more than|larger than|higher than|above|over|exceeds?|>", ">"),
@@ -78,18 +80,30 @@ class Filter:
 
 @dataclass
 class TextFilter:
-    """Column equals one of these words; case and edge spaces do not matter."""
+    """Column equals one of these words (or, when `negate`, none of them); case and edge
+    spaces do not matter."""
 
     column: str
     values: list[str]
+    negate: bool = False
 
     def sql(self) -> str:
         vals = [v.replace("'", "''") for v in self.values]
+        col = _quote(self.column)
+        if self.negate:
+            body = (
+                f"{col} <> '{vals[0]}'" if len(vals) == 1
+                else f"{col} NOT IN ({', '.join(repr(v) for v in vals)})"
+            )
+            # A blank cell is not the excluded value, so it stays in.
+            return f"({body} OR {col} IS NULL)"
         if len(vals) == 1:
-            return f"{_quote(self.column)} = '{vals[0]}'"
-        return f"{_quote(self.column)} IN ({', '.join(repr(v) for v in vals)})"
+            return f"{col} = '{vals[0]}'"
+        return f"{col} IN ({', '.join(repr(v) for v in vals)})"
 
     def words(self) -> str:
+        if self.negate:
+            return f"{self.column} is not " + " and not ".join(self.values)
         return f"{self.column} is " + " or ".join(self.values)
 
 
@@ -138,6 +152,9 @@ class Plan:
     # The sheet has the column but none of the asked-for words: report 0 rows.
     no_match: bool = False
     ambiguous_kind: str = "column"  # "value" when a cell value fits several columns
+    # Plain-words reason the ask cannot be run as written (a negated value that is not in
+    # the data). Non-empty means: say it, calculate nothing.
+    refuse: str = ""
 
     def _where(self) -> str:
         parts = [f.sql() for f in self.filters] + [t.sql() for t in self.text_filters]
@@ -343,12 +360,18 @@ def _filter_after(question: str, end: int, ceiling: int | None = None) -> tuple[
         m = re.search(rf"^\W*(?:{pattern})\s*{_NUM}", tail)
         if m:
             return op, float(m.group(1))
-    # "BaseRate is above 1" / "where BaseRate exceeds 1" carry filler words.
+    # "BaseRate is above 1" / "where BaseRate exceeds 1" carry filler words. "is NOT above
+    # 1" among them turns the comparison round: reading it as "above 1" is the opposite rows.
     for pattern, op in _CMPS:
-        m = re.search(rf"^[a-z\s,'()]{{0,20}}(?:{pattern})\s*{_NUM}", tail)
+        m = re.search(rf"^([a-z\s,'()]{{0,20}}?)(?:{pattern})\s*{_NUM}", tail)
         if m:
-            return op, float(m.group(1))
+            if re.search(r"\bnot\b|n't\b", m.group(1)):
+                op = _NEGATED_OP[op]
+            return op, float(m.group(m.lastindex))
     return None
+
+
+_NEGATED_OP = {">": "<=", ">=": "<", "<": ">=", "<=": ">", "=": "!=", "!=": "="}
 
 
 def _num(series: Any) -> Any:
@@ -431,7 +454,17 @@ def _find_text_filters(
             continue
         taken.append((pos, pos + len(k)))
         kept.append((k, found[k]))
-    by_col: dict[str, list[str]] = {}
+    # Which kept values sit behind "excluding", "except", "not" ... Walk them left to
+    # right so "excluding HR and Ops" carries the exclusion over to Ops.
+    neg_of: dict[str, bool] = {}
+    prev_end, prev_neg = 0, False
+    for k, opts in sorted(kept, key=lambda kv: kv[1][0][2]):
+        pos = opts[0][2]
+        gap = low[prev_end:pos]
+        neg = bool(_NEG_CUE.search(gap)) or bool(prev_neg and _LIST_GAP.match(gap))
+        neg_of[k] = neg
+        prev_end, prev_neg = pos + len(k), neg
+    by_col: dict[tuple[str, bool], list[str]] = {}
     ambiguous: list[str] = []
     for k, opts in kept:
         cols = {c for c, _v, _p in opts}
@@ -448,12 +481,92 @@ def _find_text_filters(
                 ambiguous.append(f"{opts[0][1]} in " + " or ".join(sorted(cols)))
                 continue
         col = next(iter(cols))
-        by_col.setdefault(col, []).append(next(v for c, v, _p in opts if c == col))
-    return [TextFilter(column=c, values=v) for c, v in by_col.items()], ambiguous
+        by_col.setdefault((col, neg_of[k]), []).append(next(v for c, v, _p in opts if c == col))
+    return [TextFilter(column=c, values=v, negate=n) for (c, n), v in by_col.items()], ambiguous
+
+
+# "excluding", "except (for)", "without", "other than", "not" ... right in front of a value.
+_NEG_CUE = re.compile(
+    r"(?:\b(?:excluding|excludes?|except(?:\s+for)?|without|other\s+than|apart\s+from|"
+    r"aside\s+from|besides|but\s+not|ignoring|minus|not|neither)|n['’]t|!=|<>)"
+    r"[\s:]*(?:(?:the|any|all|of)\s+)?$"
+)
+_LIST_GAP = re.compile(r"^\s*(?:,|,?\s*(?:and|or|nor))\s*(?:not\s+)?$")
+# A word after a cue that makes it something other than a value ("not above 5").
+_NEG_SKIP = re.compile(
+    r"^(?:including|only|just|more|less|many|much|exactly|equal|equals?|at|a|an|\d|[$€£]|"
+    r"(?:" + "|".join(p for p, _ in _CMPS if p[:1].isalpha()) + r")\b)",
+    re.I,
+)
+_NEG_PHRASE = re.compile(
+    r"^[\"'‘“]?([^\s,;?!.\"']+(?:\s+(?!(?:and|or|in|on|for|from|where|by|per|across|with|at|of|then)\b)"
+    r"[^\s,;?!.\"']+){0,3})",
+    re.I,
+)
+
+
+def _unmatched_negation(q: str, frames: dict, spans: list[tuple[int, int, str]]) -> str:
+    """Plain-words refusal for "excluding X" when X is not a value in any text column.
+
+    A negation we cannot apply must never turn into a positive filter or a silent
+    drop, so the ask stops here and says what it could not do.
+    """
+    low = q.lower()
+    cues = list(re.finditer(
+        r"\b(?:excluding|excludes?|except(?:\s+for)?|without|other\s+than|apart\s+from|aside\s+from|"
+        r"besides|but\s+not|ignoring|minus|not)\b|!=|<>", low))
+    if not cues:
+        return ""
+    values: dict[str, tuple[str, str]] = {}  # casefold value -> (column, shown)
+    cols: dict[str, str] = {}
+    for df in frames.values():
+        if df is None or df.empty:
+            continue
+        for col in df.columns:
+            if _numeric_ratio(df[col]) >= 0.6:
+                continue
+            cols.setdefault(str(col), str(col))
+            for v in df[col].dropna().astype(str).str.strip().drop_duplicates().head(5000):
+                if v:
+                    values.setdefault(v.casefold(), (str(col), v))
+    for m in cues:
+        rest = low[m.end():]
+        rest = re.sub(r"^[\s:]*(?:(?:the|any|all|of)\s+)?", "", rest)
+        if not rest or _NEG_SKIP.match(rest):
+            continue
+        start = m.end() + (len(low[m.end():]) - len(rest))
+        on_col = next(((cs, ce) for cs, ce, _n in spans if cs <= start < ce), None)
+        if on_col:
+            # "excluding Refunds" where Refunds is a column: there is no value to leave
+            # out, and dropping the words would hand back the figure with it still in.
+            if re.match(r"(?:excl|except|without|minus|other|apart|aside|besides|ignoring)", m.group(0)):
+                return (
+                    f'I could not apply "{q[m.start():m.end()].strip()} {q[on_col[0]:on_col[1]]}": '
+                    f"{q[on_col[0]:on_col[1]]} is a column, not a value I can leave out. I did not calculate anything."
+                )
+            continue
+        word = re.match(r"[a-z0-9À-￿'_-]+", rest)
+        if not word or word.group(0) in _STOPWORDS or word.group(0) in _NOT_VALUES:
+            continue
+        if any(rest.startswith(k) and not (rest[len(k):len(k) + 1].isalnum()) for k in values if len(k) >= 1):
+            continue
+        # Not a value we hold: name the phrase, and the closest real value if there is one.
+        pm = _NEG_PHRASE.match(q[start:])
+        said = (pm.group(1) if pm else word.group(0)).strip()
+        said = re.split(r"\s+(?:and|or)\s+", said)[0].strip() or word.group(0)
+        cue = q[m.start():m.end()].strip()
+        near = difflib.get_close_matches(said.casefold(), list(values), n=1, cutoff=0.6)
+        named = [n for _s, _e, n in spans if n in cols]
+        where = values[near[0]][0] if near else (named[0] if named else "")
+        msg = f'I could not apply "{cue} {said}": there is no such value in {where or "the text columns of these tables"}.'
+        if near:
+            msg += f" Did you mean {values[near[0]][1]}?"
+        return msg + " I did not calculate anything. Check the spelling and ask again."
+    return ""
 
 
 _STATED_VALUE = re.compile(
-    r"^\s*(?:is|are|=|==|equals?|equal to|:)\s*['\"\u2018\u201c]?(.+?)['\"\u2019\u201d]?"
+    r"^\s*(?P<op>is|are|=|==|!=|<>|equals?|equal to|:)\s*['\"\u2018\u201c]?(.+?)['\"\u2019\u201d]?"
     r"\s*(?:$|[?.,;!]|\s+(?:and|or|but|for|in|on|from)\b)",
     re.I,
 )
@@ -467,7 +580,7 @@ def _bind_stated_values(q, df, kept, text_filters, filters, metric):
     stated filter dropped on either would hand back the unfiltered total as the
     answer. Bind what was stated; a value no row holds then shows as "no rows match".
     """
-    by_col = {t.column: t for t in text_filters}
+    by_col = {(t.column, t.negate): t for t in text_filters}
     bound = {f.column for f in filters} | ({metric} if metric else set())
     for start, end, name in kept:
         if name in bound or name not in df.columns or _numeric_ratio(df[name]) >= 0.6:
@@ -475,15 +588,20 @@ def _bind_stated_values(q, df, kept, text_filters, filters, metric):
         m = _STATED_VALUE.match(q[end:])
         if not m:
             continue
-        said = m.group(1).strip()
+        said = m.group(2).strip()
+        # "Dept is not HR" / "Dept != HR": the same column, the value excluded.
+        neg = m.group("op") in ("!=", "<>")
+        nm_ = re.match(r"^(?:not\s+|!=\s*|<>\s*)(.+)$", said, re.I)
+        if nm_:
+            neg, said = True, nm_.group(1).strip()
         if not said:
             continue
         vals = df[name].dropna().astype(str).str.strip()
         hit = vals[vals.str.casefold() == said.casefold()]
         shown = hit.iloc[0] if len(hit) else said
-        tf = by_col.get(name)
+        tf = by_col.get((name, neg))
         if tf is None:
-            tf = by_col[name] = TextFilter(column=name, values=[])
+            tf = by_col[(name, neg)] = TextFilter(column=name, values=[], negate=neg)
             text_filters = list(text_filters) + [tf]
         if shown.casefold() not in {v.casefold() for v in tf.values}:
             tf.values.append(shown)
@@ -520,6 +638,12 @@ def plan_query(
             all_columns.update(str(c) for c in _df.columns)
     global_kept = _resolve_mentions(q, all_columns)
 
+    # "excluding Hrr": a negation whose value is not in the data. Say so; never guess.
+    said = _unmatched_negation(q, frames, global_kept)
+    if said:
+        (_wb0, _sh0) = next(iter(frames))
+        return Plan(agg=_agg_anywhere(q) or "SUM", metric="", sheet=_sh0, workbook=_wb0, refuse=said)
+
     # If the ask names a sheet, that beats every other signal - row 330 and a
     # column called OnTime exist on more than one sheet, the sheet name does not.
     # But a sheet name sitting *inside* a column mention is not a reference to the
@@ -555,11 +679,32 @@ def plan_query(
                     or _in_sheet_selector_position(q, s, e)
                 ]
 
+    # "North and South": more than one sheet named. Every one of them is asked, and the
+    # words that picked the sheets are not also values to filter on.
+    named_set = {named_sheet} if named_sheet else set()
+    value_spans = list(global_kept)
+    if named_sheet:
+        for (_wb, sn), _df in frames.items():
+            if sn in named_set:
+                continue
+            for s0, e0 in _mentions(q, sn, bounded=True):
+                if str(_wb).lower().endswith((".csv", ".tsv")) and not _in_sheet_selector_position(q, s0, e0):
+                    continue
+                if any(cs < e0 and s0 < ce for cs, ce, _c in global_kept) and not _in_sheet_selector_position(q, s0, e0):
+                    continue
+                if any(ss < e0 and s0 < se for ss, se in named_sheet_spans):
+                    continue
+                named_set.add(sn)
+                named_sheet_spans.append((s0, e0))
+                break
+        if len(named_set) > 1:
+            value_spans += [(a, b, "") for a, b in named_sheet_spans]
+
     best: Plan | None = None
     for (wb_name, sheet_name), df in frames.items():
         if df is None or not len(df) or df.empty:
             continue
-        if named_sheet and sheet_name != named_sheet:
+        if named_set and sheet_name not in named_set:
             continue
         own = {str(c) for c in df.columns}
         kept = [m for m in global_kept if m[2] in own]
@@ -577,7 +722,7 @@ def plan_query(
         # reverse direction. Bail out only when there is no route at all.
         # "how many people work in Ops" names no column, only a value from one.
         if not kept and not rows and not _reverse_candidates(q, df):
-            if not (re.search(_AGGS[0][0], q.lower()) and _find_text_filters(q, df, global_kept, set())[0]):
+            if not (re.search(_AGGS[0][0], q.lower()) and _find_text_filters(q, df, value_spans, set())[0]):
                 continue
 
         metric: str | None = None
@@ -597,7 +742,7 @@ def plan_query(
                     metric, metric_agg = name, fn
 
         # Words in the question that are values in a text column ("North", "Widget").
-        text_filters, ambiguous_values = _find_text_filters(q, df, global_kept, set())
+        text_filters, ambiguous_values = _find_text_filters(q, df, value_spans, set())
         text_filters = _bind_stated_values(q, df, kept, text_filters, filters, metric)
 
         # "by region" / "which region has the highest ...": a group-by on a text column.
@@ -725,7 +870,7 @@ def plan_query(
         # real depth - Summary-style rollups are small and are exactly the trap.
         named = len({name for _, _, name in kept})
         score = named * 10.0 + min(len(df), 100000) / 100000.0 + 5.0 * len(text_filters)
-        if named_sheet and sheet_name == named_sheet:
+        if sheet_name in named_set:
             score += 50.0
         cand = Plan(
             agg=metric_agg,
@@ -799,6 +944,8 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
             mask = col < f.value
         elif f.op == "<=":
             mask = col <= f.value
+        elif f.op == "!=":
+            mask = col != f.value
         else:
             mask = col == f.value
         work = work[mask.fillna(False)]
@@ -806,7 +953,8 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
     for t in plan.text_filters:
         if t.column not in work.columns:
             return None
-        work = work[_key(work[t.column]).isin({v.strip().casefold() for v in t.values})]
+        hit = _key(work[t.column]).isin({v.strip().casefold() for v in t.values})
+        work = work[~hit if t.negate else hit]
 
     rows_matched = int(len(work))
 
@@ -919,6 +1067,13 @@ def _round(value: float) -> str:
 
 def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | None:
     """One sheet, one figure (or one table of figures), with provenance."""
+    if plan.refuse:
+        return {
+            "answer": plan.refuse, "sql": None, "sheet": plan.sheet, "workbook": plan.workbook,
+            "abstained": True, "abstain_reason": plan.refuse,
+            "linked": {"sheet": plan.sheet, "workbook": plan.workbook,
+                       "metric": "", "filters": [], "all_numeric": False},
+        }
     if plan.ambiguous:
         opts = ", ".join(plan.ambiguous)
         what = "a word in your question matches more than one column" if plan.ambiguous_kind == "value" else "That could mean more than one column"
@@ -1003,7 +1158,7 @@ def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | Non
     )
     return {
         "answer": answer,
-        "value": result["value"],
+        "value": round(result["value"], 4),
         "sql": result["sql"],
         "sheet": plan.sheet,
         "workbook": plan.workbook,
@@ -1015,12 +1170,25 @@ def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | Non
         "filter": where,
         "values_used": result.get("values_used"),
         "assumed": plan.assumed,
+        "carry": _carry(plan),
     }
 
 
 # --------------------------------------------------------------------------------------
 # Several sheets / files, group-by, and the plain-words provenance around them.
 # --------------------------------------------------------------------------------------
+
+
+def _carry(plan: Plan) -> dict:
+    """What a later short question ("and for South?") needs to repeat this calculation."""
+    return {
+        "agg": plan.agg,
+        "metric": plan.metric,
+        "sheet": plan.sheet,
+        "workbook": plan.workbook,
+        "text": [{"column": t.column, "values": list(t.values), "negate": t.negate} for t in plan.text_filters],
+        "num": [{"column": f.column, "op": f.op, "value": f.value} for f in plan.filters],
+    }
 
 
 def _where_words(plan: Plan) -> str:
@@ -1062,7 +1230,7 @@ def _siblings(plan: Plan, cands: list[Plan], frames: dict) -> list[tuple[Plan, b
     (no North rows in Q3) is listed as having no matching rows; it must never fall
     back to an unfiltered figure.
     """
-    if plan.rows or plan.ambiguous:
+    if plan.rows or plan.ambiguous or plan.refuse:
         return [(plan, False)]
     mine = {t.sql() for t in plan.text_filters}
     out: list[tuple[Plan, bool]] = []
@@ -1183,7 +1351,8 @@ def _answer_multi(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
     first = oks[0] if oks else entries[0]
     return {
         "answer": answer,
-        "value": combined if combined is not None else (oks[0]["value"] if len(oks) == 1 else None),
+        "value": round(combined if combined is not None else (oks[0]["value"] if len(oks) == 1 else None), 4)
+        if (combined is not None or len(oks) == 1) else None,
         "sql": sql,
         "sheet": ", ".join(e["sheet"] for e in entries),
         "workbook": first["workbook"],
@@ -1193,9 +1362,10 @@ def _answer_multi(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
         "operation": plan.agg,
         "filter": where,
         "assumed": plan.assumed,
+        "carry": {**_carry(plan), "sheet": ""},
         "sheets": [
             {"workbook": e["workbook"], "sheet": e["sheet"],
-             "value": e.get("value"), "rows_matched": e["rows_matched"],
+             "value": round(e["value"], 4) if e.get("value") is not None else None, "rows_matched": e["rows_matched"],
              "rows_total": e["rows_total"], "values_used": e.get("values_used"),
              "sql": e.get("sql")}
             for e in entries
@@ -1292,7 +1462,7 @@ def _answer_group(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
         "operation": plan.agg,
         "filter": where,
         "group_by": gname,
-        "groups": [{"group": k, "value": v} for k, v in table[:50]],
+        "groups": [{"group": k, "value": round(v, 4)} for k, v in table[:50]],
         "assumed": plan.assumed,
         "sheets": sheets,
         "linked": {"sheet": plan.sheet, "workbook": plan.workbook, "metric": plan.metric,
@@ -1356,3 +1526,86 @@ def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict |
         "abstained": True,
         "linked": {"sheet": sheet, "workbook": wb, "metric": "", "filters": [], "all_numeric": False},
     }
+
+
+# --------------------------------------------------------------------------------------
+# Follow-ups: "and for South?", "what about March?", "and the average?"
+# --------------------------------------------------------------------------------------
+
+_FOLLOW_START = re.compile(r"^\W*(?:and|also|what about|how about|now|then|same|but|ok(?:ay)?)\b", re.I)
+_FOLLOW_REF = re.compile(r"\b(?:there|that|those|same|it|them)\b", re.I)
+_OP_WORD = {"SUM": "total", "AVG": "average", "COUNT": "how many", "MAX": "maximum", "MIN": "minimum"}
+
+
+def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str], Any]) -> str | None:
+    """A short follow-up, made into a full question from the previous calculation.
+
+    `prev` is the "carry" saved with the previous answer: its aggregate, column, filters
+    and sheet. The follow-up can change the aggregate ("and the average?"), the sheet
+    ("and for the South sheet?") or a value ("what about March?"); everything it does
+    not change is kept. Returns None when the question is not such a follow-up (it names
+    a column itself, is long, or there is nothing to carry), so it is asked as typed.
+    """
+    if not isinstance(prev, dict) or not prev.get("agg") or not frames:
+        return None
+    q = (question or "").strip()
+    words = q.split()
+    if not q or len(words) > 14:
+        return None
+    if not (_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= 6):
+        return None
+    all_cols: set[str] = set()
+    for df in frames.values():
+        if df is not None and not df.empty:
+            all_cols.update(str(c) for c in df.columns)
+    if _resolve_mentions(q, all_cols):
+        return None  # names a column: it is a question of its own
+    agg = _agg_anywhere(q)
+    old_sheet = str(prev.get("sheet") or "")
+    sheet = ""
+    sheet_spans: list[tuple[int, int, str]] = []
+    for (_wb, sn), _df in frames.items():
+        for a, b in _mentions(q, sn, bounded=True):
+            if str(_wb).lower().endswith((".csv", ".tsv")) and not _in_sheet_selector_position(q, a, b):
+                continue
+            if sn != old_sheet:
+                sheet = sheet or sn
+            sheet_spans.append((a, b, ""))
+            break
+    new_text: dict[tuple[str, bool], TextFilter] = {}
+    for key, df in frames.items():
+        if df is None or df.empty:
+            continue
+        target = sheet or old_sheet
+        if target and key[1] != target:
+            continue
+        found, _amb = _find_text_filters(q, df, sheet_spans, set())
+        for t in found:
+            new_text.setdefault((t.column, t.negate), t)
+    # "thanks" or "what about 5?" carry nothing: a new aggregate, sheet or value must be there.
+    if not (agg or sheet or new_text):
+        return None
+    target_sheet = sheet or old_sheet
+    # Values that only repeated the old sheet's name ("Region is North" on North) go with it.
+    drop = {old_sheet.casefold()} if sheet and sheet != old_sheet else set()
+    over = {c for c, _n in new_text}
+    parts: list[str] = []
+    for t in prev.get("text") or []:
+        vals = [v for v in t.get("values") or [] if str(v).casefold() not in drop]
+        if not vals or t.get("column") in over:
+            continue
+        parts.append(TextFilter(t["column"], vals, bool(t.get("negate"))).words())
+    for t in new_text.values():
+        parts.append(t.words())
+    for f in prev.get("num") or []:
+        parts.append(f'{f["column"]} {f["op"]} {_fmt_num(float(f["value"]))}')
+    op = agg or prev["agg"]
+    metric = str(prev.get("metric") or "")
+    out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
+    if op == "COUNT" and not metric:
+        out = "how many rows"
+    if target_sheet and not str(prev.get("workbook") or "").lower().endswith((".csv", ".tsv")):
+        out += f" in the {target_sheet} sheet"
+    if parts:
+        out += " where " + " and ".join(parts)
+    return out
