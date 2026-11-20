@@ -11,11 +11,39 @@ preset workflows.
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import Any
 
 import cortex_client
+
+_ENGINE_OFF = "The background engine is not running. Only agent runs on this computer are listed."
+_TECHY = re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|:\d{2,5}\b|\bport \d+", re.I)
+
+
+def _plain(d: dict) -> dict:
+    """What the page may read from an engine answer: no advice that names settings or
+    ports ("hint" is dropped), and an error that does is replaced by a plain sentence."""
+    out = {k: v for k, v in d.items() if k != "hint"}
+    err = str(out.get("error") or "")
+    if err and (_TECHY.search(err) or out.get("reason") == "cortex_down" or "offline" in err.lower()):
+        out["error"] = _ENGINE_OFF
+    return out
+
+
+def _cleared_file():
+    import db
+
+    return db.DATA_DIR / "bg_tasks_cleared.json"
+
+
+def _cleared_ids() -> set[int]:
+    """Ids of the finished local agent runs the user cleared from the list."""
+    try:
+        return {int(x) for x in json.loads(_cleared_file().read_text()).get("run_ids") or []}
+    except Exception:
+        return set()
 
 
 def _push_hw() -> None:
@@ -199,6 +227,7 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
         seen.add(card["id"])
 
     finished: list[dict] = []
+    cleared = _cleared_ids()
     for run in recent:
         st = (run.get("status") or "").lower()
         if st in ("queued", "pending", "running", "claimed"):
@@ -209,6 +238,8 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
             continue
         card = _agent_card(run, agents)
         if card["id"] in seen:
+            continue
+        if int(run.get("id") or 0) in cleared:
             continue
         finished.append(card)
         if len(finished) >= 20:
@@ -223,12 +254,12 @@ def snapshot() -> dict:
         local_run, local_fin = _local_agent_tasks()
         return {
             "ok": True,
-            "error": data.get("error") or "Cortex engine offline",
-            "hint": data.get("hint"),
+            "error": _ENGINE_OFF,
             "running": local_run,
             "finished": local_fin,
             "degraded": True,
         }
+    data = _plain(data)
     data.setdefault("ok", True)
     data.setdefault("running", [])
     data.setdefault("finished", [])
@@ -276,11 +307,28 @@ def cancel(task_id: str) -> dict:
             return {"ok": False, "error": "That run has already finished."}
         except Exception as e:
             return {"ok": False, "error": str(e)[:200]}
-    return cortex_client.workflows_cancel(task_id)
+    return _plain(cortex_client.workflows_cancel(task_id))
 
 
 def clear_finished() -> dict:
-    return cortex_client.workflows_clear()
+    """Empty the Finished list. Finished local agent runs are hidden here (nothing is
+    deleted from the run history); the engine clears its own list when it is up, and
+    when it is down there is nothing of its to clear, which is not a failure."""
+    try:
+        import agent_store
+
+        open_states = set(agent_store._OPEN_RUN_STATES)
+        ids = [int(r["id"]) for r in agent_store.list_runs(None, 200) if r.get("status") not in open_states]
+    except Exception:
+        ids = []
+    if ids:
+        keep = sorted(_cleared_ids() | set(ids))[-1000:]  # only runs that had finished; a running one is not touched
+        _cleared_file().write_text(json.dumps({"run_ids": keep}))
+    engine = cortex_client.workflows_clear()
+    out: dict[str, Any] = {"ok": True}
+    if engine.get("ok"):
+        out.update({k: v for k, v in _plain(engine).items() if k != "ok"})
+    return out
 
 
 def recognize(prompt: str) -> dict:
@@ -309,7 +357,7 @@ def start(
     if not workflow_id and goal:
         body["template_id"] = "deep_research"
         body["workflow_id"] = "deep_research"
-    return cortex_client.workflows_run(body)
+    return _plain(cortex_client.workflows_run(body))
 
 
 # Kept for tests / callers that still import the estimator name.
