@@ -929,7 +929,8 @@ def _run_agent_events(
                 try:
                     from cortex_runtime import redact_text
 
-                    text = redact_text(text or "")
+                    # Secrets are scrubbed but the answer is kept whole (the default cap is 4,000).
+                    text = redact_text(text or "", max_len=max(len(text or ""), 1))
                 except Exception:
                     text = text or ""
             except Exception as e:
