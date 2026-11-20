@@ -28,7 +28,7 @@
 <style>
 :root{
   --bg:#0a0a0a;--surface:rgba(17,17,17,.72);--surface2:rgba(28,28,28,.78);--line:rgba(255,255,255,.12);
-  --text:#f5f5f5;--muted:#8a8a8a;--accent:#ffffff;--ok:#3dd68c;--warn:#e8b84a;
+  --text:#f5f5f5;--muted:#8a8a8a;--accent:#ffffff;--ok:#3dd68c;--warn:#e8b84a;--fail:#e06c6c;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
   --sans:"DM Sans",system-ui,-apple-system,sans-serif;
   --display:var(--sans);
@@ -54,7 +54,7 @@ body.theme-classyblack{
 body.theme-light{
   /* Claude / Manus-like: warm paper, solid surfaces, near-black ink */
   --bg:#f5f4ef;--surface:#ffffff;--surface2:#f0eee8;--line:rgba(0,0,0,.1);
-  --text:#141414;--muted:#5c5c5c;--accent:#1a1a1a;--ok:#1a8f5a;--warn:#a67c00;
+  --text:#141414;--muted:#555555;--accent:#1a1a1a;--ok:#167a4c;--warn:#8a6200;--fail:#b42318;
   --accent-fg:#faf9f5;--code-bg:#eceae3;--code-fg:#1a1a1a;
   --code-block-bg:#1e1e1e;--code-block-fg:#e8e6e1;
   --glass-blur:0px;--glass-saturate:1;
@@ -64,6 +64,30 @@ body.theme-light{
   --send-bg:#1a1a1a;--send-fg:#faf9f5;
   --shadow-soft:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
 }
+/* Light theme contrast: dark-only colours that sat on beige or white. */
+body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
+body.theme-light .field-eye{color:var(--text)}
+body.theme-light .kv-ok .kv-chip{color:var(--ok)}
+body.theme-light [style*="color:#e03131"]{color:var(--fail)!important}
+body.theme-light .btn.danger{color:var(--fail);border-color:rgba(180,35,24,.5)}
+body.theme-light .rag-back-sessions,body.theme-light .rag-chat-stage .hint{color:var(--text)}
+body.theme-light .cortex-tag strong{color:var(--text)}
+html body.theme-light .netie-add-box{color:var(--muted)!important}
+body.theme-light #keyVaultModal .kv-group-btn span,body.theme-light #kvList>p.hint{opacity:1!important}
+body.theme-light .pal-hint-btn{opacity:.9}
+body.theme-light .side-nav .nav-label,body.theme-light .side-section-hdr,body.theme-light .side-section-hdr .chev,body.theme-light .side-section-hdr small{opacity:1}
+body.theme-light .side-nav .nav-label:hover .chev{opacity:1}
+body.theme-light .side-collapse-btn{opacity:.75}
+body.theme-light .msg-jump-count{color:var(--text)}
+body.theme-light .ds-ico:hover{background:rgba(0,0,0,.07)}
+body.theme-light .ds-ico.danger:hover{background:rgba(180,35,24,.1);color:var(--fail)}
+body.theme-light .ds-add .ds-plus{opacity:1}
+body.theme-light #bgTasksPanel .bgHead button,body.theme-light #bgTasksPanel .bgX,body.theme-light #bgTasksPanel .bgPhaseHd .cv{opacity:.8}
+body.theme-light #bgTasksPanel .bgHead button:hover,body.theme-light #bgTasksPanel .bgX:hover{opacity:1}
+body.theme-light .cortex-call span[style*="#e06c6c"],body.theme-light #bgTasksPanel .bgDesc[style*="#e03131"]{color:var(--fail)!important}
+body.theme-light #bgTasksPanel .bgLabel span{opacity:1!important}
+body.theme-light #bgTasksPanel .dots i.err,body.theme-light #bgTasksPanel .st.err{background:var(--fail)}
+body.theme-light #bgTasksPanel .bgAudit .tl.bad{color:var(--fail)}
 .shell{display:flex;flex-direction:column;height:100%;height:100dvh;min-height:0;overflow:hidden;background:var(--bg)}
 .shell>.topbar{flex:0 0 auto;min-height:var(--topbar-h);z-index:60}
 /* Wide desktop: --side animates 0 ↔ --side-w and chat shares the row.
@@ -1066,7 +1090,7 @@ body.theme-light .send-fail{background:rgba(227,73,72,.06);border-color:rgba(227
 .ds-row:hover{border-color:rgba(128,128,128,.4)}
 .ds-row .ds-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
 .ds-row .ds-sub{color:var(--muted);font-size:11px;flex:0 0 auto}
-.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:.55;transition:opacity .15s}
+.ds-acts{display:flex;gap:2px;flex:0 0 auto;opacity:1;transition:opacity .15s}
 .ds-row:hover .ds-acts{opacity:1}
 .ds-ico{width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:7px;
   background:transparent;color:var(--muted);font-size:12px;line-height:1;cursor:pointer;padding:0}
@@ -3420,19 +3444,23 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
         <div class="sc-panel" id="scPanel-models" data-panel="models">
           <h3>API</h3>
-          <p class="hint">BYOK optional — <b>OpenFree</b> (our free gateway) / Netie Engine first. Paid keys fall back through OpenVault.</p>
-          <button type="button" class="btn primary" style="width:100%;margin-bottom:12px;border-radius:999px" onclick="closeSettings();openKeyVault()">Open key manager</button>
-          <div class="settings-section">
-            <h4>API keys (advanced)</h4>
-            <label class="hint" for="setDeepSeek">DeepSeek key</label>
-            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show or hide the DeepSeek key" aria-label="Show or hide the DeepSeek key">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
-            <label class="hint" for="setOpenRouter">OpenRouter key</label>
-            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)" title="Show or hide the OpenRouter key" aria-label="Show or hide the OpenRouter key">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
+          <p class="hint">Paste a key from an AI provider and press Save. Groq and Google both have free plans.</p>
+          <div class="settings-section" style="border-top:0;padding-top:0">
+            <h4>Paste an API key</h4>
             <label class="hint" for="setGroq">Groq key</label>
             <div class="field-row"><input id="setGroq" class="side-search" placeholder="Groq gsk_…" autocomplete="off" type="password" data-key="GROQ_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGroq',this)" title="Show or hide the Groq key" aria-label="Show or hide the Groq key">👁</button><span class="field-tick" id="tickGroq">✓</span></div>
             <label class="hint" for="setGoogle">Google AI key</label>
             <div class="field-row"><input id="setGoogle" class="side-search" placeholder="Google AI key" autocomplete="off" type="password" data-key="GOOGLE_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGoogle',this)" title="Show or hide the Google AI key" aria-label="Show or hide the Google AI key">👁</button><span class="field-tick" id="tickGoogle">✓</span></div>
-            <button class="btn primary" onclick="saveSettings()">Save keys locally</button>
+            <label class="hint" for="setOpenRouter">OpenRouter key</label>
+            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)" title="Show or hide the OpenRouter key" aria-label="Show or hide the OpenRouter key">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
+            <label class="hint" for="setDeepSeek">DeepSeek key</label>
+            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show or hide the DeepSeek key" aria-label="Show or hide the DeepSeek key">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
+            <button class="btn primary" onclick="saveSettings()">Save</button>
+          </div>
+          <div class="settings-section">
+            <h4>Other ways to connect</h4>
+            <p class="hint">Open the key manager for OpenFree (our free gateway, Windows only for now) and other providers.</p>
+            <button type="button" class="btn" onclick="closeSettings();openKeyVault()">Open key manager</button>
           </div>
         </div>
 
@@ -13780,14 +13808,15 @@ let _mermaidReady=false;
 function initMermaid(){
   if(_mermaidReady||!window.mermaid)return;
   try{
-    const dark=document.body.classList.contains('theme-dark')||!document.body.classList.contains('theme-light');
+    // The diagram panel is dark in every theme (.ai-block .mermaid), so the diagram
+    // always uses the dark palette. A light palette put near-black lines on it.
     mermaid.initialize({
       startOnLoad:false,
       securityLevel:'strict',
-      theme:dark?'dark':'neutral',
+      theme:'dark',
       fontFamily:'inherit',
       flowchart:{htmlLabels:true,curve:'basis',padding:12},
-      themeVariables:dark?{
+      themeVariables:{
         background:'#0a0a0a',
         primaryColor:'#111111',
         primaryTextColor:'#f5f5f5',
@@ -13801,20 +13830,6 @@ function initMermaid(){
         clusterBkg:'rgba(17,17,17,.85)',
         clusterBorder:'rgba(255,255,255,.14)',
         titleColor:'#f5f5f5'
-      }:{
-        background:'#f7f7f5',
-        primaryColor:'#ffffff',
-        primaryTextColor:'#111',
-        primaryBorderColor:'rgba(0,0,0,.16)',
-        secondaryColor:'#f0f0ec',
-        tertiaryColor:'#fff',
-        lineColor:'rgba(0,0,0,.35)',
-        textColor:'#111',
-        mainBkg:'#fff',
-        nodeBorder:'rgba(0,0,0,.16)',
-        clusterBkg:'rgba(0,0,0,.03)',
-        clusterBorder:'rgba(0,0,0,.12)',
-        titleColor:'#111'
       }
     });
     _mermaidReady=true;
@@ -14660,7 +14675,25 @@ function renderMarkdownLite(t){
 // sent a message and saw nothing happen.
 let sendFailure=null; // {sid, text, msg, ids: files sent with it, replace: id of the question being edited}
 function noteSendFailure(text,msg,extra){sendFailure={sid:0,text:String(text||''),msg:String(msg||''),ids:[...((extra&&extra.attachment_ids)||[])],replace:(extra&&extra.replace_msg_id)||0}}
+// The server lists every provider it tried, e.g. "groq-70b(HTTP Error 401: Unauthorized) ->
+// Google(no key)". Read that list so a refused key and a cooling-down provider are told
+// apart from "no key at all".
 function sendFailureCopy(msg){
+  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree']];
+  // provider -> when its key was last refused. The server then says only "cooldown" for a few
+  // minutes, which would read as "busy" without this. Kept per browser, so a reload does not lose it.
+  let seen={};try{seen=JSON.parse(localStorage.getItem('airgpt_key_refused')||'{}')||{}}catch(e){}
+  const tried=[];
+  String(msg||'').replace(/([A-Za-z][\w.\-]*)\(([^()]*)\)/g,(m,l,r)=>{const n=names.find(x=>x[0].test(l));tried.push({name:n?n[1]:l,why:r})});
+  const refused=tried.find(t=>/\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
+  if(refused){seen[refused.name]=Date.now();try{localStorage.setItem('airgpt_key_refused',JSON.stringify(seen))}catch(e){}}
+  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);
+  if(held){
+    const host=isLocalHost();
+    return {title:'Your '+held.name+' key was refused',body:host?'The provider did not accept it. Check the key in Settings > API.':'The computer running AirGPT has a '+held.name+' key that was refused. Ask its owner to check it.',key:host,keyLabel:'Check my key'};
+  }
+  const cooling=tried.find(t=>/\b429\b|rate.?limit|quota|too many|cooldown/i.test(t.why));
+  if(cooling)return {title:cooling.name+' is busy',body:'It is limiting requests right now. Wait a minute, then try again.'};
   if(/No text LLM available|no key|api key|unauthori[sz]ed|\b401\b|\b403\b/i.test(msg))
     return {title:'No AI model is ready',body:isLocalHost()?'Add an API key for a provider (Groq, Google, OpenRouter and others have free tiers), or start a local model. Then try again.':'The computer running AirGPT has no AI model ready. Ask its owner to add an API key.',key:isLocalHost()};
   if(/\b429\b|rate.?limit|quota|too many/i.test(msg))
@@ -14686,7 +14719,7 @@ function paintSendFailure(){
     <div class="send-fail-head"><span class="send-fail-ico" aria-hidden="true">!</span><strong>${esc(c.title)}</strong></div>
     <p>${esc(c.body)}</p>
     <div class="send-fail-acts">
-      ${c.key?'<button type="button" class="btn primary" id="sendFailKey">Add an API key</button>':''}
+      ${c.key?'<button type="button" class="btn primary" id="sendFailKey">'+esc(c.keyLabel||'Add an API key')+'</button>':''}
       <button type="button" class="btn" id="sendFailRetry">Try again</button>
     </div>
     <details><summary>Details</summary><pre>${esc(f.msg)}</pre></details>
@@ -15645,7 +15678,7 @@ async function saveSettings(silent){
   if(_aiAutoDirty&&$('setAiAuto'))body.ai_auto=$('setAiAuto').checked;
   [['DEEPSEEK_API_KEY','setDeepSeek'],['OPENROUTER_API_KEY','setOpenRouter'],['GROQ_API_KEY','setGroq'],['GOOGLE_API_KEY','setGoogle']].forEach(([k,id])=>{
     const v=($(id)&&$(id).value.trim())||'';
-    if(v&&v!==_savedKeys[id])body[k]=v;
+    if(v&&v!==_savedKeys[id]){body[k]=v;try{localStorage.removeItem('airgpt_key_refused')}catch(e){}}   // a new key: forget the old refusal
   });
   const email=$('setEmail')?.value?.trim()||'';
   const emailNew=!!email&&email!==_emailLoaded;
@@ -16867,8 +16900,10 @@ function closeKeyVault(){
     setTimeout(()=>typeof runOpenIDEAgent==='function'&&runOpenIDEAgent(),120);
   }
 }
+let _kvOpenFree=null;   // /api/openfree/status: can this computer start OpenFree at all?
 async function kvRefresh(){
   try{_kvData=await fetchJson('/api/keyvault')}catch(e){_kvData=null}
+  try{_kvOpenFree=await fetchJson('/api/openfree/status')}catch(e){_kvOpenFree=null}
   kvRender();
 }
 function kvToggleGroup(g){
@@ -16886,6 +16921,9 @@ function kvRender(){
   const host=$('kvList'); if(!host)return;
   if(!_kvData||!_kvData.providers){host.innerHTML='<p class="hint">Key vault unavailable — restart the AirGPT server to load it.</p>';return}
   const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // The server calls the gateway FreeRouter (and OpenFree) and shows a D:\ path; the app says OpenFree and OpenVault.
+  const nm=t=>String(t||'').replace(/FreeRouter \(was OpenFree\)/g,'OpenFree').replace(/FreeRouter/g,'OpenFree').replace(/\s*\(D:\\+OpenVault\)/g,'').replace(/\s*Repo: D:\\+OpenVault\./g,'');
+  const cantFree=!!(_kvOpenFree&&_kvOpenFree.can_run===false);
   const visible=_kvData.providers.filter(p=>!p.ui_hidden);
   const card=p=>{
     const open=kvOpenCards.has(p.id)||(p.id==='omniroute'&&!kvOpenCards.size&&kvOpenGroups.has('gateway'));
@@ -16893,14 +16931,14 @@ function kvRender(){
     const isOpenVault=p.id==='openvault_mesh';
     return `<div class="kv-card${p.configured?' kv-ok':''}${p.group==='official'?' kv-official':''}${open?' open':''}" data-pid="${esc(p.id)}" data-call="kvToggleCard" data-ev="last" data-arg="${esc(p.id)}">
       <div class="kv-head">
-        <div class="kv-title"><span class="kv-chev">${open?'▼':'▶'}</span><strong>${esc(p.label)}</strong></div>
-        <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):'not set'}</span>
+        <div class="kv-title"><span class="kv-chev">${open?'▼':'▶'}</span><strong>${esc(nm(p.label))}</strong></div>
+        <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):(isOpenFree&&cantFree?'not available':'not set')}</span>
       </div>
       <div class="kv-body">
-        <p class="hint kv-note">${esc(p.free_note)}</p>
-        <ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
+        <p class="hint kv-note">${esc(nm(p.free_note))}</p>
+        ${isOpenFree&&cantFree?'':`<ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>`}
         <div class="kv-actions">
-          ${isOpenFree?`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`:''}
+          ${isOpenFree?(cantFree?`<p class="hint kv-cant">${esc(_kvOpenFree.why)}</p><button type="button" class="btn primary" disabled>Enable OpenFree · auto fallback</button>`:`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`):''}
           ${isOpenVault?`<button type="button" class="btn primary" onclick="event.stopPropagation();kvConnectOpenVault()">Connect OpenVault mesh</button>
             <a class="btn kv-link" href="http://127.0.0.1:5000/#mesh" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open mesh UI ↗</a>`:''}
           ${p.console&&!isOpenFree&&!isOpenVault?`<a class="btn kv-link" href="${esc(p.console)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${p.group==='official'?'Buy / claim on netie.ai ↗':'Open '+esc(p.label)+' console ↗'}</a>`:''}
@@ -16931,7 +16969,7 @@ function kvRender(){
     groupBlock('cloud','Cloud providers (optional BYO)',cloud)+
     groupBlock('cli','Your CLIs (gh · Cursor)',cli)+
     groupBlock('deploy','OpenShip (via OpenVault)',deploy)+
-    `<p class="hint" style="margin-top:10px;opacity:.8">${esc(_kvData.policy||'')}</p>`+
+    `<p class="hint" style="margin-top:10px;opacity:.8">${esc(nm(_kvData.policy||''))}</p>`+
     (order?`<p class="hint" style="opacity:.7">Fallback order: ${esc(order)}</p>`:'');
 }
 let _openfreePoll=null;

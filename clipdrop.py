@@ -6815,6 +6815,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"ok": False, "error": "host only"})
             try:
                 import openfree
+                # Where it cannot start, say so before touching any setting.
+                if not openfree._port_open() and openfree.cannot_run():
+                    return self._json(200, openfree.enable())
                 if app_settings:
                     app_settings.update_settings(
                         {"OMNIROUTE_ENABLED": "1", "OMNIROUTE_BASE_URL": openfree.BASE_URL}
