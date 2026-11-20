@@ -200,6 +200,14 @@ class FreshSendOverTheCap(SeamsBase):
         self.assertNotIn("secret-plan", repr(evs))
 
 
+    def test_fresh_send_repeated_file_is_not_called_left_out(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(12)]
+        code, evs, _ = self.post("/api/chat/stream", {"session_id": sid, "text": "q", "attachment_ids": ids + [ids[0], ids[0]]})
+        self.assertEqual(code, 200)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertNotIn("left out", repr(evs))
+
     def test_plain_messages_fallback_names_the_left_out_files_too(self):
         sid = self.new_chat()
         ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(14)]

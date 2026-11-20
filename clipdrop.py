@@ -704,12 +704,16 @@ def _clean_attach_ids(ids, cap: int | None = 12) -> list[int]:
     return out
 
 
-def _left_out_note(left_out, allowed_sessions) -> str:
+def _left_out_note(left_out, allowed_sessions, sent=()) -> str:
     """The reply's opening line naming files that did not fit in one question (empty if none).
     Only files of this chat (or the chat it replies to) are named, never another chat's."""
     allowed = {int(x) for x in allowed_sessions if x}
     names = []
+    seen = {int(x) for x in sent}  # a file asked for twice, once within the cap, did go
     for fid in left_out:
+        if fid in seen:
+            continue
+        seen.add(fid)
         fm = db.get_message(fid) or {}
         if fm.get("kind") != "file" or int(fm.get("session_id") or 0) not in allowed:
             continue
@@ -3830,7 +3834,8 @@ class Handler(BaseHTTPRequestHandler):
             attach_ids = kept_old + new_ids
             turn_note = _left_out_note(left_out, (session_id, parent_session_id))  # said in the reply itself
         else:  # a fresh send: files past the cap are named, not dropped silently
-            turn_note = _left_out_note(_clean_attach_ids(attach_ids, None)[12:], (session_id, parent_session_id))
+            _all = _clean_attach_ids(attach_ids, None)
+            turn_note = _left_out_note(_all[12:], (session_id, parent_session_id), _all[:12])
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
@@ -6395,7 +6400,8 @@ class Handler(BaseHTTPRequestHandler):
                     if target and (target.get("vision_cache") or target.get("ai_analysis")):
                         queue_analysis(int(target["id"]), text, mode=mode, session_id=sid, depth=depth)
                         return self._json(200, {"ok": True, "message": user_msg, "ai": "queued", "context_id": target["id"], "session_id": sid})
-                    note = _left_out_note(_clean_attach_ids(data.get("attachment_ids"), None)[12:], (sid, parent_session_id))
+                    _all = _clean_attach_ids(data.get("attachment_ids"), None)
+                    note = _left_out_note(_all[12:], (sid, parent_session_id), _all[:12])
                     if note:
                         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=note.strip(), kind="text", source="ai", session_id=sid)
                         bump_sync()
