@@ -105,6 +105,10 @@ def test_sheet_passage_names_sheet_and_the_rows_it_covers(server):
     assert p["rows"]["last"] - p["rows"]["first"] <= max(ids) - min(ids) + 2
     assert 100 in range(p["rows"]["first"], p["rows"]["last"] + 1)
     assert p["can_open"] is True and p["source_id"]
+    # The first passage starts at the sheet's own heading: still a sheet, starting at row 1.
+    top = next(c for c in store.sample_parent_chunks(sid, limit=24) if "O0001" in c["text"] and c["heading"].startswith("Sheet:"))
+    q = json.loads(_get(f"{base}/api/rag/passages/{top['id']}")[2])["passage"]
+    assert q["sheet"] == "Orders" and q["rows"]["first"] == 1
 
 
 def test_pdf_style_heading_gives_a_page_and_text_gets_context(server):

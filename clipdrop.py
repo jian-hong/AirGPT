@@ -2726,7 +2726,9 @@ def _rag_sheet_rows(blob: str, start: int, end: int) -> tuple[str, int, int] | N
     row, so the span's lines can be counted. Rows count below the header, the same
     way the answer's "98 of 400 rows" does. None when the span is not in a sheet."""
     last = None
-    for m in re.finditer(r"^## (.*)$", blob[: max(0, start) + 1], re.M):
+    for m in re.finditer(r"^## (.*)$", blob, re.M):
+        if m.start() > start:
+            break
         last = m
     if not last or not last.group(1).startswith("Sheet:"):
         return None
@@ -2751,6 +2753,11 @@ def _rag_passage(chunk_id: int, around: int = 3) -> dict | None:
     if not ch:
         return None
     src = rag_store.get_source(int(ch.get("source_id") or 0)) or {}
+    # The model is shown the surrounding (parent) passage of a hit, so that is what opens;
+    # showing only the narrow matching piece could miss the lines the answer used.
+    par = rag_store.get_chunk(int(ch.get("parent_id") or 0)) if ch.get("parent_id") else None
+    if par and int(par.get("source_id") or 0) == int(ch.get("source_id") or 0):
+        ch = par
     meta = src.get("meta") or {}
     if isinstance(meta, str):
         try:
@@ -2769,11 +2776,23 @@ def _rag_passage(chunk_id: int, around: int = 3) -> dict | None:
         blob = ""
     if blob and 0 <= start < end <= len(blob):
         n = max(0, min(int(around), 8))
-        before = "\n".join(blob[max(0, start - 800):start].split("\n")[-n - 1:]).strip("\n") if n else ""
-        after = "\n".join(blob[end:end + 800].split("\n")[: n + 1]).strip("\n") if n else ""
-        # A span that begins mid-line would show half a line as context.
-        if start and blob[start - 1] != "\n":
-            before = ""
+        if n:
+            # The window is cut mid-line at its far edge, so that edge says so with an ellipsis.
+            lo, hi = max(0, start - 800), min(len(blob), end + 800)
+            b_lines = blob[lo:start].rstrip("\n").split("\n")
+            before = "\n".join(b_lines[-n:])
+            if lo > 0 and len(b_lines) <= n:
+                before = "…" + before
+            a_lines = blob[end:hi].lstrip("\n").split("\n")
+            after = "\n".join(a_lines[:n])
+            if hi < len(blob) and len(a_lines) <= n:
+                after += "…"
+            # A passage that ends mid-line continues on the first line shown after it.
+            if end < len(blob) and blob[end - 1] != "\n" and blob[end] != "\n":
+                after = "…" + after
+            # A span that begins mid-line continues the last line shown before it.
+            if before and start and blob[start - 1] != "\n":
+                before += "\u2026"
         sr = _rag_sheet_rows(blob, start, end)
         if sr:
             sheet, rows = sr[0], {"first": sr[1], "last": sr[2]}

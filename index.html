@@ -1404,13 +1404,13 @@ body.theme-light .rag-neon-card > .hint,
 body.theme-light .rag-neon-card p.hint{color:var(--muted)!important;opacity:1}
 .rag-source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;margin:10px 0 4px}
 .rag-source-tile{
-  aspect-ratio:5/6;border-radius:14px;border:1px solid var(--line);background:var(--surface);
+  min-height:96px;border-radius:14px;border:1px solid var(--line);background:var(--surface);
   padding:10px 8px 8px;display:flex;flex-direction:column;gap:6px;min-width:0;position:relative;
   box-shadow:var(--shadow-soft);
 }
 .rag-source-tile .st-kind{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .rag-source-tile .st-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;flex:1}
-.rag-source-tile .st-meta{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rag-source-tile .st-meta{font-size:10px;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
 .rag-source-tile .st-x{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:8px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer;font-size:12px}
 .rag-source-tile .st-x:hover{background:rgba(0,0,0,.12);color:var(--text)}
 /* Reveal sits bottom-right and only on hover, so the resting tile stays kind +
@@ -1447,7 +1447,7 @@ body.theme-dark .rag-source-tile .st-reveal:hover{background:rgba(255,255,255,.1
 @keyframes ragShake{0%,100%{transform:none}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 .rag-url-warn{font-size:12px;color:#b91c1c;margin:0 0 6px;min-height:16px}
 .rag-rebuild-fab{
-  position:fixed;right:22px;bottom:88px;z-index:70;border:0;border-radius:999px;padding:12px 18px;
+  position:static;margin:16px 0 4px;border:0;border-radius:999px;padding:12px 18px;
   background:#111;color:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer;
   box-shadow:0 12px 32px rgba(0,0,0,.28);display:inline-flex;align-items:center;gap:8px;
 }
@@ -1857,10 +1857,50 @@ body.theme-light .msg-jump-node-btn.on{border-color:#111;background:#111}
 .rag-cites>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line,#333);opacity:.85;font-size:12px}
 .rag-cites>summary::-webkit-details-marker{display:none}
 .rag-cites[open]>summary{opacity:1;margin-bottom:4px}
-.rag-cite-chip{display:inline;border:0;padding:0 2px;margin:0 1px;background:transparent;color:var(--accent,#4ea1ff);cursor:pointer;font:inherit;font-weight:600}
+.rag-cite-chip{display:inline;border:0;padding:0;margin:0 1px;background:transparent;color:var(--accent,#4ea1ff);cursor:pointer;font:inherit;font-weight:600}
 .rag-cite-chip:hover{text-decoration:underline}
 .rag-cite-n{opacity:.75;font-variant-numeric:tabular-nums;margin-right:2px}
 .rag-cite-flash{outline:2px solid var(--accent,#4ea1ff);outline-offset:2px;border-radius:6px}
+.ai-block.rag-md{margin:0;padding:0;border:0;background:transparent;font-size:14px;line-height:1.55}
+.rag-md>:first-child{margin-top:0}.rag-md>:last-child{margin-bottom:0}
+.rag-cite-group{margin:2px 0 6px}
+.rag-cite-file{display:flex;gap:6px;align-items:center;font-weight:600;font-size:12px;padding:3px 2px;overflow-wrap:anywhere}
+.rag-cite-where{opacity:.85;font-size:11.5px}
+.rag-cite-rows{opacity:.85;font-size:11.5px}
+.rag-cite-view{padding:3px 10px;font-size:11px;margin:0 0 6px 24px}
+.rag-cite-link{display:inline-block;margin:0 0 6px 12px;font-size:11.5px}
+.rag-note{margin:8px 0 0;padding:7px 10px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid var(--line);background:rgba(127,127,127,.07)}
+.rag-note strong{font-weight:650}
+.rag-note-warn{border-color:rgba(232,184,74,.5);background:rgba(232,184,74,.1)}
+.rag-note-info{border-color:rgba(78,161,255,.4);background:rgba(78,161,255,.08)}
+.rag-note ul{margin:6px 0 0;padding-left:18px}
+.rag-note summary{cursor:pointer}
+.rag-prov{margin:8px 0 0;padding:7px 10px;border-radius:10px;border:1px solid var(--line);font-size:12.5px;line-height:1.45;background:rgba(127,127,127,.05)}
+.rag-prov-more{margin:6px 0 0;padding-left:18px}
+.rag-prov-sql{margin-top:6px}
+.rag-prov-sql summary{cursor:pointer;font-size:12px;opacity:.85}
+.rag-prov-sql code{display:block;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere}
+.rag-pass-back{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.rag-pass-back[hidden]{display:none}
+.rag-pass{width:min(720px,100%);max-height:min(80vh,100%);display:flex;flex-direction:column;border-radius:16px;border:1px solid var(--line);background:var(--surface,#161616);color:var(--text);box-shadow:0 20px 60px rgba(0,0,0,.45)}
+.rag-pass-head{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+.rag-pass-title{font-weight:650;font-size:14px;line-height:1.35;overflow-wrap:anywhere;min-width:0}
+.rag-pass-body{padding:12px 14px;overflow:auto;flex:1}
+.rag-pass-body pre{margin:0 0 8px;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:1.5}
+.rag-pass-ctx{opacity:.6}
+.rag-pass-hit{padding:8px 10px;border-radius:10px;background:rgba(232,184,74,.16);border:1px solid rgba(232,184,74,.4)}
+.rag-pass-note{margin:6px 0 0;font-size:11.5px}
+.rag-pass-foot{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px}
+.rag-pass-head .btn,.rag-pass-foot .btn{flex:0 0 auto;width:auto}
+.rag-pass-foot:not(:empty){padding:10px 14px;border-top:1px solid var(--line)}
+@media(max-width:600px){.rag-pass-back{align-items:flex-end;padding:0}.rag-pass{width:100%;border-radius:16px 16px 0 0;max-height:88vh}}
+.rag-upreport{margin:0 0 10px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);font-size:12.5px;line-height:1.5;background:rgba(127,127,127,.06)}
+.rag-upreport.warn{border-color:rgba(232,184,74,.5);background:rgba(232,184,74,.1)}
+.rag-upreport ul{margin:6px 0 0;padding-left:18px}
+.rag-upreport .btn{margin-top:8px;padding:3px 10px;font-size:11px}
+.rag-not-enforced{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;border:1px solid rgba(232,184,74,.6);background:rgba(232,184,74,.12);font-size:11px;font-weight:600;vertical-align:middle}
+.rag-lib-note{padding:14px 16px;border-radius:12px;border:1px solid var(--line);line-height:1.5}
+.btn.danger{border-color:rgba(248,113,113,.6);color:#f87171}
 .rag-surf-chip{display:inline-block;padding:1px 7px;margin:2px 3px 2px 0;border-radius:999px;border:1px solid var(--line,#333);font-size:11px}
 .rag-think{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:7px;padding:2px 0}
 .rag-think .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:ragpulse 1s ease-in-out infinite}
@@ -9710,6 +9750,7 @@ const RAG_DEPTHS=[
   ['auto','Adaptive','Picks depth per question from corpus size'],
   ['manual','Manual','Pick the pipeline yourself'],
 ];
+function ragBytes(n){n=Number(n);if(!(n>0))return'';if(n<1024)return n+' B';if(n<1048576)return Math.round(n/1024)+' KB';return (n/1048576).toFixed(1)+' MB';}
 function ragAgo(ts){if(!ts)return'';const s=Math.max(0,Date.now()/1000-ts);if(s<90)return'just now';if(s<3600)return Math.round(s/60)+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';}
 function ragDepthLabel(s){const d=(s&&s.depth_default)||'high';if(d==='manual'){const a=((s&&s.config)||{}).architecture||'preset';const t=RAG_ARCHS.find(x=>x[0]===a);return'Manual · '+(t?t[1]:a);}return d[0].toUpperCase()+d.slice(1);}
 function ragStatusPill(st){st=st||'ready';const c=st==='ready'?'#4ade80':(st==='error'?'#f87171':'#fbbf24');return`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;opacity:.9"><span style="width:7px;height:7px;border-radius:50%;background:${c}"></span>${esc(st)}</span>`;}
@@ -9746,8 +9787,10 @@ function ragFormatAboutHtml(raw){
     proseLines=lines;
     srcLines=[];
   }
-  const prose=proseLines.join('\n').trim().split(/\n{2,}/).filter(Boolean)
-    .map(p=>`<p>${esc(p.replace(/\n/g,' ').trim())}</p>`).join('')||'';
+  // Same Markdown renderer as the chat, so a summary with headings, bold or a table reads
+  // as written instead of showing its symbols.
+  const proseMd=proseLines.join('\n').trim();
+  const prose=proseMd?ragMdHtml(proseMd):'';
   const items=srcLines.map(l=>{
     const m=String(l).match(/^\s*(?:\d+\.\s+|[-*•]\s+)(.+)$/);
     return m?m[1].trim():String(l).trim();
@@ -9755,7 +9798,7 @@ function ragFormatAboutHtml(raw){
   const list=items.length
     ? `<div class="rag-about-sources"><span class="lab">Sources</span><ol>${items.map(t=>`<li>${esc(t)}</li>`).join('')}</ol></div>`
     : '';
-  return `<div class="rag-about-prose">${prose||`<p>${esc(text)}</p>`}</div>${list}`;
+  return `<div class="rag-about-prose ai-block rag-md">${prose||`<p>${esc(text)}</p>`}</div>${list}`;
 }
 async function ragFetchSummary(force){
   if(!ragState.spaceId)return;
@@ -9767,8 +9810,14 @@ async function ragFetchSummary(force){
         ragState.space.config=Object.assign({},ragState.space.config||{},{corpus_summary:r.summary});
       }
       const el=$('ragAboutText');if(el)el.innerHTML=ragFormatAboutHtml(r.summary);
+    }else{
+      const el=$('ragAboutText');
+      if(el&&/Reading indexed chunks/.test(el.textContent||''))el.innerHTML='<p>The summary could not be written just now. Press Remember to try again.</p>';
     }
-  }catch(e){}
+  }catch(e){
+    const el=$('ragAboutText');
+    if(el&&/Reading indexed chunks/.test(el.textContent||''))el.innerHTML='<p>The summary could not be written just now. Press Remember to try again.</p>';
+  }
 }
 function ragPipelineSpec(s){
   const arch=ragArchId(s);
@@ -9908,20 +9957,36 @@ async function ragRenderLibrary(){
   document.body.classList.add('rag-mode','view-only-mode');
   document.body.classList.remove('rag-ask-on','oval-chat');
   $('chat').innerHTML=`<div class="cortex-page"><div class="empty">Loading RAG spaces…</div></div>`;
-  let spaces=[];
-  try{spaces=(await api('/api/rag/spaces').then(r=>r.json())).spaces||[]}catch(e){}
-  const cards=spaces.map(s=>`<div class="cortex-card" style="margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px" onclick="ragOpenSpace(${s.id})">
+  let spaces=[];let hostOnly=false;let loadErr='';
+  try{
+    const r=await api('/api/rag/spaces');
+    if(r.status===403)hostOnly=true;
+    else{
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&Array.isArray(j.spaces))spaces=j.spaces;else loadErr=String(j.error||('HTTP '+r.status));
+    }
+  }catch(e){loadErr='no connection'}
+  ragState.libSpaces=spaces;
+  if(hostOnly){
+    // Spaces are kept on the host computer only. A phone or other device is told so,
+    // instead of being shown an empty list as if nothing had been made.
+    $('chat').innerHTML=`<div class="cortex-page chat-page-enter"><h2>RAG knowledge spaces</h2><div class="rag-lib-note">Knowledge spaces live on the host computer. Open AirGPT on that computer to see and use them.</div></div>`;
+    syncRagAskBar();
+    return;
+  }
+  const cards=spaces.map(s=>`<div class="cortex-card" style="margin-bottom:8px;cursor:pointer;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px" onclick="ragOpenSpace(${s.id})">
     <div style="min-width:0">
       <h3 style="margin:0 0 3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(s.name)}
         <span class="hint" style="font-size:11px;font-weight:500;padding:1px 8px;border-radius:999px;border:1px solid var(--line);opacity:.8" title="Index depth (change in Build / Settings)">${esc(ragDepthLabel(s))}</span></h3>
-      <p style="margin:0" class="hint">${esc(String(s.source_count||0))} sources · ${esc(String(s.chat_count||0))} chats${s.updated_at?' · '+esc(ragAgo(s.updated_at)):''}</p>
+      <p style="margin:0" class="hint">${esc(String(s.source_count||0))} ${Number(s.source_count||0)===1?"source":"sources"} · ${esc(String(s.chat_count||0))} chats${s.updated_at?' · '+esc(ragAgo(s.updated_at)):''}</p>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
       ${ragStatusPill(s.status)}
       <button type="button" class="btn" style="padding:2px 8px" title="Export pack" onclick="event.stopPropagation();ragExportSpace(${s.id})">Export</button>
-      <button type="button" class="btn" style="padding:2px 8px" title="Archive" onclick="event.stopPropagation();ragArchiveSpace(${s.id})">🗄</button>
+      <button type="button" class="btn" style="padding:2px 8px" title="Hide from the library. The files stay on disk." onclick="event.stopPropagation();ragArchiveSpace(${s.id})">Archive</button>
+      <button type="button" class="btn danger" style="padding:2px 8px" title="Delete this space and its files" onclick="event.stopPropagation();ragDeleteSpace(${s.id})">Delete</button>
     </div>
-  </div>`).join('')||'<p class="hint">No knowledge spaces yet. Create one from files, previous chats, or a project — no Docker required.</p>';
+  </div>`).join('')||(loadErr?`<p class="hint">Could not load your knowledge spaces (${esc(loadErr)}). Reload the page to try again.</p>`:'<p class="hint">No knowledge spaces yet. Create one from files, previous chats, or a project — no Docker required.</p>');
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>RAG knowledge spaces</h2>
     <p class="cortex-tag">Ingest → chunk → index → retrieve → answer. Depth is a rebuild choice on Build — not a chat-bar control.</p>
@@ -9981,6 +10046,19 @@ async function ragArchiveSpace(id){
   if(!ragConfirm('Archive this RAG? It leaves the library (data is kept on disk).'))return;
   try{await api('/api/rag/spaces/'+id+'/archive',{method:'POST',body:'{}'});toast('Archived');ragRenderLibrary();}
   catch(e){toast('Archive failed')}
+}
+// Delete a whole space: its files, index and chats go from this computer. The confirm
+// names the space so the wrong card cannot be deleted by habit.
+async function ragDeleteSpace(id){
+  const s=(ragState.libSpaces||[]).find(x=>String(x.id)===String(id))||(ragState.space&&String(ragState.space.id)===String(id)?ragState.space:null);
+  const name=String((s&&s.name)||'this space');
+  if(!ragConfirm('Delete “'+name+'” for good?\n\nIts files, chats and index are removed from this computer. This cannot be undone.\n\nTo keep the files and only hide it, choose Archive instead.'))return;
+  try{
+    const r=await api('/api/rag/spaces/'+encodeURIComponent(id),{method:'DELETE'});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){toast('Deleted “'+name+'”');ragRenderLibrary();}
+    else toast(r.status===403?'Only the host computer can delete a space':(j.error||'Could not delete this space'));
+  }catch(e){toast('Could not delete this space')}
 }
 
 // Create page (replaces prompt()) — single scrolling page, progressive disclosure
@@ -10310,7 +10388,11 @@ async function ragOpenSpace(id,opts){
   ragRenderScopeChips();
   $('chat').innerHTML=`<div class="cortex-page"><div class="empty">Loading space…</div></div>`;
   let space=null;
-  try{space=((await api('/api/rag/spaces').then(r=>r.json())).spaces||[]).find(s=>String(s.id)===String(id))||null}catch(e){}
+  try{
+    const r=await api('/api/rag/spaces');
+    if(r.status===403)return ragRenderLibrary();  // not the host: say so instead of an empty space
+    space=(((await r.json()).spaces)||[]).find(s=>String(s.id)===String(id))||null;
+  }catch(e){}
   ragState.space=space;
   ragState.depth=(space&&space.depth_default)||'high';
   ragState.summary=String(((space&&space.config)||{}).corpus_summary||'').trim();
@@ -10455,7 +10537,7 @@ async function ragRenderTab(){
         <button type="button" class="st-x" title="Remove" onclick="ragDeleteSource(${x.id})">✕</button>
         <div class="st-kind">${kind}</div>
         <div class="st-title">${title}</div>
-        <div class="st-meta">${esc(x.status||'ready')}</div>
+        <div class="st-meta">${esc([x.status||'ready',ragBytes(x.bytes),x.created_at?'added '+ragAgo(x.created_at):''].filter(Boolean).join(' · '))}</div>
         ${canReveal?`<button type="button" class="st-reveal" title="Show in folder" aria-label="Show ${title} in folder" onclick="ragRevealSource(${x.id},event)">🗂</button>`:''}
       </div>`;}).join('')}</div>`:'<p class="hint">No sources yet — add files, chats, a folder, or a link.</p>';
     body.innerHTML=`
@@ -10474,6 +10556,7 @@ async function ragRenderTab(){
             <input id="ragPathInput" placeholder="Host path — D:\\docs\\my-project" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit"/>
             <button type="button" class="btn" onclick="ragIngestPath()">Ingest path</button>
           </div>
+          <div id="ragUploadReport">${ragUploadReportHtml()}</div>
           <div id="ragIngestStatus" class="hint" style="margin-bottom:10px;color:var(--muted)"></div>
           ${list}
         </div>
@@ -10590,14 +10673,14 @@ async function ragRenderTab(){
         <p class="hint" style="margin:8px 0 0;font-size:11px">Save stores these as the space defaults. Rebuild re-runs extract → chunk → enrich → embed → index over every source under the saved config; existing chunks are replaced.</p>
       </div>
       <div class="rag-neon-card rag-settings-card">
-        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Share this RAG</div>
-        <p class="hint" style="margin:0 0 10px;line-height:1.45">LAN access keys — compute stays on this laptop. <strong>Read</strong> = extractive. <strong>Write</strong> = can toggle LLM. Importing a whole pack into this space is not supported; use Export, then Import from the library to create a new RAG.</p>
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Share this RAG <span class="rag-not-enforced">Not enforced yet</span></div>
+        <p class="hint" style="margin:0 0 10px;line-height:1.45"><strong>These keys do not control access yet.</strong> They are saved here, but nothing checks them, so they do not let anyone in or keep anyone out. Do not rely on them. To share a space with someone, use Export, then they can Import the pack from their library.</p>
         <div class="rag-share-row">
           <select id="ragShareAccess" style="padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit">
             <option value="read">Read access</option>
             <option value="write">Write access</option>
           </select>
-          <button type="button" class="btn primary" onclick="ragGrantShareKey()">Grant access key</button>
+          <button type="button" class="btn primary" onclick="ragGrantShareKey()">Save a key</button>
         </div>
         <div style="margin-top:12px">${keyRows}</div>
       </div>
@@ -10633,11 +10716,69 @@ async function ragRenderTab(){
   }
 }
 
+// ===== Adding files: say what was added, name every file that was not, and why =====
+function ragSkipReason(name,reason){
+  const r=String(reason||'');
+  const ext=(/\.([a-z0-9]+)$/i.exec(String(name||''))||[])[1]||'';
+  if(/no extractable text/i.test(r)){
+    if(/^(pdf|png|jpe?g|gif|webp|bmp|tiff?|heic)$/i.test(ext))return 'has no text it can read. It may be a scan or a picture of text. Run it through OCR (text recognition) first, then add it again.';
+    return 'is empty or has no text in it.';
+  }
+  if(/not a readable PDF/i.test(r))return 'could not be opened as a PDF. The file may be damaged or cut short.';
+  if(/^unsupported type/i.test(r))return 'is a kind of file that cannot be read here ('+r.replace(/^unsupported type\s*/i,'')+').';
+  return r?('was not added: '+r+'.'):'was not added.';
+}
+// Files that are known document or media types are left to the server. Anything else
+// that contains zero bytes in its first 2 KB is a program or data blob, not text.
+const RAG_KNOWN_BINARY=/\.(pdf|docx?|xlsx?|xlsm|pptx?|odt|ods|odp|rtf|png|jpe?g|gif|webp|bmp|tiff?|heic|mp3|m4a|wav|ogg|flac|mp4|mov|webm|mkv)$/i;
+async function ragLooksBinary(file){
+  if(!file||RAG_KNOWN_BINARY.test(file.name||''))return false;
+  try{const buf=new Uint8Array(await file.slice(0,2048).arrayBuffer());return buf.indexOf(0)>=0;}catch(e){return false;}
+}
+function ragUploadSummary(sentCount,j,refused){
+  j=j||{};
+  const skipped=Array.isArray(j.skipped)?j.skipped:[];
+  const added=Number.isFinite(j.sources)?j.sources:0;
+  const chunks=Number.isFinite(j.chunks)?j.chunks:0;
+  const problems=[];
+  (refused||[]).forEach(n=>problems.push(n+' looks like a program or data file, not a document, so it was not sent.'));
+  skipped.forEach(s=>{const nm=String((s&&s.path)||'file').split(/[\\/]/).pop();problems.push(nm+' '+ragSkipReason(nm,s&&s.reason));});
+  (Array.isArray(j.failed_urls)?j.failed_urls:[]).forEach(f=>problems.push(String((f&&f.url)||'A link')+' could not be added: '+String((f&&f.reason)||'unknown reason')+'.'));
+  if(Number.isFinite(sentCount)){
+    const rest=sentCount-added-skipped.length;
+    if(rest>0)problems.push(rest+' other file'+(rest===1?'':'s')+' added nothing new.');
+  }
+  // Same content as before makes no new pieces, and saying "added" would be wrong.
+  let headline=added>0&&chunks===0
+    ?(added+' file'+(added===1?' was':'s were')+' already in this space. Nothing new was added.')
+    :added>0
+    ?('Added '+added+' file'+(added===1?'':'s')+'. '+chunks.toLocaleString('en-US')+' searchable piece'+(chunks===1?'':'s')+' made.')
+    :'Nothing was added.';
+  if(problems.length)headline+=' '+problems.length+' not added:';
+  return {headline,problems,added,chunks};
+}
+function ragUploadReportHtml(){
+  const r=ragState.uploadReport;if(!r)return'';
+  return `<div class="rag-upreport${r.problems.length||!r.added?' warn':''}" role="status"><div>${esc(r.headline)}</div>${r.problems.length?'<ul>'+r.problems.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':''}<button type="button" class="btn" onclick="ragDismissUploadReport()">Dismiss</button></div>`;
+}
+function ragShowUploadReport(rep){
+  ragState.uploadReport=rep;
+  const el=$('ragUploadReport');if(el)el.innerHTML=ragUploadReportHtml();
+}
+function ragDismissUploadReport(){ragShowUploadReport(null);}
 async function ragUploadFiles(inp){
-  const files=[...(inp.files||[])];inp.value='';
-  if(!files.length)return;
+  const picked=[...(inp.files||[])];inp.value='';
+  if(!picked.length)return;
   if(!ragState.spaceId){toast('No RAG selected');return}
-  const st=$('ragIngestStatus');if(st)st.textContent='Uploading '+files.length+' file(s)…';
+  const st=$('ragIngestStatus');
+  const files=[],refused=[];
+  for(const f of picked){(await ragLooksBinary(f))?refused.push(f.name||'file'):files.push(f);}
+  if(!files.length){
+    ragShowUploadReport(ragUploadSummary(0,{sources:0,chunks:0,skipped:[]},refused));
+    toast('Nothing was added');
+    return;
+  }
+  if(st)st.textContent='Uploading '+files.length+' file(s)…';
   try{
     const fd=new FormData();
     files.forEach((f,i)=>fd.append('file'+i,f,f.name||('upload'+i+'.txt')));
@@ -10650,10 +10791,11 @@ async function ragUploadFiles(inp){
     let j={};
     try{j=await r.json()}catch(e){j={error:'non-JSON response ('+r.status+')'}}
     if(r.ok&&j&&j.ok){
-      toast('Indexed '+(j.chunks||0)+' chunks from '+(j.sources||files.length)+' source(s)');
-      if(st)st.textContent='Indexed '+(j.chunks||0)+' chunks. Rebuild if answers look stale.';
-      ragState.pendingBuild=true;
-      ragState.summary='';ragRefreshSpace();
+      const rep=ragUploadSummary(files.length,j,refused);
+      ragShowUploadReport(rep);
+      toast(rep.added>0?rep.headline:'Nothing was added. See the list on the Build tab.');
+      if(st)st.textContent='';
+      if(rep.added>0){ragState.pendingBuild=true;ragState.summary='';ragRefreshSpace();}
     }else{
       const err=(j&&(j.error||j.detail))||('HTTP '+r.status);
       if(st)st.textContent='Upload failed: '+err;
@@ -10713,7 +10855,7 @@ async function ragAttachChats(){
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({session_ids:ids,force:false})}).then(x=>x.json());
     if(r&&r.ok){toast('Attached '+(r.sessions_attached||ids.length)+' chats');ragState.summary='';ragRefreshSpace();}
-    else{if(st)st.textContent='Failed: '+esc((r&&r.error)||'unknown');toast('Attach failed')}
+    else{if(st)st.textContent='Failed: '+((r&&r.error)||'unknown');toast('Attach failed')}
   }catch(e){toast('Attach failed')}
 }
 async function ragIngestUrl(){
@@ -10740,7 +10882,7 @@ async function ragIngestUrlDo(u){
       const inp=$('ragUrlInput');if(inp)inp.value='';
     }else{
       const why=((r.failed_urls||[])[0]||{}).reason||r.error||'failed';
-      if(st)st.textContent='Failed: '+esc(why);toast('Link ingest failed');
+      if(st)st.textContent='Failed: '+why;toast('Link ingest failed');
     }
   }catch(e){if(st)st.textContent='Link ingest failed';toast('Link ingest failed')}
 }
@@ -10837,14 +10979,21 @@ async function ragWebIngest(){
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({urls,force:false})}).then(x=>x.json());
     if(r&&r.ok){toast('Indexed '+(r.urls_attached||urls.length)+' page(s) · '+(r.chunks||0)+' chunks');ragState.summary='';ragRefreshSpace();}
-    else{const why=((r.failed_urls||[])[0]||{}).reason||r.error||'failed';if(st)st.textContent='Failed: '+esc(why);toast('Web ingest failed')}
+    else{const why=((r.failed_urls||[])[0]||{}).reason||r.error||'failed';if(st)st.textContent='Failed: '+why;toast('Web ingest failed')}
   }catch(e){if(st)st.textContent='Web ingest failed';toast('Web ingest failed')}
 }
 async function ragDeleteSource(id){
   if(!ragConfirm('Remove this source and its indexed chunks?'))return;
   try{
     const r=await api('/api/rag/sources/'+id+'/delete',{method:'POST',body:'{}'}).then(x=>x.json());
-    if(r&&r.ok){toast('Source removed');ragRefreshSpace();}else toast('Remove failed');
+    if(r&&r.ok){
+      toast('Source removed');
+      // The server drops the old summary with the file. Drop the page's copy too, or
+      // Overview keeps describing a document that is gone.
+      ragState.summary='';
+      if(ragState.space&&ragState.space.config)delete ragState.space.config.corpus_summary;
+      ragRefreshSpace();
+    }else toast('Remove failed');
   }catch(e){toast('Remove failed')}
 }
 // Show an ingested source in the OS file manager. Fails closed and says why —
@@ -11083,7 +11232,7 @@ async function ragGrantShareKey(){
   const cfg=Object.assign({},prev,{share_keys:keys});
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/settings',{method:'POST',body:JSON.stringify({config:cfg})}).then(x=>x.json());
-    if(r&&r.ok){toast(access==='write'?'Write key granted':'Read key granted');ragState.space=r.space;ragRenderSpace();}
+    if(r&&r.ok){toast((access==='write'?'Write key saved':'Read key saved')+'. It is not enforced yet.');ragState.space=r.space;ragRenderSpace();}
     else toast('Grant failed');
   }catch(e){toast('Grant failed')}
 }
@@ -11106,8 +11255,15 @@ async function ragIngestPath(){
   const st=$('ragIngestStatus');if(st)st.textContent='Ingesting… authorize → chunk → enrich → index';
   try{
     const r=await api('/api/rag/spaces/'+ragState.spaceId+'/sources',{method:'POST',body:JSON.stringify({path:p,force:false})}).then(x=>x.json());
-    if(r&&r.ok){toast('Ingested');ragState.summary='';ragRefreshSpace();}
-    else{if(st)st.textContent='Failed: '+esc(r.error||'unknown');toast('Ingest failed')}
+    if(r&&r.ok){
+      // Name what was and was not added, the same way an upload does.
+      const rep=ragUploadSummary(null,r,[]);
+      ragShowUploadReport(rep);
+      if(st)st.textContent='';
+      toast(rep.added>0?rep.headline:'Nothing was added. See the list on the Build tab.');
+      if(rep.added>0){ragState.summary='';ragRefreshSpace();}
+    }
+    else{if(st)st.textContent='Failed: '+(r.error||'unknown');toast('Ingest failed')}
   }catch(e){if(st)st.textContent='Failed';toast('Ingest failed')}
 }
 
@@ -11214,6 +11370,7 @@ async function ragRenderChatPane(opts){
   }else if($('ragMessages')){
     $('ragMessages').innerHTML=bubbles||'';
   }
+  ragHydrateCites($('ragMessages'));
   const host=$('ragComposerHost');if(host)host.innerHTML='';
   const main=$('ragChatMain');if(main)main.innerHTML='';
   syncRagAskBar();
@@ -11226,9 +11383,12 @@ async function ragRenderChatPane(opts){
   ragScrollMsgs();
 }
 
-function ragFileName(p){
+function ragFileName(p,keepExt){
   let n=String(p||'').split(/[\\/]/).pop()||'source';
-  n=n.replace(/^\d{8,}[_-]/,'').replace(/^[0-9a-f]{10,}[_-]/i,'').replace(/^url_/,'').replace(/\.(md|txt)$/i,'');
+  n=n.replace(/^\d{8,}[_-]/,'').replace(/^[0-9a-f]{10,}[_-]/i,'').replace(/^url_/,'');
+  // Answer chips and Sources show the real name (guide.md, not guide) so two files that
+  // differ only by extension are not shown as one.
+  if(!keepExt)n=n.replace(/\.(md|txt)$/i,'');
   return n||'source';
 }
 function ragSrcIcon(p){
@@ -11239,30 +11399,242 @@ function ragSrcIcon(p){
   if(/\.pdf$/.test(s))return'📕';
   return'📄';
 }
-// Collapsed, path-free source pill. Shows "N sources"; expand for file names only.
-// Each item gets id=rag-cite-N so inline [n] chips can scroll to it.
-function ragCitesHtml(citations){
-  const cs=citations||[];if(!cs.length)return'';
-  const seen=new Set();const uniq=[];
-  cs.forEach((c,idx)=>{
-    const nm=ragFileName(c.path);const key=nm.toLowerCase();
-    if(!seen.has(key)){seen.add(key);uniq.push({nm,icon:ragSrcIcon(c.path),heading:c.heading||'',excerpt:String(c.excerpt||'').trim(),n:idx+1});}
-    else{const u=uniq.find(x=>x.nm.toLowerCase()===key);if(u&&!u.excerpt&&c.excerpt)u.excerpt=String(c.excerpt).trim();}
+// ===== Citations: one numbered row per cited passage, ids unique per answer =====
+// The model numbers the passages it was shown [1], [2] ... (web pages [W1], [W2] ...).
+// Every row keeps that number, and ids carry a per-answer scope so [1] in a later answer
+// never jumps to the first answer's list. Files are grouped visually only.
+let _ragCiteSeq=0;
+function ragCiteList(citations){
+  let n=0,w=0;
+  return (citations||[]).filter(Boolean).map(c=>{const web=!!c.web;return {c,web,label:web?('W'+(++w)):String(++n)};});
+}
+function ragCiteFile(c){
+  return c.web?String(c.title||c.path||'web page'):ragFileName(c.title||c.path_full||c.path,true);
+}
+// Where in the file a passage sits, in plain words: page, sheet, section.
+function ragCiteWhere(c){
+  const parts=[];const h=String(c.heading||'');
+  const pm=/^Page (\d+)\b/.exec(h);
+  const page=c.page||(pm?pm[1]:'');
+  if(page)parts.push('page '+page);
+  const sheet=c.sheet||((/^Sheet:\s*(.+)$/.exec(h)||[])[1]||'');
+  if(sheet)parts.push('sheet '+sheet);
+  if(h==='Spreadsheet index')parts.push('list of sheets');
+  else if(h&&!pm&&!/^Sheet:/.test(h)&&h!=='web')parts.push('under “'+h+'”');
+  return parts.join(' · ');
+}
+function ragCitesHtml(citations,scope){
+  const list=ragCiteList(citations);if(!list.length)return'';
+  if(scope==null)scope='c'+(++_ragCiteSeq);
+  const groups=[];const idx={};
+  list.forEach(it=>{
+    const k=it.web?('web:'+it.label):ragCiteFile(it.c).toLowerCase();
+    if(!(k in idx)){idx[k]=groups.length;groups.push({file:ragCiteFile(it.c),icon:it.web?'🌐':ragSrcIcon(it.c.title||it.c.path),items:[]});}
+    groups[idx[k]].items.push(it);
   });
-  const rows=uniq.map(u=>`<details class="rag-cite-item" id="rag-cite-${u.n}"><summary><span class="rag-cite-n">[${u.n}]</span> <span>${u.icon}</span><span style="opacity:.92">${esc(u.nm)}</span>${u.heading?`<span class="hint" style="font-size:11px">· ${esc(u.heading)}</span>`:''}</summary><div class="exc">${u.excerpt?esc(u.excerpt.slice(0,420)):'No excerpt captured for this source.'}</div></details>`).join('');
-  return `<details class="rag-cites" open><summary>📚 ${uniq.length} source${uniq.length>1?'s':''} visited</summary><div>${rows}</div></details>`;
+  const row=it=>{
+    const c=it.c;const exc=String(c.excerpt||'').trim();
+    const chunk=Number(c.chunk_id)||0;
+    const needRows=chunk&&/^Sheet:/.test(String(c.heading||''));
+    let link='';
+    if(it.web){const u=String(c.path_full||c.path||'');if(/^https?:\/\//i.test(u))link=`<a class="rag-cite-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Open the page</a>`;}
+    const view=chunk?`<button type="button" class="btn rag-cite-view" data-chunk="${chunk}" data-label="${esc(it.label)}">Read this passage</button>`:'';
+    return `<details class="rag-cite-item" id="rag-cite-${esc(String(scope))}-${esc(it.label)}"><summary><span class="rag-cite-n">[${esc(it.label)}]</span><span class="rag-cite-where">${esc(ragCiteWhere(c))}</span><span class="rag-cite-rows"${needRows?` data-rows-for="${chunk}"`:''}></span></summary><div class="exc">${exc?esc(exc.slice(0,420)):(c.sql?'Calculated over every row of the sheet. The steps are shown under the answer.':'No excerpt captured for this source.')}</div>${view}${link}</details>`;
+  };
+  const body=groups.map(g=>`<div class="rag-cite-group"><div class="rag-cite-file"><span>${g.icon}</span><span>${esc(g.file)}</span></div>${g.items.map(row).join('')}</div>`).join('');
+  const nWeb=list.filter(x=>x.web).length;
+  const files=groups.length;
+  const head=nWeb
+    ?`${list.length} source${list.length>1?'s':''}, ${nWeb} from the web`
+    :list.every(x=>!x.c.chunk_id)
+    ?`Calculated from ${files} file${files>1?'s':''}`
+    :`${list.length} passage${list.length>1?'s':''} from ${files} file${files>1?'s':''}`;
+  return `<details class="rag-cites" open><summary>📚 ${head}</summary><div>${body}</div></details>`;
 }
-function ragLinkCiteChips(html){
-  // Turn [n] markers into clickable chips that scroll to #rag-cite-n
-  return String(html||'').replace(/\[(\d+)\]/g,(_,n)=>`<button type="button" class="rag-cite-chip" data-cite="${n}" onclick="ragScrollToCite(${n})" title="Jump to source ${n}">[${n}]</button>`);
+// Dollar amounts in an answer ("$5 and $10") would be read as a formula by renderMd and
+// come out garbled, so a $ that starts an amount is written as an entity first. Code
+// stays as it is, and so does maths like $2x+1$.
+function ragSafeMoney(md){
+  return String(md||'').split(/(```[\s\S]*?```|`[^`\n]*`)/g).map((seg,i)=>i%2?seg:seg.replace(/\$(?=\d[\d,]*(?:\.\d+)?(?![\d\w^_{}\\+*\/=$]))/g,'&#36;')).join('');
 }
-function ragScrollToCite(n){
-  const el=document.getElementById('rag-cite-'+n);
-  if(!el)return;
+// Turn [n] / [Wn] in rendered text into chips. Text inside code, links and buttons is
+// left alone. `labels` lists the numbers this answer really has; a number it does not
+// have stays plain text, so no chip points nowhere.
+function ragLinkCiteChips(html,scope,labels){
+  const sc=scope==null?'':String(scope);
+  const known=Array.isArray(labels)?new Set(labels.map(String)):null;
+  let skip=0;
+  return String(html||'').split(/(<[^>]*>)/).map(part=>{
+    if(part.charAt(0)==='<'){
+      const m=/^<(\/?)(pre|code|a|button|script|style)\b/i.exec(part);
+      if(m&&!/\/>$/.test(part))skip=Math.max(0,skip+(m[1]?-1:1));
+      return part;
+    }
+    if(skip>0)return part;
+    return part.replace(/\[(W?\d+)\]/g,(all,n)=>(known&&!known.has(n))?all:`<button type="button" class="rag-cite-chip" data-cite="${n}" data-scope="${sc}" title="Show source ${n}">[${n}]</button>`);
+  }).join('');
+}
+// Markdown the same way the main chat renders it (headings, lists, tables, code, links,
+// maths, sanitised), plus working [n] chips when a scope is given.
+function ragMdHtml(md,scope,labels){
+  const src=ragSafeMoney(md);
+  let html;
+  try{html=(typeof renderMd==='function')?renderMd(src):esc(src).replace(/\n/g,'<br>');}
+  catch(e){html=esc(src).replace(/\n/g,'<br>');}
+  return scope==null?html:ragLinkCiteChips(html,scope,labels);
+}
+function ragScrollToCite(scope,n){
+  const el=document.getElementById('rag-cite-'+scope+'-'+n);
+  if(!el){try{toast('This answer has no source ['+n+']');}catch(e){}return;}
   el.open=true;
   el.scrollIntoView({behavior:'smooth',block:'nearest'});
   el.classList.add('rag-cite-flash');
   setTimeout(()=>el.classList.remove('rag-cite-flash'),1200);
+}
+// Rows of a sheet passage are worked out on the host, so they are filled in after the
+// answer shows. If that fails nothing is claimed.
+async function ragHydrateCites(root){
+  const els=[...(root||document).querySelectorAll('.rag-cite-rows[data-rows-for]')].slice(0,12);
+  for(const el of els){
+    const id=el.getAttribute('data-rows-for');el.removeAttribute('data-rows-for');
+    try{
+      const j=await api('/api/rag/passages/'+encodeURIComponent(id)+'?around=0').then(r=>r.json());
+      const rows=j&&j.passage&&j.passage.rows;
+      if(rows&&rows.first)el.textContent=' · rows '+rows.first+' to '+rows.last;
+    }catch(e){}
+  }
+}
+// Small passage viewer: the passage, a few lines around it, the file and where it is.
+function ragPassModal(){
+  let m=$('ragPassModal');
+  if(!m){
+    m=document.createElement('div');m.id='ragPassModal';m.className='rag-pass-back';m.hidden=true;
+    m.setAttribute('role','dialog');m.setAttribute('aria-modal','true');m.setAttribute('aria-label','Source passage');
+    m.innerHTML='<div class="rag-pass"><div class="rag-pass-head"><div class="rag-pass-title"></div><button type="button" class="btn" data-pass="close" aria-label="Close">Close</button></div><div class="rag-pass-body"></div><div class="rag-pass-foot"></div></div>';
+    m.addEventListener('click',e=>{
+      if(e.target===m){m.hidden=true;return;}
+      const b=e.target.closest&&e.target.closest('[data-pass]');if(!b)return;
+      const a=b.getAttribute('data-pass');
+      if(a==='close')m.hidden=true;
+      else if(a==='open')ragOpenSourceFile(+b.getAttribute('data-src'),+b.getAttribute('data-page')||0);
+      else if(a==='reveal')ragRevealSource(+b.getAttribute('data-src'));
+    });
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!m.hidden)m.hidden=true;});
+    document.body.appendChild(m);
+  }
+  return m;
+}
+async function ragOpenPassage(chunkId,label){
+  if(!chunkId)return;
+  const m=ragPassModal();
+  const title=m.querySelector('.rag-pass-title'),body=m.querySelector('.rag-pass-body'),foot=m.querySelector('.rag-pass-foot');
+  title.textContent=label?('Source ['+label+']'):'Source';
+  body.innerHTML='<p class="hint">Loading…</p>';foot.innerHTML='';m.hidden=false;
+  try{
+    const r=await api('/api/rag/passages/'+encodeURIComponent(chunkId)+'?around=3');
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){body.innerHTML='<p>'+esc(j.error||'This passage could not be opened.')+'</p>';return;}
+    const p=j.passage;
+    const where=[];
+    if(p.page)where.push('page '+p.page);
+    if(p.sheet)where.push('sheet '+p.sheet+(p.rows?', rows '+p.rows.first+' to '+p.rows.last:''));
+    const h=String(p.heading||'');
+    if(h&&!/^Page \d+/.test(h)&&!/^Sheet:/.test(h)&&h!=='Spreadsheet index')where.push('under “'+h+'”');
+    title.textContent=(label?'['+label+'] ':'')+p.file+(where.length?' · '+where.join(' · '):'');
+    body.innerHTML=(p.before?`<pre class="rag-pass-ctx">${esc(p.before)}</pre>`:'')
+      +`<pre class="rag-pass-hit">${esc(p.text)}</pre>`
+      +(p.after?`<pre class="rag-pass-ctx">${esc(p.after)}</pre>`:'')
+      +'<p class="hint rag-pass-note">The highlighted part is the passage the answer used. The grey lines are just before and after it.</p>';
+    if(isLocalHost()&&p.can_open&&p.source_id){
+      foot.innerHTML=`<button type="button" class="btn primary" data-pass="open" data-src="${p.source_id}" data-page="${p.page||0}">Open file</button><button type="button" class="btn" data-pass="reveal" data-src="${p.source_id}">Show in folder</button>`;
+    }
+  }catch(e){body.innerHTML='<p>This passage could not be opened. Check the connection and try again.</p>';}
+}
+async function ragOpenSourceFile(srcId,page){
+  if(!srcId)return;
+  try{
+    const r=await api('/api/rag/sources/'+srcId+'/file');
+    if(!r.ok){const j=await r.json().catch(()=>({}));toast(j.error||'Could not open this file');return;}
+    const b=await r.blob();const cd=r.headers.get('Content-Disposition')||'';
+    const url=URL.createObjectURL(b);
+    if(/^inline/i.test(cd)){
+      const w=window.open(url+(page&&/pdf/i.test(b.type)?'#page='+page:''),'_blank');
+      if(!w)toast('Your browser blocked the new tab. Allow pop-ups for this page and try again.');
+    }else{
+      const a=document.createElement('a');a.href=url;a.download=(/filename="([^"]+)"/.exec(cd)||[])[1]||'file';a.click();
+      toast('The original file was downloaded');
+    }
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){toast('Could not open this file');}
+}
+document.addEventListener('click',e=>{
+  const t=e.target;if(!t||!t.closest)return;
+  const chip=t.closest('.rag-cite-chip');
+  if(chip){ragScrollToCite(chip.getAttribute('data-scope'),chip.getAttribute('data-cite'));return;}
+  const v=t.closest('.rag-cite-view');
+  if(v)ragOpenPassage(+v.getAttribute('data-chunk'),v.getAttribute('data-label'));
+});
+// ===== What the answer rests on, in plain words =====
+function ragNum(v){
+  const n=Number(v);
+  return isFinite(n)?n.toLocaleString('en-US',{maximumFractionDigits:4}):String(v);
+}
+// Provenance of a spreadsheet answer: what was calculated, from which file, sheet and
+// how many rows. Everything is read from the answer's own provenance, nothing is guessed.
+function ragProvenanceLines(prov,sql){
+  const p=prov||{};const out={main:'',more:[],sql:String(sql||p.sql||'')};
+  const wb=String(p.workbook||'');
+  const multi=/,/.test(String(p.sheet||''));
+  const csv=/\.(csv|tsv)$/i.test(wb);
+  const where=wb?(', from '+wb+(p.sheet&&!csv?(multi?', sheets ':', sheet ')+p.sheet:'')):'';
+  const rows=(typeof p.rows_matched==='number'&&typeof p.rows_total==='number')?(', '+p.rows_matched.toLocaleString('en-US')+' of '+p.rows_total.toLocaleString('en-US')+' rows'):'';
+  if(p.abstained){
+    out.main='No figure was calculated.'+(typeof p.rows_total==='number'?' The sheet has '+p.rows_total.toLocaleString('en-US')+' rows.':'');
+    return out;
+  }
+  const OPS={SUM:'Sum of',AVG:'Average of',COUNT:'Count of',MAX:'Highest',MIN:'Lowest'};
+  const metric=String((p.linked&&p.linked.metric)||'')||(p.operation==='COUNT'?'rows':'');
+  const head=(OPS[p.operation]||'Result')+(metric?' '+metric:'')+(p.group_by?' by '+p.group_by:'')+(p.filter?' where '+p.filter:'');
+  out.main=head+(p.value!=null&&!p.group_by?': '+ragNum(p.value):'')+where+rows+'.';
+  if(Array.isArray(p.sheets)&&p.sheets.length>1){
+    p.sheets.forEach(s=>{
+      const n=(typeof s.rows_matched==='number'&&typeof s.rows_total==='number')?(s.rows_matched.toLocaleString('en-US')+' of '+s.rows_total.toLocaleString('en-US')+' rows'):'';
+      out.more.push(String(s.sheet)+': '+(s.value!=null?ragNum(s.value)+(n?' ('+n+')':''):n));
+    });
+  }
+  if(Array.isArray(p.groups)&&p.groups.length)p.groups.forEach(g=>out.more.push(String(g.group)+': '+ragNum(g.value)));
+  if(typeof p.values_used==='number'&&typeof p.rows_matched==='number'&&p.values_used<p.rows_matched){
+    out.more.push('Only '+p.values_used.toLocaleString('en-US')+' of the '+p.rows_matched.toLocaleString('en-US')+' matching rows had a number in this column. The others were left out.');
+  }
+  (Array.isArray(p.assumed)?p.assumed:[]).forEach(a=>{if(a)out.more.push('Assumed: '+a);});
+  return out;
+}
+function ragProvenanceHtml(prov,sql){
+  const l=ragProvenanceLines(prov,sql);if(!l.main)return'';
+  return `<div class="rag-prov"><div class="rag-prov-main">${esc(l.main)}</div>${l.more.length?`<ul class="rag-prov-more">${l.more.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:''}${l.sql?`<details class="rag-prov-sql"><summary>Show the calculation</summary><code>${esc(l.sql)}</code></details>`:''}</div>`;
+}
+// Honesty notes under an answer. Abstained, partly unsupported and web-assisted answers
+// are each said out loud; nothing here is a score.
+function ragNotesHtml(d,cites){
+  d=d||{};const out=[];
+  const note=(kind,title,more)=>`<div class="rag-note rag-note-${kind}"><strong>${esc(title)}</strong>${more?`<div>${more}</div>`:''}</div>`;
+  const docCites=(cites||[]).filter(c=>c&&!c.web);
+  const prov=d.provenance||{};const g=d.goal||{};
+  const sheetLane=d.lane==='sql';
+  let notFound=false;
+  if(prov.abstained){
+    out.push(note('warn','No figure was calculated',typeof prov.rows_total==='number'?'The sheet has '+prov.rows_total.toLocaleString('en-US')+' rows.':''));
+  }else if(!sheetLane&&!docCites.length&&(d.abstained||g.verdict==='unsupported'||d.stop_reason==='abstained'||d.stop_reason==='no_evidence')){
+    notFound=true;
+    out.push(note('warn','Not found in your documents','Nothing in this space backs an answer to this question.'));
+  }
+  const claims=(Array.isArray(d.unsupported_claims)?d.unsupported_claims:[]).filter(Boolean);
+  if(claims.length&&!notFound&&!sheetLane){
+    out.push(`<details class="rag-note rag-note-warn"><summary><strong>Some statements were not found in the sources</strong></summary><ul>${claims.slice(0,6).map(c=>'<li>'+esc(String(c).replace(/\s+/g,' ').slice(0,220))+'</li>').join('')}</ul></details>`);
+  }
+  if(d.web_used)out.push(note('info','This answer used web results','Web pages are marked W in the list of sources.'));
+  if(!prov.abstained&&(sheetLane||prov.workbook||prov.sql))out.push(ragProvenanceHtml(prov,d.sql));
+  return out.join('');
 }
 function ragConfirm(msg){
   if(ragState&&ragState.streaming){try{toast('Wait for the answer stream to finish');}catch(e){}return false;}
@@ -11278,8 +11650,9 @@ function ragBubbleHtml(role,content,citations){
     body=body.replace(/[A-Za-z]:\\[^\s\]\n<>"]+/g,m=>ragFileName(m));
     body=body.replace(/^Based on the indexed sources[^\n]*:\s*/i,'');
   }
-  const bodyHtml=isUser?esc(body).replace(/\n/g,'<br>'):ragLinkCiteChips(esc(body).replace(/\n/g,'<br>'));
-  return `<div style="align-self:${isUser?'flex-end':'flex-start'};max-width:min(820px,92%);padding:10px 14px;border-radius:14px;background:${bg};color:${fg};line-height:1.55;font-size:14px">${bodyHtml}${isUser?'':ragCitesHtml(citations)}</div>`;
+  const sc='b'+(++_ragCiteSeq);
+  const bodyHtml=isUser?esc(body).replace(/\n/g,'<br>'):`<div class="ai-block rag-md">${ragMdHtml(body,sc,ragCiteList(citations).map(x=>x.label))}</div>`;
+  return `<div style="align-self:${isUser?'flex-end':'flex-start'};max-width:min(820px,92%);padding:10px 14px;border-radius:14px;background:${bg};color:${fg};line-height:1.55;font-size:14px">${bodyHtml}${isUser?'':ragCitesHtml(citations,sc)}</div>`;
 }
 function ragScrollMsgs(){const m=$('ragMessages');if(m)m.scrollTop=m.scrollHeight;}
 function ragDepthSegHtml(){
@@ -11332,9 +11705,9 @@ async function ragRunSearch(query){
     const r=await api('/api/rag/search',{method:'POST',body:JSON.stringify({space_id:ragState.spaceId,query,depth:ragState.depth,top_k:8})}).then(x=>x.json());
     if(r&&r.ok){
       ragState.lastTraceId=r.trace_id||ragState.lastTraceId;
-      const rows=(r.citations||[]).slice(0,8).map((c,i)=>`[${i+1}] ${esc(ragFileName(c.path))}${c.heading?' · '+esc(c.heading):''} — ${esc((c.excerpt||'').slice(0,140))}`).join('<br>')||'No hits.';
+      const rows=(r.citations||[]).slice(0,8).map((c,i)=>`[${i+1}] ${esc(ragFileName(c.path,true))}${c.heading?' · '+esc(c.heading):''} — ${esc((c.excerpt||'').slice(0,140))}`).join('<br>')||'No hits.';
       if(msgs)msgs.insertAdjacentHTML('beforeend',`<div style="align-self:flex-start;max-width:92%;padding:8px 12px;border-radius:12px;background:var(--surface2);font-size:13px">${rows}</div>`);
-    }else if(msgs)msgs.insertAdjacentHTML('beforeend',ragBubbleHtml('ai','Search failed: '+esc(r.error||'unknown'),null));
+    }else if(msgs)msgs.insertAdjacentHTML('beforeend',ragBubbleHtml('ai','Search failed: '+(r.error||'unknown'),null));
   }catch(e){if(msgs)msgs.insertAdjacentHTML('beforeend',ragBubbleHtml('ai','Search failed',null));}
   ragScrollMsgs();
 }
@@ -11425,10 +11798,16 @@ async function ragSend(){
     const useWebFlag=forceWeb?true:(/\bwebsearch\b/i.test(query)?true:null);
   ragState.streaming=true;const sendBtn=$('ragAskSend')||$('ragSendBtn');if(sendBtn)sendBtn.disabled=true;
   const aiId='ragai-'+Date.now();
-  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody"></div><div class="ragcite"></div><div class="ragreason"></div></div>`);
+  if(msgs)msgs.insertAdjacentHTML('beforeend',`<div id="${aiId}" style="align-self:flex-start;max-width:min(860px,92%);padding:9px 13px;border-radius:14px;background:var(--surface2);line-height:1.5"><div class="ragthink rag-think"><span class="spin"></span><span class="t">${forceWeb?'Searching the web…':'Gathering…'}</span></div><div class="rag-files-surfed" style="display:none;font-size:12px;opacity:.8;margin:4px 0 6px"></div><div class="ragbody ai-block rag-md"></div><div class="ragnotes"></div><div class="ragcite"></div><div class="ragreason"></div></div>`);
   ragScrollMsgs();
   let acc='';let cites=[];let nVisited=0;let thoughts=[];let doneMeta={};let reasoning=null;
   const q1=s=>document.querySelector('#'+aiId+' '+s);
+  // One scope per answer: its [n] chips and its Sources rows share it, so a chip never
+  // jumps into another answer's list. The text is drawn as Markdown, a little at a time.
+  const scope='s'+(++_ragCiteSeq);
+  let paintT=0,streamErr='';
+  const paint=()=>{const b=q1('.ragbody');if(b)b.innerHTML=ragMdHtml(acc,scope,ragCiteList(cites).map(x=>x.label));};
+  const paintSoon=()=>{if(paintT)return;paintT=setTimeout(()=>{paintT=0;paint();ragScrollMsgs();},70);};
   const hideThink=()=>{const t=q1('.ragthink');if(t)t.style.display='none';};
   const sleuthWords=forceWeb
     ?['Searching the web…','Fetching pages…','Indexing new sources…','Cross-checking local + web…','Weighing evidence…']
@@ -11454,7 +11833,7 @@ async function ragSend(){
   const updateSurfed=()=>{
     const strip=q1('.rag-files-surfed');if(!strip)return;
     if(!cites.length){strip.style.display='none';return;}
-    const names=[...new Set(cites.map(c=>ragFileName(c.path)))].slice(0,8);
+    const names=[...new Set(cites.map(c=>ragCiteFile(c)))].slice(0,8);
     strip.style.display='block';
     strip.innerHTML='📂 Files surfed: '+names.map(n=>`<span class="rag-surf-chip">${esc(n)}</span>`).join(' ');
   };
@@ -11473,8 +11852,8 @@ async function ragSend(){
         const line=chunk.split('\n').find(l=>l.startsWith('data:'));if(!line)continue;
         let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
         if(j.type==='thinking'){const txt=j.text||'Thinking…';thoughts.push(txt);lastBeat=Date.now();if(!acc)setThink(txt,false);}
-        else if(j.type==='citations'){cites=j.citations||[];const s=new Set(cites.map(c=>ragFileName(c.path).toLowerCase()));nVisited=s.size;if(nVisited)thoughts.push('Read '+nVisited+' source'+(nVisited>1?'s':'')+': '+[...s].slice(0,5).join(', '));const t=q1('.ragthink .t');if(t&&!acc)t.textContent=nVisited?('Read '+nVisited+' source'+(nVisited>1?'s':'')+' · grounding…'):'Grounding…';updateSurfed();}
-        else if(j.type==='delta'){acc+=j.text||'';hideThink();const b=q1('.ragbody');if(b)b.innerHTML=ragLinkCiteChips(esc(acc).replace(/\n/g,'<br>'));ragScrollMsgs();}
+        else if(j.type==='citations'){cites=j.citations||[];const s=new Set(cites.map(c=>ragCiteFile(c).toLowerCase()));nVisited=s.size;if(nVisited)thoughts.push('Read '+nVisited+' source'+(nVisited>1?'s':'')+': '+[...s].slice(0,5).join(', '));const t=q1('.ragthink .t');if(t&&!acc)t.textContent=nVisited?('Read '+nVisited+' source'+(nVisited>1?'s':'')+' · grounding…'):'Grounding…';updateSurfed();}
+        else if(j.type==='delta'){acc+=j.text||'';hideThink();paintSoon();}
         else if(j.type==='meta'){
           ragState.lastTraceId=j.trace_id||ragState.lastTraceId;
           if(j.chat_id)ragState.chatId=j.chat_id;
@@ -11487,11 +11866,12 @@ async function ragSend(){
         }
         else if(j.type==='reasoning'){reasoning=j.reasoning||reasoning;}
         else if(j.type==='done'){if(j.answer)acc=j.answer;doneMeta=Object.assign(doneMeta,j||{});if(j.reasoning&&(j.reasoning.steps||[]).length)reasoning=j.reasoning;if(j.goal)ragState.lastGoal=j.goal;ragState.lastTraceId=j.trace_id||ragState.lastTraceId;}
-        else if(j.type==='error'){hideThink();const b=q1('.ragbody');if(b)b.innerHTML='<span style="opacity:.85">'+esc(j.error||'error')+'</span>';}
+        else if(j.type==='error'){if(paintT){clearTimeout(paintT);paintT=0;}hideThink();streamErr=j.error||'error';const b=q1('.ragbody');if(b)b.innerHTML='<span style="opacity:.85">'+esc(streamErr)+'</span>';}
       }
     }
     const b=q1('.ragbody');
-    if(b)b.innerHTML=acc?ragLinkCiteChips(esc(acc).replace(/\n/g,'<br>')):'<span style="opacity:.7">No grounded answer — try /search, add sources on Build, or keep LLM on.</span>';
+    if(paintT){clearTimeout(paintT);paintT=0;}
+    if(b)b.innerHTML=acc?ragMdHtml(acc,scope,ragCiteList(cites).map(x=>x.label)):streamErr?'<span style="opacity:.85">'+esc(streamErr)+'</span>':'<span style="opacity:.7">No grounded answer — try /search, add sources on Build, or keep LLM on.</span>';
     // Replace the live status line with a collapsed, expandable thinking log
     const tl=q1('.ragthink');
     if(tl&&thoughts.length&&acc){
@@ -11502,7 +11882,8 @@ async function ragSend(){
       if(g&&typeof g.distance==='number')meta.push('goal '+Math.round((1-g.distance)*100)+'%');
       tl.outerHTML=`<details class="rag-think-log"><summary>🧠 Thinking · ${thoughts.length} step${thoughts.length>1?'s':''}${meta.length?' · '+meta.join(' · '):''}</summary><div>${thoughts.map(t=>'<div class="step">'+esc(t)+'</div>').join('')}</div></details>`;
     } else hideThink();
-    const cc=q1('.ragcite');if(cc)cc.innerHTML=ragCitesHtml(cites);
+    const cc=q1('.ragcite');if(cc){cc.innerHTML=ragCitesHtml(cites,scope);ragHydrateCites(cc);}
+    const nt=q1('.ragnotes');if(nt)nt.innerHTML=ragNotesHtml(doneMeta,cites);
     // EPIC-D01 #15. The chain is built per lane in rag/reasoning.py and streamed as
     // its own SSE event; this is the only place a founder actually reads it. Open by
     // default when the run refused or abstained - that is exactly when someone needs
@@ -11525,10 +11906,10 @@ async function ragSend(){
     const g=doneMeta.goal;
     if(g&&g.verdict&&g.verdict!=='answerable'&&b){
       const tips=(g.diagnosis||[]).slice(0,4).map(d=>'<li>'+esc(d)+'</li>').join('');
-      b.insertAdjacentHTML('beforeend',`<div class="rag-goal-gap"><strong>Distance to goal ${(g.distance*100).toFixed(0)}% · ${esc(g.verdict)}</strong>${tips?'<ul>'+tips+'</ul>':''}<button type="button" class="btn" onclick="ragDiagnoseImprove()">Diagnose &amp; improve</button></div>`);
+      (q1('.ragnotes')||b).insertAdjacentHTML('beforeend',`<div class="rag-goal-gap"><strong>Distance to goal ${typeof g.distance==='number'?(g.distance*100).toFixed(0)+'%':'?'} · ${esc(g.verdict)}</strong>${tips?'<ul>'+tips+'</ul>':''}<button type="button" class="btn" onclick="ragDiagnoseImprove()">Diagnose &amp; improve</button></div>`);
     }
     if(forceWeb){try{ragState.pendingBuild=true;ragRefreshSpace?.()}catch(e){}}
-  }catch(e){clearThinkTimers();hideThink();const b=q1('.ragbody');if(b)b.textContent='Answer failed: '+(e.message||e)+' — check connection.';}
+  }catch(e){clearThinkTimers();if(paintT){clearTimeout(paintT);paintT=0;}hideThink();const b=q1('.ragbody');if(b)b.textContent='Answer failed: '+(e.message||e)+' — check connection.';}
   clearThinkTimers();
   ragState.streaming=false;if(sendBtn)sendBtn.disabled=false;ragScrollMsgs();
 }
