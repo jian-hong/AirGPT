@@ -156,3 +156,18 @@ def test_remote_device_is_refused(server, monkeypatch):
     for path in (f"/api/rag/sources/{sid_src}/file", "/api/rag/passages/1"):
         code, _h, raw = _get(base + path)
         assert code == 403 and b"plain words" not in raw and b"passage" not in raw
+
+
+def test_original_file_with_a_non_ascii_name_still_opens(server):
+    """A name like "rapport_é.txt" used to break the reply: an empty 200 with no file."""
+    base, store = server
+    sid = int(store.create_space("unicode")["id"])
+    name = "rapport_é_报告.txt"
+    _upload(base, sid, name, "les conges: 25 jours\n".encode())
+    src = store.list_sources(sid)[0]
+    code, h, body = _get(f"{base}/api/rag/sources/{src['id']}/file")
+    assert code == 200 and body == "les conges: 25 jours\n".encode()
+    assert "filename*=UTF-8''" in h["Content-Disposition"]
+    from urllib.parse import quote
+
+    assert quote(name) in h["Content-Disposition"]
