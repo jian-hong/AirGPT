@@ -727,6 +727,50 @@ def _cheap_llm(prompt: str, system: str = "", *, max_tokens: int = ROUTER_MAX_TO
 
 # Skip recently-failed providers so one dead key doesn't burn the whole reply window
 _provider_cooldown: dict[str, float] = {}
+# Why each provider is cooling down ("key refused", "rate limited", "unreachable").
+# The page reads it from the error text, so every browser says the right sentence,
+# not just the one that saw the first refusal.
+_provider_reason: dict[str, str] = {}
+
+
+def _failure_reason(err: str) -> str:
+    e = (err or "").lower()
+    if any(x in e for x in ("401", "403", "unauthorized", "forbidden", "invalid api", "incorrect api")):
+        return "key refused"
+    if any(x in e for x in ("429", "rate limit", "rate-limit", "too many", "quota")):
+        return "rate limited"
+    if any(x in e for x in ("unreachable", "refused", "timed out", "name or service", "urlopen")):
+        return "unreachable"
+    return ""
+
+
+def _cooldown_tag(label: str) -> str:
+    """What to write in the tried list for a provider that is cooling down."""
+    why = _provider_reason.get(label, "")
+    if why == "key refused":
+        return f"{label}(key refused)"
+    return f"{label}(cooldown, {why})" if why else f"{label}(cooldown)"
+
+
+# env key -> the label prefix its provider's cooldown entries start with
+_KEY_PROVIDER = (
+    ("GROQ_API_KEY", "groq"), ("GOOGLE_API_KEY", "google"), ("OPENROUTER_API_KEY", "openrouter"),
+    ("DEEPSEEK_API_KEY", "deepseek"), ("ANTHROPIC_API_KEY", "anthropic"),
+    ("OPENAI_API_KEY", "openai"), ("SEA_LION_API_KEY", "sea-lion"),
+)
+
+
+def clear_cooldown_for_keys(saved: dict) -> list[str]:
+    """A new key was saved: drop that provider's cooldown so Try again really tries it."""
+    cleared: list[str] = []
+    for env_name, prefix in _KEY_PROVIDER:
+        if not any(str(k).startswith(env_name) and v for k, v in (saved or {}).items()):
+            continue
+        for lab in [l for l in list(_provider_cooldown) if l == prefix or l.startswith(prefix + "-")]:
+            _provider_cooldown.pop(lab, None)
+            _provider_reason.pop(lab, None)
+            cleared.append(lab)
+    return cleared
 
 
 def _provider_hot(label: str) -> bool:
@@ -781,6 +825,7 @@ def _provider_mark_fail(
     elif throttled:
         seconds = max(seconds, 180.0)
     _provider_cooldown[label] = time.monotonic() + seconds
+    _provider_reason[label] = _failure_reason(err)
     # Breadcrumb so "everything died after too many requests" is diagnosable later
     try:
         import crashlog
@@ -1192,7 +1237,7 @@ def _standard_llm(
     def _try_openai(url: str, key: str, model: str, label: str, *, extra_headers: dict | None = None, temperature: float = 0.2, timeout: int = 12) -> tuple[str, str] | None:
         nonlocal last_err
         if _provider_hot(label):
-            tried.append(f"{label}(cooldown)")
+            tried.append(_cooldown_tag(label))
             return None
         try:
             content = prompt if label in _LOCAL_LABELS else _cloud_prompt_text()
@@ -1266,7 +1311,7 @@ def _standard_llm(
             tried.append("Anthropic(no key)")
             return None
         if _provider_hot("anthropic"):
-            tried.append("anthropic(cooldown)")
+            tried.append(_cooldown_tag("anthropic"))
             return None
         try:
             body = {
@@ -1289,8 +1334,8 @@ def _standard_llm(
             tried.append("anthropic")
             _provider_mark_fail("anthropic", last_err, seconds=45)
         except Exception as e:
-            tried.append("anthropic")
             last_err = str(e)[:120]
+            tried.append(f"anthropic({last_err})")
             _provider_mark_fail("anthropic", last_err)
         return None
 
@@ -1368,7 +1413,7 @@ def _standard_llm(
             tried.append("Google(no key)")
             return None
         if _provider_hot("google"):
-            tried.append("Google(cooldown)")
+            tried.append(_cooldown_tag("google").replace("google","Google",1))
             return None
         try:
             # Key goes in a header, never `?key=`. Query strings land in proxy logs,
@@ -1453,6 +1498,10 @@ def _standard_llm(
             )
             return hit
 
+    # Entries that say WHY a provider failed (refused key, busy) go first: the chat error
+    # is cut to a fixed length, and the page needs those, not the long "no key" tail.
+    _why = ("key refused", "cooldown", "401", "403", "429", "unauthorized", "forbidden", "invalid api", "rate limit")
+    tried.sort(key=lambda t: 0 if any(w in t.lower() for w in _why) else 1)
     detail = " -> ".join(tried)
     raise RuntimeError(f"No text LLM available ({detail})" + (f": {last_err}" if last_err else ""))
 
@@ -2452,7 +2501,7 @@ def chat_text_stream(
                 yield {"type": "token", "text": chunk}
     except Exception as e:
         # ASCII-only error for Windows consoles / SSE safety
-        msg = str(e).encode("ascii", "replace").decode("ascii")[:280]
+        msg = str(e).encode("ascii", "replace").decode("ascii")[:1200]
         yield {"type": "error", "text": f"Model failed - tried Groq/DeepSeek/Google/OpenRouter: {msg}"}
         return
     full = _finalize_answer(full)

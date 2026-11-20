@@ -14696,13 +14696,15 @@ function sendFailureCopy(msg){
   let seen={};try{seen=JSON.parse(localStorage.getItem('airgpt_key_refused')||'{}')||{}}catch(e){}
   const tried=[];
   String(msg||'').replace(/([A-Za-z][\w.\-]*)\(([^()]*)\)/g,(m,l,r)=>{const n=names.find(x=>x[0].test(l));tried.push({name:n?n[1]:l,why:r})});
-  const refused=tried.find(t=>/\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
+  const refused=tried.find(t=>/key refused|\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
   if(refused){seen[refused.name]=Date.now();try{localStorage.setItem('airgpt_key_refused',JSON.stringify(seen))}catch(e){}}
-  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);
+  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&!/rate limited|unreachable/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);   // the server names the reason now; this browser's memory only covers a cooldown it did not explain
   if(held){
     const host=isLocalHost();
     return {title:'Your '+held.name+' key was refused',body:host?'The provider did not accept it. Check the key in Settings > API.':'The computer running AirGPT has a '+held.name+' key that was refused. Ask its owner to check it.',key:host,keyLabel:'Check my key'};
   }
+  const gone=tried.find(t=>/cooldown, unreachable/i.test(t.why));
+  if(gone&&!tried.some(t=>/\b429\b|rate.?limit|quota|too many|cooldown(?!, unreachable)/i.test(t.why)))return {title:gone.name+' could not be reached',body:'Check your connection, then try again.'};
   const cooling=tried.find(t=>/\b429\b|rate.?limit|quota|too many|cooldown/i.test(t.why));
   if(cooling)return {title:cooling.name+' is busy',body:'It is limiting requests right now. Wait a minute, then try again.'};
   if(/No text LLM available|no key|api key|unauthori[sz]ed|\b401\b|\b403\b/i.test(msg))
