@@ -7135,7 +7135,8 @@ class Handler(BaseHTTPRequestHandler):
                         ):
                             n += 1
                             fname = f"{Path(first).stem}_{n}{Path(first).suffix}"
-                        if fname != first:
+                        # Only a copy that is new is "renamed"; the same bytes again are not.
+                        if fname != first and not (updir / fname).exists():
                             renamed.append({"from": first, "to": fname})
                         dest = updir / fname
                         dest.write_bytes(val["data"])

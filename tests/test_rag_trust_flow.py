@@ -269,6 +269,11 @@ def test_same_name_in_a_later_upload_is_kept_beside_the_first(server):
     third = _upload(base, sid, [("file0", "notes.md", "Alpha project budget is 5000 dollars.\n")])
     assert "renamed" not in third
     assert len(store.list_sources(sid)) == 2
+    # the second file again: it is the copy already kept as notes_2.md, so nothing is
+    # renamed and the report must not claim a new copy was added
+    fourth = _upload(base, sid, [("file0", "notes.md", "Beta project deadline is March.\n")])
+    assert "renamed" not in fourth
+    assert len(store.list_sources(sid)) == 2
 
 
 # --- rag.6 index counts data rows ------------------------------------------------------
