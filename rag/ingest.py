@@ -918,6 +918,10 @@ def _east_asian_codec(data: bytes, whole: bool = True):
     bytes are valid text in some legacy CJK codec but none is clearly the right one;
     ("", "") when it is not CJK text at all. A slice may be cut inside a character."""
     best, best_hit, unsure = "", 0.0, False
+    if whole and len(data) > 262144:
+        # Score on a small sample: decoding a whole 4 MB file once per codec is seconds and
+        # hundreds of MB. The chosen codec decodes the full file once, later.
+        data, whole = data[:262144], False
     for codec in _EA_CODECS:
         wide = codec.startswith("utf-16")
         if not wide and b"\x00" in data:
@@ -986,6 +990,7 @@ def _decode(raw: bytes) -> str:
 _OWN_READER = {".pdf", ".xlsx", ".xlsm", ".docx", ".pptx"}
 BINARY_REASON = "Looks like a binary file, not text"
 ENCODING_REASON = "Could not tell which text encoding this file uses. Save it as UTF-8 and add it again."
+_HIGH = bytes(range(128, 256))
 _CONTROL = bytes(set(range(32)) - {9, 10, 12, 13, 27} | {127})
 
 
@@ -1074,7 +1079,7 @@ def _chunk_is_text(data: bytes, whole: bool, hint: str = "") -> bool:
         return True
     # Old single-byte text has a few accented letters; a file that is mostly
     # high bytes is not text.
-    if sum(1 for b in data if b >= 0x80) > 0.4 * len(data):
+    if len(data) - len(data.translate(None, _HIGH)) > 0.4 * len(data):
         return False
     # Windows text uses 0x80-0x9F for curly quotes and dashes (cp1252); in Latin-1 those are
     # control characters, so judge by cp1252 and fall back to Latin-1 for its few holes.
@@ -1122,7 +1127,7 @@ def unreadable_reason(path: Path) -> str:
         size = path.stat().st_size
         if 64 <= size <= 4 * 1024 * 1024:
             data = path.read_bytes()
-            if _east_asian_codec(data)[1] == "unsure" and not any(b in _CONTROL for b in data):
+            if _east_asian_codec(data)[1] == "unsure" and len(data.translate(None, _CONTROL)) == len(data):
                 return ENCODING_REASON
     except OSError:
         pass
