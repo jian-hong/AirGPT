@@ -1496,6 +1496,9 @@ def _answer_group(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> di
         "filter": where,
         "group_by": gname,
         "groups": [{"group": k, "value": round(v, 4)} for k, v in table[:50]],
+        # A ranking ("which has the highest") is a different shape of answer; only the
+        # plain by-group table is repeated for a follow-up ("and for South?").
+        **({} if plan.rank else {"carry": {**_carry(plan), "group_by": gname}}),
         "assumed": plan.assumed,
         "sheets": sheets,
         "linked": {"sheet": plan.sheet, "workbook": plan.workbook, "metric": plan.metric,
@@ -1576,6 +1579,15 @@ _FOLLOW_REF = re.compile(r"\b(?:there|that|those|same|it|them)\b", re.I)
 _OP_WORD = {"SUM": "total", "AVG": "average", "COUNT": "how many", "MAX": "maximum", "MIN": "minimum"}
 
 
+def reads_as_followup(question: str) -> bool:
+    """A short question that may lean on the last one: the test carry_followup starts with."""
+    q = (question or "").strip()
+    words = q.split()
+    if not q or len(words) > 14:
+        return False
+    return bool(_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= 6)
+
+
 def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str], Any]) -> str | None:
     """A short follow-up, made into a full question from the previous calculation.
 
@@ -1588,10 +1600,7 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     if not isinstance(prev, dict) or not prev.get("agg") or not frames:
         return None
     q = (question or "").strip()
-    words = q.split()
-    if not q or len(words) > 14:
-        return None
-    if not (_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= 6):
+    if not reads_as_followup(q):
         return None
     all_cols: set[str] = set()
     for df in frames.values():
@@ -1655,6 +1664,8 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
     if op == "COUNT" and not metric:
         out = "how many rows"
+    if prev.get("group_by"):
+        out += f" by {prev['group_by']}"
     if target_sheet and not wb_name.lower().endswith((".csv", ".tsv")):
         out += f" in the {target_sheet} sheet"
     if parts:
