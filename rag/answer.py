@@ -436,7 +436,13 @@ def chat_history(chat_id: int) -> list[dict]:
     if not chat_id:
         return []
     try:
-        return [{"role": m["role"], "content": m["content"]} for m in store.list_messages(int(chat_id))]
+        # Turns that came in with an imported pack are someone else's text: they are not
+        # this user's conversation and must not reach the model as if they were.
+        return [
+            {"role": m["role"], "content": m["content"], "provenance": m.get("provenance") or {}}
+            for m in store.list_messages(int(chat_id))
+            if not m.get("imported")
+        ]
     except Exception:
         return []
 
@@ -1352,7 +1358,7 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
         return None
 
 
-def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
+def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = None) -> dict | None:
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
     try:
         from rag.xlsx_sql import answer_sqlish, load_table_file
@@ -1428,16 +1434,25 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     # filter-then-aggregate it does not cover, resolve it against the schema instead
     # of stopping at whatever Summary chunk retrieval liked.
     if by_sheet:
+        carried = ""
         try:
             from rag import sheet_sql
 
-            hit = sheet_sql.answer_filter_aggregate(query, by_sheet)
+            # A short follow-up ("and for South?") repeats the last calculation with
+            # what it changes; typed alone it has no column and would fall to passages.
+            carried = sheet_sql.carry_followup(query, (prev_prov or {}).get("carry"), by_sheet) or ""
+            hit = sheet_sql.answer_filter_aggregate(carried or query, by_sheet) if carried else None
+            if hit and hit.get("abstained"):
+                hit = None  # the carried question did not work out: ask it as typed
+            if not hit:
+                carried = ""
+                hit = sheet_sql.answer_filter_aggregate(query, by_sheet)
         except Exception:
             hit = None
         if hit:
             owner = sheet_owner.get(str(hit.get("workbook") or ""), {})
             return {
-                "answer": hit["answer"],
+                "answer": (f"Following on from your last question, I worked out: {carried}.\n\n" if carried else "") + hit["answer"],
                 "citations": [
                     {
                         "path": owner.get("path") or hit.get("workbook"),
@@ -1452,14 +1467,17 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
                 # Carried whole so the reasoning chain (#15) reports the binding this
                 # run actually made, rather than re-deriving it from the answer text.
                 "provenance": {
-                    k: hit.get(k)
-                    for k in (
-                        "sql", "sheet", "workbook", "rows_matched", "rows_total",
-                        "abstained", "ambiguous", "linked", "value", "per_column",
-                        "row_note", "operation", "filter", "values_used", "assumed",
-                        "sheets", "group_by", "groups",
-                    )
-                    if hit.get(k) is not None
+                    **{
+                        k: hit.get(k)
+                        for k in (
+                            "sql", "sheet", "workbook", "rows_matched", "rows_total",
+                            "abstained", "ambiguous", "linked", "value", "per_column",
+                            "row_note", "operation", "filter", "values_used", "assumed",
+                            "sheets", "group_by", "groups", "carry",
+                        )
+                        if hit.get(k) is not None
+                    },
+                    **({"followup_of": carried} if carried else {}),
                 },
             }
         # An aggregate ask about a table's own columns that no plan could compute:
@@ -1561,7 +1579,8 @@ def answer_events(
                 "text": "Ontology → " + " → ".join(s.get("op") or "" for s in _logic),
             }
         if _preset.get("hybrid_sql_lane") and raw_q:
-            sql_hit = _try_hybrid_sql_lane(space_id, raw_q)
+            _prev_prov = next((m.get("provenance") for m in reversed(history or []) if m.get("role") == "assistant"), None)
+            sql_hit = _try_hybrid_sql_lane(space_id, raw_q, _prev_prov if isinstance(_prev_prov, dict) else None)
             if sql_hit:
                 yield {"type": "thinking", "text": "Hybrid SQL lane (no confirm loop)…"}
                 _onto_sum = _ont.get("summary") if isinstance(_ont, dict) else None
@@ -2304,6 +2323,7 @@ def answer(
             citations=citations,
             depth=depth,
             trace_id=done.get("trace_id") or "",
+            provenance=done.get("provenance") or None,
         )
 
     return {
