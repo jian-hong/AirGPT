@@ -640,6 +640,13 @@ def _bind_stated_values(q, df, kept, text_filters, filters, metric):
     return text_filters
 
 
+# "how many rows", "number of rows", "row count", "count the Q1 rows": a count of rows, no column.
+_ROW_COUNT = re.compile(
+    r"\b(?:how\s+many|number\s+of|count(?:\s+of)?)\s+(?:the\s+)?(?:\w+\s+)?rows?\b|\brows?\s+count\b|\bcount\s+(?:the\s+)?(?:\w+\s+)?rows?\b",
+    re.I,
+)
+
+
 def plan_query(
     question: str,
     frames: dict[tuple[str, str], Any],
@@ -753,7 +760,8 @@ def plan_query(
         # gives a span instead, and "the average cost" names a column only in the
         # reverse direction. Bail out only when there is no route at all.
         # "how many people work in Ops" names no column, only a value from one.
-        if not kept and not rows and not _reverse_candidates(q, df):
+        row_count = bool(_ROW_COUNT.search(q)) and sheet_name in named_set  # COUNT(*) of the sheet named
+        if not kept and not rows and not row_count and not _reverse_candidates(q, df):
             if not (re.search(_AGGS[0][0], q.lower()) and _find_text_filters(q, df, value_spans, set())[0]):
                 continue
 
@@ -855,7 +863,7 @@ def plan_query(
         # a COUNT(*) over the filtered rows, not a failure to understand the ask.
         if (
             metric is None
-            and (filters or rows or text_filters or group_by)
+            and (filters or rows or text_filters or group_by or row_count)
             and re.search(_AGGS[0][0], q.lower())
         ):
             metric, metric_agg = "", "COUNT"
@@ -1516,6 +1524,14 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
     """
     cands: list[Plan] = []
     plan = plan_query(question, frames, cands)
+    if plan is None and (_missing_group_column(question, frames) or _ignored_time_by(question, frames)):
+        # "revenue by country in Q1": no aggregate word and a "by" that is no column. Plan
+        # the question without that tail (a plain total), and say what was left out below.
+        alt = _BY_TAIL.sub(" ", question)
+        if not any(re.search(p, alt.lower()) for p, _ in _AGGS):
+            alt = "total " + alt
+        cands = []
+        plan = plan_query(alt, frames, cands)
     if plan is None:
         return None
     sibs = _siblings(plan, cands, frames)
@@ -1530,6 +1546,12 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         # "by Colour" on a table with no Colour column: said, not dropped.
         hit["answer"] = f"There is no {ghost} column, so I could not group by it. Here is the answer without it:\n\n{hit['answer']}"
         hit["no_group_column"] = ghost
+    elif hit and hit.get("answer") and not hit.get("abstained"):
+        # "by next week", "by Monday", "by 2024": a time this table has no column for. Said, not dropped.
+        gone = _ignored_time_by(question, frames)
+        if gone:
+            hit["answer"] = f"I did not use \"{gone}\": I could not apply it to this table. Here is the answer without it:\n\n{hit['answer']}"
+            hit["ignored_phrase"] = gone
     # "North and South" where one of them cannot take the question (no such column):
     # say which was left out instead of answering as if it had not been asked for.
     answered = {c.sheet for c, _nm in sibs} | {str(hit.get("sheet") or "")}
@@ -1539,6 +1561,31 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         head, sep, tail = str(hit["answer"]).partition("\n\nSQL:")
         hit["answer"] = f"{head}\n\n{note}{sep}{tail}"
     return hit
+
+
+_BY_TAIL = re.compile(r"(?<![\w])by\s+(?:the\s+)?(?:[A-Za-z][A-Za-z_-]*|(?:19|20)\d\d)(?:\s+(?:week|month|quarter|year|weekend))?\b", re.I)
+_TIME_BY = re.compile(
+    r"(?<![\w])by\s+((?:(?:the\s+)?end\s+of\s+\w+)|(?:next|last|this|now)(?:\s+(?:week|month|quarter|year|weekend|day))?"
+    r"|today|tomorrow|yesterday|midnight|noon|(?:mon|tues?|wednes|thurs?|fri|satur|sun)day"
+    r"|january|february|march|april|may|june|july|august|september|october|november|december"
+    r"|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec|(?:19|20)\d\d)\b", re.I)
+
+
+def _ignored_time_by(question: str, frames: dict[tuple[str, str], Any]) -> str:
+    """"by next week" / "by Monday" / "by 2024" when no sheet, column or cell holds that word."""
+    for m in _TIME_BY.finditer(question or ""):
+        phrase = m.group(1)
+        words = {w.casefold() for w in re.findall(r"[^\W_]+", phrase)} - {"the", "of", "end"}
+        for (_wb, sheet), df in frames.items():
+            if df is None or df.empty:
+                continue
+            if _norm(sheet) in {_norm(w) for w in words} or any(_norm(str(c)) in {_norm(w) for w in words} for c in df.columns):
+                break
+            if any(df[c].astype(str).str.strip().str.casefold().isin(words).any() for c in df.columns):
+                break
+        else:
+            return "by " + phrase
+    return ""
 
 
 _BY_WORD = re.compile(r"(?<![\w])(?:(\w+)\s+)?by\s+(?:the\s+)?([A-Za-z][A-Za-z_-]*)", re.I)
@@ -1647,6 +1694,19 @@ def reads_as_followup(question: str, *, strict: bool = False) -> bool:
     return bool(_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= (3 if strict else 6))
 
 
+_FOLLOW_FILLER = {"by", "per", "for", "each", "and", "also", "what", "about", "how", "now", "then", "same", "but",
+                  "ok", "okay", "the", "in", "on", "with", "sheet", "tab", "is", "of", "it", "than"}
+
+
+def _column_followup_ok(q: str, mentions: list[tuple[int, int, str]]) -> bool:
+    """Is the question only one column and filler ("by region", "units?", "and by product")?"""
+    if len(mentions) != 1:
+        return False
+    a, b, _c = mentions[0]
+    rest = re.findall(r"[^\W_]+", (q[:a] + " " + q[b:]).lower())
+    return all(w in _FOLLOW_FILLER or re.fullmatch(r"[a-z]{0,2}\d+", w) for w in rest)
+
+
 def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str], Any]) -> str | None:
     """A short follow-up, made into a full question from the previous calculation.
 
@@ -1665,9 +1725,18 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     for df in frames.values():
         if df is not None and not df.empty:
             all_cols.update(str(c) for c in df.columns)
-    if _resolve_mentions(q, all_cols):
+    mentions = _resolve_mentions(q, all_cols)
+    if mentions and not _column_followup_ok(q, mentions):
         return None  # names a column: it is a question of its own
     agg = _agg_anywhere(q)
+    # A rank word in the follow-up decides the direction of a carried ranking ("and the
+    # lowest?" after "which region has the highest ..."); it is not also MIN or MAX.
+    rank = str(prev.get("rank") or "") if prev.get("group_by") else ""
+    new_rank = "asc" if _RANK_ASC.search(q) else ("desc" if _RANK_DESC.search(q) else "")
+    if rank in ("desc", "asc") and new_rank:
+        rank, agg = new_rank, None
+    else:
+        new_rank = ""
     old_sheet = str(prev.get("sheet") or "")
     sheet = ""
     sheet_wb = ""
@@ -1690,8 +1759,37 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
         found, _amb = _find_text_filters(q, df, sheet_spans, set())
         for t in found:
             new_text.setdefault((t.column, t.negate), t)
+    # A new group-by or metric column ("by region", "units?"): found among the columns of the
+    # sheet the answer will come from.
+    new_group, new_metric = "", ""
+    if mentions:
+        want_wb = sheet_wb if sheet else str(prev.get("workbook") or "")
+        tgt_df = next(
+            (df for (w_, n_), df in frames.items()
+             if n_ == (sheet or old_sheet) and (not want_wb or str(w_) == want_wb)
+             and df is not None and not df.empty),
+            None,
+        )
+        col = mentions[0][2]
+        if tgt_df is None or col not in tgt_df.columns:
+            return None
+        by_lead = re.search(r"\b(?:by|per|each)\s+(?:the\s+)?$", q[:mentions[0][0]], re.I)
+        if by_lead:
+            new_group = col
+        elif _numeric_ratio(tgt_df[col]) >= 0.6:
+            new_metric = col
+        else:
+            return None  # a bare text column: grouping was not asked for, so nothing is guessed
     # "thanks" or "what about 5?" carry nothing: a new aggregate, sheet or value must be there.
-    if not (agg or sheet or new_text):
+    if not (agg or sheet or new_text or new_rank or new_group or new_metric):
+        return None
+    # A question with its own count phrase and a sheet ("how many rows in Q1") is a whole
+    # question, not a follow-up: it must read the same wherever it is asked.
+    if agg == "COUNT" and not new_text and not _FOLLOW_START.match(q) and not _FOLLOW_REF.search(
+        re.sub(r"\b(?:are|is)\s+there\b", " ", q, flags=re.I)
+    ) and (
+        sheet_spans or re.search(r"\brows?\b", q, re.I)
+    ):
         return None
     # An aggregate word alone is not a follow-up: "how many pallets in Penang" is a whole
     # question. With no start word or pronoun it must be about as short as "the average?".
@@ -1712,13 +1810,16 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     for f in prev.get("num") or []:
         parts.append(f'{f["column"]} {f["op"]} {_fmt_num(float(f["value"]))}')
     op = agg or prev["agg"]
-    metric = str(prev.get("metric") or "")
+    metric = new_metric or str(prev.get("metric") or "")
+    group_by = new_group or str(prev.get("group_by") or "")
+    if op == "COUNT" and agg == "COUNT" and re.search(r"\brows?\b", q, re.I):
+        metric = ""  # a count of rows is COUNT(*), not a count of one column's filled cells
     # Moving to a sheet of another file: the carried column and filters must exist there,
     # or the old calculation would be answered under the new sheet's name.
     if sheet and sheet != old_sheet:
         tgt = next((df for (w_, n_), df in frames.items() if n_ == sheet and str(w_) == sheet_wb), None)
         have = {str(c) for c in tgt.columns} if tgt is not None else set()
-        need = ([metric] if metric else []) + [t["column"] for t in prev.get("text") or [] if t["column"] not in over
+        need = ([metric] if metric else []) + ([group_by] if group_by else []) + [t["column"] for t in prev.get("text") or [] if t["column"] not in over
                                               and any(str(v).casefold() not in drop for v in t.get("values") or [])]
         need += [f["column"] for f in prev.get("num") or []]
         if any(c not in have for c in need):
@@ -1727,13 +1828,13 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
     if op == "COUNT" and not metric:
         out = "how many rows"
-    if prev.get("group_by") and prev.get("rank") in ("desc", "asc"):
-        word = "highest" if prev["rank"] == "desc" else "lowest"
-        out = f"which {prev['group_by']} has the {word} {_OP_WORD.get(op, 'total')} {metric}".strip()
+    if group_by and rank in ("desc", "asc"):
+        word = "highest" if rank == "desc" else "lowest"
+        out = f"which {group_by} has the {word} {_OP_WORD.get(op, 'total')} {metric}".strip()
         if op == "COUNT" and not metric:
-            out = f"which {prev['group_by']} has the {word} number of rows"
-    elif prev.get("group_by"):
-        out += f" by {prev['group_by']}"
+            out = f"which {group_by} has the {word} number of rows"
+    elif group_by:
+        out += f" by {group_by}"
     if target_sheet and not wb_name.lower().endswith((".csv", ".tsv")):
         out += f" in the {target_sheet} sheet"
     if parts:
