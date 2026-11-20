@@ -123,3 +123,26 @@ def test_summary_never_ends_in_half_a_citation_mark():
     assert store._cut_summary("y" * 217 + " [12, 3] tail") == "y" * 217  # noqa: SLF001
     assert store._cut_summary("short [1]") == "short [1]"  # noqa: SLF001
     assert store._cut_summary("z" * 300) == "z" * 220  # noqa: SLF001
+
+
+def test_summary_never_ends_in_half_a_web_citation_mark():
+    for mark in ("[W1]", "[S12]"):
+        for pad in (215, 216, 217, 218, 219):
+            out = store._cut_summary("y" * pad + mark + " tail")  # noqa: SLF001
+            assert not out.rstrip().endswith(("[", "[W", "[W1", "[S", "[S1", "[S12")), (mark, pad, out[-6:])
+
+
+def test_a_second_followup_after_the_note_still_gets_the_note(monkeypatch):
+    # The first follow-up was answered from passages (no carry left behind); the next
+    # short follow-up is still not calculated and must say so.
+    history = CALC_HISTORY + [
+        {"role": "user", "content": "and the Discount column?"},
+        {"role": "assistant", "content": "x", "provenance": {"followup_not_calculated": True}},
+    ]
+    evs = _run(monkeypatch, "what about the staff file?", history)
+    done = next(e for e in evs if e["type"] == "done")
+    assert done["answer"].startswith(answer.FOLLOWUP_NOT_CALCULATED)
+    # a passage answer after that (no flag) ends the chain
+    history2 = history + [{"role": "user", "content": "q"}, {"role": "assistant", "content": "x", "provenance": {}}]
+    evs = _run(monkeypatch, "and the Discount column?", history2)
+    assert next(e for e in evs if e["type"] == "done")["answer"] == "Part one. Part two."

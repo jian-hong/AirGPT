@@ -1506,7 +1506,9 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
     calculated (live and saved), and provenance.followup_not_calculated is set."""
     prev = next((m.get("provenance") for m in reversed(history or []) if m.get("role") == "assistant"), None)
     note = False
-    if isinstance(prev, dict) and prev.get("carry"):
+    # A follow-up that already got the note leaves no carry behind, so the next one
+    # ("and for South?") is still a follow-up to a calculation that was not repeated.
+    if isinstance(prev, dict) and (prev.get("carry") or prev.get("followup_not_calculated")):
         from rag import sheet_sql
 
         note = sheet_sql.reads_as_followup(query)

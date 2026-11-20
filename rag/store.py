@@ -1195,10 +1195,10 @@ def create_chat(space_id: int, title: str = "New chat") -> dict:
 
 
 def _cut_summary(text: str, limit: int = 220) -> str:
-    """First `limit` characters, never ending inside a citation mark like "[1" or "[1, 2"."""
+    """First `limit` characters, never ending inside a citation mark like "[1", "[1, 2" or "[W1"."""
     cut = text[:limit]
     if len(text) > limit:
-        cut = re.sub(r"\s*\[[0-9,\s]*$", "", cut)
+        cut = re.sub(r"\s*\[[A-Za-z]{0,2}[0-9,\s]*$", "", cut)
     return cut
 
 
