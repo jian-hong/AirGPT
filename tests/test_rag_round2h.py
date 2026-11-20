@@ -303,3 +303,21 @@ def test_real_utf16_without_bom_is_indexed_and_junk_is_refused_in_a_space(tmp_pa
     skipped = {s["path"]: s["reason"] for s in out.get("skipped", [])}
     assert skipped == {"bom_junk.txt": "Looks like a binary file, not text"}, out
     assert out["chunks"] >= 1
+
+
+# ---- pm-rag.5: what a reopened chat needs is saved with the answer -----------------------
+
+def test_saved_answer_keeps_the_calculation_and_the_steps(space):
+    from rag import answer, store
+
+    cid = int(store.create_chat(space, "t")["id"])
+    out = answer.answer(space, "total Salary excluding HR", chat_id=cid, use_llm=False)
+    assert out["ok"]
+    saved = [m for m in store.list_messages(cid) if m["role"] == "assistant"][-1]["provenance"]
+    assert saved["sql"].startswith("SELECT SUM(Salary)") and saved["workbook"] == "staff.csv"
+    steps = saved["reasoning"]["steps"]
+    assert steps and all(s["title"] and s["detail"] for s in steps) and saved["reasoning"]["lane"]
+    # a passage answer keeps its steps too
+    answer.answer(space, "how many pallets in Penang", chat_id=cid, use_llm=False)
+    last = [m for m in store.list_messages(cid) if m["role"] == "assistant"][-1]["provenance"]
+    assert last["reasoning"]["steps"]

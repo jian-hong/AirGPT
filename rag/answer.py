@@ -1517,6 +1517,20 @@ def _retrieval_chain(query: str, **kw) -> dict:
         return {"lane": "retrieval", "steps": [], "text": "", "error": str(e)[:160]}
 
 
+def saved_provenance(done: dict) -> dict | None:
+    """What is kept with an assistant message so a reopened chat shows what the live card did:
+    the calculation's provenance plus the steps of "How I got this"."""
+    prov = dict(done.get("provenance") or {})
+    chain = done.get("reasoning")
+    if isinstance(chain, dict) and chain.get("steps"):
+        prov["reasoning"] = {
+            "lane": str(chain.get("lane") or ""),
+            "steps": [{"title": str(x.get("title") or ""), "detail": str(x.get("detail") or "")}
+                      for x in chain["steps"][:20] if isinstance(x, dict)],
+        }
+    return prov or None
+
+
 FOLLOWUP_NOT_CALCULATED = "This follow-up was answered from the passages, not calculated."
 FOLLOWUP_NOT_APPLIED = "I could not apply this follow-up to my last answer, so this is the same answer again. Ask the whole question and I will look it up."
 
@@ -2377,7 +2391,7 @@ def answer(
             citations=citations,
             depth=depth,
             trace_id=done.get("trace_id") or "",
-            provenance=done.get("provenance") or None,
+            provenance=saved_provenance(done),
         )
 
     return {

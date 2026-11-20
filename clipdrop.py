@@ -4209,7 +4209,7 @@ class Handler(BaseHTTPRequestHandler):
                     chat_id, "assistant", text,
                     citations=citations,
                     depth=depth, trace_id=done.get("trace_id") or "",
-                    provenance=done.get("provenance") or None,
+                    provenance=rag_answer.saved_provenance(done),
                 )
             except Exception:
                 pass
