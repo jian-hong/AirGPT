@@ -93,6 +93,10 @@ test("main: raw svg size is not kept", async () => {
   const r = await out("main", '<svg width=9999 height=9999 viewBox="0 0 10 10"><rect width=5 height=5 /></svg>');
   assert.ok(!/(width|height)="?9999/.test(r), r);
 });
+test("main: raw img and svg sizes are not kept", async () => {
+  const r = await out("main", '<img src="x.png" width=99999 height=99999 alt="a">');
+  assert.ok(!/(width|height)=/.test(r), r);
+});
 test("main: forged diagram tokens are not expanded", async () => {
   const forged = "MMDIAGRAMTOKEN0ENDTOKEN";
   const a = await out("main", forged);

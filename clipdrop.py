@@ -1842,7 +1842,7 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             if "/" not in rel and secret:
                 skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[secret]} stay as they are on this PC"})
                 continue
-            if "/" not in rel and rel.lower().startswith(_RESTORE_CONTROL_PREFIXES):
+            if "/" not in rel and rel.casefold().startswith(_RESTORE_CONTROL_PREFIXES):
                 skipped.append({"file": name, "why": "it controls who can reach this PC, so it stays as it is here"})
                 continue
             if _is_safety_zip(target):

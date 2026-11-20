@@ -165,3 +165,11 @@ class AllOrNothing(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Folding(Base):
+    def test_long_s_cannot_dodge_the_control_file_prefix(self):
+        (self.dd / "access_policy.json").write_text("ORIGINAL")
+        code, out = clipdrop._restore_package(_zip({"data/acceſs_policy.json": "EVIL", "data/ok.txt": "x"}))
+        self.assertEqual(code, 200, out)
+        self.assertEqual((self.dd / "access_policy.json").read_text(), "ORIGINAL")

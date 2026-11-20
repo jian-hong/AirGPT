@@ -1034,7 +1034,7 @@ body.theme-light .send-fail{background:rgba(227,73,72,.06);border-color:rgba(227
 .ai-block th{background:rgba(255,255,255,.05);color:var(--text);font-weight:600}
 .ai-block .katex-display{margin:10px 0;overflow-x:auto}
 .ai-block .katex{max-width:100%}
-.ai-block svg{max-width:100%}
+.ai-block svg,.ai-block img{max-width:100%}
 .ai-block .mermaid{margin:12px 0;padding:14px;background:#0d1117;border:1px solid var(--line);border-radius:12px;overflow-x:auto;text-align:center;line-height:normal}
 .ai-block .mermaid:not(.mm-rendered){font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--muted);white-space:pre-wrap;text-align:left}
 .ai-block .mermaid.mm-rendered{color:#e6edf3}
@@ -13649,7 +13649,7 @@ function sanitizeHtml(html){
         // page class. The only class kept is a code language; our own maths, diagrams and copy
         // buttons are added after this runs. A size on an svg would let it fill the chat.
         if(d.attrName==='class'){const k=String(d.attrValue).split(/\s+/).filter(c=>/^language-[\w+#.\-]{1,30}$/.test(c));if(k.length&&node.nodeName==='CODE')d.attrValue=k.join(' ');else d.keepAttr=false;}
-        if((d.attrName==='width'||d.attrName==='height')&&/^svg$/i.test(node.nodeName))d.keepAttr=false;
+        if((d.attrName==='width'||d.attrName==='height')&&/^(svg|img)$/i.test(node.nodeName))d.keepAttr=false;
       });
     }
     return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['id','name','onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});

@@ -12,7 +12,7 @@
   // Removed together with everything inside them.
   var DROP=('script style iframe frame frameset object embed applet form input button textarea select option '+
     'link meta base template noscript title head svg math audio video source track canvas').split(' ');
-  var ATTRS={'*':['title'],code:['class'],a:['href','target','rel'],img:['src','alt','width','height'],
+  var ATTRS={'*':['title'],code:['class'],a:['href','target','rel'],img:['src','alt'],
     td:['colspan','rowspan','align'],th:['colspan','rowspan','align'],ol:['start'],col:['span'],colgroup:['span'],
     details:['open']};
   var SCHEME=/^[a-z][a-z0-9+.\-]*:/i;
