@@ -1033,6 +1033,8 @@ body.theme-light .send-fail{background:rgba(227,73,72,.06);border-color:rgba(227
 .ai-block th,.ai-block td{border:1px solid var(--line);padding:6px 10px;text-align:left}
 .ai-block th{background:rgba(255,255,255,.05);color:var(--text);font-weight:600}
 .ai-block .katex-display{margin:10px 0;overflow-x:auto}
+.ai-block .katex{max-width:100%}
+.ai-block svg{max-width:100%}
 .ai-block .mermaid{margin:12px 0;padding:14px;background:#0d1117;border:1px solid var(--line);border-radius:12px;overflow-x:auto;text-align:center;line-height:normal}
 .ai-block .mermaid:not(.mm-rendered){font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--muted);white-space:pre-wrap;text-align:left}
 .ai-block .mermaid.mm-rendered{color:#e6edf3}
@@ -13641,9 +13643,16 @@ function sanitizeHtml(html){
     // that carries url( or image-set(. Our own maths and diagrams are put back after this runs.
     if(!sanitizeHtml._hook){
       sanitizeHtml._hook=true;
-      DOMPurify.addHook('uponSanitizeAttribute',(node,d)=>{if(/url\s*\(|image-set\s*\(|@import/i.test(d.attrValue||''))d.keepAttr=false;});
+      DOMPurify.addHook('uponSanitizeAttribute',(node,d)=>{
+        if(/url\s*\(|image-set\s*\(|@import/i.test(d.attrValue||''))d.keepAttr=false;
+        // Untrusted markup must not take a page id (getElementById would find it first) or wear a
+        // page class. The only class kept is a code language; our own maths, diagrams and copy
+        // buttons are added after this runs. A size on an svg would let it fill the chat.
+        if(d.attrName==='class'){const k=String(d.attrValue).split(/\s+/).filter(c=>/^language-[\w+#.\-]{1,30}$/.test(c));if(k.length&&node.nodeName==='CODE')d.attrValue=k.join(' ');else d.keepAttr=false;}
+        if((d.attrName==='width'||d.attrName==='height')&&/^svg$/i.test(node.nodeName))d.keepAttr=false;
+      });
     }
-    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});
+    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['id','name','onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});
   }
   // No cleaner at all: show the text, never the markup.
   return window.AirSanitize?AirSanitize.clean(html):esc(html);
@@ -13678,13 +13687,16 @@ function mdFallback(src){
   closeList();
   return out.join('\n');
 }
+// Maths comes from models and documents: cap sizes and macro growth so one line cannot make a huge slab.
+const _KATEX_SAFE={maxSize:10,maxExpand:200,trust:false,strict:'ignore'};
 function renderMd(md){
   if(!md)return '';
   // Pull mermaid fences out first so marked doesn't turn them into <pre><code>.
   const mermaidBlocks=[];
+  const mmNonce=Math.random().toString(36).slice(2,10);
   let s=md.replace(/```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/gi,(m,code)=>{
     const i=mermaidBlocks.push(code.replace(/\s+$/,''))-1;
-    return `\n\nMMDIAGRAMTOKEN${i}ENDTOKEN\n\n`;
+    return `\n\nMMDIAGRAMTOKEN${mmNonce}T${i}ENDTOKEN\n\n`;
   });
   // Maths is our own output (it carries style attributes the sanitizer strips), so it is
   // set aside as a token and put back after sanitizing, like the diagrams.
@@ -13692,11 +13704,11 @@ function renderMd(md){
   const mathNonce=Math.random().toString(36).slice(2,10);
   const mathTok=h=>`KXMATH${mathNonce}T${mathBlocks.push(h)-1}ENDTOKEN`;
   s=s.replace(/\$\$([\s\S]+?)\$\$/g,(m,tex)=>{
-    try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false}));
+    try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false,..._KATEX_SAFE}));
     }catch(e){return mathTok(`<pre>${esc(tex)}</pre>`)}
   });
   s=s.replace(/\$([^$\n]+?)\$/g,(m,tex)=>{
-    try{return mathTok(katex.renderToString(tex,{displayMode:false,throwOnError:false}));
+    try{return mathTok(katex.renderToString(tex,{displayMode:false,throwOnError:false,..._KATEX_SAFE}));
     }catch(e){return esc(tex)}
   });
   let html=window.marked?marked.parse(s,{breaks:true}):mdFallback(s);
@@ -13707,10 +13719,12 @@ function renderMd(md){
     html=html.split(/(<[^>]*>)/).map(p=>p[0]==='<'?p.replace(re,''):p.replace(re,(m,i)=>mathBlocks[+i]||'')).join('');
   }
   // Reinsert mermaid blocks AFTER sanitizing (we build the node ourselves, escaped).
-  html=html.replace(/(?:<p>\s*)?MMDIAGRAMTOKEN(\d+)ENDTOKEN(?:\s*<\/p>)?/g,(m,i)=>{
-    const code=mermaidBlocks[+i]||'';
-    return `<div class="mermaid" data-mm-src="${esc(code)}">${esc(code)}</div>`;
-  });
+  // Only the token made in this render, and only in text (a token inside a tag is dropped).
+  if(mermaidBlocks.length){
+    const mre=new RegExp('(?:<p>\\s*)?MMDIAGRAMTOKEN'+mmNonce+'T(\\d+)ENDTOKEN(?:\\s*</p>)?','g');
+    html=html.split(/(<[^>]*>)/).map(p=>p[0]==='<'?p.replace(/MMDIAGRAMTOKEN\w*ENDTOKEN/g,''):p).join('')
+      .replace(mre,(m,i)=>{const code=mermaidBlocks[+i]||'';return `<div class="mermaid" data-mm-src="${esc(code)}">${esc(code)}</div>`;});
+  }
   return html;
 }
 let _mermaidReady=false;
