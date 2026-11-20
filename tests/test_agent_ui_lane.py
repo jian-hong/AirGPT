@@ -156,6 +156,24 @@ class StopTests(unittest.TestCase):
         row = [r for r in agent_store.list_runs(None, 50) if r["id"] == holder["rid"]][0]
         self.assertEqual(row["status"], "cancelled")
 
+    def test_stop_while_the_model_thinks_runs_no_tool(self):
+        ag = _agent(["fs_write"])
+        holder = {}
+        ran = []
+
+        class M(_Model):
+            def _standard_llm(self, *a, **k):
+                agent_store.cancel_run(holder["rid"])
+                return json.dumps({"tool": "fs_write", "params": {"path": "x"}}), "stub-model"
+
+        with mock.patch.object(cortex_client, "engine_agent_loop", CORTEX_DOWN):
+            with mock.patch.dict(agent_tools.TOOLS, {"fs_write": lambda **_k: ran.append(1) or {"ok": True}}):
+                with mock.patch.object(agent_runtime, "ai_engine", M([])):
+                    for ev in agent_runtime.run_agent_events(ag["id"], "write", thinking_mode="assist"):
+                        if ev.get("run_id"):
+                            holder["rid"] = ev["run_id"]
+        self.assertEqual(ran, [])
+
     def test_stop_after_the_result_does_not_change_a_finished_run(self):
         ag = _agent(["fs_write"])
         with mock.patch.object(cortex_client, "engine_agent_loop", CORTEX_DOWN):

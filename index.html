@@ -7878,7 +7878,8 @@ function cortexRunBusy(on){
 function cortexRunEnd(text){
   cortexRunBusy(false);
   const el=$('cortexOrchClock');if(el)el.textContent=text||'';
-  try{localStorage.removeItem(CORTEX_RUN_KEY)}catch(e){}
+  // Keep the id when the card is gone (the person is on another page) so coming back shows the result.
+  if($('cortexOrchCard'))try{localStorage.removeItem(CORTEX_RUN_KEY)}catch(e){}
 }
 function cortexHostOnlyCard(){
   ensureCortexLiveCard('Cortex','');
@@ -7916,101 +7917,6 @@ async function stopCortexRun(){
     try{_cortexRun.ac&&_cortexRun.ac.abort()}catch(e){}
     cortexRunEnd('Stopped. Anything already saved stays; nothing more will run.');
   }catch(e){toast('Could not stop. Try again.');if(b)b.disabled=false}
-}
-/** Read one run's event stream into the card. Used for a fresh run and for re-attaching. */
-async function cortexReadRun(reader,live){
-  const st=_cortexRun;
-  const dec=new TextDecoder();let buf='',final='',log=[],ended=false;
-  _cortexShowAll=false;
-  const push=(line)=>{
-    let t=String(line||'').trim();
-    const q=/^Quality loop skipped:?\s*(.*)$/i.exec(t);
-    if(q){
-      const why=(q[1]||'').replace(/^engine agent loop failed:\s*/i,'').replace(/\.$/,'');
-      t='Quality check skipped'+(why?': '+why:'')+'. Continued locally.';
-    }
-    if(t)cortexLogAppend(log,{t:'text',text:t});
-  };
-  // pending: name -> queue of calls opened by `tool_call` and still awaiting their `tool`
-  // result. Run-scoped, not segment-scoped, so a status event arriving mid-step resolves
-  // into the row that opened the call instead of counting the same call twice.
-  const pending=new Map();
-  const openSeg=()=>{
-    const last=log[log.length-1];
-    if(last&&last.t==='tools')return last;
-    return cortexLogAppend(log,{t:'tools',kinds:new Map(),calls:[]});
-  };
-  const noteCall=(seg,name,params)=>{
-    const k=seg.kinds.get(name)||{n:0,added:0,removed:0,hasDelta:false,failed:false};
-    k.n++;seg.kinds.set(name,k);
-    const call={name,params:params||null,result:null,ok:null,seg};
-    seg.calls.push(call);
-    return call;
-  };
-  try{
-    while(true){
-      const {done,value}=await reader.read();if(done)break;
-      buf+=dec.decode(value,{stream:true});
-      const chunks=buf.split('\n\n');buf=chunks.pop()||'';
-      for(const chunk of chunks){
-        const line=chunk.split('\n').find(l=>l.startsWith('data:'));
-        if(!line)continue;
-        let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
-        if(j.run_id&&!st.id){
-          st.id=+j.run_id;
-          try{localStorage.setItem(CORTEX_RUN_KEY,String(st.id))}catch(e){}
-        }
-        if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
-        if(j.type==='tool_call'){
-          const name=j.name||'tool';
-          const call=noteCall(openSeg(),name,j.params);
-          let q=pending.get(name);if(!q){q=[];pending.set(name,q)}
-          q.push(call);
-          cortexLogPaint(call.seg);
-        }
-        if(j.type==='tool'){
-          st.steps++;
-          const name=j.name||'tool';
-          const q=pending.get(name)||[];
-          const call=q.length?q.shift():noteCall(openSeg(),name,j.params);
-          const seg=call.seg;
-          call.result=j.result||{};
-          call.ok=j.result?j.result.ok:null;
-          const k=seg.kinds.get(name);
-          if(k){
-            const a=(j.result&&typeof j.result.added==='number')?j.result.added:null;
-            const rm=(j.result&&typeof j.result.removed==='number')?j.result.removed:null;
-            if(a!==null||rm!==null){k.hasDelta=true;k.added+=a||0;k.removed+=rm||0}
-            if(j.result&&j.result.ok===false)k.failed=true;
-          }
-          cortexLogPaint(seg);
-        }
-        if(j.type==='token'){final+=j.text||'';cortexPaintFinal(final)}
-        if(j.type==='done'){
-          ended=true;final=j.analysis||final;cortexPaintFinal(final);
-          const m=$('cortexOrchMeta');if(m){m.textContent=cortexMetaLine(j);m.style.display=''}
-          if(st===_cortexRun)cortexRunEnd('Finished.');
-        }
-        if(j.type==='stopped'){ended=true;push('Stopped.');if(st===_cortexRun)cortexRunEnd('Stopped. Nothing more will run.')}
-        if(j.type==='error'){
-          ended=true;push('✗ '+(j.text||'error'));
-          if(st===_cortexRun)cortexRunEnd('This run failed.');
-          cortexCardNote(j.text||'The agent hit an error.');
-        }
-      }
-    }
-  }catch(e){
-    if(st.stopped||st!==_cortexRun)return final;   // Stop pressed, or the page re-attached elsewhere
-  }
-  if(st!==_cortexRun)return final;
-  if(!ended){
-    // The connection ended before the run did. The run itself keeps going on the host.
-    cortexRunBusy(false);
-    const el=$('cortexOrchClock');
-    if(el)el.textContent='Lost the live view. The run keeps going. Open Cortex again to pick it up, or check Background tasks.';
-  }
-  cortexPaintFinal(final);
-  return final;
 }
 async function runCortexAgentStream(agent,prompt,{thinking_mode=cortexThinkingMode,max_steps=16,token_budget=4000,skill_pack='',task=''}={}){
   const tl=(agent.tools||[]).slice(0,6).join(' · ');
@@ -8078,6 +7984,103 @@ function showCortexRunRow(r){
   else{const rows=$('cortexOrchRows');if(rows)rows.innerHTML='<div class="cortex-row" style="opacity:.7">No steps were saved for this run.</div>'}
   _cortexShowAll=false;
   cortexPaintFinal(r.result||'');
+}
+/** Read one run's event stream into the card. Used for a fresh run and for re-attaching. */
+async function cortexReadRun(reader,live){
+  const st=_cortexRun;
+  const dec=new TextDecoder();let buf='',final='',log=[],ended=false;
+  _cortexShowAll=false;
+  const paintFinal=()=>{const fin=$('cortexOrchFinal');if(fin)cortexPaintFinal(final)};
+  const push=(line)=>{
+    let t=String(line||'').trim();
+    const q=/^Quality loop skipped:?\s*(.*)$/i.exec(t);
+    if(q){
+      let why=(q[1]||'').replace(/^engine agent loop failed:\s*/i,'').replace(/\.$/,'');
+      if(/offline|refused|has no \/api\/engine|CORTEX_API_URL|not the Cortex engine|Cortex down/i.test(why)&&!/model backend/i.test(why))why='Cortex is not running';
+      t='Quality check skipped'+(why?': '+why:'')+'. Continued locally.';
+    }
+    if(t)cortexLogAppend(log,{t:'text',text:t});
+  };
+  // pending: name -> queue of calls opened by `tool_call` and still awaiting their `tool`
+  // result. Run-scoped, not segment-scoped, so a status event arriving mid-step resolves
+  // into the row that opened the call instead of counting the same call twice.
+  const pending=new Map();
+  const openSeg=()=>{
+    const last=log[log.length-1];
+    if(last&&last.t==='tools')return last;
+    return cortexLogAppend(log,{t:'tools',kinds:new Map(),calls:[]});
+  };
+  const noteCall=(seg,name,params)=>{
+    const k=seg.kinds.get(name)||{n:0,added:0,removed:0,hasDelta:false,failed:false};
+    k.n++;seg.kinds.set(name,k);
+    const call={name,params:params||null,result:null,ok:null,seg};
+    seg.calls.push(call);
+    return call;
+  };
+  try{
+    while(true){
+      const {done,value}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const chunks=buf.split('\n\n');buf=chunks.pop()||'';
+      for(const chunk of chunks){
+        const line=chunk.split('\n').find(l=>l.startsWith('data:'));
+        if(!line)continue;
+        let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
+        if(j.run_id&&!st.id){
+          st.id=+j.run_id;
+          try{localStorage.setItem(CORTEX_RUN_KEY,String(st.id))}catch(e){}
+        }
+        if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
+        if(j.type==='tool_call'){
+          const name=j.name||'tool';
+          const call=noteCall(openSeg(),name,j.params);
+          let q=pending.get(name);if(!q){q=[];pending.set(name,q)}
+          q.push(call);
+          cortexLogPaint(call.seg);
+        }
+        if(j.type==='tool'){
+          st.steps++;
+          const name=j.name||'tool';
+          const q=pending.get(name)||[];
+          const call=q.length?q.shift():noteCall(openSeg(),name,j.params);
+          const seg=call.seg;
+          call.result=j.result||{};
+          call.ok=j.result?j.result.ok:null;
+          const k=seg.kinds.get(name);
+          if(k){
+            const a=(j.result&&typeof j.result.added==='number')?j.result.added:null;
+            const rm=(j.result&&typeof j.result.removed==='number')?j.result.removed:null;
+            if(a!==null||rm!==null){k.hasDelta=true;k.added+=a||0;k.removed+=rm||0}
+            if(j.result&&j.result.ok===false)k.failed=true;
+          }
+          cortexLogPaint(seg);
+        }
+        if(j.type==='token'){final+=j.text||'';paintFinal()}
+        if(j.type==='done'){
+          ended=true;final=j.analysis||final;paintFinal();
+          const m=$('cortexOrchMeta');if(m){m.textContent=cortexMetaLine(j);m.style.display=''}
+          if(st===_cortexRun)cortexRunEnd('Finished.');
+        }
+        if(j.type==='stopped'){ended=true;push('Stopped.');if(st===_cortexRun)cortexRunEnd('Stopped. Nothing more will run.')}
+        if(j.type==='error'){
+          ended=true;push('✗ '+(j.text||'error'));
+          if(st===_cortexRun)cortexRunEnd('This run failed.');
+          cortexCardNote(j.text||'The agent hit an error.');
+        }
+      }
+    }
+  }catch(e){
+    if(st.stopped||st!==_cortexRun)return final;   // Stop pressed, or the page re-attached elsewhere
+  }
+  if(st!==_cortexRun)return final;
+  if(!ended){
+    // The connection ended before the run did. The run itself keeps going on the host.
+    cortexRunBusy(false);
+    const el=$('cortexOrchClock');
+    if(el)el.textContent='Lost the live view. The run keeps going. Open Cortex again to pick it up, or check Background tasks.';
+  }
+  paintFinal();
+  return final;
 }
 async function ensureCortexAgent(name,text,caps,intent){
   const existing=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
@@ -9589,8 +9592,8 @@ async function routineDelete(id){
   }catch(e){toast('Delete failed')}
 }
 /** Plain words for why the routines list is empty. Never the raw error from Python. */
-function routinesOfflineWords(d){
-  if(d&&/host only/i.test(String(d.error||'')))return 'Routines run on the host computer only. Open AirGPT on the computer that runs it to use them.';
+function routinesOfflineWords(d,raw){
+  if(/host only/i.test(String(raw||(d&&d.error)||'')))return 'Routines run on the host computer only. Open AirGPT on the computer that runs it to use them.';
   const r=d&&d.reason;
   if(r==='wrong_surface'||r==='no_scheduler')return 'Cortex is running, but it has no scheduler, so routines cannot run. Check that the Cortex engine is the right one, then refresh.';
   return 'Cortex is not running, so routines cannot be listed or run right now. Open Apps and press Start Cortex for me, then refresh.';
@@ -9598,13 +9601,14 @@ function routinesOfflineWords(d){
 async function showRoutinesPage(){
   sideView='routines';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
-  let list=[], budget=null, offline=false, offlineWhy='', hostRows=[];
+  let list=[], budget=null, offline=false, offlineWhy='', hostRows=[], d0=null;
   try{
     const d=await api('/api/cortex/routines').then(x=>x.json());
+    d0=d;
     if(d&&d.ok){list=d.routines||[];budget=d.budget||null}
     // routines_list names the reason now (cortex_down / wrong_surface / no_scheduler);
     // guessing one at the banner was the #60 defect.
-    else{offline=true;offlineWhy=routinesOfflineWords(d)}
+    else{offline=true;offlineWhy=(d&&(d.error||d.hint))||''}
     hostRows=(d&&d.host_routines)||[];
   }catch(e){offline=true;offlineWhy='Could not reach AirGPT. Check the connection and refresh.'}
   const preview=_routinePreview?routinePreviewHtml(_routinePreview):'';
@@ -9619,7 +9623,7 @@ async function showRoutinesPage(){
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
     <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing. For always-on goal pursuit (no schedule needed), open <button type="button" class="btn" style="display:inline;padding:2px 8px;font-size:11px;border-radius:8px" onclick="showSeekPage()">Seek</button>.</p>
-    ${offline?`<p class="hint" style="color:#e03131">${esc(offlineWhy)}</p>`:''}
+    ${offline?`<p class="hint" style="color:#e03131">${esc(routinesOfflineWords(d0,offlineWhy))}</p>`:''}
     ${bud}
     ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
@@ -15986,7 +15990,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(a.prompt_tokens||a.completion_tokens) bits.push((a.prompt_tokens||0)+' in / '+(a.completion_tokens||0)+' out');
     return '<tr><td class="bgAudit" colspan="4">' +
       (bits.length ? '<div class="tl">'+esc(bits.join(' · '))+'</div>' : '') +
-      (a.excerpt ? '<div class="ex ai-block">'+(typeof renderMd === 'function' ? renderMd(a.excerpt) : esc(a.excerpt))+'</div>' : '') +
+      (a.excerpt ? '<div class="ex ai-block" style="overflow-wrap:anywhere;max-width:100%">'+(typeof renderMd === 'function' ? renderMd(a.excerpt) : esc(a.excerpt))+'</div>' : '') +
       (a.excerpt_chars && a.excerpt_chars > a.excerpt.length ? '<div class="tl">Shortened: showing '+a.excerpt.length+' of '+a.excerpt_chars+' characters.</div>' : '') +
       (tools || '<div class="tl">No tool calls recorded</div>') +
       (a.error ? '<div class="tl bad">'+esc(a.error)+'</div>' : '') +

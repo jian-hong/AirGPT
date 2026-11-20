@@ -4727,7 +4727,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import agent_runtime
                 import agent_store
-                rid = int(path.split("/")[4])
+                try:
+                    rid = int(path.split("/")[4])
+                except ValueError:
+                    return self._json(400, {"error": "bad run id"})
                 q = parse_qs(urlparse(self.path).query)
                 after = int((q.get("after") or ["0"])[0] or 0)
                 tail = agent_runtime.tail_run(rid, after)

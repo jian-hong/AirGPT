@@ -498,7 +498,7 @@ def start_background_run(agent_id: int, prompt: str, **kw) -> int:
 
     def push(ev: dict) -> None:
         with slot["cv"]:
-            if len(slot["events"]) < _BG_EVENTS:
+            if len(slot["events"]) < _BG_EVENTS or ev.get("type") in ("done", "error", "stopped"):
                 slot["events"].append(ev)
             slot["cv"].notify_all()
 
@@ -922,6 +922,10 @@ def _run_agent_events(
                     break
                 continue
 
+            if agent_store.is_cancelled(run_id):
+                # Stop landed while the model was thinking: do not run the tool it asked for.
+                yield _stopped_event(run_id, agent_id)
+                return
             call = _parse_tool_call(text)
             if call and call["tool"] in tools:
                 tname = call["tool"]
