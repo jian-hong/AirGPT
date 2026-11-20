@@ -72,7 +72,9 @@
    past one line, and over the Prompt panel, Settings and the drawer. phone.js
    keeps --phone-fab-b just above the message box; hide it while a panel is open. */
 @media(max-width:760px){
-  #bugReportBtn{top:auto!important;left:auto!important;right:12px!important;bottom:var(--phone-fab-b,120px)!important}
+  /* It rests in the empty strip beside the project tab, level with it, so it is never on message
+     text or on the waiting-message chip above the box (phone.js gives --phone-fab-b: the box top + 8px). */
+  #bugReportBtn{top:auto!important;left:auto!important;right:12px!important;bottom:calc(var(--phone-fab-b,120px) - 8px - var(--bump-height,34px))!important}
   /* Any open sheet hides it, not a list of the sheets that existed when this was
      written: it sat on the Edit button in the saved-prompts sheet. Every add-on
      sheet is a dialog with aria-modal that takes .open; the command box opens on its root. */
