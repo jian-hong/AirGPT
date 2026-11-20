@@ -4722,6 +4722,28 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200], "skills": []})
 
+        if path.startswith("/api/agents/runs/") and path.endswith("/events"):
+            # Re-attach to a run that is still going (or just finished) after a refresh.
+            try:
+                import agent_runtime
+                import agent_store
+                rid = int(path.split("/")[4])
+                q = parse_qs(urlparse(self.path).query)
+                after = int((q.get("after") or ["0"])[0] or 0)
+                tail = agent_runtime.tail_run(rid, after)
+                if tail is None:
+                    row = next((r for r in agent_store.list_runs(None, 200) if int(r["id"]) == rid), None)
+                    if not row:
+                        return self._json(404, {"error": "run not found"})
+                    return self._json(200, {"ok": True, "live": False, "run": row})
+                self._sse_begin()
+                for ev in tail:
+                    if not self._sse_send(ev):
+                        break
+                return self._sse_end()
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
+
         if path.startswith("/api/agents/") and path.endswith("/runs"):
             try:
                 import agent_store
@@ -6269,10 +6291,15 @@ class Handler(BaseHTTPRequestHandler):
                         backend = cursor_bridge.get_backend()
                 except Exception:
                     pass
-                self._sse_begin()
-                for ev in agent_runtime.run_agent_events(
+                import agent_store
+                if not agent_store.get_agent(aid):
+                    return self._json(404, {"error": "agent not found"})
+                # The run lives on its own thread; this connection only watches it, so a
+                # closed page no longer ends the work. Stop = /api/workflows/cancel.
+                rid = agent_runtime.start_background_run(
                     aid,
                     prompt,
+                    task=str(data.get("task") or ""),
                     session_id=session_id,
                     thinking_mode=thinking_mode,
                     max_steps=max(1, min(int(data.get("max_steps") or settings.get("max_steps") or 8), 20)),
@@ -6286,7 +6313,9 @@ class Handler(BaseHTTPRequestHandler):
                     skill_override=str(data.get("skill_pack") or data.get("skill_override") or ""),
                     parent_run_id=int(data.get("parent_run_id") or 0),
                     is_subagent=bool(data.get("is_subagent")),
-                ):
+                )
+                self._sse_begin()
+                for ev in agent_runtime.tail_run(rid):
                     if not self._sse_send(ev):
                         break
                 return self._sse_end()
