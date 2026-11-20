@@ -32,7 +32,7 @@
     var old=chat.querySelectorAll('.turn-last-user,.turn-last-ai,.turn-no-reply');
     for(var i=0;i<old.length;i++)old[i].classList.remove('turn-last-user','turn-last-ai','turn-no-reply');
     try{if(typeof syncEditChip==='function')syncEditChip()}catch(e){}
-    if(chat.querySelector('#ai-stream,#pending-user,#sendFailCard'))return;
+    if(chat.querySelector('#ai-stream,#pending-user,#sendFailCard,#gen-note'))return;  // a reply is still coming (maybe from another tab)
     var rows=chat.querySelectorAll('.msg[id^="msg-"]');
     if(!rows.length)return;
     var last=rows[rows.length-1];

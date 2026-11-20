@@ -14525,8 +14525,8 @@ function renderMarkdownLite(t){
 // A reply that failed stays visible under the question until the next send, with what
 // to do next. It used to be a 2.4 s toast only, so a first-time user with no API key
 // sent a message and saw nothing happen.
-let sendFailure=null; // {sid, text, msg}
-function noteSendFailure(text,msg){sendFailure={sid:0,text:String(text||''),msg:String(msg||'')}}
+let sendFailure=null; // {sid, text, msg, ids: files sent with it, replace: id of the question being edited}
+function noteSendFailure(text,msg,extra){sendFailure={sid:0,text:String(text||''),msg:String(msg||''),ids:[...((extra&&extra.attachment_ids)||[])],replace:(extra&&extra.replace_msg_id)||0}}
 function sendFailureCopy(msg){
   if(/No text LLM available|no key|api key|unauthori[sz]ed|\b401\b|\b403\b/i.test(msg))
     return {title:'No AI model is ready',body:isLocalHost()?'Add an API key for a provider (Groq, Google, OpenRouter and others have free tiers), or start a local model. Then try again.':'The computer running AirGPT has no AI model ready. Ask its owner to add an API key.',key:isLocalHost()};
@@ -14544,9 +14544,11 @@ function paintSendFailure(){
   const msgs=chat.querySelectorAll('.msg');
   const last=msgs[msgs.length-1];
   // A reply that arrived later (the sync loop) settles it.
-  if(last&&last.classList.contains('ai-msg')&&last.id!=='ai-stream'){sendFailure=null;old?.remove();return}
+  // (A failed edit sits under the old answer, which is meant to stay.)
+  if(!f.replace&&last&&last.classList.contains('ai-msg')&&last.id!=='ai-stream'){sendFailure=null;old?.remove();return}
   if(old){chat.appendChild(old);return}
   const c=sendFailureCopy(f.msg);
+  if(f.replace)c.body='Your edit was not saved. Your earlier question and answer are still here. '+c.body;
   chat.insertAdjacentHTML('beforeend',`<div class="send-fail" id="sendFailCard" role="alert">
     <div class="send-fail-head"><span class="send-fail-ico" aria-hidden="true">!</span><strong>${esc(c.title)}</strong></div>
     <p>${esc(c.body)}</p>
@@ -14563,6 +14565,15 @@ function paintSendFailure(){
 async function retryFailedSend(){
   const f=sendFailure;if(!f)return;
   sendFailure=null;$('sendFailCard')?.remove();
+  if(f.replace){   // the old question is still there: ask the same edit again, with its files
+    document.getElementById('pending-user')?.remove();
+    const inp=$('input');if(!inp)return;
+    inp.value=f.text;inp.dispatchEvent(new Event('input'));
+    resumeEdit(f.replace,f.sid,f.text,f.ids);
+    send();
+    return;
+  }
+  retryIds=[...(f.ids||[])];   // the same files go with the same question
   // Ask again without leaving the unanswered copy of the question behind.
   const mine=[...($('chat')?.querySelectorAll('.msg.me[id^="msg-"]')||[])].pop();
   const id=mine&&parseInt(mine.id.slice(4),10);
@@ -14573,6 +14584,7 @@ async function retryFailedSend(){
   inp.value=f.text;inp.dispatchEvent(new Event('input'));
   send();
 }
+let retryIds=[];   // file ids the next send carries (Try again on a failed send)
 async function reconcileAfterSendFail(errToast){
   restoreUnsentText();
   hideThinking();
@@ -15016,7 +15028,7 @@ async function sendStream(text,extra={},again=false){
       document.getElementById('pending-user')?.remove();
       toast('Stopped');
       updateQueueHint();updateMsgJumpBar();
-      return {ok:true, opened:true, stopped:true};
+      return {ok:true, opened:true, stopped:true, saved:!!stoppedPayload.saved};
     }
     if(hadError||!donePayload){
       // Tokens arrived but connection dropped before done — still treat as success
@@ -15027,7 +15039,7 @@ async function sendStream(text,extra={},again=false){
         // on it — it now persists the answer even if this socket died (common on a
         // phone over a Cloudflare quick tunnel). Saying "no reply, check your API
         // keys" would be a lie; the reply arrives via the sync loop shortly.
-        if(hadError)noteSendFailure(text,errMsg);
+        if(hadError)noteSendFailure(text,errMsg,extra);
         await reconcileAfterSendFail(
           hadError ? errMsg
                    : 'Connection dropped mid-answer — it will appear here when the model finishes.');
@@ -15035,7 +15047,7 @@ async function sendStream(text,extra={},again=false){
       }
     }
     if(!(donePayload.analysis||tokens||'').trim()){
-      noteSendFailure(text,'Empty reply from the model.');
+      noteSendFailure(text,'Empty reply from the model.',extra);
       await reconcileAfterSendFail('Empty reply — check API keys / connection');
       return {ok:false, opened:true};
     }
@@ -15923,6 +15935,7 @@ function lastTurnIds(){
 // there is no second copy of it, and the old reply goes when the new one is saved.
 async function regenerateLast(){
   if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  if(document.getElementById('gen-note'))return toast('AirGPT is still answering in this chat. Wait for it or press Stop.');
   const t=lastTurnIds();
   if(!t.q||!currentSession)return toast('There is nothing to ask again.');
   const old=t.ai?document.getElementById('msg-'+t.ai):null;
@@ -15937,14 +15950,20 @@ async function regenerateLast(){
 }
 // Edit: the question goes back in the box. Sending it swaps the old question and its
 // answer for the new ones; the server does the swap (replace_msg_id).
-let editingMsgId=0,editingSession=0;
-function clearEdit(){editingMsgId=0;editingSession=0;document.getElementById('editChip')?.remove()}
+let editingMsgId=0,editingSession=0,editCarryIds=[];
+function clearEdit(){editingMsgId=0;editingSession=0;editCarryIds=[];document.getElementById('editChip')?.remove()}
 function syncEditChip(){
-  if(editingMsgId&&editingSession!==currentSession)clearEdit();
+  if(editingMsgId&&editingSession!==currentSession){
+    // Leaving the chat drops the edit, so the edit text must not come back as a plain draft
+    // (Enter on it would ask the same question a second time).
+    clearComposerDraft('s:'+editingSession);
+    clearEdit();
+  }
   purgeStaleQueue();
 }
 function editLastUser(){
   if(aiPending||sendInFlight)return toast('Wait for the reply to finish first.');
+  if(document.getElementById('gen-note'))return toast('AirGPT is still answering in this chat. Wait for it or press Stop.');
   const t=lastTurnIds();
   if(!t.q||!currentSession)return toast('There is nothing to edit.');
   const inp=$('input');if(!inp)return;
@@ -15953,12 +15972,24 @@ function editLastUser(){
   inp.value=t.text;
   try{autoGrowInput();updateSendVisibility()}catch(e){}
   inp.focus();
+  showEditChip();
+}
+function showEditChip(){
   document.getElementById('editChip')?.remove();
   const comp=document.querySelector('.composer-wrap')||document.querySelector('.composer');
   if(comp)comp.insertAdjacentHTML('beforebegin','<div class="msg-queue-hint edit-chip" id="editChip"><span>Editing your last message. Sending it replaces that message and its answer.</span><button type="button" id="editChipCancel">Cancel</button></div>');
   document.getElementById('editChipCancel')?.addEventListener('click',()=>{
     clearEdit();const i=$('input');if(i){i.value='';try{autoGrowInput();updateSendVisibility()}catch(e){}}
   });
+}
+// An edit that did not go through: the old question and answer are still there, so the
+// box and the edit chip come back (with the files it had), and Enter tries the same edit again.
+function resumeEdit(id,sess,text,ids){
+  if(!id||currentSession!==sess)return;
+  editingMsgId=id;editingSession=sess;editCarryIds=[...(ids||[])];
+  const inp=$('input');
+  if(inp&&!inp.value.trim()){inp.value=text;try{autoGrowInput();updateSendVisibility()}catch(e){}}
+  showEditChip();
 }
 async function ensureChatSession(){
   if(currentSession)return currentSession;
@@ -15981,7 +16012,7 @@ async function send(forced){
   _unsentText=queued?'':($('input')?.value||'');
   try{return await _sendInner(forced)}
   finally{
-    _unsentText='';
+    _unsentText='';retryIds=[];
     if(!queued){
       // A draft that was sent must not come back after a reload; one that was not sent stays.
       const el=$('input'),cur=draftKey();
@@ -16060,7 +16091,7 @@ async function _sendInner(forced){
       hint='Tip: /skill <pack> global|project';
     if(hint){toast(hint);window._cmdHintMute=true;setTimeout(()=>{window._cmdHintMute=false},25000)}
   }
-  if(sendInFlight){if(hasFiles)toast('Files can be sent when the reply finishes.');return}
+  if(sendInFlight){if(hasFiles)toast(text?'Your text stays in the box. Send it after this reply, or remove the file to queue it.':'Files can be sent when the reply finishes.');return}
   trackPref('project',currentMode(),'use');
   if(text){
     const qIdx=QUESTIONS_OF_THE_DAY.indexOf(text);
@@ -16093,6 +16124,11 @@ async function _sendInner(forced){
     if(!text)return;
   }
   if(!text)return;
+  // Files travel with the turn: a retried send brings the ones it had, and an edit that
+  // failed after its new file was uploaded brings that file again.
+  if(retryIds.length){attachIds=[...retryIds,...attachIds];retryIds=[]}
+  const editSess=editingSession,editCarry=editCarryIds;
+  if(editingMsgId&&editSess===currentSession&&!replyContext&&!contextIds.length&&editCarry.length)attachIds=[...editCarry,...attachIds];
   // Manual mode stays Manual — only AI when toggle is on
   if(aiMode){
     if(info.online===false&&!info.has_ai_keys){restoreUnsentText();toast('AI needs internet or API keys in Settings');return}
@@ -16112,6 +16148,9 @@ async function _sendInner(forced){
     try{
       const streamResult=await sendStream(text,extra);
       turnOk=!!streamResult.ok;
+      // An edit that saved nothing (model down, busy chat, stopped before any text) left the
+      // old question and answer in place: bring the edit back so Enter can try it again.
+      if(extra.replace_msg_id&&!(streamResult.ok&&!(streamResult.stopped&&!streamResult.saved)))resumeEdit(extra.replace_msg_id,editSess,text,attachIds);
       // Stream opened ⇒ user row already in DB. Never re-POST the same text.
       // Rate-limit pause ⇒ keep chat history, do not fallback.
       if(streamResult.ok||streamResult.opened||streamResult.paused)return;
