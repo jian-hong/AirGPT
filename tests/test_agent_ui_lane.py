@@ -231,5 +231,29 @@ class OutlivePageTests(unittest.TestCase):
         self.assertIsNone(agent_runtime.tail_run(999999))
 
 
+class CardTests(unittest.TestCase):
+    def _run(self, **kw):
+        base = {"id": 3, "agent_id": 1, "status": "done", "prompt": "mine", "result": "ok", "error": "",
+                "created_at": 1.0, "finished_at": 4.0, "steps": "[]"}
+        base.update(kw)
+        return workflow_engine._agent_card(base, {1: {"name": "A"}})
+
+    def test_card_counts_real_tools_and_names_the_runner(self):
+        steps = json.dumps([{"tool": "think", "ok": True, "summary": "Cortex quality loop…"},
+                            {"tool": "web_search", "ok": True, "summary": "5 results", "ms": 9}])
+        card = self._run(steps=steps)
+        self.assertEqual(card["totals"]["tools_real"], 1)
+        self.assertEqual(card["runner"], "Cortex")
+        self.assertEqual(self._run()["runner"], "local model")
+
+    def test_card_shows_the_users_text_not_the_wrapper_and_flags_a_cut_answer(self):
+        wrapped = "Cortex create turn for \u201cX\u201d.\nUser: my own words\n\nPriority order (mandatory): ..."
+        card = self._run(prompt=wrapped, result="x" * 9000)
+        self.assertEqual(card["description"], "my own words")
+        ag = card["phases"][0]["agents"][0]
+        self.assertEqual(len(ag["excerpt"]), 8000)
+        self.assertEqual(ag["excerpt_chars"], 9000)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -745,7 +745,7 @@ def _run_agent_events(
                 yield {
                     "type": "tool",
                     "name": str(t.get("tool") or "tool"),
-                    "result": {"ok": t.get("ok"), "summary": t.get("summary")},
+                    "result": {"ok": t.get("ok"), "summary": t.get("summary"), "ms": int(t.get("ms") or 0)},
                 }
             analysis = str(cortex.get("content") or cortex.get("output") or "")
             yield {"type": "token", "text": analysis}

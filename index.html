@@ -5234,15 +5234,15 @@ async function showProjectFocus(key){
         </section>
         <section class="proj-card" id="projCardScheduled">
           <div class="proj-card-hd">
-            <h4>Scheduled</h4>
-            <button type="button" class="icon-btn" title="Create scheduled task" data-call="openProjectScheduleEditor" data-arg="${esc(key)}">+</button>
+            <h4>Saved tasks</h4>
+            <button type="button" class="icon-btn" title="Save a task (it does not run by itself)" data-call="openProjectScheduleEditor" data-arg="${esc(key)}">+</button>
           </div>
           ${sched.length
             ?sched.map((t,i)=>`<div class="proj-sched-item"><strong>${esc(t.name||'Task')}</strong>
                 <span class="hint">${esc(t.frequency||'Manual')}</span>
                 <button type="button" class="icon-btn" style="display:inline-grid;margin-left:6px" title="Delete" data-call="removeProjectSchedule" data-args="${esc(JSON.stringify([key,i]))}">✕</button>
               </div>`).join('')
-            :`<p class="hint">Set up recurring tasks for this project.</p>`}
+            :`<p class="hint">Save tasks for this project. They do not run by themselves yet.</p>`}
         </section>
       </aside>
     </div>
@@ -5377,7 +5377,7 @@ window.removeProjectContext=async(key,idx)=>{
 window.openProjectScheduleEditor=(key)=>{
   openProjModal({
     title:'Create scheduled task',
-    sub:'Stored on this device for this project. Frequency is a label for now — Manual means you run it.',
+    sub:'Saved for this project. It does not run by itself yet: the frequency is only a label, and you start the task yourself.',
     bodyHtml:`<label class="hint" style="display:block;margin-bottom:4px">Name</label>
       <input type="text" id="projSchedName" placeholder="Daily briefing"/>
       <label class="hint" style="display:block;margin:10px 0 4px">Instructions</label>
@@ -6149,7 +6149,11 @@ async function renderCortexSideAgents(){
   if($('historyHint'))$('historyHint').textContent='pinned';
   let agents=[],runs=[];
   try{agents=await loadPinnedAgents(true)}catch(e){}
-  try{runs=(await api('/api/cortex/runs?limit=80').then(r=>r.json())).runs||[]}catch(e){}
+  try{
+    const rr=await api('/api/cortex/runs?limit=80');
+    if(rr.status===403){box.innerHTML='<div class="empty">'+esc(CORTEX_HOST_ONLY)+'</div>';return}
+    runs=(await rr.json()).runs||[];
+  }catch(e){}
   const byAgent={};
   (agents||[]).forEach(a=>{byAgent[String(a.id)]={agent:a,runs:[]}});
   (runs||[]).forEach(r=>{
@@ -6175,9 +6179,9 @@ async function renderCortexSideAgents(){
       </div>
       <div class="hist-day-body"><div class="sec-morph-inner">${
         (tools?`<div style="padding:4px 12px 6px;display:flex;flex-wrap:wrap;gap:4px">${tools}</div>`:'')+
-        (rows.length?rows.map(r=>`<div class="session-item" data-open-agent="${aid}" role="button" tabindex="0">
-          <div class="h-title">${esc(String(r.prompt||'Run').slice(0,52))}</div>
-          <small>${esc(r.status||'')} · ${esc(String(r.created_at||'').slice(0,16))}</small>
+        (rows.length?rows.map(r=>`<div class="session-item" data-open-run="${Number(r.id)||0}" role="button" tabindex="0">
+          <div class="h-title">${esc(cortexRunTitle(r.prompt).slice(0,52))}</div>
+          <small>${esc(r.status||'')} · ${esc(cortexRunWhen(r.created_at))}</small>
         </div>`).join('')
         :`<div class="empty" style="padding:10px;font-size:11px">No runs yet</div>`)+
         `<div style="display:flex;gap:6px;padding:6px 10px 10px">
@@ -6190,6 +6194,10 @@ async function renderCortexSideAgents(){
   const agentById={};agents.forEach(a=>{agentById[String(a.id)]=a});
   box.querySelectorAll('[data-open-agent]').forEach(el=>{
     el.onclick=e=>{e.stopPropagation();const a=agentById[el.getAttribute('data-open-agent')];if(a)openPinnedAgent(a)};
+  });
+  const runById={};(runs||[]).forEach(r=>{runById[String(r.id)]=r});
+  box.querySelectorAll('[data-open-run]').forEach(el=>{
+    el.onclick=e=>{e.stopPropagation();showCortexRunRow(runById[el.getAttribute('data-open-run')])};
   });
   box.querySelectorAll('[data-unpin-agent]').forEach(el=>{
     el.onclick=e=>{e.stopPropagation();toggleAgentPin(+el.getAttribute('data-unpin-agent'),false)};
@@ -7259,8 +7267,8 @@ async function showCortexAgentChat(){
   clearReplyContext();
   contextIds=[];contextLabels={};renderCtx();
   window._cortexActiveAgent=window._cortexActiveAgent||getCortexActiveAgent();
-  let agents=[];
-  try{agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[]}catch(e){}
+  let agents=[],hostOnly=false;
+  try{const ar=await api('/api/agents');if(ar.status===403)hostOnly=true;else agents=(await ar.json().catch(()=>({agents:[]}))).agents||[]}catch(e){}
   const chips=cortexSuggestionChips().map(s=>`<button type="button" data-call="useCortexSuggestion" data-arg="${esc(s)}">${esc(s)}</button>`).join('');
   const active=window._cortexActiveAgent;
   const activeLine=active?`<p class="hint" style="margin:0 0 12px">Active: <strong>${esc(active.name||'agent')}</strong> — follow-ups continue this agent. Say “new agent …” to spawn another.</p>`:'';
@@ -7269,6 +7277,7 @@ async function showCortexAgentChat(){
   // The old page stacked four full-width sections and every one of them was open.
   $('chat').innerHTML=`<div class="cortex-page cortex-agent-home chat-page-enter">
     <h2>Cortex</h2>
+    ${hostOnly?`<p class="status-standby" style="margin:0 0 12px;font-size:13px">${esc(CORTEX_HOST_ONLY)}</p>`:''}
     <p class="cortex-tag">Describe what you want; Cortex picks the tools. Agents are the thing you keep — skills and subagents are how one run is shaped.</p>
     ${activeLine}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
@@ -7292,6 +7301,7 @@ async function showCortexAgentChat(){
   applyPlaceholder({force:true});
   updateSendVisibility();
   setTimeout(()=>$('input')?.focus(),80);
+  if(!hostOnly)reattachCortexRun();
 }
 /** Subagents already spawned. Same fold shape as skills so the page reads as one list. */
 function cortexSubagentsHtml(subs){
@@ -7682,7 +7692,9 @@ async function assembleCortexCapabilities(text,intent){
     views:['web_search','vault_read',...(tools.includes('rag_search')?['rag_search']:[])],
   };
 }
-function buildCortexOrchestrationPrompt(userText,agentName,intent,caps){
+function buildCortexOrchestrationPrompt(userText,agentName,intent,caps,agentTools){
+  // An agent that was not given web_search must not be told to search the web.
+  const web=!Array.isArray(agentTools)||agentTools.includes('web_search');
   const skillIds=(caps.skills||[]).map(s=>s.id||s.name).filter(Boolean).join(', ')||'(none matched — discover via web_search + vault_read)';
   const mcp=(caps.mcp_wanted||[]).join(', ')||'none requested';
   const organs=Object.entries(caps.organs||{}).map(([k,v])=>k+': '+(v||[]).join(', ')).join(' · ');
@@ -7691,7 +7703,7 @@ function buildCortexOrchestrationPrompt(userText,agentName,intent,caps){
     `User: ${userText}`,
     '',
     'Priority order (mandatory):',
-    '1) WEB SEARCH FIRST — use web_search before guessing. Find tools, APIs, docs, MCP/server options online.',
+    web?'1) WEB SEARCH FIRST — use web_search before guessing. Find tools, APIs, docs, MCP/server options online.':'1) This agent has no web search. Do not use the web; work only from the request and the tools it has.',
     '2) Vault organs — vault_read for prior notes/skills; vault_write lasting plans.',
     '3) Assemble hands/tools/views for THIS task only: '+organs,
     '4) Skills available locally: '+skillIds+'. Load/adapt; if missing, web_search how to build the skill.',
@@ -7711,12 +7723,18 @@ function ensureCortexLiveCard(title,subtitle){
     chat.insertAdjacentHTML('beforeend',`<div class="cortex-page chat-page-enter"><div class="cortex-card" id="cortexOrchCard">
       <p id="cortexOrchEcho" style="margin:0 0 8px;font-size:13px;white-space:pre-wrap"></p>
       <p id="cortexOrchEngine" class="status-standby" style="margin:0 0 8px;font-size:13px;display:none">The Cortex engine is not running on this computer, so some steps may be skipped. To turn it on, open Apps and press Start Cortex for me.</p>
+      <p id="cortexOrchNote" class="status-standby" style="margin:0 0 8px;font-size:13px;display:none"></p>
       <h3 id="cortexOrchTitle" style="margin:0 0 8px">${esc(title)}</h3>
       <p class="hint" id="cortexOrchSub" style="margin:0 0 8px">${esc(subtitle)}</p>
       <div class="cortex-cap-chips" id="cortexCapChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px;min-height:24px">
+        <span id="cortexOrchClock" class="hint" style="flex:1;margin:0"></span>
+        <button type="button" class="btn" id="cortexStopBtn" data-call="stopCortexRun" style="display:none;width:auto;flex:none;padding:3px 14px;font-size:12px;border-radius:8px">Stop</button>
+      </div>
       <div id="cortexOrchLive" style="font-size:12px;max-height:360px;overflow:auto;margin:0">
         <div id="cortexOrchRows"><div class="cortex-row cortex-row-start" style="opacity:.7">Starting…</div></div>
-        <div id="cortexOrchFinal" style="white-space:pre-wrap;margin:10px 0 0;display:none"></div>
+        <div id="cortexOrchFinal" class="ai-block" style="margin:10px 0 0;display:none;overflow-wrap:anywhere"></div>
+        <div id="cortexOrchMeta" class="hint" style="margin:6px 0 0;display:none"></div>
       </div>
     </div></div>`);
     live=$('cortexOrchLive');
@@ -7758,15 +7776,30 @@ function cortexToolSummary(seg){
   const open=seg.calls.filter(c=>c.result===null).length;
   return cortexToolMark(seg.kinds.keys())+' '+total+' '+(total===1?'tool:':'tools:')+' '+bits.join(', ')+(open?' …':'');
 }
+/** One short line for a tool result: its own summary, else its error, else a few plain facts. */
+function cortexResultLine(res){
+  if(!res||typeof res!=='object')return '';
+  const pick=res.summary||res.error||res.preview||res.message||'';
+  if(pick)return String(pick);
+  const bits=[];
+  if(res.path)bits.push(String(res.path));
+  if(Array.isArray(res.snippets))bits.push(res.snippets.length+' result'+(res.snippets.length===1?'':'s'));
+  if(typeof res.added==='number'||typeof res.removed==='number')bits.push('+'+(res.added||0)+' -'+(res.removed||0));
+  return bits.join(' · ');
+}
+function cortexArgsLine(p){
+  if(!p||typeof p!=='object')return '';
+  return Object.keys(p).slice(0,4).map(k=>k+': '+String(typeof p[k]==='object'?JSON.stringify(p[k]):p[k]).slice(0,120)).join(' · ');
+}
 function cortexCallDetailHtml(calls){
   if(!calls.length)return '<div class="hint">no detail</div>';
   return calls.map(c=>{
-    let p='';try{p=c.params&&Object.keys(c.params).length?JSON.stringify(c.params):''}catch(e){p=''}
-    let r='';try{r=c.result?JSON.stringify(c.result):''}catch(e){r=''}
+    let a='',r='';try{a=cortexArgsLine(c.params)}catch(e){}try{r=cortexResultLine(c.result)}catch(e){}
+    const ms=c.result&&typeof c.result.ms==='number'&&c.result.ms>0?' <span style="opacity:.6">'+(c.result.ms>=1000?(c.result.ms/1000).toFixed(1)+' s':c.result.ms+' ms')+'</span>':'';
     return '<div class="cortex-call" style="margin:6px 0 0;padding-left:8px;border-left:2px solid rgba(127,127,127,.35)">'
-      +'<b>'+esc(c.name)+'</b>'+(c.ok===false?' <span style="color:#e06c6c">failed</span>':'')
-      +(p?'<div style="opacity:.75;word-break:break-word">args '+esc(p.slice(0,700))+'</div>':'')
-      +(r?'<div style="opacity:.75;word-break:break-word">→ '+esc(r.slice(0,700))+'</div>':'<div style="opacity:.5">→ running…</div>')
+      +'<b>'+esc(c.name)+'</b>'+(c.ok===false?' <span style="color:#e06c6c">failed</span>':'')+ms
+      +(a?'<div style="opacity:.75;word-break:break-word">'+esc(a.slice(0,500))+'</div>':'')
+      +(c.result?(r?'<div style="opacity:.75;word-break:break-word">'+esc(r.slice(0,500))+'</div>':''):'<div style="opacity:.5">running…</div>')
       +'</div>';
   }).join('');
 }
@@ -7801,6 +7834,7 @@ function resetCortexLiveLog(){
   const rows=$('cortexOrchRows');const fin=$('cortexOrchFinal');
   if(rows)rows.innerHTML='<div class="cortex-row cortex-row-start" style="opacity:.7">Starting…</div>';
   if(fin){fin.textContent='';fin.style.display='none'}
+  const meta=$('cortexOrchMeta');if(meta){meta.textContent='';meta.style.display='none'}
 }
 function renderCortexCapChips(caps){
   const host=$('cortexCapChips');if(!host||!caps)return;
@@ -7812,22 +7846,89 @@ function renderCortexCapChips(caps){
   ];
   host.innerHTML=bits.map(b=>`<span class="cr-tool${b.hi?' hi':''}">${esc(b.k)}</span>`).join('');
 }
-async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps=16,token_budget=4000,skill_pack=''}={}){
-  const live=ensureCortexLiveCard(agent.name||'Cortex','web_search → vault → hands → verify');
-  resetCortexLiveLog();
-  const body={prompt,session_id:currentSession||0,thinking_mode,max_steps,token_budget};
-  if(skill_pack)body.skill_pack=skill_pack;
-  else if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
-  const r=await fetch(API()+'/api/agents/'+agent.id+'/run',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId(),'Accept':'text/event-stream'},
-    body:JSON.stringify(body),
-  });
-  if(!r.ok||!r.body){toast('Run failed ('+r.status+')');return ''};
-  const reader=r.body.getReader();const dec=new TextDecoder();let buf='',final='',log=[];
+/* ---- Agent run card: clock, Stop, answer, re-attach ---- */
+const CORTEX_RUN_KEY='airgpt_cortex_run';
+const CORTEX_SHOW_CHARS=8000;
+let _cortexRun={id:0,ac:null,timer:0,t0:0,steps:0,engineUp:false,stopped:false};
+let _cortexFinalText='';let _cortexShowAll=false;
+const CORTEX_HOST_ONLY='Agents run on the host computer only. Open AirGPT on the computer that runs it to use them.';
+function cortexCardNote(text){const n=$('cortexOrchNote');if(!n)return;n.textContent=text||'';n.style.display=text?'':'none'}
+function cortexRunWhen(ts){
+  const n=+ts;if(!n)return '';
+  try{return new Date(n*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return ''}
+}
+/** Old runs stored the long wrapper as their prompt; show only what the person typed. */
+function cortexRunTitle(prompt){
+  const t=String(prompt||'');
+  const m=/^Cortex \w+ turn for [^\n]*\nUser: ([^\n]*)/.exec(t);
+  return (m?m[1]:t).trim()||'Run';
+}
+function cortexClock(){
+  const el=$('cortexOrchClock');if(!el||!_cortexRun.t0)return;
+  const sec=Math.floor((Date.now()-_cortexRun.t0)/1000);
+  el.textContent='Working… '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')
+    +(_cortexRun.engineUp&&!_cortexRun.steps?' · Cortex lists its steps when it finishes.':'');
+}
+function cortexRunBusy(on){
+  clearInterval(_cortexRun.timer);_cortexRun.timer=0;
+  const stop=$('cortexStopBtn');if(stop){stop.style.display=on?'':'none';stop.disabled=false}
+  if(on){_cortexRun.t0=Date.now();cortexClock();_cortexRun.timer=setInterval(cortexClock,1000)}
+  else _cortexRun.t0=0;
+}
+function cortexRunEnd(text){
+  cortexRunBusy(false);
+  const el=$('cortexOrchClock');if(el)el.textContent=text||'';
+  try{localStorage.removeItem(CORTEX_RUN_KEY)}catch(e){}
+}
+function cortexHostOnlyCard(){
+  ensureCortexLiveCard('Cortex','');
+  const rows=$('cortexOrchRows');if(rows)rows.innerHTML='';
+  cortexRunEnd('');
+  cortexCardNote(CORTEX_HOST_ONLY);
+}
+function cortexPaintFinal(text){
+  _cortexFinalText=String(text||'');
+  const fin=$('cortexOrchFinal');if(!fin)return;
+  const cut=!_cortexShowAll&&_cortexFinalText.length>CORTEX_SHOW_CHARS;
+  const shown=cut?_cortexFinalText.slice(0,CORTEX_SHOW_CHARS):_cortexFinalText;
+  fin.innerHTML=renderMd(shown)+(cut?`<p class="hint">Showing the first ${CORTEX_SHOW_CHARS.toLocaleString()} of ${_cortexFinalText.length.toLocaleString()} characters. <button type="button" class="btn" style="padding:2px 10px;font-size:11px" data-call="cortexShowAllAnswer">Show all</button></p>`:'');
+  fin.style.display=_cortexFinalText?'':'none';
+  const live=$('cortexOrchLive');if(live)live.scrollTop=live.scrollHeight;
+}
+function cortexShowAllAnswer(){_cortexShowAll=true;cortexPaintFinal(_cortexFinalText)}
+function cortexMetaLine(j){
+  const n=(j.steps||[]).filter(x=>x&&x.tool!=='think').length;
+  let who;
+  if(j.runner==='agent_task')who='Answered by Cortex'+(j.own_tools?', which used its own tools (not this agent’s list)':'')+(j.quality_passed===false?'. Its quality check did not pass':'');
+  else if(j.runner==='app_scaffold')who='Built by the app builder';
+  else who='Answered by your local model'+(j.model?' ('+j.model+')':'');
+  return who+' · '+n+' tool step'+(n===1?'':'s');
+}
+async function stopCortexRun(){
+  const id=_cortexRun.id;if(!id)return;
+  const b=$('cortexStopBtn');if(b)b.disabled=true;
+  try{
+    const r=await api('/api/workflows/cancel',{method:'POST',body:JSON.stringify({task_id:'agent_run_'+id})});
+    if(r.status===403){cortexHostOnlyCard();return}
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.ok===false){toast(j.error||'Could not stop that run');if(b)b.disabled=false;return}
+    _cortexRun.stopped=true;
+    try{_cortexRun.ac&&_cortexRun.ac.abort()}catch(e){}
+    cortexRunEnd('Stopped. Anything already saved stays; nothing more will run.');
+  }catch(e){toast('Could not stop. Try again.');if(b)b.disabled=false}
+}
+/** Read one run's event stream into the card. Used for a fresh run and for re-attaching. */
+async function cortexReadRun(reader,live){
+  const st=_cortexRun;
+  const dec=new TextDecoder();let buf='',final='',log=[],ended=false;
+  _cortexShowAll=false;
   const push=(line)=>{
     let t=String(line||'').trim();
-    if(/^Quality loop skipped/i.test(t)){console.info('[cortex] '+t);t='The final quality check was skipped because the Cortex engine is not available.'}
+    const q=/^Quality loop skipped:?\s*(.*)$/i.exec(t);
+    if(q){
+      const why=(q[1]||'').replace(/^engine agent loop failed:\s*/i,'').replace(/\.$/,'');
+      t='Quality check skipped'+(why?': '+why:'')+'. Continued locally.';
+    }
     if(t)cortexLogAppend(log,{t:'text',text:t});
   };
   // pending: name -> queue of calls opened by `tool_call` and still awaiting their `tool`
@@ -7846,53 +7947,137 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode='deep',max_steps
     seg.calls.push(call);
     return call;
   };
-  const paintFinal=()=>{
-    const fin=$('cortexOrchFinal');
-    if(!fin)return;
-    fin.textContent=(final||'').slice(0,8000);
-    fin.style.display=final?'':'none';
-    if(live)live.scrollTop=live.scrollHeight;
-  };
-  while(true){
-    const {done,value}=await reader.read();if(done)break;
-    buf+=dec.decode(value,{stream:true});
-    const chunks=buf.split('\n\n');buf=chunks.pop()||'';
-    for(const chunk of chunks){
-      const line=chunk.split('\n').find(l=>l.startsWith('data:'));
-      if(!line)continue;
-      let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
-      if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
-      if(j.type==='tool_call'){
-        const name=j.name||'tool';
-        const call=noteCall(openSeg(),name,j.params);
-        let q=pending.get(name);if(!q){q=[];pending.set(name,q)}
-        q.push(call);
-        cortexLogPaint(call.seg);
-      }
-      if(j.type==='tool'){
-        const name=j.name||'tool';
-        const q=pending.get(name)||[];
-        const call=q.length?q.shift():noteCall(openSeg(),name,j.params);
-        const seg=call.seg;
-        call.result=j.result||{};
-        call.ok=j.result?j.result.ok:null;
-        const k=seg.kinds.get(name);
-        if(k){
-          const a=(j.result&&typeof j.result.added==='number')?j.result.added:null;
-          const rm=(j.result&&typeof j.result.removed==='number')?j.result.removed:null;
-          if(a!==null||rm!==null){k.hasDelta=true;k.added+=a||0;k.removed+=rm||0}
-          if(j.result&&j.result.ok===false)k.failed=true;
+  try{
+    while(true){
+      const {done,value}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const chunks=buf.split('\n\n');buf=chunks.pop()||'';
+      for(const chunk of chunks){
+        const line=chunk.split('\n').find(l=>l.startsWith('data:'));
+        if(!line)continue;
+        let j={};try{j=JSON.parse(line.slice(5).trim())}catch(e){continue}
+        if(j.run_id&&!st.id){
+          st.id=+j.run_id;
+          try{localStorage.setItem(CORTEX_RUN_KEY,String(st.id))}catch(e){}
         }
-        cortexLogPaint(seg);
+        if(j.type==='status'||j.type==='thinking')push((j.text||j.type||'').trim());
+        if(j.type==='tool_call'){
+          const name=j.name||'tool';
+          const call=noteCall(openSeg(),name,j.params);
+          let q=pending.get(name);if(!q){q=[];pending.set(name,q)}
+          q.push(call);
+          cortexLogPaint(call.seg);
+        }
+        if(j.type==='tool'){
+          st.steps++;
+          const name=j.name||'tool';
+          const q=pending.get(name)||[];
+          const call=q.length?q.shift():noteCall(openSeg(),name,j.params);
+          const seg=call.seg;
+          call.result=j.result||{};
+          call.ok=j.result?j.result.ok:null;
+          const k=seg.kinds.get(name);
+          if(k){
+            const a=(j.result&&typeof j.result.added==='number')?j.result.added:null;
+            const rm=(j.result&&typeof j.result.removed==='number')?j.result.removed:null;
+            if(a!==null||rm!==null){k.hasDelta=true;k.added+=a||0;k.removed+=rm||0}
+            if(j.result&&j.result.ok===false)k.failed=true;
+          }
+          cortexLogPaint(seg);
+        }
+        if(j.type==='token'){final+=j.text||'';cortexPaintFinal(final)}
+        if(j.type==='done'){
+          ended=true;final=j.analysis||final;cortexPaintFinal(final);
+          const m=$('cortexOrchMeta');if(m){m.textContent=cortexMetaLine(j);m.style.display=''}
+          if(st===_cortexRun)cortexRunEnd('Finished.');
+        }
+        if(j.type==='stopped'){ended=true;push('Stopped.');if(st===_cortexRun)cortexRunEnd('Stopped. Nothing more will run.')}
+        if(j.type==='error'){
+          ended=true;push('✗ '+(j.text||'error'));
+          if(st===_cortexRun)cortexRunEnd('This run failed.');
+          cortexCardNote(j.text||'The agent hit an error.');
+        }
       }
-      if(j.type==='token'){final+=j.text||'';paintFinal()}
-      if(j.type==='done'){final=j.analysis||final;paintFinal()}
-      if(j.type==='error'){toast(j.text||'Agent error');push('✗ '+(j.text||'error'))}
     }
+  }catch(e){
+    if(st.stopped||st!==_cortexRun)return final;   // Stop pressed, or the page re-attached elsewhere
   }
-  // The grouped rows stay. The final analysis renders BELOW them, never over them.
-  paintFinal();
+  if(st!==_cortexRun)return final;
+  if(!ended){
+    // The connection ended before the run did. The run itself keeps going on the host.
+    cortexRunBusy(false);
+    const el=$('cortexOrchClock');
+    if(el)el.textContent='Lost the live view. The run keeps going. Open Cortex again to pick it up, or check Background tasks.';
+  }
+  cortexPaintFinal(final);
   return final;
+}
+async function runCortexAgentStream(agent,prompt,{thinking_mode=cortexThinkingMode,max_steps=16,token_budget=4000,skill_pack='',task=''}={}){
+  const tl=(agent.tools||[]).slice(0,6).join(' · ');
+  const live=ensureCortexLiveCard(agent.name||'Cortex',tl?('Tools: '+tl):'This agent’s own tools');
+  resetCortexLiveLog();
+  try{_cortexRun.ac&&_cortexRun.ac.abort()}catch(e){}
+  _cortexRun={id:0,ac:new AbortController(),timer:0,t0:0,steps:0,engineUp:!_cortexEngineDown,stopped:false};
+  cortexRunBusy(true);
+  const body={prompt,task,session_id:currentSession||0,thinking_mode,max_steps,token_budget};
+  if(skill_pack)body.skill_pack=skill_pack;
+  else if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
+  let r;
+  try{
+    r=await fetch(API()+'/api/agents/'+agent.id+'/run',{
+      method:'POST',signal:_cortexRun.ac.signal,
+      headers:{'Content-Type':'application/json','X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId(),'Accept':'text/event-stream'},
+      body:JSON.stringify(body),
+    });
+  }catch(e){cortexRunEnd('');cortexCardNote('Could not reach AirGPT. Check the connection and try again.');return ''}
+  if(r.status===403){
+    const ej=await r.clone().json().catch(()=>({}));
+    if(ej&&ej.by){cortexRunEnd('');cortexCardNote(ej.error||'The host turned AI off.');return ''}
+    cortexHostOnlyCard();return '';
+  }
+  if(!r.ok||!r.body){cortexRunEnd('');cortexCardNote('The run could not start ('+r.status+'). Try again.');return ''}
+  return cortexReadRun(r.body.getReader(),live);
+}
+/** After a refresh or a view switch: pick up the run that is still going (or just finished). */
+async function reattachCortexRun(){
+  let id=0;try{id=+localStorage.getItem(CORTEX_RUN_KEY)||0}catch(e){}
+  if(!id)return;
+  try{_cortexRun.ac&&_cortexRun.ac.abort()}catch(e){}
+  const ac=new AbortController();
+  let r;try{r=await api('/api/agents/runs/'+id+'/events',{signal:ac.signal})}catch(e){return}
+  if(r.status===403)return;
+  if(!r.ok){try{localStorage.removeItem(CORTEX_RUN_KEY)}catch(e){}return}
+  if((r.headers.get('content-type')||'').includes('json')){
+    const j=await r.json().catch(()=>({}));
+    try{localStorage.removeItem(CORTEX_RUN_KEY)}catch(e){}
+    if(j&&j.run)showCortexRunRow(j.run);
+    return;
+  }
+  ensureCortexLiveCard('Run in progress','Picked up where you left off');
+  resetCortexLiveLog();
+  _cortexRun={id,ac,timer:0,t0:0,steps:0,engineUp:false,stopped:false};
+  cortexRunBusy(true);
+  cortexReadRun(r.body.getReader(),$('cortexOrchLive'));
+}
+/** Show one saved run: its steps and its answer, from the run history. */
+function showCortexRunRow(r){
+  if(!r)return;
+  _cortexUserText=cortexRunTitle(r.prompt);
+  ensureCortexLiveCard('Run · '+(r.status||''),cortexRunWhen(r.created_at));
+  resetCortexLiveLog();
+  cortexRunEnd('');
+  cortexCardNote(r.status==='cancelled'?'This run was stopped.':(r.status==='error'?(r.error||'This run failed.'):''));
+  let steps=[];try{steps=JSON.parse(r.steps||'[]')}catch(e){}
+  const log=[];const seg={t:'tools',kinds:new Map(),calls:[]};
+  steps.filter(x=>x&&x.tool&&x.tool!=='think').forEach(x=>{
+    const k=seg.kinds.get(x.tool)||{n:0,added:0,removed:0,hasDelta:false,failed:false};
+    k.n++;if(x.ok===false)k.failed=true;seg.kinds.set(x.tool,k);
+    seg.calls.push({name:x.tool,params:null,result:{ok:x.ok,summary:x.summary,ms:x.ms},ok:x.ok,seg});
+  });
+  if(seg.calls.length)cortexLogAppend(log,seg);
+  else{const rows=$('cortexOrchRows');if(rows)rows.innerHTML='<div class="cortex-row" style="opacity:.7">No steps were saved for this run.</div>'}
+  _cortexShowAll=false;
+  cortexPaintFinal(r.result||'');
 }
 async function ensureCortexAgent(name,text,caps,intent){
   const existing=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
@@ -7935,15 +8120,16 @@ async function ensureCortexAgent(name,text,caps,intent){
         agent.config=Object.assign({},agent.config,{routine_id:rid,scheduler:r.scheduler||'cortex'});
         let linked=false;
         try{const lr=await api('/api/agents/'+agent.id,{method:'PATCH',body:JSON.stringify({config:agent.config})});linked=lr.ok}catch(e){}
-        if(!linked)toast('Scheduled, but the link to this agent was not saved');
+        if(!linked)cortexCardNote('Scheduled, but the link to this agent was not saved.');
         const when=(r.routine&&(r.routine.schedule_text||r.routine.next_run_at))||r.schedule_text||r.next_run_at||'';
         const host=r.scheduler==='airgpt_host'?' (host clock)':'';
         if(linked)toast('Scheduled'+host+(when?(' — '+String(when).slice(0,40)):''));
       }else{
-        toast('Agent saved, but NOT scheduled: '+((r&&(r.error||r.hint))||'Cortex engine offline'));
+        const why=(r&&r.reason==='cortex_down')||!r||!(r.error||r.hint)?'Cortex is not running.':String(r.error||r.hint);
+        cortexCardNote('Agent saved, but NOT scheduled: '+why+' It will not repeat on its own until Cortex is running. Start it from Apps, then ask again.');
       }
     }catch(e){
-      toast('Agent saved, but NOT scheduled — Cortex engine unreachable');
+      cortexCardNote('Agent saved, but NOT scheduled: Cortex could not be reached. Start it from Apps, then ask again.');
     }
   }
   setCortexActiveAgent(agent);
@@ -7966,47 +8152,60 @@ async function ensureCortexConcierge(caps){
   return agent;
 }
 /** Main Cortex brain — every chat turn */
+async function cortexAgentTools(id){
+  try{
+    const list=(await api('/api/agents').then(r=>r.json())).agents||[];
+    const a=list.find(x=>+x.id===+id);
+    return a&&Array.isArray(a.tools)?a.tools:null;
+  }catch(e){return null}
+}
 async function handleCortexChat(text){
   _cortexUserText=String(text||'').trim();
-  try{const h=await api('/api/cortex/health').then(r=>r.json());_cortexEngineDown=!(h&&(h.ok||h.status==='live'||h.status==='ok'))}catch(e){_cortexEngineDown=true}
+  cortexCardNote('');
+  try{
+    const hr=await api('/api/cortex/health');
+    if(hr.status===403){cortexHostOnlyCard();return false}
+    const h=await hr.json();_cortexEngineDown=!(h&&(h.ok||h.status==='live'||h.status==='ok'));
+  }catch(e){_cortexEngineDown=true}
   const intent=classifyCortexIntent(text);
   const caps=await assembleCortexCapabilities(text,intent);
   renderCortexCapChips(caps);
   try{
     if(intent==='continue'){
       const active=window._cortexActiveAgent||getCortexActiveAgent();
-      if(!active){return handleCortexChatCreate(text,caps,'create')}
-      toast('Continuing “'+(active.name||'agent')+'” · web_search on');
-      ensureCortexLiveCard('Continue · '+(active.name||'agent'),'Bias: continue chat · tools from task');
+      if(!active){return await handleCortexChatCreate(text,caps,'create')}
+      ensureCortexLiveCard('Continue · '+(active.name||'agent'),'Continuing this agent');
       renderCortexCapChips(caps);
-      const prompt=buildCortexOrchestrationPrompt(text,active.name||'agent','continue',caps);
-      await runCortexAgentStream(active,prompt,{thinking_mode:'deep',max_steps:12,token_budget:3200,skill_pack:caps.skill_pack});
+      const prompt=buildCortexOrchestrationPrompt(text,active.name||'agent','continue',caps,await cortexAgentTools(active.id));
+      await runCortexAgentStream(active,prompt,{max_steps:12,token_budget:3200,skill_pack:caps.skill_pack,task:text});
       refreshCortexRight();
       return true;
     }
     if(intent==='chat'){
-      toast('Cortex auto-respond · web_search first');
       const agent=await ensureCortexConcierge(caps);
-      if(!agent){toast('No concierge agent');return false}
-      ensureCortexLiveCard('Cortex · auto-respond','Eyes: web_search + vault · then hands if needed');
+      if(!agent){cortexCardNote('Could not open the Cortex helper agent. Try again.');return false}
+      ensureCortexLiveCard('Cortex · auto-respond','Answering with the helper agent’s tools');
       renderCortexCapChips(caps);
-      const prompt=buildCortexOrchestrationPrompt(text,'Cortex Concierge','chat',caps);
-      await runCortexAgentStream(agent,prompt,{thinking_mode:'deep',max_steps:10,token_budget:2800,skill_pack:caps.skill_pack});
+      const prompt=buildCortexOrchestrationPrompt(text,'Cortex Concierge','chat',caps,await cortexAgentTools(agent.id));
+      await runCortexAgentStream(agent,prompt,{max_steps:10,token_budget:2800,skill_pack:caps.skill_pack,task:text});
       refreshCortexRight();
       return true;
     }
-    return handleCortexChatCreate(text,caps,intent);
-  }catch(e){toast((e&&e.message)||'Cortex failed');return false}
+    return await handleCortexChatCreate(text,caps,intent);
+  }catch(e){
+    const m=String((e&&e.message)||'');
+    cortexCardNote(/host only/i.test(m)?CORTEX_HOST_ONLY:('Cortex could not finish that: '+(m||'unknown error')));
+    cortexRunEnd('');
+    return false;
+  }
 }
 async function handleCortexChatCreate(text,caps,intent){
   const name=deriveAgentNameFromPrompt(text);
-  toast((intent==='schedule'?'Scheduling':'Creating')+' “'+name+'” · assembling organs…');
-  ensureCortexLiveCard((intent==='schedule'?'Scheduler':'Agent')+' · '+name,'web_search (primary) → vault skills → hands/MCP → verify');
+  ensureCortexLiveCard((intent==='schedule'?'Scheduler':'Agent')+' · '+name,'Setting up the agent');
   renderCortexCapChips(caps);
   const agent=await ensureCortexAgent(name,text,caps,intent);
-  const prompt=buildCortexOrchestrationPrompt(text,name,intent,caps);
-  await runCortexAgentStream(agent,prompt,{thinking_mode:'deep',max_steps:16,token_budget:4000,skill_pack:caps.skill_pack});
-  toast('“'+name+'” ready');
+  const prompt=buildCortexOrchestrationPrompt(text,name,intent,caps,agent.tools||caps.tools);
+  await runCortexAgentStream(agent,prompt,{max_steps:16,token_budget:4000,skill_pack:caps.skill_pack,task:text});
   refreshCortexRight();
   try{
     const agents=(await api('/api/agents').then(r=>r.json()).catch(()=>({agents:[]}))).agents||[];
@@ -9389,6 +9588,13 @@ async function routineDelete(id){
     showRoutinesPage();
   }catch(e){toast('Delete failed')}
 }
+/** Plain words for why the routines list is empty. Never the raw error from Python. */
+function routinesOfflineWords(d){
+  if(d&&/host only/i.test(String(d.error||'')))return 'Routines run on the host computer only. Open AirGPT on the computer that runs it to use them.';
+  const r=d&&d.reason;
+  if(r==='wrong_surface'||r==='no_scheduler')return 'Cortex is running, but it has no scheduler, so routines cannot run. Check that the Cortex engine is the right one, then refresh.';
+  return 'Cortex is not running, so routines cannot be listed or run right now. Open Apps and press Start Cortex for me, then refresh.';
+}
 async function showRoutinesPage(){
   sideView='routines';updateSideNav();closeSide();
   const crp=$('cortexRightPanel');if(crp)crp.style.display='none';
@@ -9398,11 +9604,11 @@ async function showRoutinesPage(){
     if(d&&d.ok){list=d.routines||[];budget=d.budget||null}
     // routines_list names the reason now (cortex_down / wrong_surface / no_scheduler);
     // guessing one at the banner was the #60 defect.
-    else{offline=true;offlineWhy=(d&&(d.error||d.hint))||''}
+    else{offline=true;offlineWhy=routinesOfflineWords(d)}
     hostRows=(d&&d.host_routines)||[];
-  }catch(e){offline=true;offlineWhy='Could not reach the AirGPT host'}
+  }catch(e){offline=true;offlineWhy='Could not reach AirGPT. Check the connection and refresh.'}
   const preview=_routinePreview?routinePreviewHtml(_routinePreview):'';
-  const cards=list.map(routineCardHtml).join('')||'<p class="hint">No routines yet. Type one sentence below and preview it.</p>';
+  const cards=list.map(routineCardHtml).join('')||(offline?'':'<p class="hint">No routines yet. Type one sentence below and preview it.</p>');
   const bud=budget?`<p class="hint" style="margin:0 0 10px">Today's spend: RM${esc(String(budget.spent_myr??budget.spent??0))} / RM${esc(String(budget.cap_myr??budget.cap??25))}</p>`:'';
   // Legacy AirGPT-host rows are no longer creatable, but rows already on disk must
   // stay visible or the founder cannot reach them to delete (SHELL-02 #60).
@@ -9413,7 +9619,7 @@ async function showRoutinesPage(){
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Routines</h2>
     <p class="cortex-tag">Recurring work from one sentence. Cortex schedules it, races the first run, and pauses itself if it keeps failing. For always-on goal pursuit (no schedule needed), open <button type="button" class="btn" style="display:inline;padding:2px 8px;font-size:11px;border-radius:8px" onclick="showSeekPage()">Seek</button>.</p>
-    ${offline?`<p class="hint" style="color:#e03131">Cortex scheduler is not available — ${esc(offlineWhy||'start :8010, then refresh')}</p>`:''}
+    ${offline?`<p class="hint" style="color:#e03131">${esc(offlineWhy)}</p>`:''}
     ${bud}
     ${preview||routineComposerHtml()}
     <div class="routine-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">${cards}</div>
@@ -15756,21 +15962,32 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
 
   function cancelTask(id){
     fetch('/api/workflows/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({task_id:id})}).then(poll).catch(function(){});
+      body: JSON.stringify({task_id:id})}).then(function(r){ return r.json().catch(function(){return {};}); })
+      .then(function(j){ if(j && j.ok === false && j.error && window.toast) window.toast(j.error); poll(); })
+      .catch(function(){ if(window.toast) window.toast('Could not stop that task. Try again.'); });
+  }
+  function when(ts){
+    var n = +ts; if(!n) return '';
+    try{ return new Date(n*1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}); }catch(e){ return ''; }
+  }
+  function realTools(a){
+    var d = a.tool_detail;
+    return d ? d.filter(function(td){ return td.tool !== 'think'; }) : null;
   }
 
   function auditHtml(t, a){
     var ak = t.id+':'+(a.node_id||a.id);
     if(!agentOpen[ak]) return '';
-    var tools = (a.tool_detail || []).map(function(td){
-      return '<div class="tl'+(td.ok===false?' bad':'')+'">'+esc(td.tool||'?')+' · '+(td.ms||0)+'ms — '+esc(td.summary||'')+'</div>';
+    var tools = (realTools(a) || []).map(function(td){
+      return '<div class="tl'+(td.ok===false?' bad':'')+'">'+esc(td.tool||'?')+(td.ms?' · '+td.ms+'ms':'')+' — '+esc(td.summary||'')+'</div>';
     }).join('');
     var bits = [];
     if(a.model) bits.push('model '+a.model+(a.tier?' / '+a.tier:''));
     if(a.prompt_tokens||a.completion_tokens) bits.push((a.prompt_tokens||0)+' in / '+(a.completion_tokens||0)+' out');
     return '<tr><td class="bgAudit" colspan="4">' +
       (bits.length ? '<div class="tl">'+esc(bits.join(' · '))+'</div>' : '') +
-      (a.excerpt ? '<div class="ex">'+esc(a.excerpt)+'</div>' : '') +
+      (a.excerpt ? '<div class="ex ai-block">'+(typeof renderMd === 'function' ? renderMd(a.excerpt) : esc(a.excerpt))+'</div>' : '') +
+      (a.excerpt_chars && a.excerpt_chars > a.excerpt.length ? '<div class="tl">Shortened: showing '+a.excerpt.length+' of '+a.excerpt_chars+' characters.</div>' : '') +
       (tools || '<div class="tl">No tool calls recorded</div>') +
       (a.error ? '<div class="tl bad">'+esc(a.error)+'</div>' : '') +
       '</td></tr>';
@@ -15782,7 +15999,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
         var ak = t.id+':'+(a.node_id||a.id);
         return '<tr class="agent-row" data-ak="'+esc(ak)+'"><td><span class="st '+cls(a.status)+'"></span>'+esc(a.id) +
           (a.purpose ? '<span class="pp">'+esc(a.purpose)+'</span>' : '') + '</td>' +
-          '<td>'+fmtTok(a.tokens)+'</td><td>'+(a.tool_count||0)+'</td>' +
+          '<td>'+fmtTok(a.tokens)+'</td><td>'+(realTools(a) ? realTools(a).length : (a.tool_count||0))+'</td>' +
           '<td>'+fmtSec(a.elapsed)+'</td></tr>' + auditHtml(t, a);
       }).join('') + '</tbody></table>';
   }
@@ -15800,12 +16017,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   function taskHtml(t){
     var tot = t.totals || {};
     return '<div class="bgCard"><div class="bgTitle"><span>'+esc(t.name)+'</span><span class="sp"></span>' +
-      (t.status==='running' && String(t.id).indexOf('agent_run_')!==0
-        ? '<button class="bgX" data-cancel="'+esc(t.id)+'" title="Cancel">&#9723;</button>' : '') +
+      (t.status==='running'
+        ? '<button class="bgX" data-cancel="'+esc(t.id)+'" title="Stop" aria-label="Stop">Stop</button>' : '') +
       '</div>' +
       '<div class="bgMeta"><span>'+esc(t.kind||'Workflow')+'</span><span>'+fmtSec(t.elapsed)+'</span>' +
+      (t.started_at ? '<span>'+esc(when(t.started_at))+'</span>' : '') +
+      (t.runner ? '<span>'+esc(t.runner)+'</span>' : '') +
       '<span>'+(tot.agents||0)+' agents</span><span>'+fmtTok(tot.tokens)+' tokens'+(t.tokens_estimated?' ~':'')+'</span>' +
-      '<span>'+(tot.tools||0)+' tools</span></div>' +
+      '<span>'+(t.status==='running' && t.source==='cortex_agent' && !(tot.tools_real||0) ? 'working…' : ((tot.tools_real!==undefined?tot.tools_real:(tot.tools||0))+' tools'))+'</span></div>' +
       '<div class="bgDesc">'+esc(t.description)+'</div>' +
       '<div class="bgLabel">Phases <span style="opacity:.6">'+(tot.phases_done||0)+'/'+(tot.phases_total||0)+'</span></div>' +
       (t.phases||[]).map(function(p){ return phaseHtml(t, p); }).join('') +
@@ -15851,8 +16070,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   }
 
   function poll(){
-    fetch('/api/workflows/tasks').then(function(r){return r.json()})
-      .then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
+    fetch('/api/workflows/tasks').then(function(r){
+      if(r.status === 403){
+        var list = panel.querySelector('#bgTasksList');
+        if(list) list.innerHTML = '<div class="bgEmpty">Agents run on the host computer only. Open AirGPT on the computer that runs it to see background tasks.</div>';
+        return null;
+      }
+      return r.json();
+    }).then(function(d){ if(d && d.ok) render(d); }).catch(function(){});
   }
 
   window.bgTasks = {
