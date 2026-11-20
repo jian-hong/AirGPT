@@ -173,6 +173,58 @@ class TurnFileEdgesNoOldFiles(SeamsBase):
         self.assertNotIn("secret-plan", repr(evs))
 
 
+class FreshSendOverTheCap(SeamsBase):
+    def test_fresh_send_of_fourteen_files_names_the_two_left_out(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(14)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "list them", "attachment_ids": ids})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        blob = repr(evs)
+        self.assertIn("Only 12 files can go with one question. These were left out: f12.txt, f13.txt.", blob)
+        saved = [m["text"] for m in self.rows(sid) if m["source"] == "ai"]
+        self.assertTrue(any("f13.txt" in (t or "") for t in saved), saved)
+
+    def test_fresh_send_of_twelve_files_says_nothing(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(12)]
+        code, evs, _ = self.post("/api/chat/stream", {"session_id": sid, "text": "list them", "attachment_ids": ids})
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertNotIn("left out", repr(evs))
+
+    def test_fresh_send_note_never_names_another_chats_file(self):
+        a, b = self.new_chat(), self.new_chat()
+        theirs = self.file_row(b, "secret-plan.txt", "x")
+        ids = [self.file_row(a, f"f{n:02d}.txt", "w")["id"] for n in range(12)] + [theirs["id"]]
+        code, evs, _ = self.post("/api/chat/stream", {"session_id": a, "text": "q", "attachment_ids": ids})
+        self.assertNotIn("secret-plan", repr(evs))
+
+
+    def test_fresh_send_repeated_file_is_not_called_left_out(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(12)]
+        code, evs, _ = self.post("/api/chat/stream", {"session_id": sid, "text": "q", "attachment_ids": ids + [ids[0], ids[0]]})
+        self.assertEqual(code, 200)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertNotIn("left out", repr(evs))
+
+    def test_plain_messages_fallback_names_the_left_out_files_too(self):
+        sid = self.new_chat()
+        ids = [self.file_row(sid, f"f{n:02d}.txt", "w")["id"] for n in range(14)]
+        seen = {}
+        orig = clipdrop.queue_text_chat
+        clipdrop.queue_text_chat = lambda *a, **k: seen.update(k)
+        try:
+            code, _, out = self.post("/api/messages", {"ai_mode": True, "text": "list", "session_id": sid,
+                                                       "attachment_ids": ids})
+        finally:
+            clipdrop.queue_text_chat = orig
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(seen["attachments"]), 12)
+        saved = [m["text"] for m in self.rows(sid) if m["source"] == "ai"]
+        self.assertTrue(any("left out: f12.txt, f13.txt." in (t or "") for t in saved), saved)
+
+
 class FailedEditKeepsTheOldTurn(SeamsBase):
     def broken(self, question, mode, history, abort, **kw):
         yield {"type": "error", "text": "No text LLM available"}
