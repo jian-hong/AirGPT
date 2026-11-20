@@ -1,0 +1,163 @@
+{
+  "bench": "paraphrase_bench",
+  "seed": 1,
+  "top_k": 5,
+  "n_facts": 64,
+  "n_questions": 256,
+  "index_fingerprint": {
+    "schema_version": 2,
+    "chunker": {
+      "name": "parent_child_sentence",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40,
+      "table": false
+    },
+    "embed": {
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
+    },
+    "extra": {
+      "pack": "paraphrase_bench"
+    },
+    "id": "d89d8a69d7804e6c"
+  },
+  "honesty": "retrieval only, hash embedder, synthetic facts, hand-written paraphrases, no model call. Counts on 64 facts, not rates: a score here says nothing about real documents. Measures; rag/ was not tuned to it.",
+  "styles": {
+    "verbatim": {
+      "n": 64,
+      "recall_at_1": 64,
+      "recall_at_5": 64
+    },
+    "synonym": {
+      "n": 64,
+      "recall_at_1": 26,
+      "recall_at_5": 45
+    },
+    "lower_typo": {
+      "n": 64,
+      "recall_at_1": 40,
+      "recall_at_5": 49
+    },
+    "property": {
+      "n": 64,
+      "recall_at_1": 5,
+      "recall_at_5": 17
+    }
+  },
+  "types": {
+    "md": {
+      "verbatim": {
+        "n": 16,
+        "recall_at_1": 16,
+        "recall_at_5": 16
+      },
+      "synonym": {
+        "n": 16,
+        "recall_at_1": 10,
+        "recall_at_5": 16
+      },
+      "lower_typo": {
+        "n": 16,
+        "recall_at_1": 16,
+        "recall_at_5": 16
+      },
+      "property": {
+        "n": 16,
+        "recall_at_1": 0,
+        "recall_at_5": 4
+      }
+    },
+    "docx": {
+      "verbatim": {
+        "n": 16,
+        "recall_at_1": 16,
+        "recall_at_5": 16
+      },
+      "synonym": {
+        "n": 16,
+        "recall_at_1": 5,
+        "recall_at_5": 10
+      },
+      "lower_typo": {
+        "n": 16,
+        "recall_at_1": 12,
+        "recall_at_5": 16
+      },
+      "property": {
+        "n": 16,
+        "recall_at_1": 5,
+        "recall_at_5": 10
+      }
+    },
+    "pdf": {
+      "verbatim": {
+        "n": 16,
+        "recall_at_1": 16,
+        "recall_at_5": 16
+      },
+      "synonym": {
+        "n": 16,
+        "recall_at_1": 10,
+        "recall_at_5": 16
+      },
+      "lower_typo": {
+        "n": 16,
+        "recall_at_1": 12,
+        "recall_at_5": 16
+      },
+      "property": {
+        "n": 16,
+        "recall_at_1": 0,
+        "recall_at_5": 3
+      }
+    },
+    "xlsx": {
+      "verbatim": {
+        "n": 16,
+        "recall_at_1": 16,
+        "recall_at_5": 16
+      },
+      "synonym": {
+        "n": 16,
+        "recall_at_1": 1,
+        "recall_at_5": 3
+      },
+      "lower_typo": {
+        "n": 16,
+        "recall_at_1": 0,
+        "recall_at_5": 1
+      },
+      "property": {
+        "n": 16,
+        "recall_at_1": 0,
+        "recall_at_5": 0
+      }
+    }
+  },
+  "sample_misses": {
+    "verbatim": [],
+    "synonym": [
+      "[docx] Which service class applies when the Quibaxyth account asks for assistance?",
+      "[docx] Which route do goods for the Ulajorbax account travel along?",
+      "[docx] Which rebate level does the Sarvormik account fall under?",
+      "[docx] Which identifier marks the party that owns the Zerhallon agreement?"
+    ],
+    "lower_typo": [
+      "[xlsx] what is the retention period for the jortasgqn account?",
+      "[xlsx] what is the escalation code for the qxikelmik account?",
+      "[xlsx] what is the billing cycle for the wexhaldax account?",
+      "[xlsx] what is the renewal window for the halsenwen account?"
+    ],
+    "property": [
+      "[md] What is the retention period for the account whose headquarters city is Tromso?",
+      "[md] What is the escalation code for the account whose headquarters city is Kragero?",
+      "[md] What is the billing cycle for the account whose headquarters city is Lillesand?",
+      "[md] What is the renewal window for the account whose headquarters city is Haugesund?"
+    ]
+  }
+}

@@ -6437,7 +6437,11 @@ class Handler(BaseHTTPRequestHandler):
                         saved.append(dest)
                 if not saved:
                     return self._json(400, {"error": "no files in upload"})
-                out = rag_ingest.ingest_paths(sid, saved, force=str(form.get("force") or "") not in ("0", "false"))
+                # Adding files must never wipe the space. `force` used to default ON, so
+                # any caller that did not send force=0 cleared every earlier chunk while
+                # the sources list went on showing the old files. Rebuild is its own route.
+                force = str(form.get("force") or "").strip().lower() in ("1", "true")
+                out = rag_ingest.ingest_paths(sid, saved, force=force)
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})

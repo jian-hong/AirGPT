@@ -22,18 +22,27 @@
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
    Prompt lens, fork/export, chat instructions, saved prompts, command
-   box. Whole-app audit 2026-11-13: 156 findings, 9 fix lanes merged.
-   Other web pages cannot act as the host; share guests are default-deny;
-   one gate for GET/POST/PATCH/DELETE. Branch re-reviewed independently:
-   12 confirmed defects fixed. A failed reply now shows a card with the
-   next step. Not verified: real tunnel, real phone, real provider, live
-   Cortex. Owner decisions: P14-P21.
+   box; whole-app audit (156 findings) fixed; cross-site guard, share
+   guests default-deny, one gate for every method. Includes PR #90 since
+   2026-11-20 (code merged clean, full suite green). Not verified: real
+   tunnel, real phone, real provider, live Cortex. Owner calls: P14-P21.
+6. **RAG reliability (PR #90, draft, merged into #91).** Synthetic
+   benches, hash embedder: 16 file types 480/480 top-5 cited; sheet
+   chunks keep headers; 8 languages top-5 26-30 of 30 (Arabic rank-1
+   weak). Chunker changed: index fingerprint schema 2, older scores not
+   comparable; n=320 NOT re-run.
+7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
+   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
+   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
 
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
+2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
+   reliability epic and `pypdf`; re-score n=320 on the new chunker.
+3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP
 
@@ -47,6 +56,4 @@ D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 - F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
 - DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
 
-## Demo open
-
-- `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.
+Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.

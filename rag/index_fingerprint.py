@@ -24,7 +24,15 @@ from typing import Any
 
 # Bump when a change alters chunk boundaries or vector meaning in a way the
 # fields below do not already capture. Never reuse a value.
-SCHEMA_VERSION = 1
+#   1  character-count chunker: window cut by chars/4, header row only on the first
+#      row window, xlsx empty cells dropped
+#   2  sentence chunker: whole-sentence windows sized by per-script token estimate,
+#      the sheet header row on every row window, xlsx empty cells kept in place
+SCHEMA_VERSION = 2
+
+# Name of the chunking algorithm. Scores stamped with the old name ("parent_child")
+# are reported as not comparable, with this field in the reasons, not silently mixed.
+CHUNKER_NAME = "parent_child_sentence"
 
 # Defaults mirror rag.chunking.parent_child_chunk. Recorded rather than assumed,
 # so a caller that overrides them produces a different id instead of a silent
@@ -62,7 +70,7 @@ def _tokenizer_id() -> str:
 
 def fingerprint(
     *,
-    chunker: str = "parent_child",
+    chunker: str = CHUNKER_NAME,
     child_tokens: int = DEFAULT_CHILD_TOKENS,
     parent_max_tokens: int = DEFAULT_PARENT_MAX_TOKENS,
     child_overlap: int = DEFAULT_CHILD_OVERLAP,

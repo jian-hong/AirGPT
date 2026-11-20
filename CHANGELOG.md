@@ -167,6 +167,86 @@ decisions and were not built (PARKING_LOT P14-P19, PR #91 body).
   called `_standard_llm`, which appended it again. `_effective_system` is now
   the one place that adds it, once.
 - `tests/test_prompt_trace.py`: 17 tests.
+## 2026-11-13 -- Wave 3: chunks keep their meaning, in any script
+
+- Chunker is now `parent_child_sentence`. Every sheet row window carries its
+  header row (3% -> 100% of windows); prose is cut at sentence ends, not by
+  character count (PDF facts on the old cut 8/15 -> 15/15 whole); the size
+  budget is per script (Chinese chunks were up to 926 tokens, now 200); xlsx
+  keeps empty cells in their column. Index fingerprint is schema 2, so older
+  retained scores read as not comparable.
+- Near-identical table rows are no longer dropped from search as duplicates.
+- Ontology: non-Latin headers get real keys (they were all ""), CJK dates,
+  tsv / json / xml records as tables, relations across file types.
+- Multilingual: an exact-match channel for names in scripts without capitals
+  (zh rank 1 8 -> 19 of 30, th 11 -> 20). The offline answer splits on CJK and
+  Arabic sentence marks. In those scripts an unfound word gets a warning line,
+  never a refusal.
+- New benches with gates: `tests/RAG/chunk_bench.py`, `tests/RAG/multilingual_bench.py`.
+- Three builders in worktrees, each attacked by an independent agent; two were
+  refused on a reproduced high defect and fixed before landing.
+- Suite 881 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
+## 2026-11-12 -- Wave 2: abstention, five more file types, the hot-file bonus
+
+- Retrieval: the flat +0.05 hot-file bonus was three rank votes; with more than
+  five files it buried the answer (log 10 of 30). Resized to one vote. All 16
+  types in one shared space: 480 of 480 in the top 5.
+- Lowercase names and typos get an ordinary-weight exact-match channel that
+  reuses `rag/spell.py`. Paraphrase bench, lowercase+typo: 10 -> 40 of 64 at rank 1.
+- Offline answer abstains when the space does not mention the name, the file or
+  the attribute asked for (20 of 20 unanswerable, 20 of 20 answerable kept).
+  A fact spread over sentences is quoted with its subject.
+- New types: `.tsv .xml .log .ipynb .rtf`. Re-ingesting a file replaces its
+  chunks instead of duplicating them.
+- Ontology: `probable_foreign_key` tier, `001` meets `1`, text dates and
+  amounts, tables profiled in full up to one million rows.
+- New `tests/RAG/paraphrase_bench.py` with a gate whose weak floors are named.
+- Built by four agents in worktrees, each attacked by an independent agent; one
+  slice was refused on a reproduced high defect and fixed before landing.
+- Suite 796 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
+## 2026-11-12 -- Every file type is found again and cited to a place
+
+- New `tests/RAG/filetype_bench.py`: 11 types in one space. First run was red:
+  json/csv/xlsx 0 of 30, python 8 of 30, recall at 5 264 of 330, and html, docx,
+  pdf and eml cited no location. Now 330 of 330 with every locator correct.
+  Synthetic facts, hash embedder, no model call.
+- Fusion gained a weighted exact-match channel for a rare code or name. Sparse
+  scores are no longer a constant 1.0.
+- Extractors: pdf pages (all of them, no 200 cap), docx headings/tables/notes,
+  pptx shown order and speaker notes, html headings and cells, `.eml`, json
+  records, BOM and UTF-16, csv empty cells kept in their column.
+- `/upload` defaulted `force` on and a second upload wiped the first. Fixed;
+  found by driving the live server, pinned in `tests/test_rag_upload_keeps_space.py`.
+- Offline answer quotes the matching sentence with its location.
+- `pypdf` declared in `requirements.txt`. A failed PDF says encrypted, corrupt
+  or scanned instead of one generic reason.
+- Five-agent adversary workflow reproduced 25 defects; 17 fixed, 8 open with
+  reasons in `docs/subagents_findings/2026-11-12_filetype-bench-adversary-wave.md`.
+- Suite 743 passed, 0 failed, 9 skipped (Linux, Python 3.13). The old
+  `test_research_bridge_and_urls` failure is fixed at its cause.
+
+## 2026-11-12 -- Ontology is induced from the data, not a keyword list (#6)
+
+- `rag/ontology.py` rewritten (`ONTOLOGY_VERSION=2`). Keys come from uniqueness
+  and relations from value containment against another table's unique column.
+  Columns carry kind, role and date format; tables carry a grain. csv and
+  cross-workbook relations are covered. The old version matched 17 English
+  keywords and joined on seven fixed column names, so anything else was
+  "Unknown" with no relations.
+- Three lies removed: the first row was taken as the header (banner rows), the
+  reasoning steps cited `SKU` / `Money` by regex when neither existed, and the
+  cached ontology survived new workbooks until `force`.
+- Design follows NVIDIA/auto-ontology (Apache-2.0), reimplemented clean-room
+  with no model call. Their Postgres + NIM stack is not used (P7).
+- `tests/test_rag_ontology.py` (9). Four guard mutations each turn it red.
+  Suite 712 passed, 9 skipped, 1 failed. The failure predates this change:
+  `test_research_bridge_and_urls` expects 1 attached file and gets 2 on a
+  machine that has `pypdf`.
+- `oracle_bench` stamps `ontology_version` into the fingerprint `extra`. The
+  n=320 `hybrid_max` score was NOT re-run (FRTR-bench is not in the clone).
+- Research survey and routing: `docs/subagents_findings/2026-11-12_rag-survey-auto-ontology.md`.
 
 ## 2026-09-11 -- Connect stays in Settings; LTX2 mock dumps ignored
 
