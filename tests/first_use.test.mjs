@@ -47,3 +47,59 @@ test("no key at all still reads as no model", () => {
   assert.equal(c.title, "No AI model is ready");
   assert.equal(c.key, true);
 });
+
+// ---- the key manager and the API panel, in a real page opened from disk ----
+import { createRequire } from "node:module";
+import { before, after } from "node:test";
+const require = createRequire(import.meta.url);
+const { chromium } = require("playwright");
+let browser, page;
+before(async () => {
+  browser = await chromium.launch();
+  page = await browser.newPage();
+  await page.goto(new URL("../index.html", import.meta.url).href);
+  await page.waitForFunction(() => typeof kvRender === "function");
+});
+after(async () => { await browser.close(); });
+
+const PROVIDERS = [
+  { id: "omniroute", label: "FreeRouter", group: "gateway", free_note: "FreeRouter (was OpenFree) is our free gateway.", steps: ["Tap Enable FreeRouter"], configured: false },
+  { id: "openvault_mesh", label: "OpenVault (D:\\OpenVault)", group: "gateway", free_note: "Local mesh. Repo: D:\\OpenVault. One tap.", steps: [], configured: false },
+];
+
+test("key manager uses one name for the gateway and shows no D: path", async () => {
+  const t = await page.evaluate((prov) => {
+    _kvData = { providers: prov, policy: "Missing keys fall back to FreeRouter first.", free_fallback_order: [] };
+    _kvOpenFree = { can_run: true, why: "" };
+    ["gateway"].forEach((g) => kvOpenGroups.add(g));
+    kvRender();
+    return document.getElementById("kvList").innerText;
+  }, PROVIDERS);
+  assert.ok(!/FreeRouter/i.test(t), "FreeRouter leaked: " + t);
+  assert.ok(!/D:\\/.test(t), "a D: path leaked");
+  assert.match(t, /OpenFree/);
+  assert.match(t, /OpenVault/);
+});
+
+test("where OpenFree cannot start the button is off and one plain sentence says why", async () => {
+  const r = await page.evaluate((prov) => {
+    _kvData = { providers: prov, policy: "", free_fallback_order: [] };
+    _kvOpenFree = { can_run: false, why: "OpenFree can't start on this computer. Paste an API key instead." };
+    kvOpenGroups.add("gateway");
+    kvRender();
+    const card = document.querySelector('.kv-card[data-pid="omniroute"]');
+    return { disabled: card.querySelector("button.btn.primary").disabled, text: card.innerText };
+  }, PROVIDERS);
+  assert.equal(r.disabled, true);
+  assert.match(r.text, /can't start on this computer/);
+  assert.match(r.text, /not available/);
+});
+
+test("Settings > API leads with the key fields, then the key manager", async () => {
+  const order = await page.evaluate(() => {
+    const p = document.getElementById("scPanel-models");
+    const pos = (sel) => { const e = p.querySelector(sel); return e ? [...p.querySelectorAll("*")].indexOf(e) : -1; };
+    return { key: pos("#setGroq"), save: pos(".btn.primary"), mgr: pos('button[onclick*="openKeyVault"]') };
+  });
+  assert.ok(order.key > 0 && order.key < order.save && order.save < order.mgr, JSON.stringify(order));
+});

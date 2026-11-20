@@ -67,6 +67,7 @@ body.theme-light{
 /* Light theme contrast: dark-only colours that sat on beige or white. */
 body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
 body.theme-light .field-eye{color:var(--text)}
+body.theme-light .kv-ok .kv-chip{color:var(--ok)}
 body.theme-light .pal-hint-btn{opacity:.9}
 body.theme-light .side-nav .nav-label,body.theme-light .side-section-hdr,body.theme-light .side-section-hdr .chev,body.theme-light .side-section-hdr small{opacity:1}
 body.theme-light .side-nav .nav-label:hover .chev{opacity:1}
@@ -3435,19 +3436,23 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
 
         <div class="sc-panel" id="scPanel-models" data-panel="models">
           <h3>API</h3>
-          <p class="hint">BYOK optional — <b>OpenFree</b> (our free gateway) / Netie Engine first. Paid keys fall back through OpenVault.</p>
-          <button type="button" class="btn primary" style="width:100%;margin-bottom:12px;border-radius:999px" onclick="closeSettings();openKeyVault()">Open key manager</button>
-          <div class="settings-section">
-            <h4>API keys (advanced)</h4>
-            <label class="hint" for="setDeepSeek">DeepSeek key</label>
-            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show or hide the DeepSeek key" aria-label="Show or hide the DeepSeek key">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
-            <label class="hint" for="setOpenRouter">OpenRouter key</label>
-            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)" title="Show or hide the OpenRouter key" aria-label="Show or hide the OpenRouter key">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
+          <p class="hint">Paste a key from an AI provider and press Save. Groq and Google both have free plans.</p>
+          <div class="settings-section" style="border-top:0;padding-top:0">
+            <h4>Paste an API key</h4>
             <label class="hint" for="setGroq">Groq key</label>
             <div class="field-row"><input id="setGroq" class="side-search" placeholder="Groq gsk_…" autocomplete="off" type="password" data-key="GROQ_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGroq',this)" title="Show or hide the Groq key" aria-label="Show or hide the Groq key">👁</button><span class="field-tick" id="tickGroq">✓</span></div>
             <label class="hint" for="setGoogle">Google AI key</label>
             <div class="field-row"><input id="setGoogle" class="side-search" placeholder="Google AI key" autocomplete="off" type="password" data-key="GOOGLE_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setGoogle',this)" title="Show or hide the Google AI key" aria-label="Show or hide the Google AI key">👁</button><span class="field-tick" id="tickGoogle">✓</span></div>
-            <button class="btn primary" onclick="saveSettings()">Save keys locally</button>
+            <label class="hint" for="setOpenRouter">OpenRouter key</label>
+            <div class="field-row"><input id="setOpenRouter" class="side-search" placeholder="OpenRouter sk-or-…" autocomplete="off" type="password" data-key="OPENROUTER_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setOpenRouter',this)" title="Show or hide the OpenRouter key" aria-label="Show or hide the OpenRouter key">👁</button><span class="field-tick" id="tickOpenRouter">✓</span></div>
+            <label class="hint" for="setDeepSeek">DeepSeek key</label>
+            <div class="field-row"><input id="setDeepSeek" class="side-search" placeholder="sk-…" autocomplete="off" type="password" data-key="DEEPSEEK_API_KEY"/><button type="button" class="field-eye" onclick="toggleKeyVis('setDeepSeek',this)" title="Show or hide the DeepSeek key" aria-label="Show or hide the DeepSeek key">👁</button><span class="field-tick" id="tickDeepSeek">✓</span></div>
+            <button class="btn primary" onclick="saveSettings()">Save</button>
+          </div>
+          <div class="settings-section">
+            <h4>Other ways to connect</h4>
+            <p class="hint">Open the key manager for OpenFree (our free gateway, Windows only for now) and other providers.</p>
+            <button type="button" class="btn" onclick="closeSettings();openKeyVault()">Open key manager</button>
           </div>
         </div>
 
@@ -16817,8 +16822,10 @@ function closeKeyVault(){
     setTimeout(()=>typeof runOpenIDEAgent==='function'&&runOpenIDEAgent(),120);
   }
 }
+let _kvOpenFree=null;   // /api/openfree/status: can this computer start OpenFree at all?
 async function kvRefresh(){
   try{_kvData=await fetchJson('/api/keyvault')}catch(e){_kvData=null}
+  try{_kvOpenFree=await fetchJson('/api/openfree/status')}catch(e){_kvOpenFree=null}
   kvRender();
 }
 function kvToggleGroup(g){
@@ -16836,6 +16843,9 @@ function kvRender(){
   const host=$('kvList'); if(!host)return;
   if(!_kvData||!_kvData.providers){host.innerHTML='<p class="hint">Key vault unavailable — restart the AirGPT server to load it.</p>';return}
   const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // The server calls the gateway FreeRouter (and OpenFree) and shows a D:\ path; the app says OpenFree and OpenVault.
+  const nm=t=>String(t||'').replace(/FreeRouter \(was OpenFree\)/g,'OpenFree').replace(/FreeRouter/g,'OpenFree').replace(/\s*\(D:\\+OpenVault\)/g,'').replace(/\s*Repo: D:\\+OpenVault\./g,'');
+  const cantFree=!!(_kvOpenFree&&_kvOpenFree.can_run===false);
   const visible=_kvData.providers.filter(p=>!p.ui_hidden);
   const card=p=>{
     const open=kvOpenCards.has(p.id)||(p.id==='omniroute'&&!kvOpenCards.size&&kvOpenGroups.has('gateway'));
@@ -16843,14 +16853,14 @@ function kvRender(){
     const isOpenVault=p.id==='openvault_mesh';
     return `<div class="kv-card${p.configured?' kv-ok':''}${p.group==='official'?' kv-official':''}${open?' open':''}" data-pid="${esc(p.id)}" data-call="kvToggleCard" data-ev="last" data-arg="${esc(p.id)}">
       <div class="kv-head">
-        <div class="kv-title"><span class="kv-chev">${open?'▼':'▶'}</span><strong>${esc(p.label)}</strong></div>
-        <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):'not set'}</span>
+        <div class="kv-title"><span class="kv-chev">${open?'▼':'▶'}</span><strong>${esc(nm(p.label))}</strong></div>
+        <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):(isOpenFree&&cantFree?'not available':'not set')}</span>
       </div>
       <div class="kv-body">
-        <p class="hint kv-note">${esc(p.free_note)}</p>
-        <ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
+        <p class="hint kv-note">${esc(nm(p.free_note))}</p>
+        <ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>
         <div class="kv-actions">
-          ${isOpenFree?`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`:''}
+          ${isOpenFree?(cantFree?`<p class="hint kv-cant">${esc(_kvOpenFree.why)}</p><button type="button" class="btn primary" disabled>Enable OpenFree · auto fallback</button>`:`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`):''}
           ${isOpenVault?`<button type="button" class="btn primary" onclick="event.stopPropagation();kvConnectOpenVault()">Connect OpenVault mesh</button>
             <a class="btn kv-link" href="http://127.0.0.1:5000/#mesh" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open mesh UI ↗</a>`:''}
           ${p.console&&!isOpenFree&&!isOpenVault?`<a class="btn kv-link" href="${esc(p.console)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${p.group==='official'?'Buy / claim on netie.ai ↗':'Open '+esc(p.label)+' console ↗'}</a>`:''}
@@ -16881,7 +16891,7 @@ function kvRender(){
     groupBlock('cloud','Cloud providers (optional BYO)',cloud)+
     groupBlock('cli','Your CLIs (gh · Cursor)',cli)+
     groupBlock('deploy','OpenShip (via OpenVault)',deploy)+
-    `<p class="hint" style="margin-top:10px;opacity:.8">${esc(_kvData.policy||'')}</p>`+
+    `<p class="hint" style="margin-top:10px;opacity:.8">${esc(nm(_kvData.policy||''))}</p>`+
     (order?`<p class="hint" style="opacity:.7">Fallback order: ${esc(order)}</p>`:'');
 }
 let _openfreePoll=null;
