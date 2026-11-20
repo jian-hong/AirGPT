@@ -130,7 +130,9 @@ def test_packaged_source_carries_txt(isolated):
     with zipfile.ZipFile(io.BytesIO(pack)) as z:
         src_members = [n for n in z.namelist() if n.startswith("sources/")]
     assert src_members, "no source members in pack"
-    assert all(n.endswith(".txt") for n in src_members), src_members
+    # A workbook travels as one CSV per sheet (cell values only), never as the .xlsx
+    # itself, so the importing space can still calculate from it.
+    assert all(n.endswith(".csv") for n in src_members), src_members
 
 
 def test_repeated_rebuild_does_not_duplicate_sources(isolated):

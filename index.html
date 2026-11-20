@@ -10417,7 +10417,7 @@ async function ragDoImport(el){
   try{
     const r=await fetch(API()+'/api/rag/spaces/import',{method:'POST',headers:{'X-AirGPT-Token':authToken,'X-Device-Id':getDeviceId()},body:fd});
     const d=await r.json();
-    if(d&&d.ok&&d.space){toast('Imported '+(d.sources||0)+' sources');ragOpenSpace(d.space.id);}
+    if(d&&d.ok&&d.space){toast('Imported '+(d.sources||0)+' sources'+(d.notice?('. '+d.notice):''));ragOpenSpace(d.space.id);}
     else toast((d&&d.error)||'Import failed');
   }catch(e){toast('Import failed')}
 }
@@ -11775,7 +11775,7 @@ async function ragRenderChatPane(opts){
   const empty=opts.emptyHint
     ?'<p class="hint" style="font-size:13px;line-height:1.5;margin:8px 0 4px">Ask with the bottom bar to start.</p>'
     :'<p class="hint" style="font-size:13px;line-height:1.5;margin:8px 0 4px">No messages yet — ask anything about this knowledge space.</p>';
-  const bubbles=msgs.map(m=>ragBubbleHtml(m.role,m.content,m.citations)).join('')||(opts.messagesOnly||opts.focusMode?'':empty);
+  const bubbles=msgs.map(m=>ragBubbleHtml(m.role,m.content,m.citations,m.provenance)).join('')||(opts.messagesOnly||opts.focusMode?'':empty);
   // Never mount a mid-page composer — bottom #ragAskBar is the only ask surface
   if(opts.focusMode||opts.messagesOnly){
     const msgsEl=$('ragMessages');
@@ -12069,7 +12069,15 @@ function ragConfirm(msg){
   if(ragState&&ragState.streaming){try{toast('Wait for the answer stream to finish');}catch(e){}return false;}
   return confirm(msg);
 }
-function ragBubbleHtml(role,content,citations){
+// "How I got this": the steps of the answer's reasoning chain, the same card live and reopened.
+function ragReasoningHtml(reasoning){
+  const steps=(reasoning&&reasoning.steps)||[];if(!steps.length)return'';
+  const refused=steps.some(s=>/^(Why I refused|Why I did not give a number)$/.test(s.title||''));
+  return `<details class="rag-think-log"${refused?' open':''}><summary>🔍 How I got this · ${steps.length} step${steps.length>1?'s':''}${reasoning.lane?' · '+esc(reasoning.lane)+' lane':''}</summary><div>`
+    +steps.map(s=>`<div class="step"><strong>${esc(s.title||'')}</strong>: ${esc(s.detail||'')}</div>`).join('')
+    +`</div></details>`;
+}
+function ragBubbleHtml(role,content,citations,prov){
   const isUser=role==='user';
   const bg=isUser?'var(--accent,#2b6cb0)':'var(--surface2)';
   const fg=isUser?'var(--accent-fg,#0a0a0a)':'inherit';
@@ -12081,7 +12089,12 @@ function ragBubbleHtml(role,content,citations){
   }
   const sc='b'+(++_ragCiteSeq);
   const bodyHtml=isUser?esc(body).replace(/\n/g,'<br>'):`<div class="ai-block rag-md">${ragMdHtml(body,sc,ragCiteList(citations).map(x=>x.label))}</div>`;
-  return `<div style="align-self:${isUser?'flex-end':'flex-start'};max-width:min(820px,92%);padding:10px 14px;border-radius:14px;background:${bg};color:${fg};line-height:1.55;font-size:14px">${bodyHtml}${isUser?'':ragCitesHtml(citations,sc)}</div>`;
+  // A reopened chat shows what the live answer did: the calculation (with Show the
+  // calculation) and How I got this, read from what was saved with the message.
+  const p=(!isUser&&prov&&typeof prov==='object')?prov:null;
+  const notes=p?ragNotesHtml({provenance:p,lane:(p.sql||p.workbook)?'sql':'',sql:p.sql},citations):'';
+  const why=p?ragReasoningHtml(p.reasoning):'';
+  return `<div style="align-self:${isUser?'flex-end':'flex-start'};max-width:min(820px,92%);padding:10px 14px;border-radius:14px;background:${bg};color:${fg};line-height:1.55;font-size:14px">${bodyHtml}${isUser?'':ragCitesHtml(citations,sc)}${notes}${why}</div>`;
 }
 function ragScrollMsgs(){const m=$('ragMessages');if(m)m.scrollTop=m.scrollHeight;}
 function ragDepthSegHtml(){
@@ -12319,11 +12332,7 @@ async function ragSend(){
     // to see why, and a collapsed summary would hide the reason for the non-answer.
     const rc=q1('.ragreason');
     if(rc&&reasoning&&(reasoning.steps||[]).length){
-      const steps=reasoning.steps||[];
-      const refused=steps.some(s=>/^(Why I refused|Why I did not give a number)$/.test(s.title||''));
-      rc.innerHTML=`<details class="rag-think-log"${refused?' open':''}><summary>🔍 How I got this · ${steps.length} step${steps.length>1?'s':''}${reasoning.lane?' · '+esc(reasoning.lane)+' lane':''}</summary><div>`
-        +steps.map(s=>`<div class="step"><strong>${esc(s.title||'')}</strong>: ${esc(s.detail||'')}</div>`).join('')
-        +`</div></details>`;
+      rc.innerHTML=ragReasoningHtml(reasoning);
     } else if(rc){rc.innerHTML='';}
     // A reply from the last rung of the cascade used to look identical to one from
     // the preferred provider. Empty string when nothing was skipped, so this badge

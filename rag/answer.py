@@ -407,15 +407,17 @@ def standalone_query(query: str, history: list[dict] | None) -> str:
     """Make a short follow-up ("And South?") self-contained for retrieval.
 
     Retrieval only ever saw the new line, so a follow-up searched for almost nothing.
-    When the question is short or leans on a pronoun, the user's previous question is
-    put in front of it. A full, self-standing question is left alone.
+    When the question opens like a follow-up ("and", "what about", "why") or leans on a
+    pronoun, the user's previous question is put in front of it. Length alone is not a
+    signal: "how many pallets in Penang" is a whole question, and merging it with the
+    last one made it be judged on words the user never wrote.
     """
     q = (query or "").strip()
     prev = next((str(m.get("content") or "").strip() for m in reversed(history or []) if m.get("role") == "user"), "")
     if not q or not prev:
         return q
     words = q.split()
-    if len(words) <= 5 or (len(words) <= 12 and (_FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q))):
+    if len(words) <= 12 and (_FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q)):
         return f"{prev[:300]} {q}".strip()
     return q
 
@@ -544,6 +546,17 @@ def web_query_from_ask(query: str) -> str:
         q,
         flags=re.I,
     )
+    # The command words go, the user's topic stays: "search the internet for X",
+    # "look up on the web: X", "find online information about X" are all just "X".
+    q = re.sub(
+        r"\b(?:find|get|show)?\s*(?:me\s+)?online\s+(?:information|info)\s+(?:about|on)\s+"
+        r"|\b(?:search|look\s*up|find|browse|google)\s+(?:(?:on|in|across)\s+)?(?:the\s+)?(?:web|internet|net|online)"
+        r"(?:\s+(?:for|about|on)\b\s*[:,-]?|\s*[:,-]|\s*$)\s*"
+        r"|\b(?:on|from)\s+the\s+(?:web|internet)\s*[:,-]\s*",
+        "",
+        q,
+        flags=re.I,
+    )
     q = re.sub(
         r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google|searhc|serach)\s+(about\s+|for\s+)?",
         "",
@@ -568,6 +581,8 @@ def _clean_goal(text: str) -> str:
     g = re.sub(r"\s+", " ", (text or "").strip(" ,.-;:"))
     g = _GOAL_FILLER.sub(" ", g)
     g = re.sub(r"\s+", " ", g).strip(" ,.-;:")
+    # A goal cut at "also" or "next" ends on the "and" that joined it to the next one.
+    g = re.sub(r"^(?:and|or|&)\s+|\s+(?:and|or|&)$", "", g, flags=re.I).strip(" ,.-;:")
     return g
 
 
@@ -1497,7 +1512,22 @@ def _retrieval_chain(query: str, **kw) -> dict:
         return {"lane": "retrieval", "steps": [], "text": "", "error": str(e)[:160]}
 
 
+def saved_provenance(done: dict) -> dict | None:
+    """What is kept with an assistant message so a reopened chat shows what the live card did:
+    the calculation's provenance plus the steps of "How I got this"."""
+    prov = dict(done.get("provenance") or {})
+    chain = done.get("reasoning")
+    if isinstance(chain, dict) and chain.get("steps"):
+        prov["reasoning"] = {
+            "lane": str(chain.get("lane") or ""),
+            "steps": [{"title": str(x.get("title") or ""), "detail": str(x.get("detail") or "")}
+                      for x in chain["steps"][:20] if isinstance(x, dict)],
+        }
+    return prov or None
+
+
 FOLLOWUP_NOT_CALCULATED = "This follow-up was answered from the passages, not calculated."
+FOLLOWUP_NOT_APPLIED = "I could not apply this follow-up to my last answer, so this is the same answer again. Ask the whole question and I will look it up."
 
 
 def answer_events(space_id: int, query: str, *, history: list[dict] | None = None, **kw) -> Iterator[dict]:
@@ -1512,9 +1542,31 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
     if isinstance(prev, dict) and (prev.get("carry") or prev.get("sql") or prev.get("followup_not_calculated")):
         from rag import sheet_sql
 
-        note = sheet_sql.reads_as_followup(query)
+        note = sheet_sql.reads_as_followup(query, strict=True)
     if not note:
-        yield from _answer_events(space_id, query, history=history, **kw)
+        prev_text = next((str(m.get("content") or "").strip() for m in reversed(history or []) if m.get("role") == "assistant"), "")
+        q = (query or "").strip()
+        opens_as_followup = bool(prev_text) and len(q.split()) <= 12 and bool(
+            _FOLLOW_UP_START.match(q) or _FOLLOW_UP_PRONOUN.search(q))
+        if not (opens_as_followup and not kw.get("use_llm", True)):
+            yield from _answer_events(space_id, query, history=history, **kw)
+            return
+        # Offline, a short follow-up that finds the same passages prints the same answer
+        # again, as if it had been answered. Hold the events until the answer is known.
+        held = list(_answer_events(space_id, query, history=history, **kw))
+        done = next((e for e in held if e.get("type") == "done"), None)
+        if done is None or str(done.get("answer") or "").strip() != prev_text:
+            yield from held
+            return
+        for ev in held:
+            if ev.get("type") == "delta":
+                continue
+            if ev.get("type") == "done":
+                text = FOLLOWUP_NOT_APPLIED + "\n\n" + str(ev.get("answer") or "")
+                yield {"type": "delta", "text": text}
+                ev = {**ev, "answer": text,
+                      "provenance": {**(ev.get("provenance") or {}), "followup_not_applied": True}}
+            yield ev
         return
     lane, said = "", False
     for ev in _answer_events(space_id, query, history=history, **kw):
@@ -2334,7 +2386,7 @@ def answer(
             citations=citations,
             depth=depth,
             trace_id=done.get("trace_id") or "",
-            provenance=done.get("provenance") or None,
+            provenance=saved_provenance(done),
         )
 
     return {

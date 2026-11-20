@@ -33,7 +33,7 @@ function grabLine(re) {
 const NAMES = [
   "esc", "ragFileName", "ragSrcIcon", "ragCiteList", "ragCiteFile", "ragCiteWhere", "ragCitesHtml",
   "ragSafeMoney", "ragLinkCiteChips", "ragMdHtml", "ragNum", "ragProvenanceLines", "ragProvenanceHtml",
-  "ragNotesHtml", "ragSkipReason", "ragLooksBinary", "ragUploadSummary", "ragUploadReportHtml", "ragBytes",
+  "ragNotesHtml", "ragReasoningHtml", "ragBubbleHtml", "ragSkipReason", "ragLooksBinary", "ragUploadSummary", "ragUploadReportHtml", "ragBytes",
 ];
 function page(extra = {}) {
   const ctx = vm.createContext({ ragState: {}, Number, Set, Array, String, Math, Uint8Array, ...extra });
@@ -230,4 +230,22 @@ test("source tile shows size", () => {
   assert.equal(c.ragBytes(65700), "64 KB");
   assert.equal(c.ragBytes(69), "69 B");
   assert.equal(c.ragBytes(0), "");
+});
+
+test("a reopened chat shows Show the calculation and How I got this like the live card", () => {
+  const c = page();
+  const prov = {
+    workbook: "staff.csv", sheet: "staff", operation: "SUM", value: 172696, rows_matched: 6, rows_total: 8,
+    sql: "SELECT SUM(Salary) FROM staff WHERE Dept <> 'HR'", linked: { metric: "Salary" },
+    reasoning: { lane: "sql", steps: [{ title: "Read the question", detail: "total <b>Salary</b> excluding HR" }] },
+  };
+  const live = c.ragNotesHtml({ provenance: prov, lane: "sql", sql: prov.sql }, []) + c.ragReasoningHtml(prov.reasoning);
+  const saved = c.ragBubbleHtml("assistant", "172,696", [], prov);
+  assert.match(saved, /Show the calculation/);
+  assert.match(saved, /How I got this · 1 step · sql lane/);
+  assert.ok(saved.includes(live), "the reopened card carries exactly what the live card had");
+  assert.ok(!saved.includes("<b>Salary</b>"), "saved text is shown as text, never as markup");
+  // no provenance (a document answer from before, or a user line): nothing extra, nothing broken
+  assert.doesNotMatch(c.ragBubbleHtml("assistant", "plain answer", [], null), /Show the calculation|How I got this/);
+  assert.doesNotMatch(c.ragBubbleHtml("user", "hello", [], prov), /Show the calculation|How I got this/);
 });
