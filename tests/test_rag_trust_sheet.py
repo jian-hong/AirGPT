@@ -206,3 +206,21 @@ def test_negation_list_of_real_values_and_following_words_still_work(frames):
     hit = ask(frames, "total salary excluding Eng, Ops and HR")
     assert hit["value"] == pytest.approx(
         total(STAFF, "Salary", lambda r: r["Dept"] not in ("Eng", "Ops", "HR")))
+
+
+def test_followup_to_a_sheet_that_lacks_the_column_is_not_carried(frames):
+    # "and for South?" after a staff answer must not re-run the staff calculation
+    # under the South sheet's name (South has no Salary or Dept column).
+    first = ask(frames, "how many people where Dept is Ops")
+    carry = first["carry"]
+    assert sheet_sql.carry_followup("and for the South sheet?", carry, frames) is None
+    assert sheet_sql.carry_followup("and for South?", carry, frames) is None
+
+
+def test_followup_between_sheets_of_one_workbook_still_carries(frames):
+    first = ask(frames, "total revenue where Status is Paid in the North sheet")
+    carry = first["carry"]
+    q2 = sheet_sql.carry_followup("and for the South sheet?", carry, frames)
+    assert q2 and "South sheet" in q2
+    hit = ask(frames, q2)
+    assert hit["value"] == pytest.approx(total(SOUTH, "Revenue", lambda r: r["Status"] == "Paid"))

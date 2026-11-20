@@ -1593,13 +1593,14 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
     agg = _agg_anywhere(q)
     old_sheet = str(prev.get("sheet") or "")
     sheet = ""
+    sheet_wb = ""
     sheet_spans: list[tuple[int, int, str]] = []
     for (_wb, sn), _df in frames.items():
         for a, b in _mentions(q, sn, bounded=True):
             if str(_wb).lower().endswith((".csv", ".tsv")) and not _in_sheet_selector_position(q, a, b):
                 continue
-            if sn != old_sheet:
-                sheet = sheet or sn
+            if sn != old_sheet and not sheet:
+                sheet, sheet_wb = sn, str(_wb)
             sheet_spans.append((a, b, ""))
             break
     new_text: dict[tuple[str, bool], TextFilter] = {}
@@ -1631,10 +1632,21 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
         parts.append(f'{f["column"]} {f["op"]} {_fmt_num(float(f["value"]))}')
     op = agg or prev["agg"]
     metric = str(prev.get("metric") or "")
+    # Moving to a sheet of another file: the carried column and filters must exist there,
+    # or the old calculation would be answered under the new sheet's name.
+    if sheet and sheet != old_sheet:
+        tgt = next((df for (w_, n_), df in frames.items() if n_ == sheet and str(w_) == sheet_wb), None)
+        have = {str(c) for c in tgt.columns} if tgt is not None else set()
+        need = ([metric] if metric else []) + [t["column"] for t in prev.get("text") or [] if t["column"] not in over
+                                              and any(str(v).casefold() not in drop for v in t.get("values") or [])]
+        need += [f["column"] for f in prev.get("num") or []]
+        if any(c not in have for c in need):
+            return None
+    wb_name = sheet_wb if sheet and sheet != old_sheet else str(prev.get("workbook") or "")
     out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
     if op == "COUNT" and not metric:
         out = "how many rows"
-    if target_sheet and not str(prev.get("workbook") or "").lower().endswith((".csv", ".tsv")):
+    if target_sheet and not wb_name.lower().endswith((".csv", ".tsv")):
         out += f" in the {target_sheet} sheet"
     if parts:
         out += " where " + " and ".join(parts)
