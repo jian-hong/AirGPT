@@ -480,6 +480,18 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "general"
         print(f"[ai] error msg {msg_id}: {e}")
 
 
+def _run_tracked(session_id: int, fn, *args) -> None:
+    """Run a background reply and list its chat as "answering" until it ends, however it ends."""
+    token = uuid.uuid4().hex
+    with _chat_streams_lock:
+        _chat_streams[token] = {"abort": threading.Event(), "session_id": int(session_id or 0), "started": time.time()}
+    try:
+        fn(*args)
+    finally:
+        with _chat_streams_lock:
+            _chat_streams.pop(token, None)
+
+
 def queue_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
     rate_err = _check_ai_rate()
     if rate_err:
@@ -491,6 +503,10 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
         elif msg:
             db.update_ai(msg_id, status="error", analysis=rate_err)
             bump_sync()
+        return
+    sid = int(session_id or 0)
+    if question and sid:  # a question about a screenshot: the reply is being written meanwhile
+        threading.Thread(target=_run_tracked, args=(sid, run_analysis, msg_id, question, mode, session_id, depth), daemon=True).start()
         return
     threading.Thread(target=run_analysis, args=(msg_id, question, mode, session_id, depth), daemon=True).start()
 
@@ -554,7 +570,7 @@ def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, r
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=rate_err, kind="text", source="ai", session_id=session_id)
         bump_sync()
         return
-    threading.Thread(target=run_text_chat, args=(question, mode, session_id, restrict_links), daemon=True).start()
+    threading.Thread(target=_run_tracked, args=(session_id, run_text_chat, question, mode, session_id, restrict_links), daemon=True).start()
 
 
 # ---- chat_classifier wiring: one-off small-talk → shared Scratch space, no linkage ----
@@ -564,10 +580,10 @@ _scratch_ids: set[int] = set()
 
 def _get_or_create_scratch_session() -> int:
     try:
-        for s in db.list_sessions(limit=200):
-            if s.get("capture_type") == "scratch":
-                _scratch_ids.add(int(s["id"]))
-                return int(s["id"])
+        s = db.first_session_of_type("scratch")  # not list_sessions: an old Scratch chat is past its first page
+        if s:
+            _scratch_ids.add(int(s["id"]))
+            return int(s["id"])
         sess = db.create_session(_SCRATCH_TITLE, capture_type="scratch")
         _scratch_ids.add(int(sess["id"]))
         return int(sess["id"])
@@ -593,10 +609,10 @@ def _is_scratch_session(sid: int) -> bool:
     if sid in _scratch_ids:
         return True
     try:
-        for s in db.list_sessions(limit=200):
-            if int(s.get("id") or 0) == sid and s.get("capture_type") == "scratch":
-                _scratch_ids.add(sid)
-                return True
+        s = db.get_session(sid)  # by id: the chat may be past the first page of the list
+        if s and s.get("capture_type") == "scratch":
+            _scratch_ids.add(sid)
+            return True
     except Exception:
         pass
     return False
@@ -605,6 +621,22 @@ def _is_scratch_session(sid: int) -> bool:
 # Running chat streams by id, so the Stop button can reach the one it started.
 _chat_streams: dict[str, dict] = {}
 _chat_streams_lock = threading.Lock()
+
+
+def _generating_sessions(only: int | None = None) -> dict[int, float]:
+    """Chats with a reply being written right now: {chat id: when it started}.
+
+    Read-only view of _chat_streams (the server's own record of running streams), so a
+    chat opened on another tab or device can say "still answering" instead of showing a
+    bare question. An entry lives until the reply is saved or the generation fails.
+    """
+    out: dict[int, float] = {}
+    with _chat_streams_lock:
+        for run in _chat_streams.values():
+            sid = int(run.get("session_id") or 0)
+            if sid and (only is None or sid == only):
+                out[sid] = min(out.get(sid, run["started"]), run["started"])
+    return out
 
 
 def _last_turn(session_id: int, user_msg_id: int) -> tuple[dict | None, list[dict], str]:
@@ -3216,7 +3248,55 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def _json(self, code, data):
-        self._send(code, json.dumps(data).encode(), "application/json; charset=utf-8")
+        body = json.dumps(data).encode()
+        headers: dict = {}
+        # A long chat is half a megabyte of text; send it squeezed when the client allows.
+        # Only whole JSON bodies pass through here. Streams (SSE) write their own chunks
+        # and are never compressed.
+        if len(body) >= 1024 and "gzip" in (self.headers.get("Accept-Encoding", "") or "").lower():
+            import gzip as _gzip
+
+            packed = _gzip.compress(body, 5)
+            if len(packed) < len(body):
+                body, headers = packed, {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
+        self._send(code, body, "application/json; charset=utf-8", headers)
+
+    def _send_static(self, asset: Path, mime: str) -> None:
+        """A script or stylesheet from disk: ETag and Last-Modified so an unchanged file
+        answers 304 once the 60 s cache window ends, and gzip when the client accepts it."""
+        from email.utils import formatdate, parsedate_to_datetime
+
+        body, etag = _cached_asset(asset)
+        mtime = int(asset.stat().st_mtime)
+        lastmod = formatdate(mtime, usegmt=True)
+        inm = self.headers.get("If-None-Match")
+        ims = self.headers.get("If-Modified-Since")
+        fresh = False
+        if inm:
+            fresh = etag in [t.strip().removeprefix("W/") for t in inm.split(",")] or inm.strip() == "*"
+        elif ims:
+            try:
+                fresh = mtime <= parsedate_to_datetime(ims).timestamp()
+            except (TypeError, ValueError):
+                fresh = False
+        if fresh:
+            self.send_response(304)
+        else:
+            squeeze = mime.startswith(("text/", "application/javascript", "application/json", "image/svg"))
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", "") if squeeze else "")
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(payload)))
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+        self.send_header("Cache-Control", "public, max-age=60")
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", lastmod)
+        self.send_header("Vary", "Accept-Encoding")
+        self._cors()
+        self.end_headers()
+        if not fresh:
+            self.wfile.write(payload)
 
     def _sse_begin(self) -> None:
         self._drain_request_body()
@@ -3316,6 +3396,17 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"ok": True, "stopped": bool(run)})
 
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
+        # The stream stays on the running list until its reply is saved (or it fails or
+        # is stopped), however this method ends; see _generating_sessions.
+        self._stream_ids: list[str] = []
+        try:
+            return self._handle_chat_stream_run(ip, dname)
+        finally:
+            with _chat_streams_lock:
+                for sid_ in self._stream_ids:
+                    _chat_streams.pop(sid_, None)
+
+    def _handle_chat_stream_run(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
         blocked = _ai_lockdown_block()
@@ -3454,7 +3545,8 @@ class Handler(BaseHTTPRequestHandler):
         abort = threading.Event()
         stream_id = uuid.uuid4().hex
         with _chat_streams_lock:
-            _chat_streams[stream_id] = {"abort": abort, "session_id": session_id}
+            _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
+        self._stream_ids.append(stream_id)
         event_q: queue.Queue = queue.Queue()
         done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None, "partial": ""}
         gate = threading.Lock()  # a Stop and the producer never both touch done_ev
@@ -3544,8 +3636,6 @@ class Handler(BaseHTTPRequestHandler):
             if not client_gone and not self._sse_send(ev):
                 client_gone = True
 
-        with _chat_streams_lock:
-            _chat_streams.pop(stream_id, None)
         with gate:  # from here the producer can no longer add to what we save
             stopped = abort.is_set() and not done_ev["analysis"] and not done_ev["error"]
             partial = str(done_ev["partial"]).strip()
@@ -4009,19 +4099,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = "application/javascript; charset=utf-8" if asset.suffix == ".js" else (
                 "text/css; charset=utf-8" if asset.suffix == ".css"
                 else (mimetypes.guess_type(str(asset))[0] or "application/octet-stream")
             )
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path.startswith("/OpenIDE/ui/") and ".." not in path:
             rel = path.lstrip("/")
@@ -4032,20 +4114,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = mimetypes.guess_type(str(asset))[0] or "application/octet-stream"
             if asset.suffix == ".js":
                 mime = "application/javascript; charset=utf-8"
             elif asset.suffix == ".css":
                 mime = "text/css; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path == "/manifest.json":
             mf = ROOT / "manifest.json"
@@ -4261,6 +4335,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {
                 "sync_version": _sync_version,
                 "latest_id": db.latest_id(),
+                "generating": sorted(_generating_sessions(sid if gs else None)),
                 "new_chat": new_chat,
                 "new_hist": new_hist,
                 "presence": room,
@@ -4539,11 +4614,26 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
+            off = max(0, int(q.get("offset", ["0"])[0] or 0))
             gs = self._guest_scope()
-            rows = db.list_sessions(1_000_000 if gs else lim)  # a guest's old chat must not fall off the limit
+            rows = db.list_sessions(1_000_000 if gs else lim, 0 if gs else off)  # a guest's old chat must not fall off the limit
             if gs:  # a share guest lists its own chat only
                 rows = [s for s in rows if int(s["id"]) == int(gs["session_id"])]
-            return self._json(200, {"sessions": rows})
+            busy = _generating_sessions(int(gs["session_id"]) if gs else None)
+            for r in rows:
+                if int(r["id"]) in busy:
+                    r["generating"] = True
+            total = len(rows) if gs else db.count_sessions()
+            return self._json(200, {"sessions": rows, "total": total, "offset": 0 if gs else off,
+                                    "has_more": (not gs) and off + len(rows) < total})
+
+        m_one = re.fullmatch(r"/api/sessions/(\d+)", path.rstrip("/"))
+        if m_one:  # one chat by id, so an old chat opens even when the list only holds the newest
+            row = db.get_session(int(m_one.group(1)))
+            if not row or int(row.get("archived") or 0):
+                return self._json(404, {"error": "That chat does not exist."})
+            row["msg_count"] = db.count_session_messages(int(row["id"]))
+            return self._json(200, {"session": row})
 
         if path == "/api/search":
             sq = q.get("q", [""])[0]
@@ -4648,7 +4738,15 @@ class Handler(BaseHTTPRequestHandler):
                 if scoped and not _is_local_host(ip):
                     session_id = int(scoped["session_id"])
             if q.get("full", ["0"])[0] == "1":
-                return self._json(200, db.messages_grouped(since_id=since, session_id=session_id))
+                try:  # a page of the chat; the default is the newest 500, as before
+                    page = max(1, min(int(q.get("limit", ["500"])[0] or 500), 500))
+                    before = int(q.get("before_id", ["0"])[0] or 0)
+                except ValueError:
+                    return self._json(400, {"error": "invalid limit or before_id"})
+                grouped = db.messages_grouped(since_id=since, limit=page, session_id=session_id, before_id=before)
+                if session_id:
+                    grouped["generating"] = session_id in _generating_sessions(session_id)
+                return self._json(200, grouped)
             msgs = db.get_messages(since_id=since, session_id=session_id)
             return self._json(200, {"messages": msgs, "latest_id": db.latest_id()})
 
