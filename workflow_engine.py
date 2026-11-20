@@ -38,12 +38,12 @@ def _cleared_file():
     return db.DATA_DIR / "bg_tasks_cleared.json"
 
 
-def _cleared_before() -> int:
-    """Finished local agent runs with an id up to this one were cleared from the list."""
+def _cleared_ids() -> set[int]:
+    """Ids of the finished local agent runs the user cleared from the list."""
     try:
-        return int(json.loads(_cleared_file().read_text()).get("run_id") or 0)
+        return {int(x) for x in json.loads(_cleared_file().read_text()).get("run_ids") or []}
     except Exception:
-        return 0
+        return set()
 
 
 def _push_hw() -> None:
@@ -227,7 +227,7 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
         seen.add(card["id"])
 
     finished: list[dict] = []
-    cleared = _cleared_before()
+    cleared = _cleared_ids()
     for run in recent:
         st = (run.get("status") or "").lower()
         if st in ("queued", "pending", "running", "claimed"):
@@ -239,7 +239,7 @@ def _local_agent_tasks() -> tuple[list[dict], list[dict]]:
         card = _agent_card(run, agents)
         if card["id"] in seen:
             continue
-        if int(run.get("id") or 0) <= cleared:
+        if int(run.get("id") or 0) in cleared:
             continue
         finished.append(card)
         if len(finished) >= 20:
@@ -322,8 +322,8 @@ def clear_finished() -> dict:
     except Exception:
         ids = []
     if ids:
-        newest = max(max(ids), _cleared_before())
-        _cleared_file().write_text(json.dumps({"run_id": newest}))
+        keep = sorted(_cleared_ids() | set(ids))[-1000:]  # only runs that had finished; a running one is not touched
+        _cleared_file().write_text(json.dumps({"run_ids": keep}))
     engine = cortex_client.workflows_clear()
     out: dict[str, Any] = {"ok": True}
     if engine.get("ok"):

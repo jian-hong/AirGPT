@@ -65,6 +65,36 @@ class ExactTurnFiles(SeamsBase):
         self.assertEqual(json.loads(q["attachment_ids"]), [f["id"]])
 
 
+class ForgedAndSequenced(SeamsBase):
+    def test_other_chat_file_id_stored_on_a_question_is_refused_at_reload(self):
+        mine, other = self.new_chat(), self.new_chat()
+        secret = self.file_row(other, "secret.txt", "ZEBRA")
+        u = db.add_message(device_ip="x", device_name="me", text="q", source="ai-chat", session_id=mine,
+                           attachment_ids=[secret["id"]])
+        db.add_message(device_ip="x", device_name="AirGPT", text="a", source="ai", session_id=mine)
+        self.post("/api/chat/stream", {"session_id": mine, "regenerate_msg_id": u["id"]})
+        self.assertEqual(self.names(self.calls[0]), [])
+
+    def test_regenerate_ignores_attachment_ids_in_the_request(self):
+        sid = self.new_chat()
+        f = self.file_row(sid, "extra.txt", "ZEBRA")
+        u = db.add_message(device_ip="x", device_name="me", text="q", source="ai-chat", session_id=sid, attachment_ids=[])
+        db.add_message(device_ip="x", device_name="AirGPT", text="a", source="ai", session_id=sid)
+        self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": u["id"], "attachment_ids": [f["id"]]})
+        self.assertEqual(self.names(self.calls[0]), [])
+
+    def test_two_questions_each_own_file_regenerate_last(self):
+        sid = self.new_chat()
+        f1 = self.file_row(sid, "one.txt", "ZEBRA")
+        u1 = db.add_message(device_ip="x", device_name="me", text="q1", source="ai-chat", session_id=sid, attachment_ids=[f1["id"]])
+        db.add_message(device_ip="x", device_name="AirGPT", text="a1", source="ai", session_id=sid)
+        f2 = self.file_row(sid, "two.txt", "QUOKKA")
+        u2 = db.add_message(device_ip="x", device_name="me", text="q2", source="ai-chat", session_id=sid, attachment_ids=[f2["id"]])
+        db.add_message(device_ip="x", device_name="AirGPT", text="a2", source="ai", session_id=sid)
+        self.post("/api/chat/stream", {"session_id": sid, "regenerate_msg_id": u2["id"]})
+        self.assertEqual(self.names(self.calls[0]), ["two.txt"])
+
+
 class ClearBackgroundTasks(unittest.TestCase):
     def setUp(self):
         self._f = workflow_engine._cleared_file()
@@ -125,6 +155,23 @@ class ClearBackgroundTasks(unittest.TestCase):
         with mock.patch.object(cortex_client, "workflows_snapshot", lambda: {"ok": True, "running": [], "finished": []}):
             snap = workflow_engine.snapshot()
         self.assertTrue(any(t["id"] == f"agent_run_{self.rid}" for t in snap["running"]))
+
+    def test_a_run_still_running_at_clear_time_shows_up_when_it_finishes(self):
+        a = agent_store.create_agent("Later agent", tools=[], kind="custom")
+        later = agent_store.create_run(a["id"], "p2")["id"]  # newer id, finishes first
+        try:
+            with agent_store._conn() as c:
+                c.execute("UPDATE agent_runs SET status='done', finished_at=1 WHERE id=?", (later,))
+            with mock.patch.object(cortex_client, "workflows_clear", lambda: cortex_client._wf_down()):
+                workflow_engine.clear_finished()  # self.rid is still running
+            self._finish()  # the older run ends after the clear: the user has not seen it yet
+            with mock.patch.object(cortex_client, "workflows_snapshot", lambda: {"ok": True, "running": [], "finished": []}):
+                snap = workflow_engine.snapshot()
+            self.assertIn(f"agent_run_{self.rid}", self._ids(snap))
+            self.assertNotIn(f"agent_run_{later}", self._ids(snap))
+        finally:
+            with agent_store._conn() as c:
+                c.execute("UPDATE agent_runs SET status='cancelled', finished_at=1 WHERE id=?", (later,))
 
     def test_stop_error_is_plain(self):
         with mock.patch.object(cortex_client, "workflows_cancel", lambda t: cortex_client._wf_down()):
