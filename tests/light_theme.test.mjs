@@ -50,7 +50,7 @@ before(async () => {
       <div class="ds-row"><span class="ds-acts"><button class="ds-ico" id="ltEdit">✎</button><button class="ds-ico danger" id="ltDel">✕</button></span></div>
       <button class="ds-add" id="ltAdd"><span class="ds-plus">+</span></button>
       <div class="side-nav"><div class="nav-item" id="ltNavItem">Hosting<span class="nav-beta" id="ltBeta">Beta</span></div></div>
-      <div class="cortex-row"><span class="cortex-call-x">ok</span></div>`;
+      <div class="msg-jump-bar" style="position:static"><div class="msg-jump-count" id="ltJump">12</div></div>`;
     document.body.appendChild(host);
   });
 });
@@ -71,7 +71,7 @@ test("inactive Settings nav items reach 4.5:1", async () => {
 test("sidebar Beta badge, section labels and RAG back link reach 4.5:1", async () => {
   await page.evaluate(() => { closeSettings(); document.querySelector(".app").classList.remove("side-collapsed"); });
   await page.addStyleTag({ content: "*{transition:none!important}" });
-  for (const sel of ["#ltBeta", ".side-nav .nav-label", ".side-section-hdr", ".msg-jump-count"]) {
+  for (const sel of ["#ltBeta", ".side-nav .nav-label", ".side-section-hdr", "#ltJump"]) {
     const r = await page.evaluate(MEASURE, [sel]);
     if (r.error) continue;   // not on this screen
     assert.ok(r.ratio >= 4.5, sel + " " + r.ratio);
