@@ -102,6 +102,7 @@ class ClearBackgroundTasks(unittest.TestCase):
         if self._f.exists():
             self._f.unlink()
         a = agent_store.create_agent("Clear agent", tools=[], kind="custom")
+        self.aids = [a["id"]]
         self.rid = agent_store.create_run(a["id"], "p")["id"]
 
     def tearDown(self):
@@ -112,6 +113,10 @@ class ClearBackgroundTasks(unittest.TestCase):
             self._f.write_bytes(self._old)
         with agent_store._conn() as c:
             c.execute("UPDATE agent_runs SET status='cancelled', finished_at=1 WHERE id=?", (self.rid,))
+        for aid in self.aids:  # leave no agent behind: other tests assume a clean agent list
+            with agent_store._conn() as c:
+                c.execute("DELETE FROM agent_runs WHERE agent_id=?", (aid,))
+            agent_store.delete_agent(aid)
 
     def _finish(self):
         with agent_store._conn() as c:
@@ -158,6 +163,7 @@ class ClearBackgroundTasks(unittest.TestCase):
 
     def test_a_run_still_running_at_clear_time_shows_up_when_it_finishes(self):
         a = agent_store.create_agent("Later agent", tools=[], kind="custom")
+        self.aids.append(a["id"])
         later = agent_store.create_run(a["id"], "p2")["id"]  # newer id, finishes first
         try:
             with agent_store._conn() as c:
