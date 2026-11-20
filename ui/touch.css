@@ -1,0 +1,19 @@
+/* touch.css: 44px controls on touch screens at any width (tablets included). Loaded after phone.css. */
+/* Touch screens (any width, tablets too): the controls themselves are at least 44px, measured
+   as boxes, not just by an invisible layer. A mouse keeps the compact sizes. */
+@media(pointer:coarse){
+  .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn{min-width:44px;min-height:44px}
+  .chat-titlebar-actions .chat-share-btn{min-width:44px;min-height:44px}
+  .msg .meta button,.msg .cb-copy{min-width:44px;min-height:44px}
+  /* The project tab above the message box reads its height from this one variable. */
+  :root{--bump-height:44px}
+  /* The AI switch keeps its small pill; the button around it is 44px and draws it. */
+  #settingsModal button{min-width:44px!important;min-height:44px!important}
+  #aiSwitchBtn{width:48px;min-width:44px;min-height:44px;background:transparent!important;border-color:transparent!important}
+  #aiSwitchBtn::before{content:"";position:absolute;left:3px;top:9px;width:42px;height:24px;box-sizing:border-box;border-radius:999px;border:1px solid var(--line);background:var(--surface2);transition:.2s}
+  #aiSwitchBtn.on::before{border-color:var(--accent);background:var(--accent)}
+  body.theme-light #aiSwitchBtn::before{background:#e8e6e0;border-color:rgba(0,0,0,.14)}
+  body.theme-light #aiSwitchBtn.on::before{background:var(--accent);border-color:var(--accent)}
+  #aiSwitchBtn .ai-switch-thumb{top:12px;left:6px}
+  #aiSwitchBtn.on .ai-switch-thumb{left:24px}
+}
