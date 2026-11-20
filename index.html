@@ -14601,7 +14601,25 @@ function renderMarkdownLite(t){
 // sent a message and saw nothing happen.
 let sendFailure=null; // {sid, text, msg, ids: files sent with it, replace: id of the question being edited}
 function noteSendFailure(text,msg,extra){sendFailure={sid:0,text:String(text||''),msg:String(msg||''),ids:[...((extra&&extra.attachment_ids)||[])],replace:(extra&&extra.replace_msg_id)||0}}
+// The server lists every provider it tried, e.g. "groq-70b(HTTP Error 401: Unauthorized) ->
+// Google(no key)". Read that list so a refused key and a cooling-down provider are told
+// apart from "no key at all".
 function sendFailureCopy(msg){
+  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree']];
+  // provider -> when its key was last refused. The server then says only "cooldown" for a few
+  // minutes, which would read as "busy" without this. Kept per browser, so a reload does not lose it.
+  let seen={};try{seen=JSON.parse(localStorage.getItem('airgpt_key_refused')||'{}')||{}}catch(e){}
+  const tried=[];
+  String(msg||'').replace(/([A-Za-z][\w.\-]*)\(([^()]*)\)/g,(m,l,r)=>{const n=names.find(x=>x[0].test(l));tried.push({name:n?n[1]:l,why:r})});
+  const refused=tried.find(t=>/\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
+  if(refused){seen[refused.name]=Date.now();try{localStorage.setItem('airgpt_key_refused',JSON.stringify(seen))}catch(e){}}
+  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);
+  if(held){
+    const host=isLocalHost();
+    return {title:'Your '+held.name+' key was refused',body:host?'The provider did not accept it. Check the key in Settings > API.':'The computer running AirGPT has a '+held.name+' key that was refused. Ask its owner to check it.',key:host,keyLabel:'Check my key'};
+  }
+  const cooling=tried.find(t=>/\b429\b|rate.?limit|quota|too many|cooldown/i.test(t.why));
+  if(cooling)return {title:cooling.name+' is busy',body:'It is limiting requests right now. Wait a minute, then try again.'};
   if(/No text LLM available|no key|api key|unauthori[sz]ed|\b401\b|\b403\b/i.test(msg))
     return {title:'No AI model is ready',body:isLocalHost()?'Add an API key for a provider (Groq, Google, OpenRouter and others have free tiers), or start a local model. Then try again.':'The computer running AirGPT has no AI model ready. Ask its owner to add an API key.',key:isLocalHost()};
   if(/\b429\b|rate.?limit|quota|too many/i.test(msg))
@@ -14627,7 +14645,7 @@ function paintSendFailure(){
     <div class="send-fail-head"><span class="send-fail-ico" aria-hidden="true">!</span><strong>${esc(c.title)}</strong></div>
     <p>${esc(c.body)}</p>
     <div class="send-fail-acts">
-      ${c.key?'<button type="button" class="btn primary" id="sendFailKey">Add an API key</button>':''}
+      ${c.key?'<button type="button" class="btn primary" id="sendFailKey">'+esc(c.keyLabel||'Add an API key')+'</button>':''}
       <button type="button" class="btn" id="sendFailRetry">Try again</button>
     </div>
     <details><summary>Details</summary><pre>${esc(f.msg)}</pre></details>
