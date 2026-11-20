@@ -226,3 +226,80 @@ def test_web_goals_are_the_users_topic(ask_text, want):
     from rag import answer
 
     assert answer.split_web_goals(ask_text) == want
+
+
+# ---- pm-security.2 + sr.7: the binary check decodes ------------------------------------
+
+import os as _os
+import random as _random
+
+_RNG = _random.Random(7)
+_JUNK = bytes(_RNG.randrange(256) for _ in range(6000))
+_HIGH = bytes(_RNG.randrange(128, 256) for _ in range(6000))
+_SENTENCE = "Quarterly review: revenue grew and the Penang warehouse shipped 4500 pallets. "
+_LONG = (_SENTENCE * 200)
+
+
+def _write(tmp_path, name, data):
+    p = tmp_path / name
+    p.write_bytes(data)
+    return p
+
+
+@pytest.mark.parametrize("name,data", [
+    ("plain_random.txt", _JUNK),
+    ("bom_random.txt", b"\xff\xfe" + _JUNK),
+    ("bom_be_random.txt", b"\xfe\xff" + _JUNK),
+    ("high_only.txt", _HIGH),
+    ("late_nul.txt", b"A" * 9000 + _JUNK),
+    ("late_nul_big.txt", b"A" * (6 * 1024 * 1024) + b"\x00" * 100 + b"tail" * 1000),
+    ("nul_padding.txt", b"A" * 8192 + b"\x00" * 100),
+    ("elf.txt", b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 200 + _JUNK),
+    ("png.json", b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + _JUNK),
+    ("utf8_bom_random.txt", b"\xef\xbb\xbf" + _JUNK),
+])
+def test_junk_is_refused_as_binary(tmp_path, name, data):
+    from rag import ingest
+
+    assert ingest.looks_binary(_write(tmp_path, name, data)) is True
+
+
+@pytest.mark.parametrize("name,data", [
+    ("utf8.txt", _LONG.encode("utf-8")),
+    ("utf8_bom.txt", b"\xef\xbb\xbf" + _LONG.encode("utf-8")),
+    ("utf16_bom.txt", _LONG.encode("utf-16")),
+    ("utf16_le_nobom.txt", _LONG.encode("utf-16-le")),
+    ("utf16_be_nobom.txt", _LONG.encode("utf-16-be")),
+    ("utf16_cjk_bom.txt", ("今季の売上は伸びた。倉庫は四千五百パレットを出荷した。" * 80).encode("utf-16")),
+    ("cp1252.txt", ("Café menu: crème brûlée, piña colada. " * 100).encode("cp1252")),
+    ("chinese_utf8.md", ("本季度收入增长，槟城仓库出货四千五百托盘。\n" * 100).encode("utf-8")),
+    ("ansi_log.log", (b"\x1b[32mOK\x1b[0m job finished\n" * 300)),
+    ("big_text.txt", _LONG.encode("utf-8") * 400),
+    ("big_cjk_utf8.txt", ("本季度收入增长，槟城仓库出货四千五百托盘。\n" * 120000).encode("utf-8")),
+    ("big_cjk_utf16.txt", ("今季の売上は伸びた。倉庫は四千五百パレットを出荷した。" * 60000).encode("utf-16")),
+    ("big_utf16_nobom.txt", (_SENTENCE * 40000).encode("utf-16-le")),
+    ("tiny.txt", b"hi"),
+    ("empty.txt", b""),
+])
+def test_real_text_is_accepted(tmp_path, name, data):
+    from rag import ingest
+
+    assert ingest.looks_binary(_write(tmp_path, name, data)) is False
+
+
+def test_real_utf16_without_bom_is_indexed_and_junk_is_refused_in_a_space(tmp_path, monkeypatch):
+    from rag import ingest, store
+
+    root = tmp_path / "d"
+    root.mkdir()
+    monkeypatch.setattr(store, "RAG_DIR", root / "rag")
+    monkeypatch.setattr(store, "DB_PATH", root / "rag" / "rag.db")
+    monkeypatch.setattr(store, "BLOB_DIR", root / "rag")
+    store.init()
+    sid = int(store.create_space("B", depth_default="high")["id"])
+    good = _write(tmp_path, "wide.txt", "The Penang warehouse stores 4500 pallets of rice.".encode("utf-16-le"))
+    bad = _write(tmp_path, "bom_junk.txt", b"\xff\xfe" + _JUNK)
+    out = ingest.ingest_paths(sid, [good, bad], force=True)
+    skipped = {s["path"]: s["reason"] for s in out.get("skipped", [])}
+    assert skipped == {"bom_junk.txt": "Looks like a binary file, not text"}, out
+    assert out["chunks"] >= 1

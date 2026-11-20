@@ -1,6 +1,7 @@
 """Deterministic ingest: authorize → extract → chunk → enrich → index → publish."""
 from __future__ import annotations
 
+import codecs
 import hashlib
 import mimetypes
 import re
@@ -902,6 +903,12 @@ def _decode(raw: bytes) -> str:
             return raw.decode("utf-16")
         except UnicodeDecodeError:
             pass
+    wide = _wide_encoding(raw)
+    if wide:
+        try:
+            return raw.decode(wide)
+        except UnicodeDecodeError:
+            pass
     for enc in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             return raw.decode(enc)
@@ -916,12 +923,98 @@ BINARY_REASON = "Looks like a binary file, not text"
 _CONTROL = bytes(set(range(32)) - {9, 10, 12, 13, 27} | {127})
 
 
+def _wide_encoding(data: bytes) -> str:
+    """"utf-16-le" or "utf-16-be" for UTF-16 text with no byte-order mark, else "".
+
+    ASCII-range text in UTF-16 is a zero byte beside every letter, all on the same
+    side. Random bytes have zeros too, but spread over both sides and far fewer.
+    """
+    n = len(data) - len(data) % 2
+    if n < 2:
+        return ""
+    even, odd = data[0:n:2].count(0), data[1:n:2].count(0)
+    zeros, units = even + odd, n // 2
+    if zeros < 0.2 * units or max(even, odd) < 0.9 * zeros:
+        return ""
+    return "utf-16-be" if even > odd else "utf-16-le"
+
+
+def _sample_bytes(path: Path, size: int) -> list[bytes]:
+    """The whole file when it is small, else the head, middle and tail (aligned to 2 bytes)."""
+    chunk = 64 * 1024
+    with open(path, "rb") as fh:
+        if size <= 4 * 1024 * 1024:
+            return [fh.read()]
+        out = []
+        for off in (0, (size // 2) & ~1, (size - chunk) & ~1):
+            fh.seek(off)
+            out.append(fh.read(chunk))
+        return out
+
+
+def _mostly_printable(text: str, floor: float = 0.95) -> bool:
+    if not text:
+        return True
+    ok = sum(1 for ch in text if ch.isprintable() or ch in "\t\n\r\f\x1b")
+    return ok / len(text) >= floor
+
+
+def _chunk_is_text(data: bytes, whole: bool, hint: str = "") -> bool:
+    """Does this slice of a file decode to mostly printable text?
+
+    UTF-8 first, then UTF-16 (a byte-order mark, or zero bytes that all sit on one side),
+    then a single-byte code page for old files with a few accented letters. Everything
+    else is a program or data blob that would otherwise "decode" as Latin-1 junk.
+    """
+    if not data:
+        return True
+    if data[:3] == b"\xef\xbb\xbf":
+        data = data[3:]
+    if data[:2] == b"\xff\xfe":
+        enc, body = "utf-16-le", data[2:]
+    elif data[:2] == b"\xfe\xff":
+        enc, body = "utf-16-be", data[2:]
+    else:
+        # `hint`: the file opened with a byte-order mark, so a slice from its middle
+        # (CJK in UTF-16 has no zero bytes to give it away) is that encoding too.
+        enc, body = hint or _wide_encoding(data), data
+    if enc:
+        body = body[: len(body) - len(body) % 2]
+        # A slice may start or end inside a surrogate pair: allow one unit off each end.
+        for lo, hi in ((0, 0),) if whole else ((0, 0), (2, 2)):
+            try:
+                return _mostly_printable(body[lo: len(body) - hi].decode(enc))
+            except UnicodeDecodeError:
+                continue
+        return False
+    if b"\x00" in data:
+        return False
+    try:
+        if whole:
+            text = data.decode("utf-8")
+        else:
+            # A slice can start or end inside a multi-byte letter: skip the cut-off bytes.
+            lead = 0
+            while lead < 3 and lead < len(data) and (data[lead] & 0xC0) == 0x80:
+                lead += 1
+            text = codecs.getincrementaldecoder("utf-8")().decode(data[lead:], False)
+        return _mostly_printable(text)
+    except UnicodeDecodeError:
+        pass
+    # Not UTF-8. Old single-byte text has a few accented letters; a file that is mostly
+    # high bytes is not text.
+    if sum(1 for b in data if b >= 0x80) > 0.4 * len(data):
+        return False
+    return _mostly_printable(data.decode("latin-1"), 0.97)
+
+
 def looks_binary(path: Path) -> bool:
     """A file that would be read as text but is a program or data blob.
 
-    A zero byte, or a high share of control bytes, in the start of the file. A byte-order
-    mark for UTF-16 is text (its zero bytes are letters). Every other byte string
-    "decodes" as Latin-1, which is how random bytes used to become searchable chunks.
+    Judged by decoding, not by one 8 KB peek: the whole file when it is under a few MB,
+    otherwise its head, middle and tail. A byte-order mark no longer waves a file through
+    (its contents must decode as printable text), and UTF-16 text without a mark, which
+    is full of zero bytes, is read as the text it is.
     """
     from rag import media as media_mod
 
@@ -931,15 +1024,13 @@ def looks_binary(path: Path) -> bool:
     ):
         return False
     try:
-        with open(path, "rb") as fh:
-            head = fh.read(8192)
+        size = path.stat().st_size
+        parts = _sample_bytes(path, size)
     except OSError:
         return False
-    if not head or head[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return False
-    if b"\x00" in head:
-        return True
-    return sum(head.count(bytes([c])) for c in _CONTROL) / len(head) > 0.10
+    whole = len(parts) == 1
+    hint = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}.get(parts[0][:2], "")
+    return not all(_chunk_is_text(p, whole, hint) for p in parts)
 
 
 def media_mod_suffixes() -> set:
