@@ -55,3 +55,10 @@ test("upload report says a same-name file was kept beside the old one", () => {
   assert.match(rep.notes[0], /notes\.md/);
   assert.match(rep.notes[0], /notes_2\.md/);
 });
+
+test("a star or underscore that is arithmetic or a name stays", () => {
+  const { ragPlainPreview } = page(["ragPlainPreview"]);
+  assert.equal(ragPlainPreview("Total is 5*3=15 and 2 * 4 = 8"), "Total is 5*3=15 and 2 * 4 = 8");
+  assert.equal(ragPlainPreview("Use snake_case_name here"), "Use snake_case_name here");
+  assert.equal(ragPlainPreview("It is **bold**, *soft* and ~~gone~~."), "It is bold, soft and gone.");
+});
