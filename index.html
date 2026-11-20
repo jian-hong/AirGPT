@@ -13872,7 +13872,7 @@ function sanitizeMermaidSrc(src){
 // Mermaid itself made them (its ids carry the unguessable diagram id; its classes are the ones
 // its own stylesheet uses).
 function cleanMermaidSvg(svg){
-  const box=document.createElement('div');box.innerHTML=svg;
+  const box=new DOMParser().parseFromString('<body>'+svg,'text/html').body; // inert: nothing in a label loads while it is cleaned
   const root=box.querySelector('svg');
   if(!root)throw new Error('no diagram');
   const rid=root.id||'\u0000';
@@ -13881,18 +13881,19 @@ function cleanMermaidSvg(svg){
   const LABEL_CLASS=new Set(['nodeLabel','edgeLabel','labelBkg','markdown-node-label']);
   const SAFE_CSS=/^(display|white-space|line-height|max-width|text-align|width|height|padding|margin|color|background-color|font-size|font-weight|font-family|overflow|overflow-wrap|word-break|text-wrap|vertical-align|table-layout|border-collapse)$/;
   const styleKeep=v=>String(v).split(';').map(d=>d.trim()).filter(d=>{const i=d.indexOf(':');return i>0&&SAFE_CSS.test(d.slice(0,i).trim().toLowerCase())&&!/url\s*\(|image-set|expression|@import/i.test(d);}).join('; ');
-  // An id is kept when the drawing itself points at it (url(#id), href="#id", its own stylesheet).
+  // Besides its own prefixed ids, an id is kept only on a marker, gradient, filter or clip that the
+  // drawing points at with url(#id). The stylesheet is not trusted for this: a diagram can write
+  // its own (themeCSS), and a task or node name can be a page id.
   const pointed=new Set();
-  const refs=t=>String(t).replace(/(?:url\(\s*['"]?|^)#([^\s'")]+)/g,(m,i)=>{pointed.add(i);return m;});
-  root.querySelectorAll('*').forEach(el=>{if(!el.closest('foreignObject'))[...el.attributes].forEach(a=>{if(a.name!=='id')refs(a.value);});});
-  styleTxt.replace(/#([\w-]+)/g,(m,i)=>{pointed.add(i);return m;});
+  root.querySelectorAll('*').forEach(el=>{if(!el.closest('foreignObject'))[...el.attributes].forEach(a=>{if(a.name!=='id')String(a.value).replace(/url\(\s*['"]?#([^\s'")]+)/g,(m,i)=>{pointed.add(i);return m;});});});
+  const DEFS=/^(marker|lineargradient|radialgradient|filter|clippath|mask|pattern|symbol)$/i;
   const inStyle=c=>new RegExp('\\.'+c.replace(/[^\w-]/g,'\\$&')+'(?![\\w-])').test(styleTxt);
   box.querySelectorAll('*').forEach(el=>{
     if(!box.contains(el)||el===root)return;
     const fo=el.closest('foreignObject');
     if(fo&&el!==fo){
       const top=el.parentNode===fo;
-      if(!LABEL_TAGS.has(el.localName)||el.namespaceURI==='http://www.w3.org/2000/svg'){el.replaceWith(document.createTextNode(el.textContent));return;}
+      if(!LABEL_TAGS.has(el.localName)||el.namespaceURI==='http://www.w3.org/2000/svg'){el.replaceWith(box.ownerDocument.createTextNode(el.textContent));return;}
       [...el.attributes].forEach(a=>{
         const n=a.name.toLowerCase();
         if(n==='xmlns'&&top)return;
@@ -13904,7 +13905,7 @@ function cleanMermaidSvg(svg){
     }
     [...el.attributes].forEach(a=>{
       const n=a.name.toLowerCase();
-      if(n==='id'){if(!a.value.includes(rid)&&!pointed.has(a.value))el.removeAttribute('id');}
+      if(n==='id'){if(!a.value.includes(rid)&&!(pointed.has(a.value)&&DEFS.test(el.localName)))el.removeAttribute('id');}
       else if(n==='class'){const k=a.value.split(/\s+/).filter(c=>c&&inStyle(c));if(k.length)el.setAttribute('class',k.join(' '));else el.removeAttribute('class');}
       else if(n==='name'||n==='for'||n==='form'||n.startsWith('popover')||n.startsWith('on'))el.removeAttribute(a.name);
     });

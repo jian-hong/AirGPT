@@ -81,6 +81,13 @@ for (const fn of ["main", "rag"]) {
   });
 }
 
+test("a diagram's own style and task names cannot take a page id", async () => {
+  await show("main", '```mermaid\n%%{init: {"themeCSS": "#input{fill:red} #sendBtn{x:y} #composer{x:y}"}}%%\ngantt\n dateFormat YYYY-MM-DD\n section s\n a :input, 2024-01-01, 3d\n b :sendBtn, 2024-01-01, 3d\n c :composer, 2024-01-01, 3d\n```\n');
+  assert.ok(await page.evaluate(() => !!document.querySelector("#chat svg")));
+  for (const r of await hostIntact()) assert.equal(r.count, 1, JSON.stringify(r));
+  assert.equal(await page.evaluate(() => document.getElementById("input").tagName), "TEXTAREA");
+});
+
 test("ordinary diagrams still draw with their text and shape", async () => {
   await show("main", "```mermaid\nflowchart LR\n  A[Start] --> B{Choice}\n  B -->|yes| C[Do it]\n  B -->|no| D((End))\n  subgraph G[Group]\n  C --> D\n  end\n  classDef hot fill:#f00\n  class C hot\n```\n");
   const r = await page.evaluate(() => ({ text: document.querySelector("#chat svg").textContent, nodes: document.querySelectorAll("#chat svg .node").length, edges: document.querySelectorAll("#chat svg path.flowchart-link").length, marker: [...document.querySelectorAll("#chat svg path[marker-end]")].every((p) => { const m = /url\(#([^)]+)\)/.exec(p.getAttribute("marker-end")); return m && document.getElementById(m[1]); }) }));

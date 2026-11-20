@@ -89,11 +89,14 @@ class WrongTables(Base):
 class SizeCap(Base):
     def setUp(self):
         super().setUp()
-        self._cap = clipdrop._RESTORE_MIN_CAP
+        self._cap = getattr(clipdrop, "_RESTORE_MIN_CAP", None)
         clipdrop._RESTORE_MIN_CAP = 100_000  # stands in for 1 GiB
 
     def tearDown(self):
-        clipdrop._RESTORE_MIN_CAP = self._cap
+        if self._cap is not None:
+            clipdrop._RESTORE_MIN_CAP = self._cap
+        else:
+            del clipdrop._RESTORE_MIN_CAP
         super().tearDown()
 
     def test_bomb_is_refused_at_every_ratio(self):
