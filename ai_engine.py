@@ -1745,14 +1745,11 @@ def extract_attachment_text(path, filename: str = "") -> tuple[str, str]:
             if not text.strip():
                 return "", "the PDF has no readable text (it may be a scan or pictures)"
         elif ext == ".docx":
-            import docx
+            # The RAG ingester's reader: standard library only, so a Word file reads on
+            # any install (python-docx is not in requirements.txt; CI does not have it).
+            from rag.ingest import _docx_text
 
-            d = docx.Document(str(p))
-            parts = [para.text for para in d.paragraphs]
-            for t in d.tables:
-                for row in t.rows:
-                    parts.append(" | ".join(c.text for c in row.cells))
-            text = "\n".join(parts)
+            text = _docx_text(p)
         elif ext in (".xlsx", ".xlsm"):
             import openpyxl
 

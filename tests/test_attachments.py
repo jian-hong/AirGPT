@@ -41,6 +41,15 @@ def _pdf_with_text(text: str) -> bytes:
     return out
 
 
+def _docx_with_text(path, text):
+    """A minimal Word file built with the standard library (python-docx is not a dependency)."""
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>')
+        z.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>' + text + '</w:t></w:r></w:p></w:body></w:document>')
+
+
 class AttachmentsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -61,14 +70,22 @@ class AttachmentsTest(unittest.TestCase):
             self.assertIn("SECRET-42", block, name)
             self.assertEqual(rep[0]["reason"], "")
 
+    def test_docx_reads_without_python_docx_installed(self):
+        # requirements.txt does not list python-docx, so a Word attachment must read without it.
+        import sys
+        from unittest import mock
+
+        _docx_with_text(self.tmp / "w.docx", "Badge number 4471")
+        with mock.patch.dict(sys.modules, {"docx": None}):
+            block, rep = ai_engine._attachments_block([{"name": "w.docx", "path": self.tmp / "w.docx"}])
+        self.assertIn("4471", block)
+        self.assertEqual(rep[0]["reason"], "")
+
     def test_pdf_docx_xlsx_are_read(self):
-        import docx
         import openpyxl
 
         pdf = self._f("n.pdf", _pdf_with_text("Gate code 7731"))
-        d = docx.Document()
-        d.add_paragraph("Locker is 5512")
-        d.save(self.tmp / "n.docx")
+        _docx_with_text(self.tmp / "n.docx", "Locker is 5512")
         wb = openpyxl.Workbook()
         wb.active.append(["key", "Wifi is 9090"])
         wb.save(self.tmp / "n.xlsx")
