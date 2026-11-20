@@ -3976,6 +3976,7 @@ class Handler(BaseHTTPRequestHandler):
                 while left > 0:
                     chunk = f.read(min(_RANGE_CHUNK, left))
                     if not chunk:
+                        self.close_connection = True  # file shrank mid-stream: framing is broken
                         break
                     self.wfile.write(chunk)
                     left -= len(chunk)
