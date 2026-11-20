@@ -1541,7 +1541,7 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
     if isinstance(prev, dict) and (prev.get("carry") or prev.get("sql") or prev.get("followup_not_calculated")):
         from rag import sheet_sql
 
-        note = sheet_sql.reads_as_followup(query)
+        note = sheet_sql.reads_as_followup(query, strict=True)
     if not note:
         prev_text = next((str(m.get("content") or "").strip() for m in reversed(history or []) if m.get("role") == "assistant"), "")
         q = (query or "").strip()

@@ -146,6 +146,33 @@ def test_second_question_in_a_chat_answers_like_a_fresh_chat(space):
     assert "many" not in third["answer"].split("Closest")[0]
 
 
+def test_whole_question_after_a_calculation_is_not_taken_for_a_follow_up(space):
+    """"how many ..." is an aggregate word, not a follow-up: after a calculation it must answer
+    as it does in a fresh chat, at any position in the chat."""
+    fresh = ask(space, "how many pallets in Penang")
+    hist: list = []
+    for q in ("total Amount in North", "total Salary excluding HR", "total Amount by Region"):
+        turn(hist, q, ask(space, q, hist))
+        got = ask(space, "how many pallets in Penang", hist)
+        assert got["answer"] == fresh["answer"], (q, got["answer"][:200])
+        assert not got["answer"].startswith("Following on")
+    # real follow-ups still carry
+    hist = []
+    turn(hist, "total Amount in North", ask(space, "total Amount in North", hist))
+    for q, want in (("and for South?", "South"), ("and the average?", "average"), ("the average?", "average"),
+                    ("how many rows there?", "how many"), ("what about East?", "East")):
+        d = ask(space, q, hist)
+        assert d["answer"].startswith("Following on") and want in d["answer"], (q, d["answer"][:200])
+
+
+@pytest.mark.parametrize("q", ["total Amount in North by end of March", "total Amount in North by Friday",
+                               "total Amount in North by December", "total Amount in North by Q2"])
+def test_by_a_time_is_not_a_missing_column(space, q):
+    d = ask(space, q)
+    assert "no " not in d["answer"].split("\n")[0].lower() or "column" not in d["answer"].split("\n")[0]
+    assert "could not group by it" not in d["answer"]
+
+
 # ---- pm-rag.2: a follow-up that cannot be applied says so ------------------------------
 
 def test_short_followup_after_a_passage_answer_is_not_silently_repeated(space):

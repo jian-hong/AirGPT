@@ -1556,7 +1556,8 @@ def _missing_group_column(question: str, frames: dict[tuple[str, str], Any]) -> 
     """
     for m in _BY_WORD.finditer(question or ""):
         lead, word = (m.group(1) or "").lower(), m.group(2)
-        if lead in _NOT_A_GROUP_BY or word.casefold() in _STOP_BY_WORDS:
+        if (question[m.end(2): m.end(2) + 1].isdigit()  # "by Q2", "by H1": a period, not a column
+                or lead in _NOT_A_GROUP_BY or word.casefold() in _STOP_BY_WORDS):
             continue
         key = _norm(word)
         found = False
@@ -1580,7 +1581,12 @@ def _missing_group_column(question: str, frames: dict[tuple[str, str], Any]) -> 
     return ""
 
 
-_STOP_BY_WORDS = {"the", "a", "an", "each", "all", "every", "this", "that", "next", "last", "now", "then", "default"}
+_STOP_BY_WORDS = {"the", "a", "an", "each", "all", "every", "this", "that", "next", "last", "now", "then", "default",
+                  # "by end of March", "by Friday", "by December": a time, not a column to group on
+                  "end", "today", "tomorrow", "yesterday", "midnight", "noon", "monday", "tuesday", "wednesday",
+                  "thursday", "friday", "saturday", "sunday", "january", "february", "march", "april", "may", "june",
+                  "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr",
+                  "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
 
 
 def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
@@ -1627,13 +1633,18 @@ _FOLLOW_REF = re.compile(r"\b(?:there|that|those|same|it|them)\b", re.I)
 _OP_WORD = {"SUM": "total", "AVG": "average", "COUNT": "how many", "MAX": "maximum", "MIN": "minimum"}
 
 
-def reads_as_followup(question: str) -> bool:
-    """A short question that may lean on the last one: the test carry_followup starts with."""
+def reads_as_followup(question: str, *, strict: bool = False) -> bool:
+    """A short question that may lean on the last one: the test carry_followup starts with.
+
+    `strict` is for saying a question WAS a follow-up that could not be carried: then a
+    start word, a pronoun or a very short line is needed ("how many pallets in Penang"
+    is five words and a whole question, not a follow-up).
+    """
     q = (question or "").strip()
     words = q.split()
     if not q or len(words) > 14:
         return False
-    return bool(_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= 6)
+    return bool(_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= (3 if strict else 6))
 
 
 def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str], Any]) -> str | None:
@@ -1681,6 +1692,10 @@ def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str
             new_text.setdefault((t.column, t.negate), t)
     # "thanks" or "what about 5?" carry nothing: a new aggregate, sheet or value must be there.
     if not (agg or sheet or new_text):
+        return None
+    # An aggregate word alone is not a follow-up: "how many pallets in Penang" is a whole
+    # question. With no start word or pronoun it must be about as short as "the average?".
+    if not (sheet or new_text) and not (_FOLLOW_START.match(q) or _FOLLOW_REF.search(q)) and len(q.split()) > 3:
         return None
     target_sheet = sheet or old_sheet
     # Values that only repeated the old sheet's name ("Region is North" on North) go with it.
