@@ -1180,7 +1180,7 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
 def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
     try:
-        from rag.xlsx_sql import answer_sqlish, load_sheets
+        from rag.xlsx_sql import answer_sqlish, load_table_file
     except Exception:
         return None
 
@@ -1191,6 +1191,7 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
     # the sheet it actually read instead of guessing after a name clash.
     by_sheet: dict[tuple[str, str], object] = {}
     sheet_owner: dict[str, dict] = {}
+    unreadable: list[str] = []
     from rag import reveal as _reveal
 
     for src in store.list_sources(int(space_id)):
@@ -1201,18 +1202,24 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
         # is byte-identical, so reading it gives the same numbers.
         resolved, _origin = _reveal.resolve_source_path(src)
         path = resolved or str(src.get("path") or "")
-        if not path.lower().endswith((".xlsx", ".xlsm", ".xls")):
+        if not path.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv")):
             continue
         p = Path(path)
         if not p.is_file():
             continue
         try:
-            sheets = load_sheets(p)
+            sheets = load_table_file(p)
         except Exception:
+            # Said, not skipped: an unreadable table must not turn into "no table".
+            unreadable.append(str(src.get("title") or p.name))
             continue
         # Display name is the source's own title - the Docs copy is content-hashed,
         # and "32f5d4ec_frtr_00027..." is not what the founder called the file.
         wb_name = str(src.get("title") or p.name)
+        if p.suffix.lower() in (".csv", ".tsv") and len(sheets) == 1:
+            # The Docs copy is content-hashed; the table is named after the file the
+            # founder uploaded, not "b8b19340_orders".
+            sheets = {Path(wb_name).stem: next(iter(sheets.values()))}
         for _k, _df in sheets.items():
             by_sheet[(wb_name, _k)] = _df
         sheet_owner[wb_name] = {"path": path, "title": wb_name}
@@ -1274,9 +1281,29 @@ def _try_hybrid_sql_lane(space_id: int, query: str) -> dict | None:
                     for k in (
                         "sql", "sheet", "workbook", "rows_matched", "rows_total",
                         "abstained", "ambiguous", "linked", "value", "per_column",
-                        "row_note",
+                        "row_note", "operation", "filter", "values_used", "assumed",
+                        "sheets", "group_by", "groups",
                     )
                     if hit.get(k) is not None
+                },
+            }
+        # An aggregate ask about a table's own columns that no plan could compute:
+        # say so, rather than let retrieval hand the model a slice of rows to total.
+        try:
+            miss = sheet_sql.explain_no_plan(query, by_sheet)
+        except Exception:
+            miss = None
+        if miss:
+            owner = sheet_owner.get(str(miss.get("workbook") or ""), {})
+            note = (" Not read: " + ", ".join(unreadable) + ".") if unreadable else ""
+            return {
+                "answer": miss["answer"] + note,
+                "citations": [{"path": owner.get("path") or miss.get("workbook"),
+                               "title": owner.get("title") or miss.get("workbook")}],
+                "provenance": {
+                    "workbook": miss.get("workbook"), "sheet": miss.get("sheet"),
+                    "rows_total": miss.get("rows_total"), "abstained": True,
+                    "abstain_reason": "no column or filter could be bound to the question",
                 },
             }
 

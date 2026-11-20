@@ -126,6 +126,39 @@ def _pick_header_row(rows: list) -> int | None:
     return None
 
 
+def load_table_file(path: Path) -> dict[str, pd.DataFrame]:
+    """Every file the aggregate lane can read: workbooks, plus .csv/.tsv as one sheet.
+
+    A CSV was skipped by extension, so the same table answered differently as .xlsx
+    and .csv. Cells stay text here (nothing is guessed at read time); the aggregate
+    lane parses numbers itself, so "1,200" and a blank are handled the same way for
+    both formats.
+    """
+    path = Path(path)
+    if path.suffix.lower() not in (".csv", ".tsv"):
+        return load_sheets(path)
+    sep = "\t" if path.suffix.lower() == ".tsv" else None
+    last: Exception | None = None
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            df = pd.read_csv(
+                path, sep=sep, engine="python", dtype=str, keep_default_na=False,
+                encoding=enc, skip_blank_lines=True,
+            )
+            break
+        except UnicodeDecodeError as e:
+            last = e
+    else:
+        raise last or ValueError("unreadable csv")
+    df.columns = [str(c).strip() or f"c{j}" for j, c in enumerate(df.columns)]
+    df = _dedupe_columns(df)
+    df = df[df.apply(lambda r: any(str(v).strip() for v in r), axis=1)].reset_index(drop=True)
+    df.attrs["header_excel_row"] = 1
+    df.attrs["first_data_excel_row"] = 2
+    df.attrs["sheet_name"] = path.stem
+    return {path.stem: df} if len(df.columns) else {}
+
+
 def load_sheets(path: Path) -> dict[str, pd.DataFrame]:
     wb = openpyxl.load_workbook(path, data_only=True)
     out = {}
@@ -359,7 +392,16 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
     )
     if m:
         needle = m.group(1).strip().rstrip("?.")
-        for name, df in sheets.items():
+        # This is a single-cell lookup. When the needle matches several rows (or
+        # several sheets) there is no one cell to return, and taking the first row
+        # presented 100 as the "total" of 100 + 250.5. Abstain so the schema-aware
+        # aggregate lane (sheet_sql) sums every row and names every sheet.
+        _n_hits = sum(
+            int(df[df.columns[0]].astype(str).str.contains(re.escape(needle), case=False, na=False).sum())
+            for df in sheets.values()
+            if len(df) and len(df.columns) >= 2
+        )
+        for name, df in (sheets.items() if _n_hits == 1 else ()):
             if len(df) == 0 or len(df.columns) < 2:
                 continue
             label_col = df.columns[0]
@@ -400,7 +442,14 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
 
     # "Which category/channel has the highest overall spend/revenue?"
     if re.search(r"highest.*(spend|revenue|sales)|which (category|channel|vendor|region).*highest", q):
-        for name, df in sheets.items():
+        # More than one sheet shaped like this (Q1, Q2...) means the first one is not
+        # the answer; leave it to the lane that compares or pools them by name.
+        _shaped = [
+            n for n, d in sheets.items()
+            if len(d) >= 2 and len(d.columns) >= 2
+            and any(re.search(r"spend|revenue|sales|total|amount", str(c), re.I) for c in d.columns[1:])
+        ]
+        for name, df in (sheets.items() if len(_shaped) <= 1 else ()):
             if len(df) < 2 or len(df.columns) < 2:
                 continue
             label = df.columns[0]
@@ -410,6 +459,16 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
             )
             if val is None:
                 continue
+            # "which region ..." is about the Region column; naming the biggest
+            # order id because column one is the id answered a different question.
+            _who = re.search(r"which (category|channel|vendor|region)", q)
+            if _who and _who.group(1) not in str(label).lower():
+                continue
+            # idxmax names the biggest single ROW. That is only the biggest label when
+            # each label has one row; on a transactions sheet it ignores the total the
+            # ask wanted. Leave repeated labels to the group-by lane in sheet_sql.
+            if df[label].astype(str).str.strip().str.casefold().duplicated().any():
+                continue
             tmp = df.copy()
             tmp["_v"] = pd.to_numeric(tmp[val], errors="coerce")
             if tmp["_v"].notna().any():
@@ -417,7 +476,8 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
 
     # "How many sessions occurred in total across all channels?"
     if re.search(r"total.*sessions|sessions.*total|how many sessions", q):
-        for name, df in sheets.items():
+        _with = [n for n, d in sheets.items() if any(re.search(r"session", str(c), re.I) for c in d.columns)]
+        for name, df in (sheets.items() if len(_with) <= 1 else ()):
             col = next((c for c in df.columns if re.search(r"session", str(c), re.I)), None)
             if col is not None:
                 return str(float(pd.to_numeric(df[col], errors="coerce").sum()))
@@ -520,7 +580,14 @@ def answer_sqlish(sheets: dict[str, pd.DataFrame], question: str) -> str | None:
                             return str(val)
 
     # categorical mode / most frequent
-    if re.search(r"most (frequent|common)|appears most|top region|which region", q):
+    # "which region" asks for the most FREQUENT region only when no measure is named;
+    # with "highest total revenue" it asks for a sum per region, not a row count.
+    _measure = re.search(
+        r"highest|lowest|largest|smallest|total|\bsum\b|average|revenue|sales|amount|spend|cost|value|profit|price", q
+    )
+    if re.search(r"most (frequent|common)|appears most|top region", q) or (
+        re.search(r"which region", q) and not _measure
+    ):
         for name, df in sheets.items():
             for cand in ("region", "category", "channel", "product", "dept", "department", "vendor", "type"):
                 rcol = next((c for c in df.columns if cand in str(c).lower()), None)
