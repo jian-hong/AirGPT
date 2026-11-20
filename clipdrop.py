@@ -669,12 +669,16 @@ def _generating_sessions(only: int | None = None) -> dict[int, float]:
     return out
 
 
-def _last_turn(session_id: int, user_msg_id: int) -> tuple[dict | None, list[dict], str]:
+def _last_turn(session_id: int, user_msg_id: int, new_file_ids=()) -> tuple[dict | None, list[dict], str]:
     """The last question of a chat and the replies after it, for edit and regenerate.
 
     Only the last turn can change: older answers were written with the messages before
     them, and branching to keep both versions is a separate feature. Returns
     (question, replies, "") or (None, [], why-not).
+
+    `new_file_ids` are files this very request attaches to the edited question. The page
+    uploads them first, so they sit after the question; they belong to the edit and do
+    not make the question "not the last one". Any other row after it still does.
     """
     row = db.get_message(user_msg_id) if (session_id and user_msg_id) else None
     if not row or int(row.get("session_id") or 0) != session_id:
@@ -682,9 +686,28 @@ def _last_turn(session_id: int, user_msg_id: int) -> tuple[dict | None, list[dic
     if row.get("source") == "ai" or row.get("kind") != "text":
         return None, [], "Only a question you typed can be changed."
     after = db.get_messages(since_id=user_msg_id, limit=50, session_id=session_id)
+    mine = set()
+    for raw in list(new_file_ids or [])[:12]:
+        try:
+            mine.add(int(raw))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    after = [m for m in after if not (m.get("kind") == "file" and int(m.get("id") or 0) in mine)]
     if any(m.get("source") != "ai" or m.get("kind") != "text" for m in after):
         return None, [], "Only your last question can be changed."
     return row, after, ""
+
+
+def _turn_file_ids(session_id: int, user_msg_id: int) -> list[int]:
+    """Ids of the files that were sent with a question: the file rows directly before
+    it, back to the previous turn. Regenerate and edit use this so the model gets the
+    same files again; _attachment_files still checks every one of them."""
+    out: list[int] = []
+    for m in reversed(db.get_messages_before(session_id, user_msg_id, 12)):
+        if m.get("kind") != "file":
+            break
+        out.append(int(m["id"]))
+    return out[::-1]
 
 
 def _forget_turn_memory(session_id: int, question: str) -> None:
@@ -3735,12 +3758,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "invalid message id"})
         turn_user: dict | None = None
         turn_replies: list[dict] = []
+        turn_files: list[int] = []
+        claimed_id, claimed_abort = uuid.uuid4().hex, threading.Event()  # the claim made above, reused as the stream
         if regen_id or replace_id:
+            turn_sid = int(data.get("session_id", 0) or 0)
+            # The server is the only place that knows a reply is being written: two tabs
+            # (or a tab and a phone) must not both change the same turn.
+            # Check and claim in one step: two requests at the same instant must not both pass.
+            with _chat_streams_lock:
+                if turn_sid and any(int(r.get("session_id") or 0) == turn_sid for r in _chat_streams.values()):
+                    return self._json(409, {"error": "AirGPT is still answering in this chat. Wait for it or press Stop."})
+                if turn_sid:
+                    _chat_streams[claimed_id] = {"abort": claimed_abort, "session_id": turn_sid, "started": time.time()}
+                    self._stream_ids.append(claimed_id)
             turn_user, turn_replies, turn_err = _last_turn(
-                int(data.get("session_id", 0) or 0), regen_id or replace_id
+                turn_sid, regen_id or replace_id, data.get("attachment_ids") or []
             )
             if turn_err:
                 return self._json(409, {"error": turn_err})
+            turn_files = _turn_file_ids(turn_sid, int(turn_user["id"]))  # the question's own files go again
             if regen_id:
                 text = str(turn_user.get("text") or "").strip()
         if not text:
@@ -3753,6 +3789,9 @@ class Handler(BaseHTTPRequestHandler):
         reply_snippet = str(data.get("reply_snippet", ""))[:500]
         context_ids = data.get("context_ids") or []
         attach_ids = data.get("attachment_ids") or []
+        if turn_files:  # the files this question was asked about, then any added with the edit
+            new_ids = list(attach_ids)[:12] if isinstance(attach_ids, list) else []
+            attach_ids = turn_files[-max(0, 12 - len(new_ids)):] + new_ids
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
@@ -3788,24 +3827,28 @@ class Handler(BaseHTTPRequestHandler):
                 sess = db.create_session("New chat", capture_type="ai", category=cat)
                 session_id = sess["id"]
 
-        if turn_user:
-            _forget_turn_memory(session_id, str(turn_user.get("text") or ""))
+        def _drop_old_turn() -> None:
+            """The new answer (or a stopped part of it) is saved: only now does the old
+            answer go, and for an edit the old question with it."""
+            if turn_user:
+                _forget_turn_memory(session_id, str(turn_user.get("text") or ""))
+            for old in turn_replies:
+                db.delete_message(int(old["id"]))
+
         if regen_id:
             user_msg = turn_user  # same question, asked again: no second copy
         else:
             db.maybe_set_ai_session_title(session_id, text[:60])
             user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id)
-            if replace_id:  # the edited question stands in for the old turn
-                for old in [turn_user, *turn_replies]:
-                    db.delete_message(int(old["id"]))
-                turn_replies = []
+            if replace_id:  # the edited question stands in for the old turn once it is answered
+                turn_replies = [turn_user, *turn_replies]
             bump_sync()
 
         exclude_id = int(user_msg["id"]) if user_msg else 0
         history_counts: dict = {}
         history = _build_chat_history(
             session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id,
-            before_id=exclude_id, counts=history_counts,
+            before_id=int(turn_user["id"]) if turn_user else exclude_id, counts=history_counts,
         )
         history_older = int(history_counts.get("older") or 0)
 
@@ -3842,9 +3885,27 @@ class Handler(BaseHTTPRequestHandler):
         # up with its question sitting there unanswered forever.
         abort = threading.Event()
         stream_id = uuid.uuid4().hex
-        with _chat_streams_lock:
-            _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
-        self._stream_ids.append(stream_id)
+        if (regen_id or replace_id) and claimed_id in self._stream_ids:
+            abort, stream_id = claimed_abort, claimed_id  # already on the running list
+        else:
+            with _chat_streams_lock:
+                _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
+            self._stream_ids.append(stream_id)
+
+        def _release() -> None:
+            """Take the chat off the "answering" list. Called once the reply is saved and
+            BEFORE the final event goes out, so the page's next waiting line (sent the
+            moment it sees that event) never meets a chat that still looks busy."""
+            with _chat_streams_lock:
+                _chat_streams.pop(stream_id, None)
+
+        def _undo_edit() -> None:
+            """The edit produced no saved text: the old question and answer stay, and the
+            edited copy of the question must not be left behind as a duplicate."""
+            if replace_id and user_msg:
+                db.delete_message(int(user_msg["id"]))
+                bump_sync()
+
         event_q: queue.Queue = queue.Queue()
         done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None, "partial": ""}
         gate = threading.Lock()  # a Stop and the producer never both touch done_ev
@@ -3923,6 +3984,7 @@ class Handler(BaseHTTPRequestHandler):
         # on its next poll instead of the question sitting there forever unanswered.
         client_gone = False
         idle_ticks = 0
+        held_final: dict | None = None  # the done / error event, sent after the reply is saved
         while True:
             try:
                 ev = event_q.get(timeout=0.25)
@@ -3940,6 +4002,9 @@ class Handler(BaseHTTPRequestHandler):
                 break
             if isinstance(ev, dict):
                 ev = {**ev, "session_id": session_id}
+                if ev.get("type") in ("done", "error"):
+                    held_final = ev
+                    continue
             if not client_gone and not self._sse_send(ev):
                 client_gone = True
 
@@ -3958,9 +4023,11 @@ class Handler(BaseHTTPRequestHandler):
                 if part_row:
                     db.set_message_ai_info(int(part_row["id"]), status="stopped")
                     stop_ev.update(saved=True, message_id=int(part_row["id"]))
-                    for old in turn_replies:  # a stopped regenerate still replaces the old reply
-                        db.delete_message(int(old["id"]))
+                    _drop_old_turn()  # a stopped regenerate or edit still replaces the old turn
                 bump_sync()
+            if not stop_ev.get("saved"):
+                _undo_edit()
+            _release()
             self._sse_send(stop_ev)
             self._sse_end()
             return
@@ -3978,8 +4045,7 @@ class Handler(BaseHTTPRequestHandler):
             if ai_row:
                 if done_ev.get("model"):
                     db.set_message_ai_info(int(ai_row["id"]), model=str(done_ev["model"]))
-                for old in turn_replies:  # regenerate: the new reply takes the old one's place
-                    db.delete_message(int(old["id"]))
+                _drop_old_turn()  # regenerate or edit: the new reply takes the old turn's place
             if ai_row and isinstance(done_ev.get("trace"), dict):
                 try:
                     import prompt_trace
@@ -3999,7 +4065,12 @@ class Handler(BaseHTTPRequestHandler):
                 summary=done_ev["analysis"][:280].replace("\n", " "),
             )
             bump_sync()
-        elif done_ev.get("error"):
+        else:
+            _undo_edit()
+        _release()
+        if held_final and not client_gone:
+            self._sse_send(held_final)
+        elif done_ev.get("error") and not held_final:
             self._sse_send({"type": "error", "error": done_ev["error"], "session_id": session_id})
         self._sse_end()
 
