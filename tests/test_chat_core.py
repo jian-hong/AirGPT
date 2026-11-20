@@ -303,6 +303,30 @@ class ChangeLastTurnTest(ChatCoreBase):
         self.assertEqual(rows[0]["id"], u["id"], "the question must stay the same row")
         self.assertEqual(self.calls[0]["history"], [], "the old answer must not be history for its own redo")
 
+    def _remember(self, sid, q, a):
+        import memory_index as mi
+
+        return mi.add_memory(kind="memory", title=q[:56], body=f"Q: {q}\nA: {a}", session_id=sid,
+                             folder="session", source="chat_turn")
+
+    def _memory_bodies(self, sid):
+        import memory_index as mi
+
+        return [m["body"] for m in mi.list_memories(session_id=sid, kind="memory", limit=200)
+                if int(m.get("session_id") or 0) == sid]
+
+    def test_edit_and_regenerate_forget_the_old_turn_in_memory(self):
+        for key in ("replace_msg_id", "regenerate_msg_id"):
+            sid = self.new_chat()
+            u, _ = self._turn(sid, f"unique question {key}", "the answer I threw away")
+            self._remember(sid, f"unique question {key}", "the answer I threw away")
+            keep = self._remember(sid, "an older unrelated thing", "stays")
+            self.assertEqual(len(self._memory_bodies(sid)), 2)
+            self.post("/api/chat/stream", {"session_id": sid, "text": "better", key: u["id"]})
+            bodies = self._memory_bodies(sid)
+            self.assertFalse([b for b in bodies if "the answer I threw away" in b], (key, bodies))
+            self.assertTrue([b for b in bodies if "stays" in b], "other notes must stay")
+
     def test_failed_regenerate_keeps_the_old_reply(self):
         sid = self.new_chat()
         u, r = self._turn(sid)

@@ -625,6 +625,24 @@ def _last_turn(session_id: int, user_msg_id: int) -> tuple[dict | None, list[dic
     return row, after, ""
 
 
+def _forget_turn_memory(session_id: int, question: str) -> None:
+    """A question that was edited away or answered again must not come back as a
+    remembered "Q ... A ..." note in the next prompt, with the answer the person
+    just threw out. Drops this chat's saved gist of that question."""
+    q = (question or "").strip()
+    if not (session_id and q):
+        return
+    try:
+        import memory_index as mi
+
+        for m in mi.list_memories(session_id=session_id, kind="memory", limit=200):
+            if (int(m.get("session_id") or 0) == session_id and m.get("source") == "chat_turn"
+                    and f"Q: {q[:280]}" in str(m.get("body") or "")):
+                mi.delete_memory(int(m["id"]))
+    except Exception as e:
+        print(f"[chat] could not forget the old turn's memory note: {e!r}")
+
+
 # How many of a chat's latest messages are handed over as history. The character
 # budget in ai_engine (HISTORY_BUDGET_CHARS) is what actually trims them.
 CHAT_HISTORY_FETCH = 60
@@ -3289,6 +3307,8 @@ class Handler(BaseHTTPRequestHandler):
         with _chat_streams_lock:
             run = _chat_streams.get(str(data.get("stream_id") or ""))
         scoped = self._guest_scope()
+        if scoped and scoped.get("acl") == "view":
+            return self._json(403, {"error": "This share is view-only"})
         if run and scoped and int(scoped["session_id"]) != int(run["session_id"]):
             run = None  # a share link can only stop a reply in its own chat
         if run:
@@ -3379,6 +3399,8 @@ class Handler(BaseHTTPRequestHandler):
                 sess = db.create_session("New chat", capture_type="ai", category=cat)
                 session_id = sess["id"]
 
+        if turn_user:
+            _forget_turn_memory(session_id, str(turn_user.get("text") or ""))
         if regen_id:
             user_msg = turn_user  # same question, asked again: no second copy
         else:
