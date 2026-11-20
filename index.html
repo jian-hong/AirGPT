@@ -85,6 +85,20 @@ body.theme-light .side-collapse-btn{opacity:.9}
 body.theme-light .plus-menu button .pm-check{color:#1d4ed8}
 body.theme-light .composer button.cprefs-btn:disabled{opacity:.6}
 body.theme-light .msg-jump-count{color:var(--text)}
+/* project-pick modal: a light card in light theme (it was a dark card with grey ink, 1.4 to 2:1) */
+body.theme-light .project-pick-box{background:var(--surface);border-color:var(--line);box-shadow:0 28px 64px rgba(0,0,0,.18)}
+body.theme-light .project-pick-box h3,body.theme-light .project-pick-card h4{color:var(--text)}
+body.theme-light .project-pick-card{border-color:var(--line);background:var(--surface2)}
+body.theme-light .project-pick-card:hover{border-color:rgba(0,0,0,.28);background:#fff}
+body.theme-light .project-pick-card.on{border-color:rgba(0,0,0,.5);background:#fff}
+body.theme-light .project-pick-card .pick-meta{opacity:1}
+/* 'Needs setup' chip and Vertex roadmap hints: no pale red / faded ink on light surfaces */
+body.theme-light .mp-chip.bad{color:var(--fail);border-color:rgba(180,35,24,.4)}
+body.theme-light .cortex-card .hint{opacity:1!important}
+/* access popover: a later rule made it a dark card with dark ink in light (about 1:1) */
+body.theme-light .access-pop{background:var(--surface);box-shadow:0 16px 40px rgba(0,0,0,.18)}
+body.theme-light .access-row:hover,body.theme-light .access-row.on{background:var(--surface2)}
+body.theme-light .access-row.on .access-radio{border-color:var(--text);box-shadow:inset 0 0 0 3px var(--text)}
 body.theme-light .ds-ico:hover{background:rgba(0,0,0,.07)}
 body.theme-light .ds-ico.danger:hover{background:rgba(180,35,24,.1);color:var(--fail)}
 body.theme-light .ds-add .ds-plus{opacity:1}
