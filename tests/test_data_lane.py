@@ -136,8 +136,11 @@ class RestoreIsSafe(unittest.TestCase):
         self.assertEqual(code, 200, out)
         for n in secrets:
             self.assertEqual((self.dd / n).read_text(), "ORIGINAL", n)
-        self.assertFalse((self.dd / "WORKSPACE.JSON").exists())
-        self.assertFalse((self.dd / "Auth_Tokens.json").exists())
+        # Exact-case names: on a case-insensitive disk (Windows, macOS) Path("WORKSPACE.JSON")
+        # .exists() finds workspace.json itself, so ask the folder what it really holds.
+        names = set(os.listdir(self.dd))
+        self.assertNotIn("WORKSPACE.JSON", names)
+        self.assertNotIn("Auth_Tokens.json", names)
         self.assertEqual((self.dd / "notes.txt").read_text(), "fine")
         self.assertEqual((self.dd / "sub" / "ok.txt").read_text(), "fine2")
         skipped = {s["file"] for s in out["skipped"]}
