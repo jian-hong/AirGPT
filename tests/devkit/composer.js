@@ -166,6 +166,13 @@ const noSideScroll = p => p.evaluate(() => document.documentElement.scrollWidth 
   await p.reload(); await p.waitForTimeout(2500);
   check('draft is gone after sending', (await p.inputValue('#input')) === '' && (await p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('airgpt_draft:') && localStorage[k].includes('DRAFT-ONE')).length)) === 0, JSON.stringify([await p.inputValue('#input'), await p.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('airgpt_draft')))]));
 
+  // a send that fails gives the text back (and the draft survives a reload)
+  await p.route(/\/api\/(chat\/stream|messages)$/, r => r.request().method() === 'POST' ? r.fulfill({ status: 500, body: '{"error":"boom"}' }) : r.continue());
+  await p.fill('#input', 'FAIL-SEND keep me'); await p.press('#input', 'Enter'); await p.waitForTimeout(2500);
+  check('failed send keeps the text in the box', (await p.inputValue('#input')) === 'FAIL-SEND keep me', await p.inputValue('#input'));
+  await p.unroute(/\/api\/(chat\/stream|messages)$/); await p.fill('#input', '');
+  await p.waitForTimeout(600);
+
   // composer.8 bug button never covers Send
   let cover = [];
   for (const n of [1, 3, 5, 8, 12]) {

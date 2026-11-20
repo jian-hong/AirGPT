@@ -1694,6 +1694,8 @@ ATTACH_MAX_FILE_BYTES = 25 * 1024 * 1024   # bigger files are named to the user,
 ATTACH_MAX_CHARS_FILE = 12000              # per file
 ATTACH_MAX_CHARS_TOTAL = 30000             # all files together
 ATTACH_MAX_PDF_PAGES = 80
+ATTACH_MAX_UNPACKED_BYTES = 40 * 1024 * 1024  # docx/xlsx once unzipped
+_FENCE_RE = re.compile(r"<<<(?=\s*(?:END\s*)?FILE)", re.I)
 _ATTACH_TEXT_EXT = {".txt", ".md", ".csv", ".tsv", ".json", ".log", ".xml", ".yaml", ".yml", ".html", ".htm", ".rtf"}
 
 
@@ -1713,11 +1715,21 @@ def extract_attachment_text(path, filename: str = "") -> tuple[str, str]:
     if size > ATTACH_MAX_FILE_BYTES:
         return "", f"too large to read ({size // (1024 * 1024)} MB, limit {ATTACH_MAX_FILE_BYTES // (1024 * 1024)} MB)"
     try:
+        if ext in (".docx", ".xlsx", ".xlsm"):
+            # a small zip can unpack to gigabytes: judge the unpacked size before opening it
+            import zipfile
+
+            with zipfile.ZipFile(str(p)) as z:
+                if sum(i.file_size for i in z.infolist()) > ATTACH_MAX_UNPACKED_BYTES:
+                    return "", "too large once opened"
         if ext in _ATTACH_TEXT_EXT or ext == "":
             raw = p.read_bytes()
-            if b"\x00" in raw[:4096]:
+            if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+                text = raw.decode("utf-16", errors="replace")
+            elif b"\x00" in raw[:4096]:
                 return "", "this looks like a binary file, not text"
-            text = raw.decode("utf-8", errors="replace")
+            else:
+                text = raw.decode("utf-8-sig", errors="replace")
         elif ext == ".pdf":
             from pypdf import PdfReader
 
@@ -1772,14 +1784,14 @@ def _attachments_block(files: list[dict]) -> tuple[str, list[dict]]:
     parts: list[str] = []
     budget = ATTACH_MAX_CHARS_TOTAL
     for f in files or []:
-        name = str(f.get("name") or "file")[:120].replace('"', "'").replace("\n", " ")
+        name = re.sub(r"[^\w .()\[\]-]", "_", str(f.get("name") or "file"))[:120]
         text, why = extract_attachment_text(f.get("path"), name)
         row = {"name": name, "chars": 0, "cut": False, "reason": why}
         if why:
             parts.append(f'[File "{name}" was attached but could not be read: {why}.]')
             report.append(row)
             continue
-        text = text.replace("<<<END FILE>>>", "<<< END FILE >>>")
+        text = _FENCE_RE.sub("<< <", text)  # file text cannot forge or close a fence, however spaced or cased
         take = min(ATTACH_MAX_CHARS_FILE, budget)
         if take <= 0:
             row["reason"] = "left out, the attached files together are too long"

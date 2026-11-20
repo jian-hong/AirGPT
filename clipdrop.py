@@ -525,6 +525,8 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0, res
     try:
         business = bool((app_license.get_status() if app_license else {}).get("business_features"))
         result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business, attachments=attachments)
+        if len(question or "") > ai_engine.QUESTION_LIMIT and result.get("analysis"):
+            result["analysis"] = ai_engine.QUESTION_CUT_NOTE + "\n\n" + result["analysis"]
         if result.get("error") == "ai_lockdown":
             db.add_message(
                 device_ip="127.0.0.1",
@@ -610,10 +612,14 @@ def _attachment_files(ids, allowed_sessions) -> list[dict]:
     """
     out: list[dict] = []
     allowed = {int(x) for x in allowed_sessions if x}
+    seen: set[int] = set()
     for raw in list(ids or [])[:12]:
         try:
+            if int(raw) in seen:
+                continue
+            seen.add(int(raw))
             m = db.get_message(int(raw))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if not m or m.get("kind") != "file" or not m.get("filepath"):
             continue

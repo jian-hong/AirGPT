@@ -4055,7 +4055,7 @@ function charCountText(n){
 }
 function updateCharCount(){
   const el=$('input'),c=$('charCount');if(!el||!c)return;
-  const n=(el.value||'').trim().length,t=charCountText(n);
+  const n=Array.from((el.value||'').trim()).length,t=charCountText(n); // characters, as the server counts them
   c.textContent=t;c.hidden=!t;c.classList.toggle('over',n>INPUT_LIMIT);
 }
 let lastId=0,lastHistId=0,myName=localStorage.getItem('clipdrop_name')||'';
@@ -4091,7 +4091,7 @@ const MODE_BLURBS={
 const OLD_MODES=['engineering','ml','finance'];
 function draftKey(){return currentSession?('s:'+currentSession):('new:'+(typeof currentMode==='function'?currentMode():'general'))}
 // Unsent drafts also live in localStorage (one key per chat) so a reload or a closed tab keeps them.
-const DRAFT_PREFIX='airgpt_draft:',DRAFT_MAX=20000;
+const DRAFT_PREFIX='airgpt_draft:',DRAFT_MAX=200000;
 const _draftTimers={};
 function _draftWrite(k,v){
   try{if(v)localStorage.setItem(DRAFT_PREFIX+k,String(v).slice(0,DRAFT_MAX));else localStorage.removeItem(DRAFT_PREFIX+k)}catch(e){}
@@ -5357,8 +5357,8 @@ async function showProjectFocus(key){
     ta.setAttribute('enterkeyhint',coarsePointer()?'enter':'send');
     wireComposerAutocomplete(ta,{});
     ta.addEventListener('input',()=>{
-      const c=$('projCount'),t=charCountText(ta.value.trim().length);
-      if(c){c.textContent=t;c.hidden=!t;c.classList.toggle('over',ta.value.trim().length>INPUT_LIMIT)}
+      const c=$('projCount'),n=Array.from(ta.value.trim()).length,t=charCountText(n);
+      if(c){c.textContent=t;c.hidden=!t;c.classList.toggle('over',n>INPUT_LIMIT)}
     });
   }
   $('projAttach')?.addEventListener('click',()=>$('projFileIn')?.click());
@@ -13740,6 +13740,7 @@ async function retryFailedSend(){
   send();
 }
 async function reconcileAfterSendFail(errToast){
+  restoreUnsentText();
   hideThinking();
   document.getElementById('ai-stream')?.remove();
   const pending=document.getElementById('pending-user');
@@ -14989,10 +14990,18 @@ async function ensureChatSession(){
   }catch(e){}
   return 0;
 }
+// Text of the send in flight. If the send fails, the text goes back in the box instead of vanishing.
+let _unsentText='';
+function restoreUnsentText(){
+  const el=$('input');
+  if(el&&_unsentText&&!el.value){el.value=_unsentText;try{autoGrowInput();updateSendVisibility()}catch(e){}}
+}
 async function send(){
   const k=draftKey();
+  _unsentText=($('input')?.value||'');
   try{return await _sendInner()}
   finally{
+    _unsentText='';
     // A draft that was sent must not come back after a reload; one that was not sent stays.
     const el=$('input'),cur=draftKey();
     if(k!==cur)clearComposerDraft(k);
@@ -15101,7 +15110,7 @@ async function _sendInner(){
   if(!text)return;
   // Manual mode stays Manual — only AI when toggle is on
   if(aiMode){
-    if(info.online===false&&!info.has_ai_keys){toast('AI needs internet or API keys in Settings');return}
+    if(info.online===false&&!info.has_ai_keys){restoreUnsentText();toast('AI needs internet or API keys in Settings');return}
     const extra={};
     if(replyContext){
       extra.reply_to_id=replyContext.msgId;
