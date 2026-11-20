@@ -150,6 +150,29 @@ class TurnFileEdges(SeamsBase):
         self.assertNotIn("left out", repr(evs))
 
 
+class TurnFileEdgesNoOldFiles(SeamsBase):
+    def test_edit_of_a_question_without_files_still_names_files_past_the_cap(self):
+        sid = self.new_chat()
+        u, _ = self.turn(sid)
+        new = [self.file_row(sid, f"new{n:02d}.txt", "new")["id"] for n in range(13)]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": sid, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        self.assertEqual(len(self.names(self.calls[0])), 12)
+        self.assertIn("new12.txt", repr(evs))
+
+    def test_the_left_out_note_never_names_a_file_of_another_chat(self):
+        a, b = self.new_chat(), self.new_chat()
+        theirs = self.file_row(b, "secret-plan.txt", "not yours")
+        self.file_row(a, "mine.txt", "old")
+        u, _ = self.turn(a)
+        new = [self.file_row(a, f"new{n:02d}.txt", "new")["id"] for n in range(12)] + [theirs["id"]]
+        code, evs, out = self.post("/api/chat/stream", {"session_id": a, "text": "edited",
+                                                        "replace_msg_id": u["id"], "attachment_ids": new})
+        self.assertEqual(code, 200, out)
+        self.assertNotIn("secret-plan", repr(evs))
+
+
 class FailedEditKeepsTheOldTurn(SeamsBase):
     def broken(self, question, mode, history, abort, **kw):
         yield {"type": "error", "text": "No text LLM available"}

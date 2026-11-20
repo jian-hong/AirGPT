@@ -3806,18 +3806,21 @@ class Handler(BaseHTTPRequestHandler):
         attach_ids = data.get("attachment_ids") or []
         if regen_id:  # asked again with exactly the files it had; nothing else rides along
             attach_ids = turn_files
-        elif turn_files:  # the files this question was asked about, then any added with the edit
+        elif replace_id:  # the files this question was asked about (if any), then any added with the edit
             all_new = _clean_attach_ids(attach_ids, None)
             new_ids = all_new[:12]
             room = 12 - len(new_ids)
             kept_old = turn_files[len(turn_files) - room:] if room > 0 else []
             left_out = turn_files[:len(turn_files) - len(kept_old)] + all_new[12:]
             attach_ids = kept_old + new_ids
+            names = []
             if left_out:  # said in the reply itself, like a cut question
-                names = []
                 for fid in left_out:
                     fm = db.get_message(fid) or {}
+                    if fm.get("kind") != "file" or int(fm.get("session_id") or 0) not in (session_id, parent_session_id):
+                        continue  # only this chat's files are named, never another chat's
                     names.append(str(fm.get("filename") or ("file " + str(fid))))
+            if names:
                 turn_note = ("Only 12 files can go with one question. These were left out: "
                              + ", ".join(names) + ".\n\n")
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
