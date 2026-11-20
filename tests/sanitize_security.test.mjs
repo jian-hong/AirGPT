@@ -32,7 +32,7 @@ before(async () => {
   await page.addScriptTag({ url: CDN("katex@0.16.11/dist/katex.min.js") });
   await page.evaluate(() => { window.esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); });
   const src = ["sanitizeHtml", "mdFallback", "renderMd", "ragSafeMoney", "ragLinkCiteChips", "ragMdHtml"].filter((n) => new RegExp("^function " + n + "\\(", "m").test(html)).map(grab).join("\n");
-  const ksafe = /^const _KATEX_SAFE=.*$/m.exec(html);
+  const ksafe = /^const _KATEX_SAFE=[\s\S]*?^function texOk.*$/m.exec(html);
   assert.ok(ksafe, "_KATEX_SAFE not found");
   await page.addScriptTag({ content: ksafe[0] + "\n" + src + "\nwindow.renderMd=renderMd;window.ragMdHtml=ragMdHtml;" });
 });

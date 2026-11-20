@@ -1818,6 +1818,42 @@ def _export_package() -> bytes:
     return buf.getvalue()
 
 
+# Tables a restored database must have, by path inside the data folder. A valid SQLite file with
+# other tables would be swapped in and break chats until the next fix-up, so it is refused first.
+_RESTORE_DB_TABLES = {
+    "clipdrop.db": ("messages", "devices", "chat_sessions"),
+    "agents.db": ("agents", "agent_runs"),
+    "rag/rag.db": ("knowledge_spaces", "sources", "chunks"),
+    "memory/index.db": ("memories",),
+}
+# One backup may not unpack to more than this: the larger of 1 GiB and four times the data folder.
+_RESTORE_MIN_CAP = 1 << 30
+_RESTORE_CAP_FACTOR = 4
+_RESTORE_MAX_PATH = 4096
+_RESTORE_MAX_SEGMENT = 255
+
+
+def _db_refusal(path: Path, rel: str) -> str:
+    """'' when the database file is sound and has the tables the app needs, else a short reason."""
+    try:
+        with open(path, "rb") as fh:
+            if fh.read(16) != b"SQLite format 3\x00":
+                return "it is not a database file"
+        con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        try:
+            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            miss = [t for t in _RESTORE_DB_TABLES.get(rel.lower(), ()) if t not in have]
+            if miss:
+                return "it is missing " + ", ".join(miss)
+            if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                return "it is damaged"
+        finally:
+            con.close()
+    except Exception:
+        return "it is not a working database"
+    return ""
+
+
 def _restore_package(blob: bytes) -> tuple[int, dict]:
     """Restore a backup zip into DATA_DIR. Returns (http status, answer).
     Plans first (nothing written), saves the current data as pre-restore-<time>.zip,
@@ -1838,6 +1874,8 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             if any(seg in ("", ".", "..") for seg in norm.split("/")) or norm.startswith("/") or ":" in norm:
                 skipped.append({"file": name, "why": "unsafe path"})
                 continue
+            if len(norm) > _RESTORE_MAX_PATH or any(len(seg) > _RESTORE_MAX_SEGMENT for seg in norm.split("/")):
+                return 400, {"error": "This backup has a file name that is too long to restore. Nothing was changed."}
             if norm == "env.local":
                 skipped.append({"file": name, "why": "API keys are never restored from a backup; yours here stay as they are"})
                 continue
@@ -1879,8 +1917,16 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
                 return 400, {"error": f"This backup cannot be restored: \"{r.as_posix()}\" is a file in one place and a folder in another. Nothing was changed.", "skipped": skipped}
         # Room first: the safety copy plus the restored files must fit on the disk.
         need = sum(zf.getinfo(n).file_size for n, _ in plan)
+        have_now = 0
         try:
-            need += sum(f.stat().st_size for f in DATA_DIR.rglob("*") if f.is_file())
+            have_now = sum(f.stat().st_size for f in DATA_DIR.rglob("*") if f.is_file())
+        except OSError:
+            pass
+        cap = max(_RESTORE_MIN_CAP, _RESTORE_CAP_FACTOR * have_now)
+        if need > cap:
+            return 400, {"error": "This backup unpacks to far more data than this PC holds, so it was not restored. Nothing was changed.", "skipped": skipped}
+        try:
+            need += have_now
             free = shutil.disk_usage(DATA_DIR if DATA_DIR.is_dir() else DATA_DIR.parent).free
             if need > free:
                 return 400, {"error": "There is not enough free space on this PC to restore that backup safely. Nothing was changed.", "skipped": skipped}
@@ -1905,6 +1951,7 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
         tmps: list[tuple[Path, Path]] = []
         made_dirs: list[Path] = []
         swapped: list[tuple[str, Path, bool]] = []
+        written = 0
 
         def _undo_stage():
             for tmp, _ in tmps:
@@ -1924,21 +1971,23 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
                 made_dirs.extend(missing)
                 tmp = target.with_name(target.name + ".restoring")
                 tmps.append((tmp, target))
+                # Count what is really written: a zip can state a small size and unpack to a huge one.
                 with zf.open(name) as src, open(tmp, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    while True:
+                        chunk = src.read(1 << 20)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > cap:
+                            _undo_stage()
+                            return 400, {"error": "This backup unpacks to far more data than this PC holds, so it was not restored. Nothing was changed. "
+                                                  f"Your data was also saved to {safety}.", "safety_copy": str(safety), "skipped": skipped}
+                        dst.write(chunk)
                 if target.suffix.lower() in (".db", ".sqlite", ".sqlite3"):
-                    try:
-                        with open(tmp, "rb") as fh:
-                            if fh.read(16) != b"SQLite format 3\x00":
-                                raise ValueError("header")
-                        con = sqlite3.connect(f"file:{tmp.as_posix()}?mode=ro", uri=True)
-                        try:
-                            con.execute("SELECT count(*) FROM sqlite_master").fetchone()
-                        finally:
-                            con.close()
-                    except Exception:
+                    why = _db_refusal(tmp, target.relative_to(DATA_DIR).as_posix())
+                    if why:
                         _undo_stage()
-                        return 400, {"error": f"\"{name}\" in this backup is not a working database, so nothing was changed. "
+                        return 400, {"error": f"\"{name}\" in this backup is not a usable database ({why}), so nothing was changed. "
                                               f"Your data was also saved to {safety}.", "safety_copy": str(safety), "skipped": skipped}
         except Exception as e:
             _undo_stage()

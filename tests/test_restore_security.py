@@ -65,6 +65,9 @@ class SecurityControlFiles(Base):
     def test_a_real_backup_round_trips(self):
         (self.dd / "clipdrop.db").write_bytes(b"")
         con = sqlite3.connect(self.dd / "clipdrop.db")
+        # A backup made by the app always carries the app's own tables; a database without them is refused.
+        for t in ("messages", "devices", "chat_sessions"):
+            con.execute(f"create table {t}(a)")
         con.execute("create table t(a)")
         con.execute("insert into t values (1)")
         con.commit()

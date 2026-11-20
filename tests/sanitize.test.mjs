@@ -142,3 +142,11 @@ test("fallback cleaner drops id, name and page classes, keeps the code language"
   assert.ok(!/modal-backdrop|evil/.test(out), out);
   assert.match(out, /<code class="language-js">c<\/code>/);
 });
+
+test("fallback cleaner drops for, form, popover, list and size attributes", async () => {
+  const out = await clean('<label for="sendBtn">x</label><table width="99999" height="99999" cellpadding="9" border="9"><tr><td height="9" width="9">y</td></tr></table>' +
+    '<span popover popovertarget="a" list="b" form="c" formaction="http://evil.test/">z</span><marquee>m</marquee>');
+  assert.ok(!/\s(for|form|formaction|popover|popovertarget|list|width|height|cellpadding|border)=/i.test(out), out);
+  assert.ok(!/marquee/i.test(out), out);
+  assert.match(out, /x/); assert.match(out, /y/); assert.match(out, /z/);
+});
