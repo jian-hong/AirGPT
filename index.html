@@ -17144,7 +17144,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     var tg = list.querySelector('#bgTasksToggleFin');
     if(tg) tg.onclick = function(){ showFinished = !showFinished; poll(); };
     var cl = list.querySelector('#bgTasksClear');
-    if(cl) cl.onclick = function(){ bgApi('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
+    if(cl) cl.onclick = function(){ bgApi('/api/workflows/clear',{method:'POST'}).then(function(r){ return r.json().catch(function(){return {};}); })
+      .then(function(j){ if(j && j.ok === false && window.toast) window.toast(j.error || 'Could not clear the list. Try again.'); poll(); })
+      .catch(function(){ if(window.toast) window.toast('Could not clear the list. Try again.'); }); };
 
     var n = run.length;
     fit();

@@ -105,6 +105,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE messages ADD COLUMN ai_category TEXT DEFAULT ''")
         if "session_id" not in cols:
             conn.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER DEFAULT 0")
+        if "attachment_ids" not in cols:  # JSON list of the files sent with a question; NULL = saved before this existed
+            conn.execute("ALTER TABLE messages ADD COLUMN attachment_ids TEXT")
         # migrate chat_sessions
         scols = {r[1] for r in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         for col, sql in (
@@ -1204,6 +1206,7 @@ def add_message(
     session_id: int = 0,
     allow_duplicate: bool = False,
     hash_preclaimed: bool = False,
+    attachment_ids: list | None = None,
 ) -> dict | None:
     if content_hash:
         if allow_duplicate and session_id:
@@ -1216,9 +1219,10 @@ def add_message(
     now = time.time()
     with _lock, _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO messages(device_ip,device_name,text,kind,filename,filepath,thumb,mime,size,source,content_hash,created_at,session_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (device_ip, device_name, text or "", kind, filename, filepath, thumb, mime, size, source, content_hash, now, session_id),
+            "INSERT INTO messages(device_ip,device_name,text,kind,filename,filepath,thumb,mime,size,source,content_hash,created_at,session_id,attachment_ids) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (device_ip, device_name, text or "", kind, filename, filepath, thumb, mime, size, source, content_hash, now, session_id,
+             None if attachment_ids is None else json.dumps([int(x) for x in attachment_ids])),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM messages WHERE id=?", (cur.lastrowid,)).fetchone()

@@ -698,10 +698,28 @@ def _last_turn(session_id: int, user_msg_id: int, new_file_ids=()) -> tuple[dict
     return row, after, ""
 
 
+def _clean_attach_ids(ids) -> list[int]:
+    """The attachment ids a request names, as plain ints (at most 12), junk dropped."""
+    out: list[int] = []
+    for raw in (ids if isinstance(ids, list) else [])[:12]:
+        try:
+            out.append(int(raw))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return out
+
+
 def _turn_file_ids(session_id: int, user_msg_id: int) -> list[int]:
-    """Ids of the files that were sent with a question: the file rows directly before
-    it, back to the previous turn. Regenerate and edit use this so the model gets the
-    same files again; _attachment_files still checks every one of them."""
+    """Ids of the files that were sent with a question. A question saved with its
+    attachment ids gets exactly those back. Only a question saved before that was
+    recorded (no stored value) falls back to the file rows directly before it, back
+    to the previous turn. _attachment_files still checks every one of them."""
+    row = db.get_message(user_msg_id)
+    if row and row.get("attachment_ids") is not None:
+        try:
+            return _clean_attach_ids(json.loads(row["attachment_ids"]))
+        except (TypeError, ValueError):
+            return []
     out: list[int] = []
     for m in reversed(db.get_messages_before(session_id, user_msg_id, 12)):
         if m.get("kind") != "file":
@@ -3789,7 +3807,9 @@ class Handler(BaseHTTPRequestHandler):
         reply_snippet = str(data.get("reply_snippet", ""))[:500]
         context_ids = data.get("context_ids") or []
         attach_ids = data.get("attachment_ids") or []
-        if turn_files:  # the files this question was asked about, then any added with the edit
+        if regen_id:  # asked again with exactly the files it had; nothing else rides along
+            attach_ids = turn_files
+        elif turn_files:  # the files this question was asked about, then any added with the edit
             new_ids = list(attach_ids)[:12] if isinstance(attach_ids, list) else []
             attach_ids = turn_files[-max(0, 12 - len(new_ids)):] + new_ids
         attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
@@ -3839,7 +3859,8 @@ class Handler(BaseHTTPRequestHandler):
             user_msg = turn_user  # same question, asked again: no second copy
         else:
             db.maybe_set_ai_session_title(session_id, text[:60])
-            user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id)
+            user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id,
+                                      attachment_ids=_clean_attach_ids(attach_ids))
             if replace_id:  # the edited question stands in for the old turn once it is answered
                 turn_replies = [turn_user, *turn_replies]
             bump_sync()
@@ -6338,7 +6359,8 @@ class Handler(BaseHTTPRequestHandler):
                         else:
                             sess = db.create_session("New chat", capture_type="ai")
                             sid = sess["id"]
-                    user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=sid)
+                    user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=sid,
+                                              attachment_ids=_clean_attach_ids(data.get("attachment_ids")))
                     # Soft-title from first user question until AI replies
                     db.maybe_set_ai_session_title(sid, text.strip()[:60])
                     depth = str(data.get("depth", "normal"))
