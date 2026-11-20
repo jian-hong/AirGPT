@@ -94,10 +94,10 @@
 @media(max-width:760px){
   .modal .btn,.modal-actions .btn,#settingsModal .modal-actions .btn,#bugDialog .btn{min-height:44px}
   /* Small buttons keep their look; an invisible layer makes the tap area 44px. */
-  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,.banner-x,
+  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,
   #bgTasksPanel .bgFoot button{position:relative}
   .modal .kv-group-btn::after,.search-filter-chip::after{content:"";position:absolute;inset:-8px 0}
-  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,.banner-x::after,
+  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,
   #bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
   /* Settings checkbox rows were 17px to 34px tall. */
   #settingsModal .settings-check{min-height:44px}

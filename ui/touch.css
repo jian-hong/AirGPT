@@ -41,7 +41,8 @@
   /* Close and refresh in Background tasks are bare glyphs: a 44px box is the tap area; negative margins keep the header the same height. */
   #bgTasksPanel .bgHead button{min-width:44px;min-height:44px;margin:-10px -4px}
   /* Banner dismiss is a bare x: a 44px box in the banner's corner. Docs is a text link in the footer. */
-  .banner-x{min-width:44px;min-height:44px;top:0;right:0;padding:0}
+  .banner-x{min-width:44px;min-height:44px;top:0;right:4px;padding:0}
+  .lan-banner,.paywall-banner,.net-banner{min-height:46px;padding-right:48px;box-sizing:border-box}
   .sc-docs{display:inline-flex;align-items:center;min-height:44px;min-width:44px}
   .composer-actions{gap:8px}
   .msg-queue-hint.edit-chip{padding-bottom:18px}
