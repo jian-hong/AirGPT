@@ -6531,6 +6531,9 @@ function settleQueue(ok){
   if(ok){setTimeout(drainMessageQueue,0);return}
   const back=messageQueue.map(q=>q.text);
   messageQueue=[];updateQueueHint();
+  // A failed Edit has its text and chip back in the box. Waiting lines are new questions: they
+  // must not ride on that edit (Enter would replace the old question with both texts mixed).
+  if(typeof editingMsgId!=='undefined'&&editingMsgId)clearEdit();
   const inp=$('input');
   if(inp){
     inp.value=[...back,inp.value.trim()].filter(Boolean).join('\n\n');
