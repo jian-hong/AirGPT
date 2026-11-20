@@ -2719,6 +2719,87 @@ def _rag_rebuild_paths(srcs: list) -> list:
     return rag_ingest.rebuild_source_paths(srcs)
 
 
+def _rag_sheet_rows(blob: str, start: int, end: int) -> tuple[str, int, int] | None:
+    """(sheet, first data row, last data row) for a span of a table's extracted text.
+
+    A workbook is stored as ``## Sheet: Name`` then the column row, then one line per
+    row, so the span's lines can be counted. Rows count below the header, the same
+    way the answer's "98 of 400 rows" does. None when the span is not in a sheet."""
+    last = None
+    for m in re.finditer(r"^## (.*)$", blob[: max(0, start) + 1], re.M):
+        last = m
+    if not last or not last.group(1).startswith("Sheet:"):
+        return None
+    nl = blob.find("\n", last.end() + 1)  # end of the column row
+    first_data = nl + 1 if nl >= 0 else len(blob)
+    if end <= first_data:
+        return None
+    first = blob.count("\n", first_data, max(start, first_data)) + 1
+    last_row = blob.count("\n", first_data, max(end - 1, first_data)) + 1
+    return last.group(1)[len("Sheet:"):].strip(), first, max(first, last_row)
+
+
+def _rag_passage(chunk_id: int, around: int = 3) -> dict | None:
+    """One cited passage with a few lines before and after, for the answer's viewer.
+
+    Read-only. Everything comes from the space's own rows and its stored text copy;
+    nothing the client sends is used as a path."""
+    from rag import reveal as rag_reveal
+    from rag import store as rag_store
+
+    ch = rag_store.get_chunk(int(chunk_id))
+    if not ch:
+        return None
+    src = rag_store.get_source(int(ch.get("source_id") or 0)) or {}
+    meta = src.get("meta") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    start, end = int(ch.get("span_start") or 0), int(ch.get("span_end") or 0)
+    before = after = ""
+    sheet = rows = None
+    blob = ""
+    try:
+        bp = Path(str(meta.get("blob") or ""))
+        if bp.is_file():
+            blob = bp.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        blob = ""
+    if blob and 0 <= start < end <= len(blob):
+        n = max(0, min(int(around), 8))
+        before = "\n".join(blob[max(0, start - 800):start].split("\n")[-n - 1:]).strip("\n") if n else ""
+        after = "\n".join(blob[end:end + 800].split("\n")[: n + 1]).strip("\n") if n else ""
+        # A span that begins mid-line would show half a line as context.
+        if start and blob[start - 1] != "\n":
+            before = ""
+        sr = _rag_sheet_rows(blob, start, end)
+        if sr:
+            sheet, rows = sr[0], {"first": sr[1], "last": sr[2]}
+    heading = str(ch.get("heading") or "")
+    page = int(ch.get("page") or 0)
+    pm = re.match(r"^Page (\d+)\b", heading)
+    if not page and pm:
+        page = int(pm.group(1))
+    spath = str(src.get("path") or "")
+    is_url = bool(re.match(r"https?://", spath)) or str(src.get("title") or "").startswith("url_")
+    target = None if is_url else rag_reveal.resolve_source_path(src)[0]
+    return {
+        "chunk_id": int(ch["id"]),
+        "source_id": int(src.get("id") or 0),
+        "file": str(src.get("title") or Path(spath.replace("\\", "/")).name or "source"),
+        "heading": heading,
+        "page": page or None,
+        "sheet": sheet,
+        "rows": rows,
+        "text": str(ch.get("text") or "")[:6000],
+        "before": before,
+        "after": after,
+        "can_open": bool(target),
+    }
+
+
 def _rag_resolved(raw) -> Path | None:
     """Absolute path with symlinks followed and `..` collapsed, or None."""
     try:
@@ -4989,6 +5070,54 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": True, "sources": rag_store.list_sources(sid)})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/rag/passages/"):
+            # A cited passage with its neighbours, so a [n] chip can open the source.
+            try:
+                qs = parse_qs(urlparse(self.path).query or "")
+                out = _rag_passage(int(path.rstrip("/").split("/")[-1]), int((qs.get("around") or ["3"])[0] or 3))
+                if not out:
+                    return self._json(404, {"ok": False, "error": "passage not found - the file may have been removed"})
+                return self._json(200, {"ok": True, "passage": out})
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/sources/") and path.endswith("/file"):
+            # The original file, to read in a new tab. Host only like all of /api/rag.
+            try:
+                from rag import reveal as rag_reveal
+                from rag import store as rag_store
+
+                src = rag_store.get_source(int(path.split("/")[4]))
+                target = rag_reveal.resolve_source_path(src)[0] if src else None
+                if not target or not Path(target).is_file():
+                    return self._json(404, {"ok": False, "error": "No file on disk for this source - it may have been moved or deleted."})
+                if Path(target).stat().st_size > 200 * 1024 * 1024:
+                    return self._json(413, {"ok": False, "error": "This file is too large to open here."})
+                ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
+                # Only types a browser shows without running anything are shown in
+                # place; a document that could carry script is handed over as a download.
+                inline = ctype in ("application/pdf", "text/plain", "text/csv", "text/markdown", "application/json") or (
+                    ctype.startswith("image/") and ctype != "image/svg+xml"
+                )
+                body = Path(target).read_bytes()
+                name = Path(target).name.replace('"', "")
+                self.send_response(200)
+                self.send_header("Content-Type", ctype if inline else "application/octet-stream")
+                self.send_header("Content-Disposition", f'{"inline" if inline else "attachment"}; filename="{name}"')
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "sandbox")
+                self.send_header("Content-Length", str(len(body)))
+                self._cors()
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/spaces/") and path.endswith("/ann-status"):
             try:
