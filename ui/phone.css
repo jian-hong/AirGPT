@@ -176,4 +176,7 @@
   html body .chat-titlebar-actions .chat-share-btn:hover,html body .chat-titlebar-actions .chat-share-btn:focus-visible{background:var(--surface2)}
   .chat-titlebar-actions .chat-share-btn svg{width:18px;height:18px}
   .chat-titlebar-actions .cta-lab{display:inline}
+  /* The Export formats open in place under Export (ui/chattools.js), pushing Share down. */
+  .chat-titlebar-actions .ctools-menu.inline{position:static;min-width:0;padding:0 0 0 30px;border:0;border-radius:0;background:transparent;box-shadow:none}
+  .chat-titlebar-actions .ctools-menu.inline[hidden]{display:none}
 }

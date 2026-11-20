@@ -17,8 +17,14 @@
 }
 .msg .body pre .cb-copy:hover,.msg .body pre .cb-copy:focus-visible{color:var(--text);border-color:var(--line)}
 .msg .body pre .cb-copy.bad{color:#e66767}
-/* A finger-sized target on touch screens without making the bar taller. */
-@media (pointer:coarse){.msg .body pre .cb-copy::after{content:"";position:absolute;inset:-10px -6px}}
+/* A finger-sized target on touch screens (the invisible 44x44 layer comes from touch.css, the button
+   keeps its small look). The layer only works if it fits inside the bar: the code block clips
+   anything past its edge, and the reply rail sits over its right side. So the bar is 44 tall,
+   and on a phone Copy stays clear of the rail. A mouse keeps the compact bar. */
+@media (pointer:coarse){
+  .msg .body pre .cb-bar{min-height:44px;padding-top:0;padding-bottom:0}
+}
+@media (max-width:760px){.msg .body pre .cb-bar{padding-right:34px}}
 /* Light theme keeps code blocks dark (--code-block-bg), so the bar uses light text on it. */
 body.theme-light .msg .body pre .cb-bar{color:rgba(232,230,225,.7);border-bottom-color:rgba(255,255,255,.12)}
 body.theme-light .msg .body pre .cb-copy{color:rgba(232,230,225,.8)}

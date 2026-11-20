@@ -67,6 +67,10 @@ body.theme-light{
 /* Light theme contrast: dark-only colours that sat on beige or white. */
 body.theme-light .side-nav .nav-item .nav-beta{opacity:1}
 body.theme-light .field-eye{color:var(--text)}
+body.theme-light .netie-spec-hw .cell .v,body.theme-light .netie-opt .olab{color:var(--text)}
+body.theme-light .kv-head .kv-chev{opacity:.85}
+body.theme-light input::placeholder,body.theme-light textarea::placeholder{color:#646464;opacity:1}
+body.theme-light .mp-logo{background:rgba(0,0,0,.08);color:var(--text)}
 body.theme-light .kv-ok .kv-chip{color:var(--ok)}
 body.theme-light [style*="color:#e03131"]{color:var(--fail)!important}
 body.theme-light .btn.danger{color:var(--fail);border-color:rgba(180,35,24,.5)}
@@ -77,7 +81,9 @@ body.theme-light #keyVaultModal .kv-group-btn span,body.theme-light #kvList>p.hi
 body.theme-light .pal-hint-btn{opacity:.9}
 body.theme-light .side-nav .nav-label,body.theme-light .side-section-hdr,body.theme-light .side-section-hdr .chev,body.theme-light .side-section-hdr small{opacity:1}
 body.theme-light .side-nav .nav-label:hover .chev{opacity:1}
-body.theme-light .side-collapse-btn{opacity:.75}
+body.theme-light .side-collapse-btn{opacity:.9}
+body.theme-light .plus-menu button .pm-check{color:#1d4ed8}
+body.theme-light .composer button.cprefs-btn:disabled{opacity:.6}
 body.theme-light .msg-jump-count{color:var(--text)}
 body.theme-light .ds-ico:hover{background:rgba(0,0,0,.07)}
 body.theme-light .ds-ico.danger:hover{background:rgba(180,35,24,.1);color:var(--fail)}
@@ -960,6 +966,7 @@ body.phone-client .stage-tile{width:48px;height:48px;border-radius:10px}
 .btn-row{display:flex;gap:6px;flex-wrap:wrap}
 .btn{flex:1;min-width:70px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit;font-size:11px;cursor:pointer;font-weight:500}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg,#0a0a0a)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 :root{--accent-fg:#0a0a0a}
 .hint{font-size:10px;color:var(--muted);margin-top:8px;line-height:1.45}
 .dev{padding:7px 9px;background:var(--bg);border:1px solid var(--line);border-radius:7px;font-size:11px;display:flex;justify-content:space-between;margin-bottom:5px}
@@ -1733,6 +1740,14 @@ body.theme-light .btn.primary.spinning::before{border-color:rgba(0,0,0,.2);borde
 .forge-honesty span.warn{border-color:rgba(232,184,74,.35);color:var(--warn);background:rgba(232,184,74,.08)}
 .forge-schematic{min-height:180px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#0a0a0a;padding:12px;overflow:auto}
 .forge-schematic svg{max-width:100%;height:auto}
+/* Glass (no theme class) is see-through by design, but a floating menu over reply text must not be. */
+body:not(.theme-dark):not(.theme-light) .chat-titlebar.more-open .chat-titlebar-actions,body:not(.theme-dark):not(.theme-light) .ctools-menu:not(.inline){background:#161618}
+body.theme-light .forge-shell{background:var(--bg)}
+body.theme-light .forge-left,body.theme-light .forge-right{background:var(--surface);border-color:var(--line)}
+body.theme-light .forge-schematic{background:var(--bg);border-color:var(--line)}
+body.theme-light .forge-honesty span{border-color:var(--line)}
+body.theme-light .forge-honesty span.ok{background:rgba(22,122,76,.1);border-color:rgba(22,122,76,.4)}
+body.theme-light .forge-honesty span.warn{background:rgba(138,98,0,.1);border-color:rgba(138,98,0,.4)}
 body.openforge-mode .composer,body.openforge-mode .ctx-bar,body.openforge-mode .project-rail{display:none!important}
 body.openforge-mode .connect-col,body.openforge-mode .connect-collapse-btn{display:none!important}
 @media(max-width:900px){.forge-shell{grid-template-columns:1fr}}
@@ -4859,8 +4874,10 @@ function openSkuSettings(){
   openSettings('plan');
   setTimeout(()=>{const el=$('setLicenseKey');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})},200);
 }
+const _bannerGone={};   // the close still works when the browser refuses to store anything (private mode)
 function dismissBanner(which){
-  localStorage.setItem('banner_dismiss_'+which,'1');
+  _bannerGone[which]=1;
+  try{localStorage.setItem('banner_dismiss_'+which,'1')}catch(e){}
   const map={lan:'lanBanner',net:'netBanner',pay:'paywallBanner'};
   const el=$(map[which]);
   if(!el)return;
@@ -4870,7 +4887,7 @@ function dismissBanner(which){
     el.classList.remove('show','dismissing');
   },340);
 }
-function bannerAllowed(which){return localStorage.getItem('banner_dismiss_'+which)!=='1'}
+function bannerAllowed(which){if(_bannerGone[which])return false;try{return localStorage.getItem('banner_dismiss_'+which)!=='1'}catch(e){return true}}
 function markHadSession(){
   if(localStorage.getItem('airgpt_had_session')!=='1')localStorage.setItem('airgpt_had_session','1');
 }
@@ -5862,14 +5879,14 @@ function sessionShortDate(s){
   if(!ts)return '';
   return new Date(ts*1000).toLocaleDateString([],{month:'short',day:'numeric'});
 }
-function sessionCompactTitle(s){
+function sessionCompactTitle(s,full){
   const t=s.capture_type||'';
   const d=sessionShortDate(s);
   if(t==='daily_clipboard_text')return d?`Text ${d}`:'Text';
   if(t==='daily_clipboard_image')return d?`Image ${d}`:'Image';
   if(t==='daily_clipboard')return d?`Clipboard ${d}`:'Clipboard';
   if(t==='daily_ai_screenshot'||t==='screenshot')return d?`AI Screenshot ${d}`:'AI Screenshot';
-  return summarizeChatTitle(s.title||s.summary||s.preview||'New chat');
+  return summarizeChatTitle(s.title||s.summary||s.preview||'New chat',full);
 }
 function relativeTimeShort(ts){
   const t=(typeof ts==='number'?ts:(Date.parse(ts)/1000))||0;
@@ -6424,19 +6441,19 @@ function markSelectedSession(id){
   });
   syncChatTitleBar();
 }
-function summarizeChatTitle(raw){
+function summarizeChatTitle(raw,full){   // full: the chat title bar keeps the whole title and lets CSS cut it to fit
   let t=mdPlain(raw);  // first message text becomes the title; "Say **hi**" reads "Say hi"
   if(!t)return 'New chat';
   // Drop date-prefixed daily labels into a short readable form
   t=t.replace(/^(Text|Images|AI Screenshot Chat|Clipboard|Screenshot|Photo|Capture)\s*[·\-]\s*/i,'').trim()||t;
-  if(t.length>36)t=t.slice(0,34).replace(/\s+\S*$/,'')+'…';
+  if(!full&&t.length>36)t=t.slice(0,34).replace(/\s+\S*$/,'')+'…';
   return t;
 }
-function sessionTitleForId(id){
+function sessionTitleForId(id,full){
   const n=parseInt(id,10)||0;
   if(!n)return '';
   const hit=(cachedSessions||[]).find(s=>+s.id===n);
-  if(hit)return sessionCompactTitle(hit);
+  if(hit)return sessionCompactTitle(hit,full);
   return 'Chat #'+n;
 }
 function syncChatTitleBar(){
@@ -6449,7 +6466,7 @@ function syncChatTitleBar(){
   if(show){bar.hidden=false;bar.removeAttribute('hidden');bar.classList.add('show')}
   else{bar.hidden=true;bar.setAttribute('hidden','');bar.classList.remove('show');return}
   const hit=(cachedSessions||[]).find(s=>+s.id===sid);
-  titleEl.textContent=sessionTitleForId(sid)||'New chat';
+  titleEl.textContent=sessionTitleForId(sid,true)||'New chat';
   titleEl.title=hit?.title||titleEl.textContent;
   const cat=(hit?.category||currentMode?.()||'').toString();
   if(badge){
@@ -7024,7 +7041,7 @@ async function renderHubPage(){
       <button type="button" class="btn primary" onclick="hubCreateJoinCode()">Team code</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'view')">QR View</button>
       <button type="button" class="btn" onclick="shareSession(currentSession||0,'post')">QR Write</button>
-      <span class="hint" id="hubJoinCodeHint">${d.join_code?`Code: <strong style="color:#fff">${esc(d.join_code)}</strong>`:''}</span>
+      <span class="hint" id="hubJoinCodeHint">${d.join_code?`Code: <strong style="color:var(--text)">${esc(d.join_code)}</strong>`:''}</span>
     </div>
     <div class="hub-graph">
       <div class="hub-host">${hubNodeHtml(host)}</div>
@@ -7052,7 +7069,7 @@ async function hubCreateJoinCode(){
     const r=await api('/api/hub/join-code',{method:'POST',body:JSON.stringify({access_level:level})}).then(x=>x.json());
     if(r.ok){
       toast('Join code: '+r.code);
-      const hint=$('hubJoinCodeHint');if(hint)hint.innerHTML=`Code: <strong style="color:#fff">${esc(r.code)}</strong> (${hubAccessLabel(r.access_level)})`;
+      const hint=$('hubJoinCodeHint');if(hint)hint.innerHTML=`Code: <strong style="color:var(--text)">${esc(r.code)}</strong> (${hubAccessLabel(r.access_level)})`;
     }else toast(r.error||'Failed');
   }catch(e){toast('Join code failed')}
 }
@@ -8665,7 +8682,7 @@ async function renderMarketplace(){
   }).join('')||'<p class="hint">No suitable models or tools for this profile. Try Use auto-detect or Show all.</p>';
   $('chat').innerHTML=`<div class="cortex-page chat-page-enter">
     <h2>Marketplace</h2>
-    <p class="cortex-tag">App Store style — press Install, auto-download + integrate. Curated models + Netie modules. Profile: <strong style="color:#fff">${esc(prof.profile||'?')}</strong>.</p>
+    <p class="cortex-tag">App Store style — press Install, auto-download + integrate. Curated models + Netie modules. Profile: <strong style="color:var(--text)">${esc(prof.profile||'?')}</strong>.</p>
     <div class="cortex-grid">
       <div class="cortex-card"><h3>This laptop</h3><p>${esc(ram)} · ${esc(vram)} · ${esc(disk)}</p>
         <p style="margin-top:8px">${opts||''}</p>
@@ -14765,19 +14782,21 @@ function noteSendFailure(text,msg,extra){sendFailure={sid:0,text:String(text||''
 // Google(no key)". Read that list so a refused key and a cooling-down provider are told
 // apart from "no key at all".
 function sendFailureCopy(msg){
-  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree']];
+  const names=[[/^groq/i,'Groq'],[/^google|^gemini/i,'Google'],[/^openrouter/i,'OpenRouter'],[/^deepseek/i,'DeepSeek'],[/^anthropic/i,'Anthropic'],[/^openai/i,'OpenAI'],[/^sea-?lion/i,'SEA-LION'],[/^openvault/i,'OpenVault'],[/^omniroute|^openfree/i,'OpenFree'],[/^ollama/i,'Ollama']];
   // provider -> when its key was last refused. The server then says only "cooldown" for a few
   // minutes, which would read as "busy" without this. Kept per browser, so a reload does not lose it.
   let seen={};try{seen=JSON.parse(localStorage.getItem('airgpt_key_refused')||'{}')||{}}catch(e){}
   const tried=[];
   String(msg||'').replace(/([A-Za-z][\w.\-]*)\(([^()]*)\)/g,(m,l,r)=>{const n=names.find(x=>x[0].test(l));tried.push({name:n?n[1]:l,why:r})});
-  const refused=tried.find(t=>/\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
+  const refused=tried.find(t=>/key refused|\b40[13]\b|unauthori[sz]ed|forbidden|invalid api|incorrect api/i.test(t.why));
   if(refused){seen[refused.name]=Date.now();try{localStorage.setItem('airgpt_key_refused',JSON.stringify(seen))}catch(e){}}
-  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);
+  const held=refused||tried.find(t=>/cooldown/i.test(t.why)&&!/rate limited|unreachable/i.test(t.why)&&Date.now()-(seen[t.name]||0)<300000);   // the server names the reason now; this browser's memory only covers a cooldown it did not explain
   if(held){
     const host=isLocalHost();
     return {title:'Your '+held.name+' key was refused',body:host?'The provider did not accept it. Check the key in Settings > API.':'The computer running AirGPT has a '+held.name+' key that was refused. Ask its owner to check it.',key:host,keyLabel:'Check my key'};
   }
+  const gone=tried.find(t=>/cooldown, unreachable/i.test(t.why));
+  if(gone&&!tried.some(t=>/\b429\b|rate.?limit|quota|too many|cooldown(?!, unreachable)/i.test(t.why)))return {title:gone.name+' could not be reached',body:'Check your connection, then try again.'};
   const cooling=tried.find(t=>/\b429\b|rate.?limit|quota|too many|cooldown/i.test(t.why));
   if(cooling)return {title:cooling.name+' is busy',body:'It is limiting requests right now. Wait a minute, then try again.'};
   if(/No text LLM available|no key|api key|unauthori[sz]ed|\b401\b|\b403\b/i.test(msg))
@@ -17031,7 +17050,7 @@ function kvRender(){
         <span class="kv-chip">${p.configured?('✓ '+esc(p.masked||'ready')):(isOpenFree&&cantFree?'not available':'not set')}</span>
       </div>
       <div class="kv-body">
-        <p class="hint kv-note">${esc(nm(p.free_note))}</p>
+        ${isOpenFree&&cantFree?'':`<p class="hint kv-note">${esc(nm(p.free_note))}</p>`}
         ${isOpenFree&&cantFree?'':`<ol class="kv-steps">${(p.steps||[]).map(s=>`<li>${esc(nm(s))}</li>`).join('')}</ol>`}
         <div class="kv-actions">
           ${isOpenFree?(cantFree?`<p class="hint kv-cant">${esc(_kvOpenFree.why)}</p><button type="button" class="btn primary" disabled>Enable OpenFree · auto fallback</button>`:`<button type="button" class="btn primary" onclick="event.stopPropagation();kvEnableOmniRoute()">Enable OpenFree · auto fallback</button>`):''}

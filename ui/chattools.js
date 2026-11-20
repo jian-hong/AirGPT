@@ -90,11 +90,18 @@
     if(restore)try{btn.focus({preventScroll:true})}catch(e){}
   }
   function openMenu(){
+    var box=btn.closest('.chat-titlebar.more-open .chat-titlebar-actions');
+    // Inside the phone's ... list the formats open in place under Export, so they never
+    // sit on top of the Share row. On a wide screen the menu floats under the button.
+    if(box){menu.classList.add('inline');box.insertBefore(menu,btn.nextSibling)}
+    else{menu.classList.remove('inline');if(menu.parentNode!==document.body)document.body.appendChild(menu)}
     var r=btn.getBoundingClientRect();
     menu.hidden=false;btn.setAttribute('aria-expanded','true');
-    var w=menu.offsetWidth;
-    menu.style.top=Math.round(r.bottom+6)+'px';
-    menu.style.left=Math.max(8,Math.min(window.innerWidth-w-8,Math.round(r.right-w)))+'px';
+    if(!box){
+      var w=menu.offsetWidth;
+      menu.style.top=Math.round(r.bottom+6)+'px';
+      menu.style.left=Math.max(8,Math.min(window.innerWidth-w-8,Math.round(r.right-w)))+'px';
+    }
     var first=menu.querySelector('button');if(first)first.focus({preventScroll:true});
   }
   function mount(){
@@ -118,6 +125,8 @@
     });
     document.addEventListener('click',function(e){if(!menu.hidden&&!menu.contains(e.target))closeMenu(false)});
     window.addEventListener('resize',function(){closeMenu(false)});
+    var tb=document.getElementById('chatTitleBar');   // closing the ... list closes the formats too
+    if(tb)new MutationObserver(function(){if(!tb.classList.contains('more-open'))closeMenu(false)}).observe(tb,{attributes:true,attributeFilter:['class']});
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&!menu.hidden){e.preventDefault();e.stopPropagation();closeMenu(true)}
     },true);
