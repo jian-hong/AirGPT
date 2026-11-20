@@ -206,3 +206,34 @@ def test_delete_space_removes_everything(server):
     for tbl in ("sources", "chunks", "file_index", "rag_chats", "traces", "ingest_jobs", "revisions"):
         assert con.execute(f"SELECT COUNT(*) FROM {tbl} WHERE space_id=?", (sid,)).fetchone()[0] == 0, tbl
     con.close()
+
+
+# --- exported pack leaks no host paths (rag-server.6) ---------------------------------
+
+def test_export_pack_has_no_absolute_host_paths(server, tmp_path):
+    import io
+    import zipfile
+
+    base, store = server
+    sid = int(store.create_space("pack")["id"])
+    _upload(base, sid, [("file0", "sales.csv", "Region,Amount\nNorth,100\nSouth,50\nNorth,25\n"),
+                        ("file1", "policy.txt", "The Zorvath refund window is 30 days.\n")])
+    from rag import ontology
+
+    ontology.ontology_for_space(sid, force=True)
+    assert store.get_space(sid)["config"].get("ontology"), "setup: the space should carry an ontology"
+    with urllib.request.urlopen(f"{base}/api/rag/spaces/{sid}/export", timeout=60) as r:
+        blob = r.read()
+    zf = zipfile.ZipFile(io.BytesIO(blob))
+    for name in zf.namelist():
+        text = zf.read(name).decode("utf-8", "replace")
+        assert str(tmp_path) not in text, f"host path leaked in {name}"
+        assert "/uploads/" not in text and "/Docs/" not in text, f"host folder leaked in {name}"
+    manifest = json.loads(zf.read("manifest.json"))
+    assert "ontology" not in manifest["space"]["config"]
+    # the pack still imports and answers
+    from rag import export_import
+
+    out = export_import.import_pack(blob)
+    assert out["ok"], out
+    assert _found(int(out["space"]["id"]), "Zorvath")
