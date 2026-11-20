@@ -14932,6 +14932,21 @@ function updateQueueHint(){
   }
   if(h)h.innerHTML=messageQueue.map((q,i)=>`<span class="queue-chip"><span class="queue-chip-text">Will send when the reply finishes: ${esc(q.text.length>50?q.text.slice(0,50)+'…':q.text)}</span><button type="button" data-qi="${i}" aria-label="Remove this waiting message" title="Remove">×</button></span>`).join('');
 }
+// Waiting messages live in memory only. If the page is closed or reloaded with some
+// still waiting, keep them and hand them back in the box next time, with a word about it.
+window.addEventListener('pagehide',()=>{
+  try{if(messageQueue.length)localStorage.setItem('airgpt.unsentQueue',JSON.stringify(messageQueue.map(q=>q.text)))}catch(e){}
+});
+setTimeout(()=>{
+  try{
+    const raw=localStorage.getItem('airgpt.unsentQueue');if(!raw)return;
+    localStorage.removeItem('airgpt.unsentQueue');
+    const back=(JSON.parse(raw)||[]).filter(t=>typeof t==='string'&&t.trim());
+    if(!back.length)return;
+    restoreUnsentText(back.join('\n\n'));
+    toast(back.length>1?'Your waiting messages were not sent before the page closed. They are back in the box.':'Your waiting message was not sent before the page closed. It is back in the box.');
+  }catch(e){}
+},2500);
 // The last turn of the open chat: its question row and the reply under it.
 function lastTurnIds(){
   const rows=[...($('chat')?.querySelectorAll('.msg[id^="msg-"]')||[])];
