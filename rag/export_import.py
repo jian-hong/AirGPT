@@ -196,7 +196,12 @@ def _sheet_csvs(src: dict) -> list[tuple[str, bytes]]:
         if not path or not path.lower().endswith(_TABLE_SUFFIXES):
             return []
         out: list[tuple[str, bytes]] = []
-        for name, df in load_table_file(Path(path)).items():
+        sheets = load_table_file(Path(path))
+        if path.lower().endswith((".csv", ".tsv")) and len(sheets) == 1:
+            # The file on disk is the Docs copy (content-hashed name): the table is named
+            # after the file that was uploaded, as the answer lane names it.
+            sheets = {Path(str(src.get("title") or path)).stem: next(iter(sheets.values()))}
+        for name, df in sheets.items():
             buf = io.StringIO()
             w = csv.writer(buf, lineterminator="\n")
             w.writerow([str(c) for c in df.columns])
@@ -418,6 +423,43 @@ def export_space_to_path(space_id: int, dest: Path, **kw: Any) -> Path:
     return dest
 
 
+def _table_name(name: Any) -> str:
+    """A spreadsheet's own file name, kept readable (spaces and accents stay) but safe to write."""
+    n = re.sub(r"[\x00-\x1f<>:\"/\\|?*]+", "_", Path(str(name or "")).name).strip(". ")[:120]
+    return n or "sheet.csv"
+
+
+_PLAIN_NUMBER = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?")
+
+
+def _typed(cell: str) -> Any:
+    """A packed cell back to what it was: a number only when it reads back the same text."""
+    if _PLAIN_NUMBER.fullmatch(cell):
+        try:
+            n = int(cell) if "." not in cell else float(cell)
+        except ValueError:
+            return cell
+        return n if str(n) == cell else cell
+    return cell
+
+
+def _build_workbook(sheets: list[tuple[str, bytes, dict]]) -> bytes:
+    """One .xlsx from the packed sheets (cell values only, in their original order)."""
+    import csv
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for name, data, _entry in sheets:
+        ws = wb.create_sheet(re.sub(r"[\[\]:*?/\\]", "_", name)[:31] or "Sheet")
+        for row in csv.reader(io.StringIO(data.decode("utf-8", errors="replace"), newline="")):
+            ws.append([_typed(c) if c != "" else None for c in row])
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def import_pack(
     zip_bytes: bytes,
     *,
@@ -456,33 +498,14 @@ def import_pack(
         extracted: list[Path] = []
         by_authority: dict[str, list[Path]] = {}
         entry_by_target: dict[str, dict] = {}
-        for entry in manifest.get("sources") or []:
-            pack_path = _safe_member_name(str(entry.get("pack_path") or ""))
-            if not pack_path:
-                continue
-            title = _safe_title(str(entry.get("title") or Path(pack_path).name))
-            sheet = entry.get("table_sheet")
-            if isinstance(sheet, str) and sheet and pack_path.lower().endswith(".csv"):
-                # One sheet of a spreadsheet: a real .csv again, so the calculation lane
-                # reads it. A workbook with several sheets gets one file per sheet.
-                if not title.lower().endswith((".csv", ".tsv")):
-                    title = _safe_title(f"{title}__{sheet}")
-                if not title.lower().endswith(".csv"):
-                    title = f"{title}.csv"
-            elif not title.lower().endswith(".txt"):
-                title = f"{title}.txt"
+
+        def _place(title: str, data: bytes, entry: dict) -> None:
             target = dest_dir / title
             # Avoid collisions
-            if target.exists():
-                stem, suf = target.stem, target.suffix
-                n = 2
-                while True:
-                    cand = dest_dir / f"{stem}_{n}{suf}"
-                    if not cand.exists():
-                        target = cand
-                        break
-                    n += 1
-            data = zf.read(pack_path)
+            n = 2
+            while target.exists():
+                target = dest_dir / f"{Path(title).stem}_{n}{Path(title).suffix}"
+                n += 1
             try:
                 _assert_under_rag(target)
             except (ValueError, OSError) as e:
@@ -491,6 +514,30 @@ def import_pack(
             extracted.append(target)
             by_authority.setdefault(str(entry.get("authority") or ""), []).append(target)
             entry_by_target[str(target.resolve())] = entry
+
+        # Sheets of one workbook come back as one workbook again, so a total over
+        # "every sheet" still adds all of them up and the answer names the original file.
+        workbooks: dict[str, list[tuple[str, bytes, dict]]] = {}
+        for entry in manifest.get("sources") or []:
+            pack_path = _safe_member_name(str(entry.get("pack_path") or ""))
+            if not pack_path:
+                continue
+            title = _safe_title(str(entry.get("title") or Path(pack_path).name))
+            sheet = entry.get("table_sheet")
+            if isinstance(sheet, str) and sheet and pack_path.lower().endswith(".csv"):
+                wb_name = _table_name(entry.get("table_workbook") or title)
+                if wb_name.lower().endswith((".xlsx", ".xlsm")):
+                    workbooks.setdefault(wb_name, []).append((sheet, zf.read(pack_path), entry))
+                    continue
+                # A csv or tsv: one table, a real .csv again.
+                title = (Path(wb_name).stem + ".csv") if wb_name.lower().endswith(".tsv") else wb_name
+                if not title.lower().endswith(".csv"):
+                    title = f"{title}.csv"
+            elif not title.lower().endswith(".txt"):
+                title = f"{title}.txt"
+            _place(title, zf.read(pack_path), entry)
+        for wb_name, sheets in workbooks.items():
+            _place(wb_name, _build_workbook(sheets), sheets[0][2])
 
         ingest_out: dict = {"ok": True, "chunks": 0, "sources": 0}
         if extracted and rebuild:
@@ -533,11 +580,6 @@ def import_pack(
                 orig = str(entry.get("original_path") or "").strip()
                 if orig:
                     meta["original_path"] = Path(orig).name
-                if entry.get("table_sheet") and entry.get("table_workbook"):
-                    # Names the original file and sheet in the answer's provenance.
-                    meta["table_workbook"] = str(entry["table_workbook"])[:200]
-                    meta["table_sheet"] = str(entry["table_sheet"])[:200]
-                    meta["table"] = True
                 store.update_source_status(
                     int(src["id"]), str(src.get("status") or "ready"), meta=meta
                 )

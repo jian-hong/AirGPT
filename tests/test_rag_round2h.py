@@ -98,6 +98,8 @@ def test_exported_space_still_calculates_after_import(space):
     d = ask(new, q2)
     assert d["provenance"]["workbook"] == "sales.xlsx" and d["provenance"]["sheet"] == "Sales"
     assert any(c.get("title") == "sales.xlsx" for c in d["citations"])
+    d = ask(new, q1)
+    assert d["provenance"]["workbook"] == "staff.csv" and d["provenance"]["sheet"] == "staff"
 
 
 def test_import_says_when_a_spreadsheet_could_only_come_back_as_text(space):
@@ -321,3 +323,33 @@ def test_saved_answer_keeps_the_calculation_and_the_steps(space):
     answer.answer(space, "how many pallets in Penang", chat_id=cid, use_llm=False)
     last = [m for m in store.list_messages(cid) if m["role"] == "assistant"][-1]["provenance"]
     assert last["reasoning"]["steps"]
+
+
+def test_two_sheet_workbook_round_trips_with_each_sheet_named(tmp_path, monkeypatch):
+    from rag import export_import, ingest, store
+
+    root = tmp_path / "d"
+    root.mkdir()
+    monkeypatch.setattr(store, "RAG_DIR", root / "rag")
+    monkeypatch.setattr(store, "DB_PATH", root / "rag" / "rag.db")
+    monkeypatch.setattr(store, "BLOB_DIR", root / "rag")
+    store.init()
+    wb = openpyxl.Workbook()
+    a = wb.active
+    a.title = "Q1"
+    b = wb.create_sheet("Q2")
+    q1, q2 = [("North", 1000), ("South", 250)], [("North", 1300), ("East", 3500)]
+    for ws, rows in ((a, q1), (b, q2)):
+        ws.append(["Region", "Revenue"])
+        for r in rows:
+            ws.append(list(r))
+    f = tmp_path / "quarters.xlsx"
+    wb.save(f)
+    sid = int(store.create_space("Q", depth_default="high")["id"])
+    assert ingest.ingest_paths(sid, [f], force=True)["ok"]
+    new = int(export_import.import_pack(export_import.export_space(sid, include_chats=False))["space"]["id"])
+    want = pd.DataFrame(q1 + q2, columns=["Region", "Revenue"]).query("Region == 'North'").Revenue.sum()
+    d = ask(new, "total Revenue for North")
+    assert str(int(want)) in d["answer"].replace(",", "")
+    assert {s["sheet"] for s in d["provenance"]["sheets"]} == {"Q1", "Q2"}
+    assert d["provenance"]["workbook"] == "quarters.xlsx"
