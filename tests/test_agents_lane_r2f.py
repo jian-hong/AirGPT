@@ -136,3 +136,21 @@ class RestartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WordingFollowUps(unittest.TestCase):
+    def test_running_cortex_that_failed_is_not_called_down(self):
+        w = agent_runtime._plain_engine_why({"ok": False, "error": "engine agent loop failed: model backend refused"})
+        self.assertNotIn("not running", w)
+
+    def test_normal_agent_skip_line_does_not_mention_research(self):
+        w = agent_runtime._plain_engine_why({"ok": False, "error": "Cortex engine offline"}, owns=False)
+        self.assertNotIn("research", w)
+
+    def test_no_provider_wording_before_the_failure(self):
+        ag = _agent(["fs_write"])
+        with mock.patch.object(agent_runtime, "ai_engine", _DownModel()), mock.patch.object(
+            cortex_client, "engine_agent_loop", lambda *_a, **_k: {"ok": False, "error": "offline"}
+        ):
+            evs = _run(ag["id"])
+        self.assertNotIn("provider", json.dumps(evs).lower())

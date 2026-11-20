@@ -791,7 +791,7 @@ def _run_agent_events(
                 "steps": packed,
             }
             return
-        why = _plain_engine_why(cortex)
+        why = _plain_engine_why(cortex, owns)
         if owns:
             try:
                 agent_store.finish_run(run_id, status="error", error=why)
@@ -934,7 +934,8 @@ def _run_agent_events(
                     text = text or ""
             except Exception as e:
                 llm_fail_streak += 1
-                yield {"type": "status", "text": f"LLM provider failed — trying fallback APIs ({llm_fail_streak})…"}
+                if llm_fail_streak < 3 and goal_driven:
+                    yield {"type": "status", "text": f"The model did not answer. Trying again ({llm_fail_streak})…"}
                 if llm_fail_streak >= 3 or not goal_driven:
                     _log.warning("agent run %s: no model answered: %s", run_id, str(e)[:500])
                     no_answer = _NO_MODEL_SENTENCE
@@ -1051,7 +1052,7 @@ def _effective_tools(agent: dict) -> list[str]:
     return tools
 
 
-def _plain_engine_why(cortex) -> str:
+def _plain_engine_why(cortex, owns: bool = True) -> str:
     """Engine refusal as a sentence a person can act on. Raw text stays in the server log."""
     raw = str((cortex or {}).get("error") or "") if isinstance(cortex, dict) else "Cortex down"
     reason = str((cortex or {}).get("reason") or "") if isinstance(cortex, dict) else ""
@@ -1059,6 +1060,8 @@ def _plain_engine_why(cortex) -> str:
     low = raw.lower()
     if "not the cortex engine" in low:
         return "Cortex is running, but it is not the part that runs agents. Check it from Apps."
+    if "loop failed" in low or "model backend" in low:
+        return "Cortex is running, but it could not finish this. Try again."
     if "timed out" in low or "timeout" in low:
         return "Cortex took too long to answer. Try again."
     if "empty answer" in low:
@@ -1066,6 +1069,8 @@ def _plain_engine_why(cortex) -> str:
     if not raw or reason == "wrong_surface" or any(
         w in low for w in ("offline", "down", "unreachable", "refused", "connect", "not running", "has no /api/engine")
     ):
+        if not owns:
+            return "Cortex is not running"
         return "Cortex is not running, so this research agent cannot run. Start it from Apps."
     return "Cortex could not run this agent. Try again."
 
