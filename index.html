@@ -7883,9 +7883,9 @@ async function assembleCortexCapabilities(text,intent){
 function buildCortexOrchestrationPrompt(userText,agentName,intent,caps,agentTools){
   // An agent that was not given web_search must not be told to search the web.
   const web=!Array.isArray(agentTools)||agentTools.includes('web_search');
-  const skillIds=(caps.skills||[]).map(s=>s.id||s.name).filter(Boolean).join(', ')||'(none matched — discover via web_search + vault_read)';
+  const skillIds=(caps.skills||[]).map(s=>s.id||s.name).filter(Boolean).join(', ')||(web?'(none matched — discover via web_search + vault_read)':'(none matched)');
   const mcp=(caps.mcp_wanted||[]).join(', ')||'none requested';
-  const organs=Object.entries(caps.organs||{}).map(([k,v])=>k+': '+(v||[]).join(', ')).join(' · ');
+  const organs=Object.entries(caps.organs||{}).map(([k,v])=>k+': '+(v||[]).filter(t=>web||t!=='web_search'&&t!=='web_fetch').join(', ')).join(' · ');
   return [
     `Cortex ${intent} turn for “${agentName}”.`,
     `User: ${userText}`,
@@ -7894,7 +7894,7 @@ function buildCortexOrchestrationPrompt(userText,agentName,intent,caps,agentTool
     web?'1) WEB SEARCH FIRST — use web_search before guessing. Find tools, APIs, docs, MCP/server options online.':'1) This agent has no web search. Do not use the web; work only from the request and the tools it has.',
     '2) Vault organs — vault_read for prior notes/skills; vault_write lasting plans.',
     '3) Assemble hands/tools/views for THIS task only: '+organs,
-    '4) Skills available locally: '+skillIds+'. Load/adapt; if missing, web_search how to build the skill.',
+    '4) Skills available locally: '+skillIds+'. Load/adapt'+(web?'; if missing, web_search how to build the skill.':'.'),
     '5) MCP / connectors wanted: '+mcp+'. If MCP UI is unavailable, map to first-party tools + document the gap.',
     '6) If schedule intent: parse time/cadence, store in memory/vault, describe the scheduler loop.',
     '7) Auto-test: try the plan; on failure fall back to another API/provider; scale until useful output.',
@@ -8024,10 +8024,12 @@ function resetCortexLiveLog(){
   if(fin){fin.textContent='';fin.style.display='none'}
   const meta=$('cortexOrchMeta');if(meta){meta.textContent='';meta.style.display='none'}
 }
-function renderCortexCapChips(caps){
+function renderCortexCapChips(caps,agentTools){
   const host=$('cortexCapChips');if(!host||!caps)return;
+  // The agent's own tools when they are known; the engine's list only as a fallback.
+  const chipTools=Array.isArray(agentTools)&&agentTools.length?agentTools:(caps.tools||[]);
   const bits=[
-    ...(caps.tools||[]).slice(0,8).map(t=>({k:t,hi:t==='web_search'})),
+    ...chipTools.slice(0,8).map(t=>({k:t,hi:t==='web_search'})),
     ...(caps.skill_pack?[{k:'forced:'+caps.skill_pack,hi:true}]:[]),
     ...(caps.skills||[]).slice(0,3).map(s=>({k:'skill:'+(s.id||s.name),hi:false})),
     ...(caps.mcp_wanted||[]).map(m=>({k:'mcp:'+m,hi:false})),
@@ -8038,7 +8040,7 @@ function renderCortexCapChips(caps){
 const CORTEX_RUN_KEY='airgpt_cortex_run';
 const CORTEX_SHOW_CHARS=8000;
 let _cortexRun={id:0,ac:null,timer:0,t0:0,steps:0,engineUp:false,stopped:false};
-let _cortexFinalText='';let _cortexShowAll=false;
+let _cortexFinalText='';let _cortexShowAll=false;let _cortexSavedTotal=0;
 const CORTEX_HOST_ONLY='Agents run on the host computer only. Open AirGPT on the computer that runs it to use them.';
 function cortexCardNote(text){const n=$('cortexOrchNote');if(!n)return;n.textContent=text||'';n.style.display=text?'':'none'}
 function cortexRunWhen(ts){
@@ -8075,22 +8077,25 @@ function cortexHostOnlyCard(){
   cortexRunEnd('');
   cortexCardNote(CORTEX_HOST_ONLY);
 }
-function cortexPaintFinal(text){
+function cortexPaintFinal(text,savedTotal){
   _cortexFinalText=String(text||'');
+  _cortexSavedTotal=+savedTotal||0;
   const fin=$('cortexOrchFinal');if(!fin)return;
   const cut=!_cortexShowAll&&_cortexFinalText.length>CORTEX_SHOW_CHARS;
   const shown=cut?_cortexFinalText.slice(0,CORTEX_SHOW_CHARS):_cortexFinalText;
-  fin.innerHTML=renderMd(shown)+(cut?`<p class="hint">Showing the first ${CORTEX_SHOW_CHARS.toLocaleString()} of ${_cortexFinalText.length.toLocaleString()} characters. <button type="button" class="btn" style="padding:2px 10px;font-size:11px" data-call="cortexShowAllAnswer">Show all</button></p>`:'');
+  const savedCut=_cortexSavedTotal>_cortexFinalText.length?`<p class="hint">Saved copy cut at ${_cortexFinalText.length.toLocaleString()} of ${_cortexSavedTotal.toLocaleString()} characters.</p>`:'';
+  fin.innerHTML=renderMd(shown)+savedCut+(cut?`<p class="hint">Showing the first ${CORTEX_SHOW_CHARS.toLocaleString()} of ${_cortexFinalText.length.toLocaleString()} characters. <button type="button" class="btn" style="padding:2px 10px;font-size:11px" data-call="cortexShowAllAnswer">Show all</button></p>`:'');
   fin.style.display=_cortexFinalText?'':'none';
   const live=$('cortexOrchLive');if(live)live.scrollTop=live.scrollHeight;
 }
-function cortexShowAllAnswer(){_cortexShowAll=true;cortexPaintFinal(_cortexFinalText)}
+function cortexShowAllAnswer(){_cortexShowAll=true;cortexPaintFinal(_cortexFinalText,_cortexSavedTotal)}
 function cortexMetaLine(j){
   const n=(j.steps||[]).filter(x=>x&&x.tool!=='think').length;
   let who;
-  if(j.runner==='agent_task')who='Answered by Cortex'+(j.own_tools?', which used its own tools (not this agent’s list)':'')+(j.quality_passed===false?'. Its quality check did not pass':'');
+  if(j.runner==='agent_task')who='Answered by Cortex'+(j.tools_sent?'. This agent’s tool list was sent, but Cortex may not follow it':'')+(j.quality_passed===false?'. Its quality check did not pass':'');
   else if(j.runner==='app_scaffold')who='Built by the app builder';
-  else who='Answered by your local model'+(j.model?' ('+j.model+')':'');
+  else if(j.runner==='local')who='Answered by your local model'+(j.model?' ('+j.model+')':'');
+  else who='Finished';
   return who+' · '+n+' tool step'+(n===1?'':'s');
 }
 async function stopCortexRun(){
@@ -8113,6 +8118,7 @@ async function runCortexAgentStream(agent,prompt,{thinking_mode=cortexThinkingMo
   try{_cortexRun.ac&&_cortexRun.ac.abort()}catch(e){}
   _cortexRun={id:0,ac:new AbortController(),timer:0,t0:0,steps:0,engineUp:!_cortexEngineDown,stopped:false};
   cortexRunBusy(true);
+  if(window.bgTasks&&window.bgTasks.nudge)setTimeout(window.bgTasks.nudge,600);  // the run row exists a moment after the request lands
   const body={prompt,task,session_id:currentSession||0,thinking_mode,max_steps,token_budget};
   if(skill_pack)body.skill_pack=skill_pack;
   else if(window.pendingSkillPack){body.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
@@ -8160,7 +8166,8 @@ function showCortexRunRow(r){
   ensureCortexLiveCard('Run · '+(r.status||''),cortexRunWhen(r.created_at));
   resetCortexLiveLog();
   cortexRunEnd('');
-  cortexCardNote(r.status==='cancelled'?'This run was stopped.':(r.status==='error'?(r.error||'This run failed.'):''));
+  const interrupted=/^Interrupted when the app restarted/.test(r.error||'');
+  cortexCardNote(r.status==='cancelled'?'This run was stopped.':(interrupted?'This run was interrupted when the app restarted.':(r.status==='error'?(r.error||'This run failed.'):'')));
   let steps=[];try{steps=JSON.parse(r.steps||'[]')}catch(e){}
   const log=[];const seg={t:'tools',kinds:new Map(),calls:[]};
   steps.filter(x=>x&&x.tool&&x.tool!=='think').forEach(x=>{
@@ -8171,7 +8178,7 @@ function showCortexRunRow(r){
   if(seg.calls.length)cortexLogAppend(log,seg);
   else{const rows=$('cortexOrchRows');if(rows)rows.innerHTML='<div class="cortex-row" style="opacity:.7">No steps were saved for this run.</div>'}
   _cortexShowAll=false;
-  cortexPaintFinal(r.result||'');
+  cortexPaintFinal(r.result||'',r.result_chars);
 }
 /** Read one run's event stream into the card. Used for a fresh run and for re-attaching. */
 async function cortexReadRun(reader,live){
@@ -8366,8 +8373,9 @@ async function handleCortexChat(text){
       const active=window._cortexActiveAgent||getCortexActiveAgent();
       if(!active){return await handleCortexChatCreate(text,caps,'create')}
       ensureCortexLiveCard('Continue · '+(active.name||'agent'),'Continuing this agent');
-      renderCortexCapChips(caps);
-      const prompt=buildCortexOrchestrationPrompt(text,active.name||'agent','continue',caps,await cortexAgentTools(active.id));
+      const activeTools=await cortexAgentTools(active.id);
+      renderCortexCapChips(caps,activeTools);
+      const prompt=buildCortexOrchestrationPrompt(text,active.name||'agent','continue',caps,activeTools);
       await runCortexAgentStream(active,prompt,{max_steps:12,token_budget:3200,skill_pack:caps.skill_pack,task:text});
       refreshCortexRight();
       return true;
@@ -8376,8 +8384,9 @@ async function handleCortexChat(text){
       const agent=await ensureCortexConcierge(caps);
       if(!agent){cortexCardNote('Could not open the Cortex helper agent. Try again.');return false}
       ensureCortexLiveCard('Cortex · auto-respond','Answering with the helper agent’s tools');
-      renderCortexCapChips(caps);
-      const prompt=buildCortexOrchestrationPrompt(text,'Cortex Concierge','chat',caps,await cortexAgentTools(agent.id));
+      const agentToolList=await cortexAgentTools(agent.id);
+      renderCortexCapChips(caps,agentToolList);
+      const prompt=buildCortexOrchestrationPrompt(text,'Cortex Concierge','chat',caps,agentToolList);
       await runCortexAgentStream(agent,prompt,{max_steps:10,token_budget:2800,skill_pack:caps.skill_pack,task:text});
       refreshCortexRight();
       return true;
@@ -8395,6 +8404,7 @@ async function handleCortexChatCreate(text,caps,intent){
   ensureCortexLiveCard((intent==='schedule'?'Scheduler':'Agent')+' · '+name,'Setting up the agent');
   renderCortexCapChips(caps);
   const agent=await ensureCortexAgent(name,text,caps,intent);
+  renderCortexCapChips(caps,agent.tools);
   const prompt=buildCortexOrchestrationPrompt(text,name,intent,caps,agent.tools||caps.tools);
   await runCortexAgentStream(agent,prompt,{max_steps:16,token_budget:4000,skill_pack:caps.skill_pack,task:text});
   refreshCortexRight();
@@ -8451,6 +8461,7 @@ async function runAgentWithPrompt(id,prompt){
       const a=agents.find(x=>String(x.id)===String(id));
       if(a)touchRecentAgent(a); else touchRecentAgent({id,name:'Agent'});
     }catch(e){touchRecentAgent({id,name:'Agent'})}
+    if(window.bgTasks&&window.bgTasks.nudge)setTimeout(window.bgTasks.nudge,600);
     const runBody={prompt,session_id:currentSession||0,thinking_mode:cortexThinkingMode};
     if(window.pendingSkillPack){runBody.skill_pack=window.pendingSkillPack;window.pendingSkillPack='';}
     const r=await fetch(API()+'/api/agents/'+id+'/run',{
@@ -16896,7 +16907,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     '<div id="bgTasksList"></div></div>';
   document.body.appendChild(panel);
   panel.querySelector('#bgTasksClose').onclick = function(){ openPanel(false); };
-  panel.querySelector('#bgTasksRefresh').onclick = poll;
+  panel.querySelector('#bgTasksRefresh').onclick = function(){ hostOnly = false; window.__bgHostOnly = false; poll(); };
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -16964,14 +16975,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     if(host) host.innerHTML = '';
   }
 
+  // Same helper the rest of the page uses, so the token and device headers go with every call.
+  function bgApi(path, opts){ return typeof api === 'function' ? api(path, opts) : fetch(path, opts); }
+  var hostOnly = false;  // a phone or guest gets 401/403 here for good: say so once, stop asking
   function runWorkflow(id, goal){
-    fetch('/api/workflows/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    bgApi('/api/workflows/run', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({workflow_id:id||'', goal:goal||''})})
       .then(function(r){return r.json()}).then(function(){ poll(); attachSse(); }).catch(function(){});
   }
 
   function cancelTask(id){
-    fetch('/api/workflows/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+    bgApi('/api/workflows/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({task_id:id})}).then(function(r){ return r.json().catch(function(){return {};}); })
       .then(function(j){ if(j && j.ok === false && j.error && window.toast) window.toast(j.error); poll(); })
       .catch(function(){ if(window.toast) window.toast('Could not stop that task. Try again.'); });
@@ -16997,7 +17011,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     return '<tr><td class="bgAudit" colspan="4">' +
       (bits.length ? '<div class="tl">'+esc(bits.join(' · '))+'</div>' : '') +
       (a.excerpt ? '<div class="ex ai-block" style="overflow-wrap:anywhere;max-width:100%">'+(typeof renderMd === 'function' ? renderMd(a.excerpt) : esc(a.excerpt))+'</div>' : '') +
-      (a.excerpt_chars && a.excerpt_chars > a.excerpt.length ? '<div class="tl">Shortened: showing '+a.excerpt.length+' of '+a.excerpt_chars+' characters.</div>' : '') +
+      (a.excerpt_chars && a.excerpt_chars > a.excerpt.length ? '<div class="tl">Showing the first '+a.excerpt.length.toLocaleString()+' of '+a.excerpt_chars.toLocaleString()+' characters.'+(a.excerpt_chars > 20000 ? ' The saved copy was cut at 20,000.' : '')+'</div>' : '') +
       (tools || '<div class="tl">No tool calls recorded</div>') +
       (a.error ? '<div class="tl bad">'+esc(a.error)+'</div>' : '') +
       '</td></tr>';
@@ -17070,7 +17084,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     var tg = list.querySelector('#bgTasksToggleFin');
     if(tg) tg.onclick = function(){ showFinished = !showFinished; poll(); };
     var cl = list.querySelector('#bgTasksClear');
-    if(cl) cl.onclick = function(){ fetch('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
+    if(cl) cl.onclick = function(){ bgApi('/api/workflows/clear',{method:'POST'}).then(poll).catch(function(){}); };
 
     var n = run.length;
     fit();
@@ -17083,18 +17097,23 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
   // wait before the next idle check (5 s up to 60 s); an answer from a running engine, or
   // opening the panel, puts it back to 5 s.
   var idleFails = 0;
+  var HOST_ONLY_TEXT = 'Agents run on the host computer only. Open AirGPT on that computer to see background tasks.';
+  function showHostOnly(){
+    hostOnly = true; window.__bgHostOnly = true;
+    var list = panel.querySelector('#bgTasksList');
+    if(list) list.innerHTML = '<div class="bgEmpty">' + HOST_ONLY_TEXT + '</div>';
+    var b = panel.querySelector('#bgTasksLaunch'); if(b) b.innerHTML = '';
+    syncBadges(0);
+  }
   function poll(){
-    fetch('/api/workflows/tasks').then(function(r){
-      if(r.status === 403){
-        var list = panel.querySelector('#bgTasksList');
-        if(list) list.innerHTML = '<div class="bgEmpty">Agents run on the host computer only. Open AirGPT on the computer that runs it to see background tasks.</div>';
-        idleFails = 4;  // host only: nothing will change, so ask rarely
-        return null;
-      }
+    if(hostOnly){ showHostOnly(); return; }  // nothing will change: no more requests from here
+    bgApi('/api/workflows/tasks').then(function(r){
+      if(r.status === 403 || r.status === 401){ showHostOnly(); return null; }
       return r.json();
     }).then(function(d){
         if(d === null) return;
-        if(d && d.ok){ render(d); idleFails = d.degraded ? Math.min(idleFails + 1, 4) : 0; }
+        // Anything running keeps the checks quick, even while Cortex itself is down.
+        if(d && d.ok){ render(d); idleFails = (d.degraded && !(d.running || []).length) ? Math.min(idleFails + 1, 4) : 0; }
         else idleFails = Math.min(idleFails + 1, 4);
       }).catch(function(){ idleFails = Math.min(idleFails + 1, 4); });
   }
@@ -17104,7 +17123,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
     close: function(){ openPanel(false); },
     research: function(topic){ runWorkflow('deep_research', topic); openPanel(true); },
     run: function(id, goal){ runWorkflow(id || 'smoothness_audit', goal||''); openPanel(true); },
-    refresh: poll
+    refresh: poll,
+    // A run was just started: look now and drop back to the quick checks.
+    nudge: function(){ idleFails = 0; poll(); scheduleIdle(); }
   };
 
   // Idle check: slower after failures, and not at all while the tab is hidden.
@@ -17146,7 +17167,11 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('keyVaultModal').
 
   function upd(){
     var n = 0;
-    fetch('/api/workflows/tasks').then(function(r){return r.json()}).then(function(d){
+    if(window.__bgHostOnly) return;
+    (typeof api === 'function' ? api('/api/workflows/tasks') : fetch('/api/workflows/tasks')).then(function(r){
+      if(r.status === 401 || r.status === 403){ window.__bgHostOnly = true; return null; }
+      return r.json();
+    }).then(function(d){
       if(!d || !d.ok) return;
       n = (d.running || []).length;
       [['bgTasksTopBtn','bgTasksTopDot'],['bgTasksTitleBtn','bgTasksTitleDot']].forEach(function(pair){
