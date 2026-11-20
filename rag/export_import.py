@@ -177,6 +177,32 @@ def validate_pack(zf: zipfile.ZipFile) -> dict:
 _TABLE_SUFFIXES = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv")
 
 
+def _hidden_parts(path: str) -> list[str]:
+    """Plain-words list of hidden sheets / sheets with hidden rows in an .xlsx (empty if none)."""
+    if not path.lower().endswith((".xlsx", ".xlsm")):
+        return []
+    out: list[str] = []
+    try:
+        with zipfile.ZipFile(path) as zf:
+            wb = zf.read("xl/workbook.xml").decode("utf-8", "replace")
+            for m in re.finditer(r"<(?:\w+:)?sheet\b[^>]*>", wb):
+                tag = m.group(0)
+                if re.search(r"\bstate=\"(?:hidden|veryHidden)\"", tag):
+                    n = re.search(r"\bname=\"([^\"]*)\"", tag)
+                    out.append(f"hidden sheet {n.group(1) if n else ''}".strip())
+            rows = 0
+            for name in zf.namelist():
+                if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                    with zf.open(name) as fh:
+                        if re.search(rb"<row\b[^>]*\shidden=\"(?:1|true)\"", fh.read()):
+                            rows += 1
+            if rows:
+                out.append(f"hidden rows in {rows} sheet" + ("s" if rows != 1 else ""))
+    except Exception:
+        return []
+    return out
+
+
 def _sheet_csvs(src: dict) -> list[tuple[str, bytes]]:
     """(sheet name, CSV bytes) for a spreadsheet source whose original file is still here.
 
@@ -239,6 +265,14 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
             if sheet_files:
                 meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
                 meta_out = _strip_abs_paths({k: v for k, v in meta.items() if k not in ("blob", "docs_path", "table")})
+                hidden_note = ""
+                try:
+                    from rag import reveal
+
+                    hp = _hidden_parts(reveal.resolve_source_path(src)[0] or "")
+                    hidden_note = "; ".join(hp)
+                except Exception:
+                    pass
                 for sheet, data in sheet_files:
                     member_no += 1
                     pack_path = f"sources/{member_no:04d}__{_safe_title(str(src.get('title') or 'sheet'))}__{_safe_title(sheet, fallback='sheet')}.csv"
@@ -257,6 +291,7 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                             "table_sheet": sheet,
                             "authority": store.source_authority(int(src.get("id") or 0)),
                             "meta": meta_out,
+                            **({"hidden_note": hidden_note} if hidden_note else {}),
                         }
                     )
                 continue
@@ -375,7 +410,8 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 "Import via RAG library → Import, or POST /api/rag/spaces/import.\n"
                 "Index rebuilds on import; vectors are not included.\n"
                 "Spreadsheets travel as one CSV per sheet (cell values only), so counts and\n"
-                "totals still work after import. A spreadsheet listed under\n"
+                "totals still work after import. Hidden sheets and hidden rows travel too and\n"
+                "come back visible; the manifest names them under hidden_note. A spreadsheet listed under\n"
                 "stats.spreadsheets_as_text travelled as plain text and cannot be calculated\n"
                 "from; add the original file again.\n"
             ).encode("utf-8"),
@@ -455,6 +491,10 @@ def _build_workbook(sheets: list[tuple[str, bytes, dict]]) -> bytes:
         ws = wb.create_sheet(re.sub(r"[\[\]:*?/\\]", "_", name)[:31] or "Sheet")
         for row in csv.reader(io.StringIO(data.decode("utf-8", errors="replace"), newline="")):
             ws.append([_typed(c) if c != "" else None for c in row])
+            # Text, never a formula: a cell that starts with = + - @ must not become live.
+            for cell in ws[ws.max_row]:
+                if isinstance(cell.value, str) and cell.value[:1] in "=+-@":
+                    cell.data_type = "s"
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -629,10 +669,16 @@ def import_pack(
             "chunks": int(ingest_out.get("chunks") or 0),
             "chats": chats_imported,
         }
+        hidden = sorted({f"{e.get('table_workbook')} ({e['hidden_note']})" for e in manifest.get("sources") or [] if e.get("hidden_note")})
+        if hidden:
+            out["hidden_parts"] = hidden
+            out["notice"] = (
+                "Hidden sheets or rows were part of the pack and are now visible: " + ", ".join(hidden) + "."
+            )
         if as_text:
             # Said, not skipped: these tables are searchable text now, not calculable.
             out["spreadsheets_as_text"] = as_text
-            out["notice"] = (
+            out["notice"] = (out.get("notice", "") + " " if out.get("notice") else "") + (
                 "These spreadsheets came back as text and cannot be calculated: " + ", ".join(as_text)
                 + ". Add the original files again to get totals and counts."
             )

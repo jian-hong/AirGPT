@@ -230,6 +230,9 @@ def _unseen_script_terms(query: str, blob: str) -> list[str]:
             continue
         stem = t[:-1] if len(t) >= 3 else t
         if t not in held_stems and stem not in held_stems:
+            # A Korean word with its ending cut off ("창고" for "창고에는"): a prefix of a held word.
+            if "\uac00" <= t[0] <= "\ud7af" and any(w.startswith(t) for w in held):
+                continue
             gone.append(t)
     # Chinese, Japanese and Thai are not judged at all: the tokenizer cuts them into
     # overlapping pieces, and "two missing pieces in a row" refused ordinary rewordings
@@ -548,19 +551,22 @@ def web_query_from_ask(query: str) -> str:
     )
     # The command words go, the user's topic stays: "search the internet for X",
     # "look up on the web: X", "find online information about X" are all just "X".
+    _lead = r"^(?:\W*\b(?:hmm+|then|and|also|ok|okay|so|please|yup|now)\b)*\W*"
     q = re.sub(
-        r"\b(?:find|get|show)?\s*(?:me\s+)?online\s+(?:information|info)\s+(?:about|on)\s+"
+        _lead + r"(?:\b(?:find|get|show)?\s*(?:me\s+)?online\s+(?:information|info)\s+(?:about|on)\s+"
         r"|\b(?:search|look\s*up|find|browse|google)\s+(?:(?:on|in|across)\s+)?(?:the\s+)?(?:web|internet|net|online)"
         r"(?:\s+(?:for|about|on)\b\s*[:,-]?|\s*[:,-]|\s*$)\s*"
-        r"|\b(?:on|from)\s+the\s+(?:web|internet)\s*[:,-]\s*",
+        r"|\b(?:on|from)\s+the\s+(?:web|internet)\s*[:,-]\s*)",
         "",
         q,
+        count=1,
         flags=re.I,
     )
     q = re.sub(
-        r"\b(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google|searhc|serach)\s+(about\s+|for\s+)?",
+        _lead + r"(web\s*search|search\s+the\s+web|search\s+online|look\s+up|google|searhc|serach)\s+(about\s+|for\s+)?",
         "",
         q,
+        count=1,
         flags=re.I,
     )
     q = re.sub(r"\b(then\s+)?(yup\s+)?reasoning\s+on\s+top\s+of\s+that\b", "", q, flags=re.I)
@@ -1585,7 +1591,10 @@ def answer_events(space_id: int, query: str, *, history: list[dict] | None = Non
             ev = {
                 **ev,
                 "answer": FOLLOWUP_NOT_CALCULATED + "\n\n" + str(ev.get("answer") or ""),
-                "provenance": {**(ev.get("provenance") or {}), "followup_not_calculated": True},
+                # The calculation before it is kept, so the next follow-up still has
+                # something to repeat ("by region" failed, "and for South?" still works).
+                "provenance": {**(ev.get("provenance") or {}), "followup_not_calculated": True,
+                               **({"carry": prev["carry"]} if isinstance(prev, dict) and prev.get("carry") else {})},
             }
         yield ev
 
