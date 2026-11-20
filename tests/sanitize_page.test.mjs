@@ -91,3 +91,10 @@ test("main: tables and diagrams still come out", async () => {
   assert.match(r.html, /<table>/);
   assert.match(r.html, /class="mermaid" data-mm-src=/);
 });
+
+test("main: maths tokens in attributes are dropped and a forged token is just text", async () => {
+  const r = await show("main", '<a href="#" title="$x$">q</a> and $y$ KXMATHTOKEN0ENDTOKEN');
+  assert.ok(!/title="[^"]*katex/.test(r.html) && !/ katex"/.test(r.html), r.html);
+  assert.equal((r.html.match(/class="katex"/g) || []).length, 1, r.html);
+  assert.ok(r.html.includes("KXMATHTOKEN0ENDTOKEN"), r.html);
+});

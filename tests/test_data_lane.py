@@ -130,7 +130,7 @@ class RestoreIsSafe(unittest.TestCase):
             "data/./workspace.json": "EVIL", "data//auth_tokens.json": "EVIL",
             "data\\.\\join_codes.json": "EVIL", "data/WORKSPACE.JSON": "EVIL",
             "data/sub/../license.json": "EVIL", "data/./token_session_acl.json": "EVIL",
-            "data/Auth_Tokens.json": "EVIL", "data/notes.txt": "fine", "data/sub/ok.txt": "fine2",
+            "data/Auth_Tokens.json": "EVIL", "data/license.json. ": "EVIL", "data/notes.txt": "fine", "data/sub/ok.txt": "fine2",
         })
         code, out = clipdrop._restore_package(blob)
         self.assertEqual(code, 200, out)
@@ -141,7 +141,7 @@ class RestoreIsSafe(unittest.TestCase):
         self.assertEqual((self.dd / "notes.txt").read_text(), "fine")
         self.assertEqual((self.dd / "sub" / "ok.txt").read_text(), "fine2")
         skipped = {s["file"] for s in out["skipped"]}
-        self.assertEqual(len(skipped), 7, skipped)
+        self.assertEqual(len(skipped), 8, skipped)
         self.assertEqual(out["restored"], 2)
 
     def test_a_bad_zip_changes_nothing(self):

@@ -13657,7 +13657,8 @@ function renderMd(md){
   // Maths is our own output (it carries style attributes the sanitizer strips), so it is
   // set aside as a token and put back after sanitizing, like the diagrams.
   const mathBlocks=[];
-  const mathTok=h=>`KXMATHTOKEN${mathBlocks.push(h)-1}ENDTOKEN`;
+  const mathNonce=Math.random().toString(36).slice(2,10);
+  const mathTok=h=>`KXMATH${mathNonce}T${mathBlocks.push(h)-1}ENDTOKEN`;
   s=s.replace(/\$\$([\s\S]+?)\$\$/g,(m,tex)=>{
     try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false}));
     }catch(e){return mathTok(`<pre>${esc(tex)}</pre>`)}
@@ -13668,7 +13669,11 @@ function renderMd(md){
   });
   let html=window.marked?marked.parse(s,{breaks:true}):mdFallback(s);
   html=sanitizeHtml(html);
-  if(mathBlocks.length)html=html.replace(/KXMATHTOKEN(\d+)ENDTOKEN/g,(m,i)=>mathBlocks[+i]||'');
+  if(mathBlocks.length){
+    // Only in text: a token inside a tag (an attribute value) is dropped, never expanded.
+    const re=new RegExp('KXMATH'+mathNonce+'T(\\d+)ENDTOKEN','g');
+    html=html.split(/(<[^>]*>)/).map(p=>p[0]==='<'?p.replace(re,''):p.replace(re,(m,i)=>mathBlocks[+i]||'')).join('');
+  }
   // Reinsert mermaid blocks AFTER sanitizing (we build the node ourselves, escaped).
   html=html.replace(/(?:<p>\s*)?MMDIAGRAMTOKEN(\d+)ENDTOKEN(?:\s*<\/p>)?/g,(m,i)=>{
     const code=mermaidBlocks[+i]||'';

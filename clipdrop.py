@@ -1767,7 +1767,7 @@ def _restore_package(blob: bytes) -> tuple[int, dict]:
             except (ValueError, OSError):
                 skipped.append({"file": name, "why": "outside the data folder"})
                 continue
-            secret = next((k for k in _BACKUP_SECRET_FILES if k.lower() == rel.lower()), None)
+            secret = next((k for k in _BACKUP_SECRET_FILES if k.lower() == rel.rstrip(" .").lower()), None)  # Windows drops trailing dots and spaces
             if "/" not in rel and secret:
                 skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[secret]} stay as they are on this PC"})
                 continue

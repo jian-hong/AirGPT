@@ -2,7 +2,7 @@
 /* Touch screens (any width, tablets too): the controls themselves are at least 44px, measured
    as boxes, not just by an invisible layer. A mouse keeps the compact sizes. */
 @media(pointer:coarse){
-  .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn{min-width:44px;min-height:44px}
+  .composer #attachBtn,.topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn{min-width:44px;min-height:44px}
   .chat-titlebar-actions .chat-share-btn{min-width:44px;min-height:44px}
   .msg .meta button,.msg .cb-copy{min-width:44px;min-height:44px}
   /* The project tab above the message box reads its height from this one variable. */
