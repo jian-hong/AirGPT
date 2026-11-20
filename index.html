@@ -13730,10 +13730,9 @@ function sanitizeHtml(html){
         // page class. The only class kept is a code language; our own maths, diagrams and copy
         // buttons are added after this runs. A size on an svg would let it fill the chat.
         if(d.attrName==='class'){const k=String(d.attrValue).split(/\s+/).filter(c=>/^language-[\w+#.\-]{1,30}$/.test(c));if(k.length&&node.nodeName==='CODE')d.attrValue=k.join(' ');else d.keepAttr=false;}
-        if((d.attrName==='width'||d.attrName==='height')&&/^(svg|img)$/i.test(node.nodeName))d.keepAttr=false;
       });
     }
-    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage'],FORBID_ATTR:['id','name','onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc']});
+    return DOMPurify.sanitize(html,{ALLOW_DATA_ATTR:false,ADD_ATTR:['target'],FORBID_TAGS:['style','form','input','button','textarea','select','image','use','feImage','marquee'],ALLOW_ARIA_ATTR:false,FORBID_ATTR:['id','name','onerror','onload','style','background','srcset','poster','ping','lowsrc','dynsrc','for','form','formaction','formmethod','formtarget','popover','popovertarget','popovertargetaction','list','usemap','headers','width','height','cellpadding','cellspacing','border','hspace','vspace']});
   }
   // No cleaner at all: show the text, never the markup.
   return window.AirSanitize?AirSanitize.clean(html):esc(html);
@@ -13770,6 +13769,12 @@ function mdFallback(src){
 }
 // Maths comes from models and documents: cap sizes and macro growth so one line cannot make a huge slab.
 const _KATEX_SAFE={maxSize:10,maxExpand:200,trust:false,strict:'ignore'};
+// Macro definitions can set a row height of thousands of lines (\gdef\arraystretch{5000}) and a long
+// nest of braces blocks the page for seconds, so a formula that defines macros or is very long is shown
+// as plain text instead of being drawn.
+const _TEX_MAX=2000;
+const _TEX_REDEFINES=/\\(?:[gex]?def|let|futurelet|global|long|outer|(?:re|provide)?newcommand|newenvironment|renewenvironment|DeclareMathOperator|set(?:length|counter))(?![a-zA-Z])/;
+function texOk(tex){return tex.length<=_TEX_MAX&&!_TEX_REDEFINES.test(tex);}
 function renderMd(md){
   if(!md)return '';
   // Pull mermaid fences out first so marked doesn't turn them into <pre><code>.
@@ -13785,10 +13790,12 @@ function renderMd(md){
   const mathNonce=Math.random().toString(36).slice(2,10);
   const mathTok=h=>`KXMATH${mathNonce}T${mathBlocks.push(h)-1}ENDTOKEN`;
   s=s.replace(/\$\$([\s\S]+?)\$\$/g,(m,tex)=>{
+    if(!texOk(tex))return mathTok(`<pre>${esc(tex)}</pre>`);
     try{return mathTok(katex.renderToString(tex,{displayMode:true,throwOnError:false,..._KATEX_SAFE}));
     }catch(e){return mathTok(`<pre>${esc(tex)}</pre>`)}
   });
   s=s.replace(/\$([^$\n]+?)\$/g,(m,tex)=>{
+    if(!texOk(tex))return esc(tex);
     try{return mathTok(katex.renderToString(tex,{displayMode:false,throwOnError:false,..._KATEX_SAFE}));
     }catch(e){return esc(tex)}
   });
@@ -13859,6 +13866,51 @@ function sanitizeMermaidSrc(src){
   }
   return out.join('\n');
 }
+// Mermaid makes its labels as HTML after sanitizeHtml has run, so a label could carry a page id
+// (getElementById would find it first), a page class, or a position style. After the diagram is
+// drawn, label content is cut back to plain text styling and ids and classes are kept only when
+// Mermaid itself made them (its ids carry the unguessable diagram id; its classes are the ones
+// its own stylesheet uses).
+function cleanMermaidSvg(svg){
+  const box=document.createElement('div');box.innerHTML=svg;
+  const root=box.querySelector('svg');
+  if(!root)throw new Error('no diagram');
+  const rid=root.id||'\u0000';
+  const styleTxt=[...root.querySelectorAll('style')].map(x=>x.textContent).join('\n');
+  const LABEL_TAGS=new Set(['div','span','p','b','i','em','strong','br','code','u','s','sub','sup','small','mark']);
+  const LABEL_CLASS=new Set(['nodeLabel','edgeLabel','labelBkg','markdown-node-label']);
+  const SAFE_CSS=/^(display|white-space|line-height|max-width|text-align|width|height|padding|margin|color|background-color|font-size|font-weight|font-family|overflow|overflow-wrap|word-break|text-wrap|vertical-align|table-layout|border-collapse)$/;
+  const styleKeep=v=>String(v).split(';').map(d=>d.trim()).filter(d=>{const i=d.indexOf(':');return i>0&&SAFE_CSS.test(d.slice(0,i).trim().toLowerCase())&&!/url\s*\(|image-set|expression|@import/i.test(d);}).join('; ');
+  // An id is kept when the drawing itself points at it (url(#id), href="#id", its own stylesheet).
+  const pointed=new Set();
+  const refs=t=>String(t).replace(/(?:url\(\s*['"]?|^)#([^\s'")]+)/g,(m,i)=>{pointed.add(i);return m;});
+  root.querySelectorAll('*').forEach(el=>{if(!el.closest('foreignObject'))[...el.attributes].forEach(a=>{if(a.name!=='id')refs(a.value);});});
+  styleTxt.replace(/#([\w-]+)/g,(m,i)=>{pointed.add(i);return m;});
+  const inStyle=c=>new RegExp('\\.'+c.replace(/[^\w-]/g,'\\$&')+'(?![\\w-])').test(styleTxt);
+  box.querySelectorAll('*').forEach(el=>{
+    if(!box.contains(el)||el===root)return;
+    const fo=el.closest('foreignObject');
+    if(fo&&el!==fo){
+      const top=el.parentNode===fo;
+      if(!LABEL_TAGS.has(el.localName)||el.namespaceURI==='http://www.w3.org/2000/svg'){el.replaceWith(document.createTextNode(el.textContent));return;}
+      [...el.attributes].forEach(a=>{
+        const n=a.name.toLowerCase();
+        if(n==='xmlns'&&top)return;
+        if(n==='class'){const k=a.value.split(/\s+/).filter(c=>LABEL_CLASS.has(c)||(/^[\w-]+$/.test(c)&&inStyle(c)));if(k.length)el.setAttribute('class',k.join(' '));else el.removeAttribute('class');return;}
+        if(n==='style'){const v=styleKeep(a.value);if(v)el.setAttribute('style',v);else el.removeAttribute('style');return;}
+        el.removeAttribute(a.name);
+      });
+      return;
+    }
+    [...el.attributes].forEach(a=>{
+      const n=a.name.toLowerCase();
+      if(n==='id'){if(!a.value.includes(rid)&&!pointed.has(a.value))el.removeAttribute('id');}
+      else if(n==='class'){const k=a.value.split(/\s+/).filter(c=>c&&inStyle(c));if(k.length)el.setAttribute('class',k.join(' '));else el.removeAttribute('class');}
+      else if(n==='name'||n==='for'||n==='form'||n.startsWith('popover')||n.startsWith('on'))el.removeAttribute(a.name);
+    });
+  });
+  return box.innerHTML;
+}
 async function renderMermaidIn(root){
   if(!window.mermaid)return;
   initMermaid();
@@ -13872,7 +13924,7 @@ async function renderMermaidIn(root){
     try{
       const id='mm-'+Math.random().toString(36).slice(2);
       const{svg}=await mermaid.render(id,src);
-      el.innerHTML=svg;
+      el.innerHTML=cleanMermaidSvg(svg);
       el.classList.add('mm-rendered');
     }catch(e){
       el.innerHTML=`<pre class="mm-error">${esc(src)}</pre>`;
