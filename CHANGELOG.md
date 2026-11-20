@@ -2,6 +2,17 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-20 -- Database connections close when their block ends (Windows)
+
+- `with _connect() as conn:` in `db.py`, `agent_store.py` and `memory_index.py`
+  only committed; the connection stayed open until a garbage-collection pass.
+  On Windows an open handle blocks deleting or replacing the file, so the new
+  restore test failed there and a restore's file swap could fail in a running
+  app. `db.ClosingConnection` now commits (or rolls back) and closes.
+- Proof: unclosed-database warnings in the restore, data and agent tests went
+  from 299 to 0; suite 1488 passed, 0 failed, 9 skipped; browser 27 of 27;
+  Windows CI green on `8d0c5e8`.
+
 ## 2026-11-20 -- Round 2, final checks: 76 more findings, two critical, fixed and re-verified
 
 - After the round-2 entry below, two more adversarial passes ran on the merged

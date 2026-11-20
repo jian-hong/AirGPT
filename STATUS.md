@@ -25,9 +25,9 @@
    Round 2: PR #90 merged in; RAG totals checked against pandas, packs
    keep calculating, turns keep their files, agents run only their own
    tools, restore all-or-nothing, sanitizer drops styles and page ids,
-   phone title readable, light theme readable. Head `8b10716`: 1488
+   phone title readable, light theme readable. Head `8d0c5e8`: 1488
    passed, 0 failed, 9 skipped; JS 235; browser 27/27; Windows CI green
-   through `7bf07d6`. Not verified: real tunnel, real phone, real
+   on `8d0c5e8`. Not verified: real tunnel, real phone, real
    provider, live Cortex, Windows restore names. Owner calls: P14-P31.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5

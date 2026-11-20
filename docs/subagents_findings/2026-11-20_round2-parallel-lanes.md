@@ -78,6 +78,11 @@ main_idea: Lanes that each passed their own verifier broke where they met, and f
   rules.
 - **Invariant:** prove a gate can fail. Both fixes were proven red with the
   protection switched off.
+- **Third case, same class:** connections opened with `with sqlite3.connect()`
+  were never closed (the context manager only commits). Linux deletes and
+  replaces open files; Windows does not, so a restore test's cleanup failed
+  there, and a restore's swap could too. Fixed by closing at block end; the
+  count of unclosed-database warnings (299 to 0) is the gate.
 
 ## Finding 6 - name-based deny lists for restore
 
