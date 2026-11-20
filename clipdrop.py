@@ -3487,6 +3487,11 @@ class Handler(BaseHTTPRequestHandler):
                 chat_id = int(rag_store.create_chat(sid, (q[:60] or "New chat"))["id"])
             except Exception:
                 chat_id = 0
+        # A chat belongs to one space; answers from another space must not land in it.
+        why = rag_answer.check_chat(sid, chat_id)
+        if why:
+            return self._json(400, {"ok": False, "error": why})
+        history = rag_answer.chat_history(chat_id)
 
         self._sse_begin()
         text = ""
@@ -3494,7 +3499,8 @@ class Handler(BaseHTTPRequestHandler):
         done: dict = {}
         try:
             for ev in rag_answer.answer_events(
-                sid, q, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids
+                sid, q, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids,
+                history=history,
             ):
                 t = ev.get("type")
                 if t == "thinking":
@@ -3509,6 +3515,11 @@ class Handler(BaseHTTPRequestHandler):
                         "space_id": sid,
                         "chat_id": chat_id,
                         "confidence": ev.get("confidence"),
+                        # The goal rides with the first event so the page can show the
+                        # gap box as soon as it knows; it used to be dropped here.
+                        "goal": ev.get("goal") or {},
+                        "lane": ev.get("lane"),
+                        "web_used": bool(ev.get("web_used")),
                     }
                     if not self._sse_send(payload):
                         break
@@ -3569,6 +3580,21 @@ class Handler(BaseHTTPRequestHandler):
             # be indistinguishable from a first-choice reply.
             "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
+            # Same fields the JSON answer carries, so the page reads one shape.
+            "goal": done.get("goal") or {},
+            "citations": citations,
+            "abstained": bool(done.get("abstained")),
+            "abstain_reason": done.get("abstain_reason") or "",
+            "web_used": bool(done.get("web_used")),
+            "lane": done.get("lane"),
+            "variant": done.get("variant"),
+            "honesty": done.get("honesty"),
+            "logic": done.get("logic"),
+            "ontology_summary": done.get("ontology_summary"),
+            "sql": done.get("sql") or "",
+            "provenance": done.get("provenance") or {},
+            "template_id": done.get("template_id"),
+            "depth": done.get("depth") or depth,
         })
         self._sse_end()
 

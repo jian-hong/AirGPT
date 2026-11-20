@@ -18,8 +18,8 @@ from rag.answer import (  # noqa: E402
 
 def test_wants_web_detects_natural_language():
     assert wants_web("web search about cortex edge ai for jepa")
-    assert wants_web("please search for JEPA reasoning")
-    assert wants_web("look up edge AI on cortex")
+    assert wants_web("please search the web for JEPA reasoning")
+    assert wants_web("look up edge AI on cortex online")
     assert wants_web("/search who is jian hong and his netie ai startup")
     assert wants_web("/web Netie AI")
     assert not wants_web("what is a resistor")
@@ -136,14 +136,18 @@ def test_a_topic_named_search_is_not_a_request_to_search():
 
 
 def test_directed_search_still_reaches_the_web():
-    """R-0005: the narrower rule must not refuse a real web ask."""
+    """R-0005: the narrower rule must not refuse a real web ask. Round 2 narrowed it
+    further: a real web ask now has to say web, online, internet or news (or use the
+    /search and /web commands); a plain 'search X' is about the user's own files."""
     for q in (
-        "search JEPA",
-        "serach for jepa papers",
-        "can you search the archive",
-        "please search for JEPA reasoning",
-        "look up edge AI on cortex",
-        "search about netie",
+        "search the web for JEPA",
+        "serach online for jepa papers",
+        "can you search the internet for the archive",
+        "please web search JEPA reasoning",
+        "look up edge AI on cortex online",
+        "/search netie",
         "google scholar lecun",
     ):
         assert wants_web(q), f"real web ask refused: {q!r}"
+    for q in ("search JEPA", "can you search the archive", "please search for JEPA reasoning", "look up edge AI on cortex"):
+        assert not wants_web(q), f"own-files question sent to the web: {q!r}"
