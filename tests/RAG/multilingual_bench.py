@@ -372,7 +372,7 @@ def _score_style(sid, facts, style, ask, top_k, retrieve, answer):
            "false_abstain": 0, "false_warn": 0, "locator_n": 0, "locator_ok": 0, "misses": []}
     for f in facts:
         q = ask(f)
-        hits = retrieve.search(sid, q, depth="high", top_k=top_k).get("hits") or []
+        hits = answer.rescue_hits(sid, q, retrieve.search(sid, q, depth="high", top_k=top_k).get("hits") or [])
         rank = next((i for i, h in enumerate(hits) if f.value in str(h.get("text") or "")), None)
         if rank is not None:
             row["recall_at_5"] += 1
@@ -435,7 +435,7 @@ def run(n: int = 30, seed: int = 1, top_k: int = 5, langs: list[str] | None = No
             qs += [render(lang, lang.ask, f.entity, lang.absent) for f in facts[: N_UNANSWERABLE - len(qs)]]
             abst, warned, missed = 0, 0, []
             for q in qs:
-                hits = retrieve.search(sid, q, depth="high", top_k=top_k).get("hits") or []
+                hits = answer.rescue_hits(sid, q, retrieve.search(sid, q, depth="high", top_k=top_k).get("hits") or [])
                 if not hits or answer.abstention(q, hits):
                     abst += 1
                 elif answer.unseen_terms_note(q, hits):

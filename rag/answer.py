@@ -124,6 +124,77 @@ _FILE_REF_RE = re.compile(r"\b[\w-]+\.(?:pdf|docx?|pptx?|xlsx?|csv|tsv|txt|md|ht
 _SENTENCE_END = re.compile(r"\n+|(?<=[.!?])\s+|(?<=[\u3002\uff01\uff1f\u061f])\s*")
 
 
+# Function words, to tell an English question from the language of the passages. Small on
+# purpose: it only has to say "this is English" and "this is clearly not English".
+_EN_FUNCTION = frozenset(
+    "the is of for what which who does are was were how and to in on with from this that has have".split()
+)
+_OTHER_FUNCTION = frozenset(
+    # Spanish, Malay/Indonesian, French, German, Portuguese, Italian
+    "de la el los las del para por con una que es se bagi ialah yang dan untuk di ini itu adalah dengan "
+    "dari pada akaun les des est une pour dans der die das und ist nicht mit ein para uma dos nao "
+    "il di che per sono gli".split()
+)
+
+
+def _cross_language(query: str, blob: str) -> bool:
+    """An English question put to evidence that is plainly in another language.
+
+    Then nothing but a name can be compared: "retention period" is never in a Russian
+    or Malay passage whatever it holds, so counting those words refused every such
+    question (retrieval had found the passage). Evidence counts as foreign when most
+    of its letters are not Latin, or when it has a good run of words, none of them
+    English function words and several of them another language's.
+    """
+    qwords = re.findall(r"[a-z]+", (query or "").lower())
+    if sum(1 for w in qwords if w in _EN_FUNCTION) < 2:
+        return False
+    letters = [c for c in blob if c.isalpha()]
+    if not letters:
+        return False
+    if sum(1 for c in letters if not c.isascii()) / len(letters) >= 0.3:
+        return True
+    words = re.findall(r"[a-z]+", blob)
+    if len(words) < 20:
+        return False
+    en = sum(1 for w in words if w in _EN_FUNCTION)
+    other = sum(1 for w in words if w in _OTHER_FUNCTION)
+    return en == 0 and other >= 3
+
+
+def _pair_scan(query: str, hits: list[dict]) -> tuple[list[str], list[str]]:
+    """Two-word names in Arabic that the evidence holds only as two different names.
+
+    Arabic has no capitals, and a full name is a first name and a family name that are
+    each common in a register. A question about "خالد القحطاني" in a space that has
+    "خالد الزهراني" and "فيصل القحطاني" finds every word and no name. So each pair of
+    neighbouring words in the question is looked for as a pair in a single passage;
+    a pair whose two words are both held but never together is reported. Only for
+    Arabic script: Latin and Cyrillic names have capitals (identifier_terms) and Korean
+    names are one word.
+    """
+    drop = _STOPWORDS | retrieve.QUESTION_FLUFF
+    seq = [t for t in sira.tokenize(_fold(query)) if not t.isascii()]
+    pairs = [(a, b) for a, b in zip(seq, seq[1:])
+             if "\u0600" <= a[0] <= "\u06ff" and "\u0600" <= b[0] <= "\u06ff"
+             and a not in drop and b not in drop and len(a) >= 3 and len(b) >= 3 and a != b]
+    if not pairs:
+        return [], []
+    words: set[str] = set()
+    adjacent: set[tuple[str, str]] = set()
+    for h in hits:
+        toks = sira.tokenize(_fold(f"{h.get('heading') or ''}\n{h.get('text') or ''}".lower()))
+        words.update(toks)
+        adjacent.update(zip(toks, toks[1:]))
+    both = [(a, b) for a, b in pairs if a in words and b in words]
+    return ([f"{a} {b}" for a, b in both if (a, b) not in adjacent],
+            [f"{a} {b}" for a, b in both if (a, b) in adjacent])
+
+
+def _split_pairs(query: str, hits: list[dict]) -> list[str]:
+    return _pair_scan(query, hits)[0]
+
+
 def abstention(query: str, hits: list[dict]) -> dict | None:
     """Is the evidence too thin to answer from? None means go ahead and answer.
 
@@ -170,22 +241,50 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
     # refuse. A missing name and a reworded ordinary word look the same there, and
     # refusing on them turned "请问...大概是多久" into "the space does not mention".
     # extractive_answer warns about them instead (see unseen_terms_note).
-    toks = _salient_tokens(query)
+    # Chinese, Japanese and Thai: a name or an attribute the evidence does not hold
+    # (see _script_unfounded) is grounds to refuse, same as a capitalised name above.
+    lost = _script_unfounded(query, hits, blob)
+    if lost:
+        return {"kind": "term", "missing": lost[:4],
+                "reason": "the space does not mention " + ", ".join(f'"{t}"' for t in lost[:4])}
+    split, named = _pair_scan(query, hits)
+    if split:
+        return {"kind": "term", "missing": split[:3],
+                "reason": "the space does not mention " + ", ".join(f'"{t}"' for t in split[:3])
+                          + " together (each word is there, in other names)"}
+    if _cross_language(query, blob):
+        # Only a name can be compared across languages, and the names were found above.
+        return None
+    # Chinese, Japanese and Thai pieces are judged above, on whole strings: as 2-3
+    # character pieces they tell a table row (no "客户" in it) from a missing name badly.
+    toks = [t for t in _salient_tokens(query) if not retrieve._is_unseg(t)]
     blobs = [_evidence_blob([h]) for h in hits]
+
+    name_toks = {w for term in terms for w in sira.tokenize(_fold(term))}
 
     def _in(t: str, b: str) -> bool:
         # "renewal" is evidenced by "renews". Without this a harmless rewording of an
         # answerable question flipped it from answered to refused.
+        if t in name_toks and not t.isascii():
+            # A name is not reworded by an ending: "Савич" is not held by "Савин".
+            return t in _blob_words(b)
         return _token_in_blob(t, b) or (t.isascii() and len(t) >= 6 and t[:5] in b)
 
+    # A word most passages hold ("account" in a register of accounts) says little about
+    # whether the asked-for thing is there, yet it padded the score of a question about
+    # an attribute the space never records. So each word counts for how much it tells
+    # the passages apart: 1 when no retrieved passage holds it, down to a quarter when
+    # all of them do. (Dropping such words outright left a table row, which has no
+    # "account" column word, judged on the name and one frame word alone.)
     if len(hits) >= 3:
-        # A word every passage holds ("account" in a register of accounts) says nothing
-        # about whether the asked-for thing is there, yet it padded the score of a
-        # question about an attribute the space never records. Judge on the words that
-        # tell passages apart, unless that leaves nothing.
-        toks = [t for t in toks if not all(_in(t, b) for b in blobs)] or toks
-    if toks and (terms or _coverage(query, hits) >= _COVERAGE_FLOOR):
-        best = max(sum(1 for t in toks if _in(t, b)) / len(toks) for b in blobs)
+        held = {t: sum(1 for b in blobs if _in(t, b)) for t in toks}
+        # A word no passage holds is the strongest sign the thing is not there.
+        weight = {t: 1.5 if not held[t] else 1.0 - 0.75 * held[t] / len(blobs) for t in toks}
+    else:
+        weight = {t: 1.0 for t in toks}
+    wsum = sum(weight.values())
+    if toks and (terms or named or _coverage(query, hits) >= _COVERAGE_FLOOR):
+        best = max(sum(weight[t] for t in toks if _in(t, b)) / wsum for b in blobs)
         if best < _COVERAGE_FLOOR:
             gone = [t for t in toks if not _in(t, blob)]
             return {"kind": "coverage", "missing": gone, "coverage": round(best, 3),
@@ -238,6 +337,176 @@ def _unseen_script_terms(query: str, blob: str) -> list[str]:
     # overlapping pieces, and "two missing pieces in a row" refused ordinary rewordings
     # and printed fragments such as "户目前的" as the missing term.
     return gone
+
+
+# Particles and chatter of the scripts written without spaces. They carry no content, so
+# a question that words them differently ("的" for "之", "目前", "大概") must not count
+# as a missing term. Kept short on purpose: an unlisted chatty word is still a miss.
+_SCRIPT_PARTICLES = "的之の はがをにでともやへ是了吗呢吧啊么嗎ですますかよね"
+_SCRIPT_CHATTER = (
+    "目前 大概 一般 通常 现在 現在 请问 請問 请 麻烦 麻煩 帮我 幫我 想知道 知道 告诉我 告訴我 能否 是否 可以 "
+    "多久 多长时间 多長時間 多少 什么时候 何时 哪里 哪裡 是谁 是誰 几个 幾個 いつ どのくらい どれくらい "
+    "何日 何時 何人 何個 いくつ いくら だれ どこ 現在 今 ください 教えて "
+    "ตอนนี้ ปัจจุบัน ช่วย โปรด บอก ครับ ค่ะ คะ นะ เท่าไร เท่าไหร่ เมื่อไร ใคร ที่ไหน"
+)
+
+
+def _script_segments(query: str) -> list[str]:
+    """Runs of Chinese, Japanese or Thai characters in a question, minus the words that
+    only ask it, the particles and the chatter, as the strings a passage must hold."""
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(set(retrieve.FLUFF_PHRASES) | set(_SCRIPT_CHATTER.split()), key=len, reverse=True):
+        text = text.replace(w, " ")
+    text = "".join(" " if c in _SCRIPT_PARTICLES else c for c in text)
+    out = []
+    for run in re.split(r"[^\w]+|[A-Za-z0-9_]+", text):
+        if len(run) >= 2 and retrieve._is_unseg(run[0]):
+            out.append(run)
+    return out
+
+
+def _script_gap(query: str, hits: list[dict]) -> dict | None:
+    """How much of the question, in an unsegmented script, the single best passage lacks.
+
+    Each run of the question is laid against the passage and the stretches it shares
+    (two characters or more, in the passage's own order) are marked as covered. The
+    rest is what the passage does not hold: a name that is not there, or an attribute
+    nobody recorded. Pieces of a name split across other words or other names in the
+    evidence do not count as holding it, which the old test (every character present
+    somewhere) allowed.
+    """
+    import difflib
+
+    segs = _script_segments(query)
+    if not segs:
+        return None
+    total = sum(len(s) for s in segs)
+    best: tuple[int, list[str]] | None = None
+    for h in hits:
+        blob = _evidence_blob([h])
+        gone: list[str] = []
+        for seg in segs:
+            sm = difflib.SequenceMatcher(None, seg, blob, autojunk=False)
+            cover = [False] * len(seg)
+            for a, _b, size in sm.get_matching_blocks():
+                if size >= 2:
+                    for k in range(a, a + size):
+                        cover[k] = True
+            run = ""
+            for ch, ok in zip(seg, cover):
+                if ok:
+                    if run:
+                        gone.append(run)
+                    run = ""
+                else:
+                    run += ch
+            if run:
+                gone.append(run)
+        miss = sum(len(g) for g in gone)
+        if best is None or miss < best[0]:
+            best = (miss, gone)
+    miss, gone = best
+    return {"missing_chars": miss, "total_chars": total, "gone": gone}
+
+
+def _script_unfounded(query: str, hits: list[dict], blob: str | None = None) -> list[str]:
+    """Strings of an unsegmented-script question that the evidence does not hold at all.
+
+    Two things count. A stretch the best passage lacks AND no other retrieved passage
+    holds either (_script_gap): a frame word such as "客户" is missing from a table row
+    but sits in the neighbouring passages, a name or an attribute nobody recorded does
+    not. And a Thai word standing alone between spaces (a name) that no passage holds
+    whole: Thai names are built from syllables every other name also uses, so their
+    pieces are always "present" and only the whole word tells them apart.
+    """
+    blob = blob if blob is not None else _evidence_blob(hits)
+    gap = _script_gap(query, hits)
+    out = [g for g in (gap["gone"] if gap else []) if len(g) >= 2 and g not in blob]
+    text = retrieve.fold_text(query).lower()
+    for w in sorted(set(retrieve.FLUFF_PHRASES) | set(_SCRIPT_CHATTER.split()), key=len, reverse=True):
+        text = text.replace(w, " ")
+    for word in re.split(r"[^\w]+", text):
+        if 3 <= len(word) <= 10 and "\u0e00" <= word[0] <= "\u0e7f" and word not in blob and word not in out:
+            out.append(word)
+    return out
+
+
+def _missing_terms(query: str, blob: str) -> list[str]:
+    """Names and codes of the question that the evidence does not hold (the "term" test of abstention)."""
+    blob_tokens = set(sira.tokenize(blob))
+
+    def present(term: str) -> bool:
+        toks = sira.tokenize(_fold(term))
+        return term.lower() in blob or (bool(toks) and all(t in blob_tokens for t in toks))
+
+    return [t for t in retrieve.identifier_terms(query) if not present(t)]
+
+
+def rescue_hits(space_id: int, query: str, hits: list[dict], *, limit: int = 3) -> list[dict]:
+    """Put back the passage that holds a name the question asks about, when retrieval missed it.
+
+    Retrieval returns the best few passages by score. A question about a name the
+    space DOES hold sometimes gets look-alikes instead (a Chinese name that shares
+    two characters with ten others), and the answer then either quoted a look-alike or,
+    once the answer layer refuses on a missing name, refused although the name is there.
+    Before judging, look the missing name up in the space's own text. A passage that
+    holds it whole is added at the front; a name nothing holds stays missing and the
+    answer refuses as before. Exact lookups only, no scoring, so a made-up name that
+    resembles a real one is not rescued: the whole string must be there (a Latin or
+    Cyrillic name may carry one more letter for its ending), and for Chinese and
+    Japanese the passage must cover the question's own words with no stray character.
+    """
+    if not hits or not query:
+        return hits
+    try:
+        blob = _evidence_blob(hits)
+        names = _missing_terms(query, blob) + _split_pairs(query, hits)
+        strings = _script_unfounded(query, hits, blob)
+        if not names and not strings:
+            return hits
+        have = {int(h.get("chunk_id") or 0) for h in hits}
+        found: list[tuple[int, dict]] = []
+        with store._conn() as conn:
+            for needle in [*names, *strings][:5]:
+                rows = conn.execute(
+                    "SELECT id, parent_id, path, heading, text, authority FROM chunks "
+                    "WHERE space_id=? AND kind='child' AND text LIKE ? LIMIT 400",
+                    (int(space_id), "%" + needle.replace("%", "").replace("_", "") + "%"),
+                ).fetchall()
+                low = needle.lower()
+                unseg = bool(needle) and retrieve._is_unseg(needle[0])
+                for r in rows:
+                    if int(r["id"]) in have:
+                        continue
+                    text = _fold(r["text"] or "").lower()
+                    if unseg:
+                        if low not in text:
+                            continue
+                        gap = _script_gap(query, [{"text": r["text"], "path": r["path"], "heading": r["heading"]}])
+                        runs = (gap or {}).get("gone") or []
+                        pool = blob + " " + text
+                        if any(len(g) < 2 or g not in pool for g in runs):
+                            continue
+                        rank = gap["missing_chars"] if gap else 0
+                    else:
+                        if not re.search(r"(?<!\w)" + re.escape(low).replace("\\ ", r"\s+") + r"\w?(?!\w)", text):
+                            continue
+                        rank = 0
+                    found.append((rank, dict(r)))
+        if not found:
+            return hits
+        found.sort(key=lambda x: x[0])
+        out, seen = [], set()
+        for _rank, r in found:
+            if r["id"] in seen or len(out) >= limit:
+                continue
+            seen.add(r["id"])
+            out.append({"chunk_id": int(r["id"]), "parent_id": r["parent_id"], "path": r["path"],
+                        "heading": r["heading"], "text": r["text"], "authority": r["authority"] or "document",
+                        "score": float(hits[0].get("score") or 0.0), "rescued": True})
+        return out + list(hits)
+    except Exception:
+        return hits
 
 
 def unseen_terms_note(query: str, hits: list[dict]) -> str:
@@ -874,18 +1143,78 @@ _STOPWORDS = {
     "document", "documents", "content", "contents", "first", "thing", "things", "stuff", "here",
     "ensure", "mention", "mentioned", "mentions", "file", "files", "doc", "docs", "detail", "details",
     "every", "each", "entire", "whole", "full", "complete", "all", "any", "some", "info", "information",
+    # Function words of the other spaced scripts and languages the app is asked in: they
+    # say nothing about the subject, and a register's table rows do not repeat them.
+    "для", "при", "про", "над", "под", "это", "эти", "как", "или", "если", "также", "его", "ещё", "на", "по",
+    "из", "от", "до", "за", "не", "ли", "то", "об", "со", "ко",
+    "para", "por", "con", "una", "del", "los", "las", "que", "sus", "son",
+    "bagi", "untuk", "dengan", "yang", "dan", "ini", "itu", "adalah", "ialah", "dari", "pada", "atau", "akan",
+    "في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "التي", "الذي",
+    # The kind of thing a name belongs to ("client Savich", "akaun X", "cuenta X"). A table
+    # row holds the name and no such word, and the question only repeats the kind.
+    "клиент", "клиента", "клиенту", "клиенте", "клиентом", "клиентов", "аккаунт", "аккаунта",
+    "cuenta", "cliente", "akaun", "pelanggan", "العميل", "عميل", "للعميل", "العملاء",
 }
+
+
+_WORDS_CACHE: dict[int, tuple[str, frozenset]] = {}
+
+
+def _blob_words(blob: str) -> frozenset:
+    """The words of an evidence blob (cached: the same blob is asked about many times)."""
+    key = hash(blob)
+    hit = _WORDS_CACHE.get(key)
+    if hit and hit[0] == blob:
+        return hit[1]
+    words = frozenset(sira.tokenize(blob))
+    if len(_WORDS_CACHE) > 32:
+        _WORDS_CACHE.clear()
+    _WORDS_CACHE[key] = (blob, words)
+    return words
+
+
+def _bare(w: str) -> str:
+    """A word without Arabic's definite article, which would otherwise make every word look like every other."""
+    return w[2:] if len(w) > 4 and w[:2] in ("\u0627\u0644", "\u0644\u0644") else w
+
+
+def _word_held(t: str, words: frozenset) -> bool:
+    """A word of a spaced script (Cyrillic, Arabic, Hangul) is held when the evidence has
+    that word or the same word with another ending ("клиента" for "клиент", "고객의" for
+    "고객"). Not when it merely shares letters: the old test counted a word as present
+    when half its characters appeared anywhere in the evidence, which every Russian
+    passage satisfies for every Russian word."""
+    if t in words:
+        return True
+    t = _bare(t)
+    if len(t) < 4:
+        return False
+
+    def stem(x: str) -> str:
+        return x[:-1] if len(x) <= 6 else x[:-2]
+
+    st = stem(t)
+    for w in words:
+        w = _bare(w)
+        if len(w) >= 4 and abs(len(w) - len(t)) <= 3 and (w.startswith(st) or t.startswith(stem(w))):
+            return True
+    return False
 
 
 def _token_in_blob(t: str, blob: str) -> bool:
     """Is this coverage token evidenced in the blob?
 
-    Exact substring first. Non-Latin paraphrase is the remaining CHUNK-02 miss:
-    CJK/Thai bigrams of the query often do not appear contiguously (损坏商品 vs
-    损坏的商品), and Hangul/Arabic letter-runs are whole words that inflect
-    (상품의 vs 상품은). Bigrams: both characters present. Longer runs: majority
-    of characters present. Unrelated Latin evidence still scores 0 because those
-    characters are absent.
+    Latin words: as a substring. Chinese, Japanese and Thai pieces (overlapping
+    2-3 character cuts): as one unbroken string. Hangul, Arabic and Cyrillic words: the
+    word itself or the same word with another ending (_word_held).
+
+    The old rule counted a non-Latin piece as present when its characters were found
+    ANYWHERE in the blob, so a name that was not in the space still looked covered
+    (every character of a made-up name is somewhere in a register of other names) and,
+    for a spaced script, a name that was in the space was dropped as "a word every
+    passage holds". That one rule produced both the refusals of English questions about
+    Russian and Malay documents and the missing refusals in Chinese, Japanese, Korean,
+    Arabic and Thai.
     """
     if not t:
         return False
@@ -893,12 +1222,9 @@ def _token_in_blob(t: str, blob: str) -> bool:
         return True
     if t.isascii():
         return False
-    if len(t) == 2:
-        return t[0] in blob and t[1] in blob
-    if len(t) >= 3:
-        hits = sum(1 for ch in t if ch in blob)
-        return hits >= (len(t) + 1) // 2
-    return False
+    if retrieve._is_unseg(t):
+        return False
+    return _word_held(t, _blob_words(blob))
 
 
 def _fold(text: str) -> str:
@@ -1920,6 +2246,14 @@ def _answer_events(
             " ".join(goals) if len(goals) > 1 else (knowledge_q or query),
             hits,
         )
+
+    # A name the question asks about that retrieval returned look-alikes for: look it up
+    # in the space before judging the evidence thin (see rescue_hits).
+    if hits:
+        rescued = rescue_hits(space_id, query, hits)
+        if rescued is not hits:
+            hits = rescued
+            coverage = _coverage(query, hits)
 
     if not hits:
         stop_reason = "no_evidence"

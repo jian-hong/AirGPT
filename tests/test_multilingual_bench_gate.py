@@ -8,13 +8,19 @@ Before the retrieval fixes: zh r@1 8/30, th name-only r@1 3/30, and Malay and
 Spanish refused answerable questions 12-13 of 30.
 
 READ THIS BEFORE CALLING IT GREEN.
-- Unanswerable questions in scripts without capital letters (zh ja ko ar th) are
-  WARNED about, never refused: abstained is 0 of 10 there by design. An absent name
-  and a reworded ordinary word look the same in those scripts, and a rule that
-  refused on missing pieces also refused ordinary rewordings. The warning line is
-  counted as `warned`; the floor is on abstained + warned.
-- Arabic is weak: r@1 12-13 of 30 and only 5 of 10 unanswerable flagged. Whole-word
-  names shared between customers are not told apart.
+- Unanswerable questions are REFUSED in every language, not only warned about: abstained
+  is 10 of 10 in all eight (it was 0 of 10 in zh ja ko ar th, 5 in ru). The root cause of
+  both the missing refusals and the false ones was one rule: a non-Latin word counted as
+  present when half its characters were found anywhere in the evidence (see
+  answer._token_in_blob). Chinese, Japanese and Thai are now judged on whole strings,
+  Arabic names on the pair of words, and an English question put to a passage in another
+  language is judged on the name only (the c_english column used to be refused 6 to 30
+  times of 30 although retrieval had found the passage).
+- Questions are put through answer.rescue_hits, as the app does: a name the space holds
+  but retrieval missed is looked up before the answer is judged. r@1 and r@5 here include
+  that lookup; plain retrieval is unchanged.
+- Arabic is still the weakest on r@1 (12-13 of 30): whole-word names shared between
+  customers are not told apart by the ranking.
 - n=30 per language bounds nothing about real documents; templates are hand-written
   and were not reviewed by native speakers.
 - Style c (English question) keeps the name in its own script. A pure English
@@ -42,14 +48,14 @@ import multilingual_bench as mb  # noqa: E402
 # lands fifth differs between SQLite and numpy builds (Linux measured ja name-only at
 # 3, the Windows runner at 4), so the ceiling moves with the recall floor beside it.
 FLOORS = {
-    "zh": ((18, 26, 22, 1), (18, 22, 21, 1), 9),
-    "ja": ((18, 26, 23, 1), (17, 25, 22, 4), 10),
-    "ko": ((19, 25, 23, 1), (29, 29, 29, 1), 9),
-    "ar": ((12, 28, 23, 1), (11, 29, 29, 1), 5),   # WEAK: see docstring
-    "th": ((19, 28, 27, 1), (21, 26, 23, 1), 9),
-    "ru": ((25, 27, 27, 3), (29, 29, 29, 1), 10),
-    "ms": ((27, 29, 28, 2), (25, 29, 26, 5), 10),
-    "es": ((29, 29, 29, 1), (25, 28, 25, 2), 10),
+    "zh": ((20, 28, 24, 1), (22, 27, 25, 1), 10),
+    "ja": ((19, 28, 24, 1), (20, 28, 26, 4), 10),
+    "ko": ((19, 29, 29, 1), (29, 29, 29, 1), 10),
+    "ar": ((12, 29, 24, 1), (12, 29, 29, 1), 10),   # r@1 weak: see docstring
+    "th": ((19, 29, 27, 1), (24, 29, 26, 1), 10),
+    "ru": ((29, 29, 29, 3), (29, 29, 29, 1), 10),
+    "ms": ((29, 29, 29, 2), (29, 29, 29, 5), 10),
+    "es": ((29, 29, 29, 1), (29, 29, 29, 2), 10),
 }
 
 
@@ -79,12 +85,19 @@ def test_language_meets_its_floor(board, code):
     u = row["unanswerable"]
     flagged = u["abstained"] + u["warned"]
     assert flagged >= abst, f"{code} flagged {flagged}/{u['n']}, answered with no warning: {u['missed']}"
+    assert u["abstained"] >= 9, f"{code} refused only {u['abstained']}/{u['n']} unanswerable questions: {u['missed']}"
 
 
 def test_english_question_about_foreign_document_has_a_weak_floor(board):
     """Named weakness: the pure-English paraphrase is not tested (needs P13). Weak floor only."""
     for code, row in board["languages"].items():
         assert row["c_english"]["recall_at_5"] >= 20, code
+
+
+def test_english_question_about_foreign_document_is_not_refused(board):
+    """The passage is found (r@5) and its name is in the question: refusing it was the bug."""
+    for code, row in board["languages"].items():
+        assert row["c_english"]["false_abstain"] <= 2, (code, row["c_english"]["false_abstain"])
 
 
 def test_board_states_its_limits(board):
