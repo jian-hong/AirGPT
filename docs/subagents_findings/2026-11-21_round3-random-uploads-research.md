@@ -54,8 +54,10 @@ main_idea: A random-upload corpus with pandas truth found spreadsheet answers th
   lane3/robust-fix and lane3/research.
 - **Root-cause class:** a channel's internal order chosen by its own evidence,
   not by the question; measured lanes merged without re-measuring.
-- **Fix:** order the name channel by the other channels; vector weight 0.6, the
-  lowest where no style loses rank-1 answers on seeds 1 and 4-7.
+- **Fix:** order the name channel by the other channels at equal weight; vector
+  weight 0.6, the lowest of 0.25, 0.4, 0.6 and 1.0 where no style loses rank-1
+  answers on seeds 1-7. A first version ordered by the weighted channels and lost
+  1 to 4 synonym answers per seed against full weight; the full suite caught it.
 - **Invariant:** adversary is not the verifier (each lane's verifier passed);
   don't weaken a check: the research lane had lowered two r@1 gate floors to
   ship 0.25. They are restored and a test now fails at 0.25.
