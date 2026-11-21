@@ -1022,7 +1022,10 @@ def insert_chunk(
     token_est: int = 0,
     meta: dict | None = None,
     authority: str = "",
+    index_context: str = "",
 ) -> int:
+    """`index_context` (where the chunk sits: file title, heading chain) is searched with
+    the chunk but never stored in its text, so a citation shows the original words."""
     init()
     now = time.time()
     # Decided once, at write time. Re-deriving the class from a path regex on every
@@ -1058,7 +1061,7 @@ def insert_chunk(
         cid = int(cur.lastrowid)
         conn.execute(
             "INSERT INTO chunks_fts(text, path, heading, chunk_id) VALUES(?,?,?,?)",
-            (text or "", path or "", heading or "", cid),
+            (text or "", path or "", f"{heading or ''} {index_context}".strip() if index_context else (heading or ""), cid),
         )
         return cid
 

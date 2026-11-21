@@ -39,8 +39,12 @@ FLOORS = {
     # ordered by the other channels) and the vector channel at 0.6 under the hash
     # embedder (tests/test_dense_weight.py). No r@1 floor was lowered.
     "synonym": (43, 64),     # was (26, 45)
-    "lower_typo": (40, 53),  # was (40, 49)
-    "property": (5, 22),     # was (5, 17); DELIBERATELY WEAK: recorded weakness, not a pass
+    # Raised in round 3b: the file boost no longer lifts every chunk of a favoured file over
+    # the answer (lower_typo 40/53 -> 56/64), and the bridge hop (retrieve.bridge_hops)
+    # reads the name the first passage holds next to the question's value and searches
+    # again for it (property 5/22 -> 64/64). Seeds 4-7, held out, give property 64/64 too.
+    "lower_typo": (56, 64),  # was (40, 53)
+    "property": (64, 64),    # was (5, 22)
 }
 
 

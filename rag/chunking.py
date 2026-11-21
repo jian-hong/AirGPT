@@ -28,6 +28,9 @@ class ChunkDraft:
     token_est: int = 0
     parent_index: int = -1  # index into parents list for children
     meta: dict = field(default_factory=dict)
+    # Where the chunk sits: "Vendor policy > Security > Retention". Indexed with the
+    # chunk, never shown in its text.
+    context: str = ""
 
 
 # Characters per token differ a lot by script. A flat 4 made a Chinese or Japanese
@@ -370,7 +373,9 @@ def parent_child_chunk(
     children: list[ChunkDraft] = []
     demoted = 0
     seen_rows: set[str] = set()
+    paths = {} if (code or table) else heading_paths(text)
     for heading, body, start, end in _split_sections(text, code=code):
+        context = paths.get(start, "")
         # Cap oversized parents by further splitting on blank lines (or whole rows)
         parent_bodies: list[tuple[str, str, int, int]] = [(heading, body, start, end)]
         kw = {"header": _table_header(heading, body)} if table else dict(prose_kw)
@@ -390,6 +395,7 @@ def parent_child_chunk(
                     span_end=pe,
                     token_est=estimate_tokens(pb),
                     meta={"headings": [ph] if ph else [], "table": bool(table)},
+                    context=context,
                 )
             )
             prev_text = ""
@@ -417,6 +423,7 @@ def parent_child_chunk(
                         token_est=estimate_tokens(ct),
                         parent_index=pidx,
                         meta={"salience": round(norm.salience_score(ct, salience_terms), 3)},
+                        context=context,
                     )
                 )
                 prev_text = ct
@@ -432,6 +439,7 @@ def parent_child_chunk(
                     span_end=p.span_end,
                     token_est=p.token_est,
                     parent_index=i,
+                    context=p.context,
                 )
             )
     metrics = {
@@ -442,6 +450,19 @@ def parent_child_chunk(
         "code": bool(code),
     }
     return parents, children, metrics
+
+
+def heading_paths(text: str) -> dict[int, str]:
+    """Section start offset -> the chain of headings above and including that section."""
+    stack: list[tuple[int, str]] = []
+    out: dict[int, str] = {}
+    for m in HEADING_RE.finditer(text or ""):
+        level, title = len(m.group(1)), m.group(2).strip()
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        stack.append((level, title))
+        out[m.start()] = " > ".join(t for _, t in stack)
+    return out
 
 
 def extract_headings(text: str) -> list[str]:
