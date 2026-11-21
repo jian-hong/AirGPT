@@ -26,8 +26,8 @@
    Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
    ingest, Windows line endings. Round 3b: refusals right in 8 languages,
    Word/web/PDF tables, a second search hop, phone chat like Claude; seam
-   check fixed 12 (file scope held in every lane). Code `bdb67c8`: 1594/0/9;
-   JS 256; browser 27/27; Windows CI green to `421c96c`. Unverified: tunnel,
+   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
+   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
    phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
