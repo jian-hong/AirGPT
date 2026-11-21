@@ -450,7 +450,8 @@ def _missing_terms(query: str, blob: str) -> list[str]:
     return [t for t in retrieve.identifier_terms(query) if not present(t)]
 
 
-def rescue_hits(space_id: int, query: str, hits: list[dict], *, limit: int = 3) -> list[dict]:
+def rescue_hits(space_id: int, query: str, hits: list[dict], *, limit: int = 3,
+                source_ids: list[int] | None = None) -> list[dict]:
     """Put back the passage that holds a name the question asks about, when retrieval missed it.
 
     Retrieval returns the best few passages by score. A question about a name the
@@ -463,6 +464,8 @@ def rescue_hits(space_id: int, query: str, hits: list[dict], *, limit: int = 3) 
     resembles a real one is not rescued: the whole string must be there (a Latin or
     Cyrillic name may carry one more letter for its ending), and for Chinese and
     Japanese the passage must cover the question's own words with no stray character.
+    A question limited to some files (`source_ids`) is looked up in those files only, as
+    every search of the question is.
     """
     if not hits or not query:
         return hits
@@ -474,12 +477,14 @@ def rescue_hits(space_id: int, query: str, hits: list[dict], *, limit: int = 3) 
             return hits
         have = {int(h.get("chunk_id") or 0) for h in hits}
         found: list[tuple[int, dict]] = []
+        scope = sorted({int(s) for s in (source_ids or []) if str(s).strip()})
+        in_scope = (" AND source_id IN (" + ",".join("?" * len(scope)) + ")") if scope else ""
         with store._conn() as conn:
             for needle in [*names, *strings][:5]:
                 rows = conn.execute(
                     "SELECT id, parent_id, path, heading, text, authority FROM chunks "
-                    "WHERE space_id=? AND kind='child' AND text LIKE ? LIMIT 400",
-                    (int(space_id), "%" + needle.replace("%", "").replace("_", "") + "%"),
+                    "WHERE space_id=? AND kind='child' AND text LIKE ?" + in_scope + " LIMIT 400",
+                    (int(space_id), "%" + needle.replace("%", "").replace("_", "") + "%", *scope),
                 ).fetchall()
                 low = needle.lower()
                 unseg = bool(needle) and retrieve._is_unseg(needle[0])
@@ -2418,7 +2423,7 @@ def _answer_events(
     # A name the question asks about that retrieval returned look-alikes for: look it up
     # in the space before judging the evidence thin (see rescue_hits).
     if hits:
-        rescued = rescue_hits(space_id, query, hits)
+        rescued = rescue_hits(space_id, query, hits, source_ids=source_ids)
         if rescued is not hits:
             hits = rescued
             coverage = _coverage(query, hits)
