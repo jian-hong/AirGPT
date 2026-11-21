@@ -109,3 +109,15 @@ test("tablet touch: drawer rows and Pin/Archive reach 44px", async () => {
   assert.ok(h >= 40, "pin " + h);
   await ctx.close();
 });
+
+test("the preview line on the open drawer row keeps 4.5:1 text contrast", async () => {
+  const [p, ctx] = await page(`<aside class="side" style="background:#101010"><div class="session-item dense on" style="background:#2a2a2a"><div class="sess-detail-inner"><div class="sess-preview" id="pv">Launch plan</div></div></div></aside>`, PHONE);
+  const r = await p.evaluate(() => {
+    const L = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+    const cs = getComputedStyle(pv), fg = cs.color.match(/[\d.]+/g).map(Number), o = +cs.opacity, bg = [42, 42, 42];
+    const a = L(fg.slice(0, 3).map((v, i) => v * o + bg[i] * (1 - o))), b = L(bg);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  });
+  assert.ok(r >= 4.5, "preview " + r);
+  await ctx.close();
+});
