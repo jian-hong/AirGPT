@@ -373,6 +373,27 @@ def _script_segments(query: str) -> list[str]:
     return out
 
 
+def _one_char_swap(seg: str, run: str, k: int, blob: str, at: list[int], cover: list[bool]) -> str:
+    """The whole string when the one character left over is another character in the passage.
+
+    "王明丽" against a passage that holds "王明华": the two shared characters are covered
+    and the one left over is a single character, which used to be too short to count. It
+    is a different name, not a reworded question, when the passage has a character of the
+    same script in that very place (next to the shared stretch) that is not the asked one.
+    A character with nothing there (the start or end of a line, a space, a particle) is
+    only an extra word and stays uncounted. "" when this is not the case; `k` is where
+    the run starts in `seg`.
+    """
+    if len(run) != 1 or not retrieve._is_unseg(run):
+        return ""
+    for nb, step in ((k - 1, 1), (k + 1, -1)):
+        if 0 <= nb < len(seg) and cover[nb]:
+            i = at[nb] + step
+            if 0 <= i < len(blob) and blob[i] != run and retrieve._is_unseg(blob[i]) and not blob[i].isspace():
+                return seg
+    return ""
+
+
 def _script_gap(query: str, hits: list[dict]) -> dict | None:
     """How much of the question, in an unsegmented script, the single best passage lacks.
 
@@ -396,25 +417,56 @@ def _script_gap(query: str, hits: list[dict]) -> dict | None:
         for seg in segs:
             sm = difflib.SequenceMatcher(None, seg, blob, autojunk=False)
             cover = [False] * len(seg)
+            at = [-1] * len(seg)  # where in the passage each covered character was found
             for a, _b, size in sm.get_matching_blocks():
                 if size >= 2:
                     for k in range(a, a + size):
                         cover[k] = True
+                        at[k] = _b + (k - a)
             run = ""
-            for ch, ok in zip(seg, cover):
+            start = 0
+            for k, (ch, ok) in enumerate(zip(seg, cover)):
                 if ok:
                     if run:
-                        gone.append(run)
+                        gone.append(_one_char_swap(seg, run, start, blob, at, cover) or run)
                     run = ""
                 else:
+                    if not run:
+                        start = k
                     run += ch
             if run:
-                gone.append(run)
+                gone.append(_one_char_swap(seg, run, start, blob, at, cover) or run)
         miss = sum(len(g) for g in gone)
         if best is None or miss < best[0]:
             best = (miss, gone)
     miss, gone = best
     return {"missing_chars": miss, "total_chars": total, "gone": gone}
+
+
+def _split_script_names(query: str, hits: list[dict]) -> list[str]:
+    """Four-character Chinese or Japanese names built from two real names' halves.
+
+    "山田次郎" when the space holds "山田太郎" and "田中次郎": each half is there, in a
+    different passage, and no passage has them together. The same rule as the Arabic
+    name pairs (_pair_scan), for the script with no spaces. A whole string a passage
+    holds is fine, and so is a string whose two halves sit in one passage (a reworded
+    attribute such as "保存の期間"); only halves that always appear apart are reported.
+    """
+    out = []
+    blobs = None
+    for seg in _script_segments(query):
+        if len(seg) != 4 or not all("\u3040" <= c <= "\u30ff" or "\u3400" <= c <= "\u9fff" for c in seg):
+            continue
+        if blobs is None:
+            blobs = [_evidence_blob([h]) for h in hits]
+        a, b = seg[:2], seg[2:]
+        if any(seg in x for x in blobs):
+            continue
+        in_a = [a in x for x in blobs]
+        in_b = [b in x for x in blobs]
+        if any(in_a) and any(in_b) and not any(p and q for p, q in zip(in_a, in_b)):
+            out.append(seg)
+    return out
 
 
 def _script_unfounded(query: str, hits: list[dict], blob: str | None = None) -> list[str]:
@@ -430,6 +482,9 @@ def _script_unfounded(query: str, hits: list[dict], blob: str | None = None) -> 
     blob = blob if blob is not None else _evidence_blob(hits)
     gap = _script_gap(query, hits)
     out = [g for g in (gap["gone"] if gap else []) if len(g) >= 2 and g not in blob]
+    for seg in _split_script_names(query, hits):
+        if seg not in out:
+            out.append(seg)
     text = retrieve.fold_text(query).lower()
     for w in sorted(set(retrieve.FLUFF_PHRASES) | set(_SCRIPT_CHATTER.split()), key=len, reverse=True):
         text = text.replace(w, " ")
@@ -1153,6 +1208,7 @@ _STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be", "been", "being",
     "of", "to", "in", "on", "for", "with", "about", "into", "from", "by", "as", "at", "it", "its",
     "this", "that", "these", "those", "what", "which", "who", "whom", "how", "why", "when", "where",
+    "whose", "has", "have", "had", "having",
     "do", "does", "did", "can", "could", "should", "would", "will", "please", "me", "my", "our",
     "your", "tell", "explain", "describe", "give", "summarise", "summarize", "summary", "talking",
     "document", "documents", "content", "contents", "first", "thing", "things", "stuff", "here",
@@ -1455,11 +1511,12 @@ def _inventory_chain(**kw) -> dict:
         return {"lane": "inventory", "steps": [], "text": "", "error": str(e)[:160]}
 
 
-def _inventory_answer_events(space_id: int, *, use_llm: bool, depth: str, refuse: str | None):
+def _inventory_answer_events(space_id: int, *, use_llm: bool, depth: str, refuse: str | None,
+                             source_ids: list[int] | None = None):
     """Shared SSE path for corpus inventory (no topical retrieve)."""
     yield {"type": "thinking", "text": "Inventorying sources in this space…"}
     # Always force a fresh inventory so every file is listed (cached summaries drop links).
-    inv = summarize_space(space_id, use_llm=use_llm, force=True)
+    inv = summarize_space(space_id, use_llm=use_llm, force=True, source_ids=source_ids)
     sources = list(inv.get("sources") or [])
     # Guarantee a full numbered file list even if the LLM blurb omits some.
     listing = "\n".join(
@@ -1583,18 +1640,22 @@ def heuristic_space_blurb(space: dict, chunks: list[dict], sources: list[dict]) 
     return "\n".join(lines)
 
 
-def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False) -> dict:
+def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False,
+                    source_ids: list[int] | None = None) -> dict:
     """Generative (or heuristic) summary of what a RAG corpus is about. Cached on space.config."""
     space = store.get_space(int(space_id))
     if not space:
         return {"ok": False, "error": "space not found"}
     cfg = dict(space.get("config") or {}) if isinstance(space.get("config"), dict) else {}
+    scope = {int(x) for x in (source_ids or []) if str(x).strip()}
     cached = str(cfg.get("corpus_summary") or "").strip()
-    if cached and not force:
+    if cached and not force and not scope:
         return {"ok": True, "summary": cached, "mode": "cached", "space_id": space_id}
 
     sources = store.list_sources(int(space_id))
-    chunks = store.sample_parent_chunks(int(space_id), limit=24)
+    if scope:
+        sources = [s for s in sources if int(s.get("id") or 0) in scope]
+    chunks = store.sample_parent_chunks(int(space_id), limit=24, source_ids=sorted(scope) or None)
     heuristic = heuristic_space_blurb(space, chunks, sources)
     summary = heuristic
     mode = "heuristic"
@@ -1654,11 +1715,12 @@ def summarize_space(space_id: int, *, use_llm: bool = True, force: bool = False)
         except Exception:
             mode = "heuristic"
 
-    cfg["corpus_summary"] = summary
-    try:
-        store.update_space_settings(int(space_id), config=cfg)
-    except Exception:
-        pass
+    if not scope:  # the cached summary describes the whole space, never a chosen few files
+        cfg["corpus_summary"] = summary
+        try:
+            store.update_space_settings(int(space_id), config=cfg)
+        except Exception:
+            pass
     return {
         "ok": True,
         "summary": summary,
@@ -1834,8 +1896,12 @@ def _document_table_notes(hit: dict, by_sheet: dict, declined: list) -> str:
     return ("\n\n" + " ".join(notes)) if notes else ""
 
 
-def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = None) -> dict | None:
-    """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
+def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = None,
+                         source_ids: list[int] | None = None) -> dict | None:
+    """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI.
+
+    A question limited to some files (`source_ids`) is calculated from the tables of those
+    files only; a file the founder left out is neither read, totalled nor cited."""
     try:
         from rag.xlsx_sql import answer_sqlish, load_table_file
     except Exception:
@@ -1853,7 +1919,10 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
     declined_tables: list[tuple[str, dict]] = []
     from rag import reveal as _reveal
 
+    _scope = {int(x) for x in (source_ids or []) if str(x).strip()}
     for src in store.list_sources(int(space_id)):
+        if _scope and int(src.get("id") or 0) not in _scope:
+            continue
         # Resolve the same way reveal does. Trusting src["path"] alone means a
         # workbook that moved on disk since ingest makes this lane skip the source
         # silently - the ask then falls through to retrieve and looks like "the SQL
@@ -2175,7 +2244,8 @@ def _answer_events(
             }
         if _preset.get("hybrid_sql_lane") and raw_q:
             _prev_prov = next((m.get("provenance") for m in reversed(history or []) if m.get("role") == "assistant"), None)
-            sql_hit = _try_hybrid_sql_lane(space_id, raw_q, _prev_prov if isinstance(_prev_prov, dict) else None)
+            sql_hit = _try_hybrid_sql_lane(space_id, raw_q, _prev_prov if isinstance(_prev_prov, dict) else None,
+                                        source_ids=source_ids)
             if sql_hit:
                 yield {"type": "thinking", "text": "Hybrid SQL lane (no confirm loop)…"}
                 _onto_sum = _ont.get("summary") if isinstance(_ont, dict) else None
@@ -2235,7 +2305,8 @@ def _answer_events(
 
     # "What does this RAG contain?" → inventory, not topical retrieve (avoids JEPA wall)
     if wants_corpus_summary(raw_q) and not wants_web(raw_q):
-        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse)
+        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse,
+                                            source_ids=source_ids)
         return
 
     yield {"type": "thinking", "text": "Retrieving evidence…"}
@@ -2589,7 +2660,8 @@ def _answer_events(
             )
         )
     ):
-        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse)
+        yield from _inventory_answer_events(space_id, use_llm=use_llm, depth=depth, refuse=refuse,
+                                            source_ids=source_ids)
         return
 
     # One refined retrieval aimed only at missing terms (JEPA-style close-the-gap).

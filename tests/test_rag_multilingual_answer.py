@@ -95,3 +95,36 @@ def test_fold_text_keeps_ascii_and_strips_latin_accents_only():
 def test_english_name_detection_is_unchanged():
     assert retrieve.identifier_terms("What is the escalation code for the Halvorsen account?") == ["Halvorsen"]
     assert answer.abstention("what is the fee for Zorblax", [hit("The fee for Halvorsen is 5.")])["kind"] == "term"
+
+
+ZH_NAMES = hit("客户王明华的保留期限是 ZQ-4400。\n\n客户李建国的保留期限是 ZQ-4401。\n\n客户张伟强的保留期限是 ZQ-4402。")
+JA_NAMES = [
+    hit("顧客山田太郎の保存期間は JP-5500です。"),
+    hit("顧客鈴木一郎の保存期間は JP-5501です。"),
+    hit("顧客田中次郎の保存期間は JP-5503です。"),
+]
+
+
+def test_chinese_name_one_character_off_a_real_one_is_refused():
+    # 王明丽 differs from 王明华 by its last character: the single leftover character was
+    # too short to count, so the real person's code was listed under a warning.
+    why = answer.abstention("王明丽的保留期限是多少?", [ZH_NAMES])
+    assert why and why["kind"] == "term" and "王明丽" in why["missing"]
+    out = answer.extractive_answer("王明丽的保留期限是多少?", [ZH_NAMES])
+    assert out.startswith('The space does not mention "王明丽"')
+    # The real name, a reworded frame and a leading extra word are still answered.
+    for q in ("王明华的保留期限是多少?", "客户王明华的保留期限是多少?", "该客户王明华的保留期限是多少?"):
+        assert answer.abstention(q, [ZH_NAMES]) is None, q
+        assert "ZQ-4400" in answer.extractive_answer(q, [ZH_NAMES])
+
+
+def test_japanese_name_made_of_two_real_names_is_refused():
+    # 山田次郎: the space holds 山田太郎 and 田中次郎, never 山田次郎.
+    why = answer.abstention("山田次郎の保存期間は?", JA_NAMES)
+    assert why and why["kind"] == "term" and "山田次郎" in why["missing"]
+    out = answer.extractive_answer("山田次郎の保存期間は?", JA_NAMES)
+    assert out.startswith('The space does not mention "山田次郎"')
+    assert answer.abstention("山田太郎の保存期間は?", JA_NAMES) is None
+    assert "JP-5500" in answer.extractive_answer("山田太郎の保存期間は?", JA_NAMES)
+    # Both halves in one passage (a reworded attribute) is not a split name.
+    assert answer.abstention("保存期間は?", [hit("顧客山田太郎の保存の期間は JP-5500です。")]) is None
