@@ -2,6 +2,18 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Seam fixes pass on Windows: paths compared as files, tests use only listed packages
+
+- Windows CI failed two seam-check tests. The rebuild cleanup compared a stored Docs
+  path with the re-read path as strings, one resolved and one not; on Windows the
+  temp folder is a short name (RUNNER~1), so the old row stayed beside the new one.
+  `rag/ingest._same_path` compares them as one file. A test with the data folder
+  behind a link fails the same way on Linux without the fix.
+- A scope test built its Word file with python-docx, which is not in
+  `requirements.txt` and not on the Windows runner; it now writes the file with
+  zipfile. The suite was re-run here with python-docx blocked. A test also closes a
+  sqlite connection it had left open.
+
 ## 2026-11-21 -- Round 3b seam check: questions limited to some files stay inside them
 
 - **How.** After the round 3b merge, three adversarial finders looked only where the

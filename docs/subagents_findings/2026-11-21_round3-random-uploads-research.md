@@ -173,6 +173,21 @@ main_idea: A random-upload corpus with pandas truth found spreadsheet answers th
 - **Invariant:** adversary is not the verifier; fix the root-cause class (all four
   paths, not the one found first).
 
+### Finding 13 - two Windows blind spots in tests written on Linux, again
+
+- **Expected:** a test that passes on Linux passes on the Windows runner.
+- **Actual:** a rebuild test kept two sources on Windows: the code compared a
+  resolved path with an unresolved one as strings, and Windows resolves the
+  `RUNNER~1` short name. A second test imported python-docx, which only the Linux
+  container had.
+- **Root-cause class:** path identity by string; test dependencies taken from the
+  machine instead of `requirements.txt`. Same class as round 2's JSON-escaped
+  paths and case-insensitive disk.
+- **Fix:** `_same_path` (samefile, else resolved and case-folded); the Word file is
+  built with zipfile; the full suite re-run with python-docx blocked; a symlink test
+  reproduces the path bug on Linux.
+- **Invariant:** prove a gate can fail (on the platform it guards).
+
 ## Not verified
 
 A real embedding model or reranker (none installed; every number is the hash
