@@ -61,6 +61,7 @@ def _dedupe_columns(df):
     seen: dict[str, int] = {}
     drop_positions: list[int] = []
     new_names = list(names)
+    dups: dict[str, list[str]] = {}
     for i, name in enumerate(names):
         if name not in seen:
             seen[name] = i
@@ -72,11 +73,29 @@ def _dedupe_columns(df):
         else:
             n = sum(1 for j in range(i) if names[j] == name)
             new_names[i] = f"{name}__{n + 1}"
+            dups.setdefault(name, [name]).append(new_names[i])
     df.columns = new_names
     if drop_positions:
         keep = [i for i in range(len(new_names)) if i not in set(drop_positions)]
         df = df.iloc[:, keep]
+    # The planner says which copy it used when a question names one of these.
+    df.attrs["duplicate_columns"] = dups
     return df
+
+
+_MANGLED = re.compile(r"^(.+)\.(\d+)$")
+
+
+def _unmangle_headers(names: list[str]) -> list[str]:
+    """pandas renames a repeated CSV header "score" to "score.1"; give the repeat its own name back.
+
+    Only a name whose base is also a header counts ("score" and "score.1"), so a header
+    that really is "v1.1" with no "v1" beside it is left alone. _dedupe_columns then
+    treats a CSV like a workbook: identical copies collapse, different ones are named
+    score and score__2, and the lane can say which one it used.
+    """
+    have = set(names)
+    return [m.group(1) if (m := _MANGLED.match(n)) and m.group(1) in have else n for n in names]
 
 
 def _looks_like_banner(row) -> bool:
@@ -236,9 +255,11 @@ def load_table_file(path: Path) -> dict[str, pd.DataFrame]:
             last = e
     else:
         raise last or ValueError("unreadable csv")
-    df.columns = [str(c).strip() or f"c{j}" for j, c in enumerate(df.columns)]
+    df.columns = _unmangle_headers([str(c).strip() or f"c{j}" for j, c in enumerate(df.columns)])
     df = _dedupe_columns(df)
+    dup_attr = dict(df.attrs.get("duplicate_columns") or {})
     df = df[df.apply(lambda r: any(str(v).strip() for v in r), axis=1)].reset_index(drop=True)
+    df.attrs["duplicate_columns"] = dup_attr
     df.attrs["header_excel_row"] = banner + 1
     df.attrs["first_data_excel_row"] = banner + 2
     df.attrs["sheet_name"] = path.stem
@@ -309,6 +330,85 @@ def _load_json_records(path: Path) -> dict[str, pd.DataFrame]:
     df.attrs["first_data_excel_row"] = 1
     df.attrs["sheet_name"] = path.stem
     return {path.stem: df}
+
+
+def _is_number_cell(text: str) -> bool:
+    t = re.sub(r"[\s,$€£¥%()+\-]", "", str(text or ""))
+    t = t.replace(".", "", 1)
+    return bool(t) and t.isdigit()
+
+
+def table_frame(rows: list[list[str]]) -> tuple[pd.DataFrame | None, str]:
+    """A table from a Word file, web page or PDF as a frame, or why it is not one.
+
+    Confidence first: a header row, then body rows of the same width. A table with
+    rows of different widths, one header name used twice, an empty header cell, or a
+    first row that looks like data (a number sitting over a column of numbers, as when
+    a table continues on the next page without its header) is declined, because a
+    wrong frame would give wrong sums. Cells stay text, the way a CSV is read.
+    """
+    rows = [list(r) for r in rows if any(str(c).strip() for c in r)]
+    if len(rows) < 3:
+        return None, "it has fewer than two rows under its header"
+    width = len(rows[0])
+    if width < 2:
+        return None, "it has one column"
+    if any(len(r) != width for r in rows):
+        return None, "its rows have different numbers of cells"
+    head = [str(c).strip() for c in rows[0]]
+    if any(not h for h in head):
+        return None, "a column has no name"
+    if len({h.casefold() for h in head}) != len(head):
+        return None, "two columns have the same name"
+    body = rows[1:]
+    # A closing "Total" row repeats the column sums; adding it to the rows above counts
+    # every figure twice. It is left out of the frame and named in the answer.
+    dropped_total = ""
+    if len(body) >= 3 and re.fullmatch(r"(?i)(grand\s+|sub\s*)?(total|totals|sum|overall)\s*:?", str(body[-1][0]).strip()):
+        dropped_total = str(body[-1][0]).strip()
+        body = body[:-1]
+    for j, h in enumerate(head):
+        col = [str(r[j]).strip() for r in body if str(r[j]).strip()]
+        if col and sum(_is_number_cell(c) for c in col) / len(col) >= 0.8 and _is_number_cell(h):
+            return None, "its first row looks like data, not column names"
+    df = pd.DataFrame([[str(c).strip() for c in r] for r in body], columns=head, dtype=str)
+    df.attrs["header_excel_row"] = 0
+    df.attrs["first_data_excel_row"] = 1
+    if dropped_total:
+        df.attrs["dropped_total_row"] = dropped_total
+    return df, ""
+
+
+def load_document_tables(path: Path) -> tuple[dict[str, pd.DataFrame], list[dict]]:
+    """The tables of a .docx, .html or .pdf that read as tables, and those that did not.
+
+    Frames are named "table N", N counting every table of the file in the order a reader
+    sees them, so "table 2 of memo.docx" is the second table of the memo whether or not
+    the first could be read. Each declined table is {"label", "reason", "header"}: the
+    caller names it in plain words instead of searching the text and calling it a total.
+    """
+    from rag import ingest
+
+    path = Path(path)
+    frames: dict[str, pd.DataFrame] = {}
+    declined: list[dict] = []
+    for t in ingest.document_tables(path):
+        label = f"table {t['index']}"
+        rows = t.get("rows") or []
+        header = [str(c) for c in (rows[0] if rows else [])]
+        if t.get("issues"):
+            declined.append({"label": label, "reason": "; ".join(t["issues"]), "header": header})
+            continue
+        df, why = table_frame(rows)
+        if df is None:
+            # A one-row or two-column strip of navigation or layout is not a table
+            # anyone asked about; only report one that had a body of rows.
+            if len(rows) >= 3:
+                declined.append({"label": label, "reason": why, "header": header})
+            continue
+        df.attrs["sheet_name"] = label
+        frames[label] = df
+    return frames, declined
 
 
 def load_sheets(path: Path) -> dict[str, pd.DataFrame]:

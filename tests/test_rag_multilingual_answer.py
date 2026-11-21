@@ -37,15 +37,18 @@ def test_latin_decimal_point_is_not_a_sentence_end():
     assert "3.5 percent" in answer.extractive_answer("what is the fee", [h])
 
 
-def test_unknown_chinese_name_is_warned_about_not_refused():
-    # No capital letters, so nothing marks 吴泽林 as a name. An absent name and a
-    # reworded ordinary word look the same here, so the answer WARNS and still shows
-    # the passages. It used to refuse, and that also refused the rewording below
-    # while printing fragments such as "户目前的" as the missing term.
+def test_unknown_chinese_name_is_refused_and_named_whole():
+    # No capital letters, so nothing marks 吴泽林 as a name. It used to be WARNED about
+    # and answered with a look-alike, because a rule that refused on missing 2-character
+    # pieces also refused ordinary rewordings and printed fragments such as "户目前的".
+    # The question is now laid against the passage as whole strings: what the passage
+    # lacks and no other passage holds is the missing term, printed as the user typed
+    # it. The rewording test below keeps rewordings answered.
     zh = hit("华兴盛客户的保留期限是AB-1001。华兴达客户的保留期限是CD-2002。恒达信客户的保留期限是EF-3003。")
-    assert answer.abstention("吴泽林客户的保留期限是什么？", [zh]) is None
-    assert answer.unseen_terms_note("吴泽林客户的保留期限是什么？", [zh])
-    assert "were not found in this space" in answer.extractive_answer("吴泽林客户的保留期限是什么？", [zh])
+    why = answer.abstention("吴泽林客户的保留期限是什么？", [zh])
+    assert why and why["kind"] == "term" and "吴泽林" in why["missing"]
+    out = answer.extractive_answer("吴泽林客户的保留期限是什么？", [zh])
+    assert "吴泽林" in out and "AB-1001" not in out.split("Closest passages")[0]
     assert answer.unseen_terms_note("华兴达客户的保留期限是什么？", [zh]) == ""
 
 
