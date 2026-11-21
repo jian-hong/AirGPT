@@ -95,3 +95,61 @@
   .topbar #openideIdeBtn{position:relative}
   .topbar #openideIdeBtn::after{content:"";position:absolute;inset:-4px -2px}
 }
+
+/* Round 3b: the drawer Search and List icons were 34x34 and the sidebar edge tab 18x56. */
+@media(pointer:coarse){
+  .nav-chats-row .icon-btn{flex:0 0 44px;width:44px;height:44px}
+  .nav-chats-row .icon-btn::after{content:none}
+  .side-collapse-btn{overflow:visible}
+  .side-collapse-btn::after{content:"";position:absolute;top:0;bottom:0;left:0;right:-28px}
+}
+
+/* Round 3b sweep: controls on the knowledge-space, Cortex and OpenIDE pages that measured 20 to 36px on a touch screen. */
+@media(pointer:coarse){
+  .cortex-page .btn,.cortex-page .chip-btn{min-height:44px}
+  .cortex-page p.hint .btn{min-height:0}              /* a button inside a sentence keeps the line */
+  #ragAskScopeBtn{min-height:44px;min-width:44px}
+  #ragAskSend{width:44px;height:44px}
+  .rag-note>summary{min-height:44px;box-sizing:border-box;padding-block:12px}
+  .cortex-page details>summary{min-height:44px;box-sizing:border-box;padding-block:10px}
+  .modal input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),#openidePreviewUrl{min-height:44px;box-sizing:border-box}
+  .openide-empty-ctas button,#openideRunBtn,.openide-app-chip,#oideBgTasksBtn{min-height:44px;box-sizing:border-box}
+  .oide-think-btn{width:44px;height:44px}
+  .topbar #openideIdeBtn::after{inset:-8px -2px}
+}
+
+/* Round 3b: the chat card's detail line and its Rename/Share/Delete were 4.2 to 4.4:1 on the dark and glass themes. */
+body:not(.theme-light) .session-item .sess-detail-inner small,
+body:not(.theme-light) .session-item .sess-actions button{color:#a8a8a8}
+@media(pointer:coarse){
+  .rag-mem-actions .btn,#ragLlmBtn,#ragLlmMini,.url-box{min-height:44px;box-sizing:border-box}
+  .url-box{display:flex;align-items:center}
+  .cortex-page [data-call="useCortexSuggestion"]{min-height:44px}
+}
+
+/* Round 3b: tablets (a touch screen wider than 760px) and small desktop targets. */
+@media(pointer:coarse){
+  /* A touch screen has no hover to reveal the reply rail, its dots were 12px, and it sits over text. */
+  .msg-jump-bar{display:none!important}
+  /* Drawer: Rename/Share/Delete under the open chat were 19px, the Group icon 25x20, the command-box chip 30px, Admin link 32px. */
+  .side .session-item .sess-actions button{min-height:44px;padding:3px 12px}
+  .side #groupByBtn{min-width:44px;min-height:44px}
+  #pal-hint-btn,.pal-hint-btn,[aria-label="Open the command box"],#adminPanelLink{min-height:44px;box-sizing:border-box}
+  .rag-think-log>summary,.rag-cites>summary,.rag-cite-item>summary{min-height:44px;box-sizing:border-box;padding-block:12px}
+}
+/* Any pointer: the reply-rail dots get a 28px hit area (they were 12px), and the OpenIDE header chips are never under 24px (WCAG 2.5.8). */
+.msg-jump-node-btn::before{content:"";position:absolute;inset:-9px}
+@media(pointer:fine){.openide-chip,.openide-view-toggle button,.oide-new-agent,.openide-browse-link{min-height:24px;box-sizing:border-box}}
+/* Round 3b: any pointer. The banner close and the code Copy were 18 to 20px tall (WCAG 2.5.8 asks 24); the reply-rail dot outline was 2.4:1 on light (3:1 for a control). */
+@media(pointer:fine){.banner-x{min-height:24px;min-width:24px}.msg .body pre .cb-copy{min-height:24px;box-sizing:border-box}}
+body.theme-light .msg-jump-node-btn{border-color:rgba(0,0,0,.55)}
+@media(pointer:coarse){.rag-cite-view{min-height:44px;box-sizing:border-box}}
+@media(pointer:fine){.msg .meta button{min-height:24px;box-sizing:border-box}}
+@media(pointer:coarse) and (min-width:761px){.openide-hdr-actions .btn,.openide-view-toggle button,#openideIdeBtn{min-height:44px;box-sizing:border-box}}
+
+/* Round 3b verifier: the edge tab's wider tap layer covered the OpenIDE Folder button on a tablet. */
+body.openide-mode .side-collapse-btn::after{right:0}
+/* Round 3b verifier: small grey labels measured 3.3 to 4.4:1 on the dark and glass themes. */
+body:not(.theme-light) .side-section-hdr,body:not(.theme-light) .side-section-hdr small,
+body:not(.theme-light) .rag-ask-hint,body:not(.theme-light) .rag-ask-hint+*{color:#a8a8a8;opacity:1}
+body:not(.theme-light) #ragAboutText~*,body:not(.theme-light) .rag-mem .hint{opacity:1}

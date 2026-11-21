@@ -21,9 +21,14 @@
     if(!c||!mq.matches)return;
     var b=document.getElementById('bugReportBtn');
     if(b&&b.title.indexOf('drag')>-1)b.title='Report a problem';
-    var r=c.getBoundingClientRect(),v=76;
+    var r=c.getBoundingClientRect(),v=76,rag=false;
+    /* The knowledge-space page has its own ask bar and hides the message box: rest above that bar, not on its Send button. */
+    var rb=document.getElementById('ragAskBar');
+    if(!r.height&&rb){var rr=rb.getBoundingClientRect();if(rr.height>0){r=rr;rag=true}}
     /* Hub, RAG, OpenForge and Docs hide the message box (its top reads 0), which put the button on the
        Settings gear. With no box it rests low; with one it sits above it, never higher than the lower half. */
+    /* The stylesheet lowers the button by the height of the message box's project tab; the ask bar has no tab, so add it back. */
+    if(rag)r={top:r.top-(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bump-height'))||34),height:r.height};
     if(r.height>0)v=Math.min(Math.max(60,Math.round(window.innerHeight-r.top+8)),Math.round(window.innerHeight/2));
     document.documentElement.style.setProperty('--phone-fab-b',v+'px');
   }
@@ -75,7 +80,7 @@
     if(!ta||!c)return;
     hint();fab();more();
     new MutationObserver(hint).observe(ta,{attributes:true,attributeFilter:['placeholder']});
-    if(window.ResizeObserver)new ResizeObserver(fab).observe(c);
+    if(window.ResizeObserver){var ro=new ResizeObserver(fab);ro.observe(c);var rb=document.getElementById('ragAskBar');if(rb)ro.observe(rb)}
     window.addEventListener('resize',function(){hint();fab()});
     if(window.visualViewport){visualViewport.addEventListener('resize',fab);visualViewport.addEventListener('scroll',fab)}
     c.addEventListener('transitionend',fab);
