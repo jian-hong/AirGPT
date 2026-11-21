@@ -17,7 +17,7 @@ body.theme-light .ctools-menu{box-shadow:0 10px 30px rgba(0,0,0,.14)}
   /* Same pattern as Copy, Reply and Prompt in phone.css: the button keeps its small
      look and an invisible layer makes the tap area finger sized. A 44px tall box
      here pushed Fork onto its own line and made Export taller than Share. */
-  .msg .msg-fork{position:relative;padding:6px 8px}
+  .msg .msg-fork{position:relative;padding:3px 8px}
   .msg .msg-fork::after{content:"";position:absolute;inset:-14px -3px}
   .ctools-menu button{min-height:44px;font-size:15px}
   .chat-share-btn{position:relative}

@@ -345,8 +345,9 @@ body.theme-dark .side,body.theme-dark .topbar,body.theme-dark .connect-col,body.
 .session-item.dense .h-title{flex:1;min-width:0;font-size:12.5px;font-weight:500;line-height:1.25}
 .session-item.dense .sess-rel{
   flex-shrink:0;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;
-  margin:0;letter-spacing:.01em;opacity:.85;transition:opacity var(--sec-morph);
+  margin:0;letter-spacing:.01em;opacity:1;transition:opacity var(--sec-morph);
 }
+.session-item.on .sess-rel{color:var(--text)}
 .session-item.dense .sess-actions-inline{
   display:flex;align-items:center;gap:1px;flex-shrink:0;
   opacity:0;max-width:0;overflow:hidden;transform:translateX(6px);
@@ -1766,7 +1767,7 @@ body.openforge-mode .composer,body.openforge-mode .ctx-bar,body.openforge-mode .
 body.openforge-mode .connect-col,body.openforge-mode .connect-collapse-btn{display:none!important}
 @media(max-width:900px){.forge-shell{grid-template-columns:1fr}}
 .msg-queue-hint{font-size:11px;color:var(--muted);padding:4px 12px}
-.side-nav .nav-label{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:12px 10px 5px;font-weight:600;border:0;background:transparent;cursor:pointer;text-align:left;opacity:.78;line-height:1.2;margin-top:6px;font-family:var(--sans)}
+.side-nav .nav-label{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:12px 10px 5px;font-weight:600;border:0;background:transparent;cursor:pointer;text-align:left;opacity:1;line-height:1.2;margin-top:6px;font-family:var(--sans)}
 .side-nav .nav-label:hover{color:var(--text);opacity:1}
 .side-nav .nav-label .chev{font-size:9px;width:10px;opacity:0;transition:opacity .15s;flex-shrink:0;margin-left:auto;text-align:right}
 .side-nav .nav-label:hover .chev,.side-nav .nav-label:focus-visible .chev{opacity:.7}
@@ -15014,7 +15015,7 @@ function updateMsgJumpBar(){
   if(countEl)countEl.textContent=n?String(n):'0';
   // The reply rail belongs to a chat: not on OpenIDE, and not once another page has replaced the messages.
   if(n<1||document.body.classList.contains('openide-mode')){bar.hidden=true;track.querySelectorAll('.msg-jump-node-btn').forEach(b=>b.remove());track.dataset.sig='';return}
-  bar.hidden=false;
+  bar.hidden=false;bar.dataset.n=n>1?'many':'one';
   // Rebuild only when count/ids change (keeps hover smooth)
   const sig=nodes.map(m=>m.id).join('|');
   if(track.dataset.sig!==sig){

@@ -11,7 +11,7 @@
 .queue-chip button:hover,.edit-chip button:hover{color:var(--text)}
 @media(max-width:760px),(pointer:coarse){
   /* Same pattern as Fork in chattools.css: small look, finger sized tap area. */
-  .msg .msg-edit,.msg .msg-regen,.msg .msg-retry{position:relative;padding:6px 8px}
+  .msg .msg-edit,.msg .msg-regen,.msg .msg-retry{position:relative;padding:3px 8px}
   .msg .msg-edit::after,.msg .msg-regen::after,.msg .msg-retry::after{content:"";position:absolute;inset:-14px -3px}
   .queue-chip button,.edit-chip button{min-height:36px;min-width:36px}
 }
