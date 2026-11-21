@@ -230,13 +230,36 @@ def _sheet_csvs(src: dict) -> list[tuple[str, bytes]]:
         for name, df in sheets.items():
             buf = io.StringIO()
             w = csv.writer(buf, lineterminator="\n")
-            w.writerow([str(c) for c in df.columns])
+            # A repeated header was renamed (score, score__2) by the loader. The pack
+            # keeps the name the sheet really has, so the importing space finds the
+            # repeat itself and says which copy a figure came from.
+            back = {c: base for base, copies in (df.attrs.get("duplicate_columns") or {}).items() for c in copies}
+            w.writerow([back.get(c, str(c)) for c in df.columns])
             for row in df.itertuples(index=False):
                 w.writerow(["" if v is None or v != v else v for v in row])
             out.append((str(name), buf.getvalue().encode("utf-8")))
         return out
     except Exception:
         return []
+
+
+def _has_document_tables(src: dict) -> bool:
+    """True for a Word, web or PDF source whose original file holds tables.
+
+    Those tables are calculated from the original file, which a pack does not carry
+    (it carries the extracted text), so the importing space cannot total them.
+    """
+    try:
+        from rag import reveal
+        from rag.xlsx_sql import load_document_tables
+
+        path, _origin = reveal.resolve_source_path(src)
+        if not path or not path.lower().endswith((".docx", ".html", ".htm", ".pdf")) or not Path(path).is_file():
+            return False
+        frames, declined = load_document_tables(Path(path))
+        return bool(frames or declined)
+    except Exception:
+        return False
 
 
 def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
@@ -301,7 +324,7 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 continue
             member_no += 1
             i = member_no
-            if (src.get("meta") or {}).get("table"):
+            if (src.get("meta") or {}).get("table") or _has_document_tables(src):
                 as_text.append(str(src.get("title") or blob.name))
             title = _safe_title(str(src.get("title") or blob.name))
             # Packed sources are extracted text; carry .txt so import re-ingests
@@ -412,7 +435,7 @@ def export_space(space_id: int, *, include_chats: bool = True) -> bytes:
                 "Spreadsheets travel as one CSV per sheet (cell values only), so counts and\n"
                 "totals still work after import. Hidden sheets and hidden rows travel too and\n"
                 "come back visible; the manifest names them under hidden_note. A spreadsheet listed under\n"
-                "stats.spreadsheets_as_text travelled as plain text and cannot be calculated\n"
+                "stats.spreadsheets_as_text (also Word, web and PDF files with tables) travelled as plain text and cannot be calculated\n"
                 "from; add the original file again.\n"
             ).encode("utf-8"),
         )
@@ -679,7 +702,7 @@ def import_pack(
             # Said, not skipped: these tables are searchable text now, not calculable.
             out["spreadsheets_as_text"] = as_text
             out["notice"] = (out.get("notice", "") + " " if out.get("notice") else "") + (
-                "These spreadsheets came back as text and cannot be calculated: " + ", ".join(as_text)
+                "These spreadsheets and document tables came back as text and cannot be calculated: " + ", ".join(as_text)
                 + ". Add the original files again to get totals and counts."
             )
         return out

@@ -1901,7 +1901,7 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI.
 
     A question limited to some files (`source_ids`) is calculated from the tables of those
-    files only; a file the founder left out is neither read, totalled nor cited."""
+    files only; a file the user left out is neither read, totalled nor cited."""
     try:
         from rag.xlsx_sql import answer_sqlish, load_table_file
     except Exception:
@@ -1919,8 +1919,9 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
     declined_tables: list[tuple[str, dict]] = []
     from rag import reveal as _reveal
 
-    _scope = {int(x) for x in (source_ids or []) if str(x).strip()}
+    _scope = {int(x) for x in (source_ids or []) if str(x).strip().lstrip("-").isdigit()}
     for src in store.list_sources(int(space_id)):
+        # A question limited to some files is worked out from those files only.
         if _scope and int(src.get("id") or 0) not in _scope:
             continue
         # Resolve the same way reveal does. Trusting src["path"] alone means a
@@ -2244,8 +2245,9 @@ def _answer_events(
             }
         if _preset.get("hybrid_sql_lane") and raw_q:
             _prev_prov = next((m.get("provenance") for m in reversed(history or []) if m.get("role") == "assistant"), None)
-            sql_hit = _try_hybrid_sql_lane(space_id, raw_q, _prev_prov if isinstance(_prev_prov, dict) else None,
-                                        source_ids=source_ids)
+            sql_hit = _try_hybrid_sql_lane(
+                space_id, raw_q, _prev_prov if isinstance(_prev_prov, dict) else None, source_ids=source_ids
+            )
             if sql_hit:
                 yield {"type": "thinking", "text": "Hybrid SQL lane (no confirm loop)…"}
                 _onto_sum = _ont.get("summary") if isinstance(_ont, dict) else None

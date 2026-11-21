@@ -6,6 +6,7 @@ import hashlib
 import mimetypes
 import re
 import shutil
+import threading
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -1574,7 +1575,14 @@ def _drop_replaced_sources(space_id: int, original_path: str, digest: str) -> No
     for old in store.list_sources(space_id):
         meta = old.get("meta") if isinstance(old.get("meta"), dict) else {}
         origins = _origins(meta)
-        if original_path not in origins or old.get("content_hash") == digest:
+        if old.get("content_hash") == digest:
+            continue
+        if original_path not in origins:
+            # A rebuild reads the Docs copy of a file whose original is gone. That copy
+            # belongs to the row it was made for; read differently now (for instance
+            # after a newline fix), it replaces that row instead of sitting beside it.
+            if str(meta.get("docs_path") or "") == original_path:
+                store.delete_source(int(old["id"]))
             continue
         if len(origins) == 1:
             store.delete_source(int(old["id"]))
@@ -1595,7 +1603,37 @@ def _origins(meta: dict) -> list[str]:
     return paths
 
 
+_SPACE_LOCKS: dict[int, threading.RLock] = {}
+_SPACE_LOCKS_GUARD = threading.Lock()
+
+
+def _space_lock(space_id: int) -> threading.RLock:
+    with _SPACE_LOCKS_GUARD:
+        lk = _SPACE_LOCKS.get(int(space_id))
+        if lk is None:
+            lk = _SPACE_LOCKS[int(space_id)] = threading.RLock()
+        return lk
+
+
 def ingest_paths(
+    space_id: int,
+    paths: list[str | Path],
+    *,
+    force: bool = False,
+    progress=None,
+    authority: str = "",
+) -> dict:
+    """One ingest at a time per space.
+
+    Two uploads of the same file (a double click, two tabs) used to both find the first
+    row still "indexing", skip the content-hash dedupe, and index every passage twice.
+    Taking turns lets the second see the first one's finished row.
+    """
+    with _space_lock(space_id):
+        return _ingest_paths(space_id, paths, force=force, progress=progress, authority=authority)
+
+
+def _ingest_paths(
     space_id: int,
     paths: list[str | Path],
     *,
