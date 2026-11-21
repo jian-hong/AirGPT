@@ -68,13 +68,13 @@ for (const [w, h] of [[320, 568], [360, 780], [390, 844]]) {
       const jb = document.getElementById("msgJumpBar");
       return {
         docW: document.documentElement.scrollWidth, jump: jb ? getComputedStyle(jb).display : "none",
-        body: box(last.querySelector(".body")),
+        body: box(last.querySelector(".body")), bub: box(last.querySelector(".bub")),
         btns: [...last.querySelectorAll(".meta button")].map((b) => ({ ...box(b), label: b.getAttribute("aria-label"), title: b.getAttribute("title"), text: b.textContent.trim() })),
       };
     });
     assert.equal(r.docW, w, "no sideways page scroll");
     assert.equal(r.jump, "none", "the reply jump bar is hidden on a phone (it sat over text and code)");
-    assert.ok(Math.abs(r.body.x - (w - r.body.x - r.body.width)) <= 4, `reply is centred in the width: left ${r.body.x}, right ${w - r.body.x - r.body.width}`);
+    assert.ok(Math.abs(r.bub.x - (w - r.bub.x - r.bub.width)) <= 4, `reply uses the width evenly: left ${r.bub.x}, right ${w - r.bub.x - r.bub.width}`);
     assert.ok(r.body.x <= 14, "no avatar column indenting the reply");
     assert.equal(r.btns.length, 5, "Copy, Reply, Prompt, Fork and Regenerate are all still there");
     assert.deepEqual(r.btns.map((b) => b.label), ["Copy", "Reply", "Prompt", "Fork", "Regenerate"]);
@@ -137,6 +137,14 @@ test("tablet 820x1180: drawer Search and List icons and the edge tab have 44px t
   });
   assert.ok(r.search.w >= 44 && r.search.h >= 44, "Search icon " + JSON.stringify(r.search));
   assert.ok(r.edge.w >= 44 && r.edge.h >= 44, "edge tab " + JSON.stringify(r.edge));
+  await ctx.close();
+});
+
+test("tablet 820x1180 OpenIDE: the sidebar edge tab does not cover the Folder button", async () => {
+  const { ctx, p } = await open(820, 1180, true);
+  await p.evaluate(() => showWorkspace("openide")); await p.waitForTimeout(2000);
+  const r = await p.evaluate(() => { const e = document.getElementById("oideFolderBtn"); const c = e.getBoundingClientRect(); let hit = 0, n = 0; for (let x = c.x; x < c.right; x += 2) for (let y = c.y; y < c.bottom; y += 2) { n++; const h = document.elementFromPoint(x, y); if (h && (h === e || e.contains(h))) hit++; } return hit / n; });
+  assert.ok(r > 0.95, "Folder button owns " + r);
   await ctx.close();
 });
 

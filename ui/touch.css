@@ -146,3 +146,10 @@ body.theme-light .msg-jump-node-btn{border-color:rgba(0,0,0,.55)}
 @media(pointer:coarse){.rag-cite-view{min-height:44px;box-sizing:border-box}}
 @media(pointer:fine){.msg .meta button{min-height:24px;box-sizing:border-box}}
 @media(pointer:coarse) and (min-width:761px){.openide-hdr-actions .btn,.openide-view-toggle button,#openideIdeBtn{min-height:44px;box-sizing:border-box}}
+
+/* Round 3b verifier: the edge tab's wider tap layer covered the OpenIDE Folder button on a tablet. */
+body.openide-mode .side-collapse-btn::after{right:0}
+/* Round 3b verifier: small grey labels measured 3.3 to 4.4:1 on the dark and glass themes. */
+body:not(.theme-light) .side-section-hdr,body:not(.theme-light) .side-section-hdr small,
+body:not(.theme-light) .rag-ask-hint,body:not(.theme-light) .rag-ask-hint+*{color:#a8a8a8;opacity:1}
+body:not(.theme-light) #ragAboutText~*,body:not(.theme-light) .rag-mem .hint{opacity:1}
