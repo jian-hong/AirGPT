@@ -252,6 +252,10 @@ _WORD_RE = re.compile(r"[^\W_]+(?:[-_./][^\W_]+)*")
 _QUOTED_RE = re.compile(r"[\"\u201c]([^\"\u201d]{2,60})[\"\u201d]")
 EXACT_MAX_DF = 5
 EXACT_WEIGHT = 3.0
+# A capitalised name in at most this many chunks earns a plain vote even where the chunk
+# shares none of the question's other words (see exact_term_search, relaxed).
+NAME_MAX_DF = 3
+NAME_WEIGHT = 1.5
 _QUESTION_WORDS = frozenset(
     "what which when where does that this with from have about there their during will".split()
 )
@@ -296,7 +300,9 @@ def identifier_terms(query: str) -> list[str]:
     out = [m.group(1).strip() for m in _QUOTED_RE.finditer(q)]
     for i, m in enumerate(_WORD_RE.finditer(q)):
         w = m.group(0)
-        if _is_code(w) or (i > 0 and w[0].isupper() and len(w) >= 3 and not w.isdigit()):
+        # A capital after a full stop opens a sentence ("... Give the code."); it is not a name.
+        starts_sentence = bool(re.search(r"[.!?\u3002\uff01\uff1f]\s*$", q[: m.start()]))
+        if _is_code(w) or (i > 0 and not starts_sentence and w[0].isupper() and len(w) >= 3 and not w.isdigit()):
             out.append(w)
     return list(dict.fromkeys(out))[:6]
 
@@ -372,7 +378,31 @@ def _script_name_slots(conn, space_id: int, query: str, found: dict[int, dict]) 
             slot["bm25"] += float(run)
 
 
-def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> list[RankedHit]:
+_VALUE_LEAD = re.compile(r"(?:\b(?:equals?|named|called)|[=:])\s*[\"']?$", re.I)
+_IS_LEAD = re.compile(r"(\w+)\s+(?:is|are|was|were)\s*[\"']?$", re.I)
+_WH_WORDS = {"how", "what", "where", "who", "which", "when", "why", "whom", "whose"}
+_MODIFIER_LEAD = re.compile(
+    r"\b(?:in|at|near|from|during|around|within|inside|outside|since|until|before|after|on|by)\s+(?:the\s+)?[\"']?$", re.I)
+
+
+def _named_as_value(query: str, term: str) -> bool:
+    """Is this name a value that identifies something else, or a place or time that only
+    sets the scene ("whose headquarters city is Tromso", "meals in Tromso")? Either way a
+    chunk that merely says the name is not the answer. A name that is the subject ("how
+    long does Mikulawex keep ...", "for the Mikulawex account") is neither."""
+    for m in re.finditer(re.escape(term), query or ""):
+        lead = query[max(0, m.start() - 24):m.start()]
+        if _VALUE_LEAD.search(lead) or _MODIFIER_LEAD.search(lead):
+            return True
+        mi = _IS_LEAD.search(lead)
+        if mi and mi.group(1).lower() not in _WH_WORDS:
+            return True
+    return False
+
+
+def exact_term_search(
+    space_id: int, query: str, *, lowercase: bool = False, relaxed: bool = False
+) -> list[RankedHit]:
     """Chunks holding a name or code from the question that is RARE in this space.
 
     Someone who types "Halvorsen" or "ZQ-4471" wants the few places that say it.
@@ -384,6 +414,13 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
     "reimbursement for meals in Tromso" must not be pulled to a chunk that only
     says the office is in Tromso. A name therefore counts only where the chunk also
     covers at least half of what else the question asks about.
+
+    `relaxed` is the reverse case: a name that sits in only NAME_MAX_DF chunks, held by
+    a chunk that does not echo the question's other words. "For how long does Wexganpim
+    keep its records" is answered by "The retention period for the Wexganpim account is
+    ...", which shares nothing but the name. Those chunks get a vote of their own, at
+    ordinary weight, so a rare name is not out-voted by chunks that only share
+    "records" and "code" - and it stays a vote, not an override.
     """
     store.init()
     found: dict[int, dict] = {}
@@ -430,15 +467,35 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
                 ).fetchall()
             except Exception:
                 continue
-            if not rows or len(rows) > EXACT_MAX_DF:
+            if not rows or len(rows) > (NAME_MAX_DF if relaxed else EXACT_MAX_DF):
+                continue
+            if relaxed and (_is_code(term) or lowercase):
+                continue
+            if relaxed and _named_as_value(query, term):
+                # "...whose headquarters city is Tromso": the name is a value used to
+                # identify something else, so a chunk that only says it is not the answer.
                 continue
             rest = content - set(parts)
+
+            def _thin(r) -> bool:
+                # snake_case keys ("discount_band") are one token to the tokenizer
+                have = set(sira.tokenize(fold_text(str(r["text"])).replace("_", " ")))
+                return len(rest & have) < 0.5 * len(rest)
+
+            if relaxed:
+                # The index matches inside words ("Savich" inside "Savichev"); a name must
+                # stand alone, or a look-alike person would be pulled in as the one asked for.
+                whole = re.compile(r"(?<!\w)" + r"\W+".join(re.escape(x) for x in parts) + r"(?!\w)", re.I)
+                rows = [r for r in rows if whole.search(str(r["text"]))]
+                if not rows:
+                    continue
+            if relaxed and (not rest or any(not _thin(r) for r in rows)):
+                # Some chunk with this name already echoes the question: the strict
+                # channel has it. Only a name that NO chunk echoes needs the plain vote.
+                continue
             for r in rows:
-                if rest and not _is_code(term):
-                    # snake_case keys ("discount_band") are one token to the tokenizer
-                    have = set(sira.tokenize(fold_text(str(r["text"])).replace("_", " ")))
-                    if len(rest & have) < 0.5 * len(rest):
-                        continue
+                if rest and not _is_code(term) and not relaxed and _thin(r):
+                    continue
                 slot = found.setdefault(int(r["id"]), {"row": r, "terms": 0, "bm25": 0.0})
                 slot["terms"] += 1
                 slot["bm25"] += -float(r["score"] or 0.0)
@@ -457,7 +514,7 @@ def exact_term_search(space_id: int, query: str, *, lowercase: bool = False) -> 
                 "parent_id": int(s["row"]["parent_id"] or 0),
                 "source_id": int(s["row"]["source_id"] or 0),
                 "authority": s["row"]["authority"] or "",
-                "channel": "exact",
+                "channel": "name" if relaxed else "exact",
             },
         )
         for s in ranked
@@ -713,12 +770,15 @@ def _search(
     rare = exact_term_search(space_id, query, lowercase=True)
     if rare:
         channels["rare"] = rare
+    named = exact_term_search(space_id, query, relaxed=True)
+    if named:
+        channels["name"] = named
 
     fused = fuse_channels(
         channels,
         k=60,
         top_n=50 if base == "max" else (20 if base == "basic" else 30),
-        weights={"exact": EXACT_WEIGHT},
+        weights={"exact": EXACT_WEIGHT, "name": NAME_WEIGHT},
     )
 
     # Keep chunk hits primarily; attach file hits as metadata boosts

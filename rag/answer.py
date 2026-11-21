@@ -263,7 +263,22 @@ def unseen_terms_note(query: str, hits: list[dict]) -> str:
     return ""
 
 
-def _abstention_text(hits: list[dict], why: dict) -> str:
+def _closest_line(text: str, query: str) -> str:
+    """The part of a passage worth showing under "closest": the sentence that holds the
+    name the question asks about, not the first 200 characters (which in a long chunk are
+    filler, so the passage that did hold the answer looked like noise)."""
+    from rag import retrieve
+
+    flat = re.sub(r"\s+", " ", re.sub(r"(?m)^#.*$", "", text or "")).strip()
+    terms = [t.lower() for t in retrieve.identifier_terms(query)]
+    if terms and len(flat) > 200:
+        for sent in re.split(_SENTENCE_END, flat):
+            if sent and any(t in sent.lower() for t in terms):
+                return sent.strip()
+    return flat
+
+
+def _abstention_text(hits: list[dict], why: dict, query: str = "") -> str:
     """Say plainly that the answer is not there; look-alikes are shown but labelled."""
     names = ", ".join('"' + t + '"' for t in why["missing"])
     if why["kind"] == "term":
@@ -274,12 +289,19 @@ def _abstention_text(hits: list[dict], why: dict) -> str:
         head = "The space does not contain enough to answer this: " + why["reason"] + "."
     lines = []
     for h in hits[:2]:
-        text = re.sub(r"\s+", " ", re.sub(r"(?m)^#.*$", "", h.get("text") or "")).strip()
+        text = _closest_line(h.get("text") or "", query)
         if text:
             where = _display_path(h.get("path")) + (f" · {h.get('heading')}" if h.get("heading") else "")
             lines.append(f"- {text[:200]}{'…' if len(text) > 200 else ''} ({where})")
     if lines:
         head += "\n\nClosest passages (closest, not an answer):\n" + "\n".join(lines)
+    if why["kind"] == "coverage" and re.search(
+        r"\b(total|sum|average|mean|how many|count|number of|highest|lowest|maximum|minimum)\b", query or "", re.I
+    ):
+        head += (
+            "\n\nNote: I add up and count only from spreadsheet files (xlsx, csv, tsv) and JSON lists "
+            "of records. A table inside a Word, PDF or web page is searched as text, so I did not calculate it."
+        )
     return head
 
 
@@ -291,7 +313,7 @@ def extractive_answer(query: str, hits: list[dict], *, model_failed: bool = Fals
         )
     why = abstention(query, hits)
     if why:
-        return _abstention_text(hits, why)
+        return _abstention_text(hits, why, query)
     # Quote the passage that answers, not the first 180 characters of each chunk.
     # Clipping the head cut the value off whenever it sat past the first few
     # sentences, so the offline answer showed everything except the answer.
@@ -1374,7 +1396,7 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
         # is byte-identical, so reading it gives the same numbers.
         resolved, _origin = _reveal.resolve_source_path(src)
         path = resolved or str(src.get("path") or "")
-        if not path.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv")):
+        if not path.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".json", ".ndjson", ".jsonl")):
             continue
         p = Path(path)
         if not p.is_file():
@@ -1385,10 +1407,12 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
             # Said, not skipped: an unreadable table must not turn into "no table".
             unreadable.append(str(src.get("title") or p.name))
             continue
+        if not sheets:
+            continue  # JSON that is not a list of records: searched as text, not a table
         # Display name is the source's own title - the Docs copy is content-hashed,
         # and "32f5d4ec_frtr_00027..." is not what the founder called the file.
         wb_name = str(src.get("title") or p.name)
-        if p.suffix.lower() in (".csv", ".tsv") and len(sheets) == 1:
+        if p.suffix.lower() in (".csv", ".tsv", ".json", ".ndjson", ".jsonl") and len(sheets) == 1:
             # The Docs copy is content-hashed; the table is named after the file the
             # founder uploaded, not "b8b19340_orders".
             sheets = {Path(wb_name).stem: next(iter(sheets.values()))}
