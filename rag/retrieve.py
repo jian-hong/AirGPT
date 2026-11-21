@@ -245,6 +245,16 @@ def script_search(space_id: int, query: str, *, k: int = 40) -> list[RankedHit]:
     ]
 
 
+def dense_weight() -> float:
+    """Vector-channel weight for the embedder that is actually active."""
+    try:
+        from rag import embed
+
+        return DENSE_WEIGHT_MODEL if embed.backend_name() == "model" else DENSE_WEIGHT_HASH
+    except Exception:
+        return DENSE_WEIGHT_HASH
+
+
 # A code ("ZQ-4471", "frtr_0001", anything in quotes) or a name (capitalised somewhere
 # other than the start of the question: "Halvorsen"). A bare number is neither: "2024"
 # and "5" turn up by accident in chunks that have nothing to do with the question.
@@ -256,6 +266,11 @@ EXACT_WEIGHT = 3.0
 # shares none of the question's other words (see exact_term_search, relaxed).
 NAME_MAX_DF = 3
 NAME_WEIGHT = 1.5
+# Weight of the vector channel in the fusion. The built-in hash embedder only matches
+# shared word pieces, so its ranking is mostly noise next to the word-index channel;
+# a real embedding model earns the full weight. See dense_weight().
+DENSE_WEIGHT_HASH = 0.25
+DENSE_WEIGHT_MODEL = 1.0
 _QUESTION_WORDS = frozenset(
     "what which when where does that this with from have about there their during will".split()
 )
@@ -774,11 +789,12 @@ def _search(
     if named:
         channels["name"] = named
 
+    dense_w = dense_weight()
     fused = fuse_channels(
         channels,
         k=60,
         top_n=50 if base == "max" else (20 if base == "basic" else 30),
-        weights={"exact": EXACT_WEIGHT, "name": NAME_WEIGHT},
+        weights={"exact": EXACT_WEIGHT, "name": NAME_WEIGHT, "dense": dense_w},
     )
 
     # Keep chunk hits primarily; attach file hits as metadata boosts
@@ -903,6 +919,13 @@ def _search(
         "n_dense": len(dense),
         "n_file": len(files),
         "n_fused_chunks": len(chunk_hits),
+        "dense_weight": dense_w,
+        "fusion_note": (
+            "Built-in word-piece matcher in use: its vector ranking counts for a quarter of the "
+            "word-index ranking (measured on the paraphrase test set, 175 to 220 of 256 found)."
+            if dense_w < 1.0 else
+            "Embedding model in use: vector ranking counts as much as the word index."
+        ),
         "backend_fallback": dense_meta.get("backend_fallback"),
         "vector_profile": dense_meta.get("profile") or space.get("profile") or "local",
     }
