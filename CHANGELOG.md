@@ -2,6 +2,35 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Round 3b seam check: questions limited to some files stay inside them
+
+- **How.** After the round 3b merge, three adversarial finders looked only where the
+  lanes meet (the RAG answer path, the RAG data path, the phone screens on a live
+  app), and an independent fixer per area reproduced each finding before fixing it
+  with a test that fails on the old code. 12 defects, all fixed.
+- **File scope.** A question limited to some files is now calculated, looked up,
+  summarised and cited from those files only. Before: a question scoped to one CSV
+  added up another (16,150 instead of 150), a Word table answered a question scoped
+  to a CSV, and "what does this space contain" named every file. With the name
+  lookup and the second search fixed earlier today, every path that goes back to the
+  store now takes the scope.
+- **Uploads and packs.** Two uploads of the same file at once no longer create two
+  sources and duplicate citations (uploads to one space now take turns). A pack lists
+  Word, web and PDF tables that come back as text and cannot be calculated, and the
+  import notice says so; a sheet with two columns called Score keeps its note after
+  import. A rebuild of a space ingested before today's line-ending fix no longer
+  leaves an empty duplicate source.
+- **Refusals.** "What is the retention period for the account whose headquarters
+  city is Tromso?" and the "has" wording are answered offline (the words "whose" and
+  "has" counted as missing). A Chinese name one character off a real one, and a
+  Japanese name built from two real names, are refused instead of answered with
+  someone else's code.
+- **Phone.** The Stop button showed the Copy icon while a reply streamed; a stopped
+  reply showed its icons on two rows. Both fixed.
+- Not verified by the fixers: the HTTP routes with a model (`use_llm=True`), PDF
+  and HTML table scoping (Word and CSV tested), light and glass themes for the two
+  phone fixes, a real Chinese or Japanese corpus for the new name rules.
+
 ## 2026-11-21 -- Round 3b screens: chat laid out like Claude, ChatGPT and Gemini on a phone
 
 - **Research.** WCAG 2.2 target size (24 px minimum, 44 px at the stricter level)

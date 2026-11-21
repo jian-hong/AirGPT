@@ -146,6 +146,33 @@ main_idea: A random-upload corpus with pandas truth found spreadsheet answers th
   basic, where it passes at 0.6 and fails at 1.0.
 - **Invariant:** prove a gate can fail; a gate that saturates stops measuring.
 
+### Finding 12 - four lanes each read past the files the user chose
+
+- **Expected:** a question limited to some files (`source_ids`) uses, cites and
+  names only those files, in every lane.
+- **Actual:** the retrieval channels honoured the scope, but four later steps did
+  not: the bridge hop (found by its verifier), the name lookup before judging
+  (found in the merge review), the spreadsheet and document-table maths lane (found
+  twice, by two seam finders independently: a question scoped to one CSV added up
+  another, 16,150 instead of 150), and the "what does this space contain" inventory,
+  which named every file.
+- **Root-cause class:** a scope applied at the first search and assumed downstream;
+  every new path that goes back to the store (a lookup, a second search, a table
+  read, a summary) must take the scope again. Each lane was verified alone and none
+  had a scoped test.
+- **Fix:** each of the four takes `source_ids`; `tests/test_rag_scope_seams.py` and
+  `tests/test_rag_scope_pack_concurrency.py` assert the answer, citations, SQL and
+  provenance hold no out-of-scope file. The same seam pass found and fixed: duplicate
+  sources from concurrent uploads of one file (a per-space ingest lock), the
+  repeated-column note lost after pack import, document tables silently becoming
+  text after import (now said in the pack and the import notice), an empty duplicate
+  source after a rebuild of a pre-CRLF-fold space, "whose" and "has" counted as
+  missing words, a Chinese name one character off answered with the real person's
+  code, a Japanese name built from two real names answered, the phone Stop button
+  showing the Copy icon, and a stopped reply showing two icon rows.
+- **Invariant:** adversary is not the verifier; fix the root-cause class (all four
+  paths, not the one found first).
+
 ## Not verified
 
 A real embedding model or reranker (none installed; every number is the hash
