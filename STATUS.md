@@ -22,13 +22,13 @@
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
    Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
-   totals checked against pandas, turns keep their files, restore
-   all-or-nothing, sanitizer, phone title. Round 3: stress corpus (sheet
-   maths 7 to 22 of 25 right), rare-name retrieval, ingest 417 s to 12 s,
-   phone polish, Windows line endings. Head `5a5b7bf`: 1532 passed, 0 failed,
-   9 skipped; JS 245; browser 27/27; Windows CI green. Round 3b running (multi-hop,
-   multilingual refusals, Word/web/PDF tables, screens). Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P33.
+   totals checked against pandas, turns keep their files, restore, sanitizer.
+   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
+   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
+   Word/web/PDF tables, a second search hop. Head `81c0bd3`: 1582 passed,
+   0 failed, 9 skipped; JS 245; Windows CI pending; screens lane running.
+   Unverified: tunnel, phone, provider, Cortex, a real embedder. Owner
+   calls: P14-P35.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
    26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
@@ -42,7 +42,7 @@
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
 2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320; decide P22-P33.
+   reliability epic and `pypdf`; re-score n=320; decide P22-P35.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

@@ -2,6 +2,57 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Round 3b: a second search when one is not enough, honest refusals in every language, tables in Word, web pages and PDFs
+
+- **How.** Two local lanes (retrieval; answers and tables), each with an
+  independent verifier that used its own seeds and its own corpora (the screens
+  lane runs separately and gets its own entry). They found 13 more defects inside the new work: 9 are fixed (one in
+  the main session) and 4 are parked (P34, P35).
+- **Refusals in every language.** One loose rule caused two opposite bugs: a
+  non-Latin word counted as present when half its characters appeared anywhere.
+  So invented Chinese, Japanese, Korean, Arabic and Thai names were never refused
+  (0 of 10), and English questions about Russian, Malay and Spanish files were
+  refused although the passage was found (30, 30 and 24 of 30). Words are now
+  matched whole (endings allowed), Chinese, Japanese and Thai as whole strings,
+  Arabic names as pairs, and the name is looked up before judging. Multilingual
+  bench, seed 1: should-refuse 10 of 10 in all 8 languages; false refusals 0 in
+  every column; Arabic English-question answers 21 to 27 of 30. Held-out seeds
+  2-5: 9 to 10 of 10 refused, 0 false refusals. Thai vowel marks, Korean question
+  words and Russian case endings no longer cut or hide a name.
+- **Tables in Word, web pages and PDFs.** They now get the same exact maths as a
+  CSV, cited as "table 2 of memo.docx": 0 of 5 to 5 of 5 right per format against
+  pandas, on two corpora made by different generators. A closing Total row is left
+  out and the answer says so (it was doubling the sum); merged, nested and ragged
+  tables are declined in plain words; a table that continues on the next page
+  without its header is caveated, never silently half-counted. A refusal about a
+  named file no longer mentions another file's table.
+- **Small table fixes.** A CSV with two columns called score says which one it
+  used and lets you ask for the other (score__2). A workbook's banner row stays out
+  of the sheet text. "How many visits did Site7 have?" gives the visits (862), not
+  a row count (1), and says it assumed that.
+- **A second search when one is not enough** (Corrective and agentic RAG, without
+  a model). When the first pass does not cover the question, the app searches
+  again for the name it found next to the question's own (the account whose city
+  is Tromso, then that account's retention period), inside the files the user
+  chose, and says so in the trace. None at basic, one hop at high, two at max,
+  0.4 s budget. Paraphrase bench property questions: 5/22 to 64/64 (rank 1 / top
+  five of 64) on seeds 1 and 4-11. That set is synthetic and fits the hop closely,
+  so it is not a real-world rate.
+- **A deeper search never finds less.** The file boost appeared only when a file
+  row fitted in the fused list, which happened at high and max and not at basic.
+  Top five of 256 (mean of seeds 1-3): basic 208.7 to 218.3, high 201.0 to 256,
+  max 204.3 to 256; seeds 4-7 agree.
+- **Section names in the index.** Each passage's heading chain is in the keyword
+  index (the cited text is unchanged): eight policy sections that all end in
+  "### Retention" are now found at keyword rank 1 (0 of 8 before). Index schema 3.
+- Unchanged on purpose: the vector weight stays 0.6, because 0.3 or lower loses
+  Russian and Malay name questions (P35). Filetype and chunk benches are identical;
+  the 83-question stress set went from 78 to 80 right. Search at depth high costs
+  about 17 ms more on a 5,000-paragraph space.
+- Suite: 1582 passed, 0 failed, 9 skipped. JS: 245 passed. Not verified: a real
+  embedding model, real documents (both benches are synthetic), Windows CI at
+  this head, native speakers reviewing the question-word lists.
+
 ## 2026-11-21 -- Files saved on Windows read like the same files saved on Linux
 
 - Windows CI failed the multilingual gate on the round 3 head: 5 Japanese name
