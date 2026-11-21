@@ -28,7 +28,10 @@ from typing import Any
 #      row window, xlsx empty cells dropped
 #   2  sentence chunker: whole-sentence windows sized by per-script token estimate,
 #      the sheet header row on every row window, xlsx empty cells kept in place
-SCHEMA_VERSION = 2
+#   3  contextual chunks: a child's vector and keyword index also carry its file title
+#      and heading chain (chunk text and boundaries unchanged). A space indexed under 2
+#      keeps working, without the context, until its files are ingested again
+SCHEMA_VERSION = 3
 
 # Name of the chunking algorithm. Scores stamped with the old name ("parent_child")
 # are reported as not comparable, with this field in the reasons, not silently mixed.

@@ -48,6 +48,36 @@ def _docs_dir(space_id: int) -> Path:
     return store.BLOB_DIR / str(int(space_id)) / "Docs"
 
 
+def child_vector_text(title_words: str, context: str, heading: str, text: str) -> str:
+    """What the vector index reads for a child chunk.
+
+    A real embedding model reads the file's title and the heading chain above the chunk
+    ahead of its own words (contextual chunks, Anthropic 2024: top-20 retrieval failures
+    down 35 to 49 percent). The built-in hash embedder only matches shared word pieces:
+    the same words in front of every chunk of a file thinned its match on the chunk's
+    own words (paraphrase bench, synonym questions at rank 1: 43 -> 41 of 64), so it
+    reads the heading alone, as before. The text stored and cited is never changed.
+    """
+    head = heading
+    try:
+        from rag import embed
+
+        if embed.backend_name() == "model":
+            where = " > ".join(x for x in (title_words, context) if x)
+            if where and where != heading:
+                head = f"{where}\n{heading}"
+    except Exception:
+        pass
+    return f"{head}\n{text}"
+
+
+def _title_words(name: str) -> str:
+    """"q3_Travel-Budget.xlsx" -> "q3 Travel Budget": the file's title as words."""
+    stem = Path(str(name or "")).stem
+    stem = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", stem)
+    return re.sub(r"[\s_\-.]+", " ", stem).strip()[:80]
+
+
 def _original_basename(path: Path, space_id: int) -> str:
     """User filename. Docs copies are stored as {8hex}_{original_name}."""
     try:
@@ -1543,6 +1573,7 @@ def ingest_paths(
                 parent_max_tokens=parent_tok,
             )
             demoted_total += int(chunk_metrics.get("demoted_children") or 0)
+            title_words = _title_words(orig_name or path.name)
             # One connection and one commit for the whole file. A new connection and a
             # commit per chunk cost about 20 ms each, so a 20,000-row sheet took minutes.
             parent_row_ids: list[int] = []
@@ -1579,9 +1610,11 @@ def ingest_paths(
                         span_end=cdraft.span_end,
                         token_est=cdraft.token_est,
                         authority=file_authority,
+                        meta={"context": cdraft.context} if cdraft.context else None,
+                        index_context=cdraft.context if cdraft.context != cdraft.heading else "",
                     )
                     chunk_count += 1
-                    child_pairs.append((cid, f"{cdraft.heading}\n{cdraft.text}"))
+                    child_pairs.append((cid, child_vector_text(title_words, cdraft.context, cdraft.heading, cdraft.text)))
 
             store.update_job(job_id, stage="enrich", detail=path.name)
             phrases = sira.index_phrases(text)

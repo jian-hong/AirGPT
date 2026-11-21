@@ -129,7 +129,7 @@ def build_plan(seed: int = 1):
     return plan
 
 
-def run(seed: int = 1, top_k: int = 5) -> dict:
+def run(seed: int = 1, top_k: int = 5, depth: str = "high") -> dict:
     os.environ["AIRGPT_RAG_EMBED"] = "hash"  # deterministic, offline
     import rag.store as store
     from rag import embed, index_fingerprint, ingest, retrieve
@@ -159,7 +159,7 @@ def run(seed: int = 1, top_k: int = 5) -> dict:
         misses = {s: [] for s in STYLES}
         for kind, (_, qs) in plan.items():
             for item in qs:
-                hits = retrieve.search(sid, item["q"], depth="high", top_k=top_k).get("hits") or []
+                hits = retrieve.search(sid, item["q"], depth=depth, top_k=top_k).get("hits") or []
                 rank = next((i for i, h in enumerate(hits) if item["f"].value in str(h.get("text") or "")), None)
                 for c in (by_style[item["style"]], by_type[kind][item["style"]]):
                     c["n"] += 1
@@ -169,7 +169,7 @@ def run(seed: int = 1, top_k: int = 5) -> dict:
                     misses[item["style"]].append(f"[{kind}] {item['q']}")
         return {
             "bench": "paraphrase_bench",
-            "seed": seed, "top_k": top_k,
+            "seed": seed, "top_k": top_k, "depth": depth,
             "n_facts": sum(len(q) for _, q in plan.values()) // len(STYLES),
             "n_questions": sum(len(q) for _, q in plan.values()),
             "index_fingerprint": index_fingerprint.fingerprint(extra={"pack": "paraphrase_bench"}),
@@ -205,9 +205,10 @@ def render(res: dict) -> str:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--depth", default="high", choices=["basic", "high", "max"])
     ap.add_argument("--no-write", action="store_true")
     args = ap.parse_args()
-    res = run(args.seed)
+    res = run(args.seed, depth=args.depth)
     print(render(res))
     if not args.no_write:
         RESULTS.parent.mkdir(parents=True, exist_ok=True)

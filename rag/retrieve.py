@@ -271,8 +271,11 @@ NAME_WEIGHT = 1.5
 # a real embedding model earns the full weight. See dense_weight(). Measured on
 # tests/RAG/paraphrase_bench.py seeds 1-7 with the name channel on: of 0.25, 0.4, 0.6
 # and 1.0, 0.6 is the lowest weight where no style finds fewer answers at rank 1 than
-# at 1.0, and it finds more in the top five (0.4 and 0.25 find more still, but drop
-# property questions at rank 1 to 0-2).
+# at 1.0, and it finds more in the top five. Re-measured with the bridge hop on (which
+# answers property questions at every weight): the paraphrase bench would now allow
+# 0.25, but tests/RAG/multilingual_bench.py does not - at 0.3 Russian questions that name
+# a person fall from 30 of 30 to 11 at rank 1 and Malay ones from 30 to 12, because the
+# hashed word pieces are what finds a Cyrillic or Malay name. So 0.6 stays.
 DENSE_WEIGHT_HASH = 0.6
 DENSE_WEIGHT_MODEL = 1.0
 _QUESTION_WORDS = frozenset(
@@ -643,6 +646,7 @@ def file_level_search(space_id: int, query: str, *, k: int = 20) -> list[RankedH
                     "path": r["path"],
                     "title": r["title"],
                     "source_id": int(r["source_id"] or 0),
+                    "bm25": max(0.0, -raw),
                     "channel": "file",
                 },
             )
@@ -654,6 +658,197 @@ def Path_name(path: str) -> str:
     from pathlib import Path
 
     return Path(path or "").name
+
+
+# --- bridge hop: a second look for the thing the first pass pointed to -----------------
+#
+# "What is the retention period for the account whose headquarters city is Tromso?" needs
+# two pieces of evidence: one passage says the Halvorsen account is headquartered in
+# Tromso, another gives Halvorsen's retention period. The first pass finds the first
+# passage and no passage that holds the whole question. The hop reads the sentence next
+# to the question's name in that passage, takes the rare name there that the question
+# does not hold (Halvorsen), and searches again for that name plus the question words
+# nothing covered yet (retention period). It runs only when the first pass is not enough,
+# needs no model, and is capped in time. (Corrective RAG, arXiv 2401.15884; bridge-entity
+# retrieval as in IRCoT and Self-Ask.)
+BRIDGE_WEIGHT = 5.0
+BRIDGE_MAX_DF = 8  # a bridge name in more chunks than this is a common word, not a name
+BRIDGE_BUDGET_S = 0.4  # all hops of one question together
+_HOP_SKIP = frozenset("whose which whom their there these those would could should about".split())
+_SENTENCE_OPENERS = frozenset(
+    "the this that these those for and but our their its when with from each every all any some "
+    "if as we it he she they there here after before during under over also then once".split()
+)
+_SENT_SPLIT = re.compile(r"(?<=[.!?。])\s+|\n+|\t+")
+
+
+def _hop_words(query: str) -> set[str]:
+    """The question's content words, minus the ones that only ask ("whose", "which")."""
+    return {t for t in _content_tokens(query) if t not in _HOP_SKIP}
+
+
+def _chunk_words(text: str) -> set[str]:
+    return set(sira.tokenize(fold_text(str(text or "")).replace("_", " ")))
+
+
+def _whole_word_re(term: str):
+    parts = re.findall(r"[^\W_]+", term.lower())
+    return re.compile(r"(?<!\w)" + r"\W+".join(re.escape(x) for x in parts) + r"(?!\w)", re.I) if parts else None
+
+
+def _term_chunks(conn, space_id: int, term: str, limit: int) -> list:
+    parts = re.findall(r"[^\W_]+", term.lower())
+    if not parts:
+        return []
+    try:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.text, c.path, c.heading, c.parent_id, c.source_id, c.authority,
+                   bm25(chunks_fts) AS score
+            FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.chunk_id
+            WHERE chunks_fts MATCH ? AND c.space_id=? AND c.kind='child'
+            ORDER BY score, chunks_fts.rowid LIMIT ?
+            """,
+            ('"' + " ".join(parts) + '"', int(space_id), int(limit)),
+        ).fetchall()
+    except Exception:
+        return []
+    rx = _whole_word_re(term)
+    return [r for r in rows if rx and rx.search(str(r["text"] or ""))]
+
+
+def _bridge_candidates(row, anchor: str, asked: set[str], limit: int = 2) -> list[tuple[str, set[str]]]:
+    """Names and codes written in the same sentence as `anchor`, nearest first, each with
+    the words of that sentence (what the passage already says about it)."""
+    text = str(row["text"] or "")
+    rx = _whole_word_re(anchor)
+    if not rx:
+        return []
+    out: list[tuple[int, str, set[str]]] = []
+    for seg in _SENT_SPLIT.split(text):
+        m = rx.search(seg)
+        if not m:
+            continue
+        if len(seg) > 320:
+            seg = seg[max(0, m.start() - 150): m.end() + 150]
+            m = rx.search(seg)
+            if not m:
+                continue
+        seg_words = _chunk_words(seg)
+        words = list(_WORD_RE.finditer(seg))
+        at = next((i for i, w in enumerate(words) if w.end() > m.start()), 0)
+        for i, w in enumerate(words):
+            tok = w.group(0)
+            low = tok.lower()
+            if low in asked or len(tok) < 3 or tok.isdigit():
+                continue
+            # The first word of a table row is a name ("Halvorsen | headquarters city | Tromso");
+            # the first word of a sentence is a name only if it is not an everyday word,
+            # which the rarity test in bridge_hops settles.
+            if not (_is_code(tok) or (tok[0].isupper() and (i > 0 or low not in _SENTENCE_OPENERS))):
+                continue
+            out.append((abs(i - at), tok, seg_words))
+    out.sort(key=lambda x: x[0])
+    seen: dict[str, set[str]] = {}
+    for _, t, w in out:
+        seen.setdefault(t, w)
+    return list(seen.items())[:limit]
+
+
+def bridge_hops(space_id: int, query: str, fused_texts: list[str], *, max_hops: int,
+                started: float, top_k: int = 30) -> tuple[list[RankedHit], list[str]]:
+    """-> (hits found by the extra look(s), what was done, in plain words)."""
+    import time
+
+    if max_hops <= 0:
+        return [], []
+    asked = _hop_words(query)
+    if not asked:
+        return [], []
+    # Enough already: one passage of the first pass holds every word of the question.
+    if any(asked <= _chunk_words(t) for t in fused_texts[:3]):
+        return [], []
+    qwords = {w.lower() for w in re.findall(r"[^\W_]+", fold_text(query))}
+    anchors = identifier_terms(query)
+    notes: list[str] = []
+    hits: dict[str, RankedHit] = {}
+    used: set[str] = {a.lower() for a in anchors}
+    uncovered = set(asked)
+    store.init()
+    with store._conn() as conn:
+        for hop in range(max_hops):
+            nxt: list[tuple[str, str, str, frozenset, frozenset]] = []  # bridge, anchor, file, said, own ids
+            for a in anchors:
+                if time.monotonic() - started > BRIDGE_BUDGET_S:
+                    break
+                rows = _term_chunks(conn, space_id, a, EXACT_MAX_DF + 1)
+                if not rows or len(rows) > EXACT_MAX_DF:
+                    continue
+                # A name that is the subject of the question ("for the Halvorsen account")
+                # is answered by its own passage; only a name that identifies something
+                # else ("whose headquarters city is Tromso"), or one that no top passage
+                # holds, sends the search elsewhere.
+                if hop == 0 and not _named_as_value(query, a):
+                    rx = _whole_word_re(a)
+                    if any(rx and rx.search(t) for t in fused_texts[:5]):
+                        continue
+                own = {int(r["id"]) for r in rows}
+                for r in rows:
+                    for b, said in _bridge_candidates(r, a, qwords | used):
+                        found = _term_chunks(conn, space_id, b, BRIDGE_MAX_DF + 1)
+                        if not found or len(found) > BRIDGE_MAX_DF or all(int(f["id"]) in own for f in found):
+                            continue
+                        nxt.append((b, a, Path_name(str(r["path"] or "")), frozenset(said), frozenset(own)))
+            nxt = list(dict.fromkeys(nxt))[:3]
+            if not nxt:
+                break
+            got_any = False
+            for b, a, fname, said, own in nxt:
+                used.add(b.lower())
+                want = (uncovered - said) or uncovered
+                q2 = " ".join([b] + sorted(want))
+                rx = _whole_word_re(b)
+                # The passage that named the bridge is already in the first pass.
+                pool = [h for h in sparse_search(space_id, q2, k=top_k)
+                        if rx and rx.search(str(h.payload.get("text") or "")) and int(h.doc_id) not in own]
+                if not pool:
+                    continue
+                got_any = True
+                for h in pool:
+                    h.payload = {**h.payload, "channel": "bridge"}
+                    hits.setdefault(h.doc_id, h)
+                where = f" in {fname}" if fname else ""
+                notes.append(f"searched again for {b}, named next to {a}{where}")
+                uncovered -= _chunk_words(pool[0].payload.get("text"))
+            if not got_any or not uncovered:
+                break
+            anchors = [n[0] for n in nxt]
+    return list(hits.values()), notes
+
+
+# A file the file channel favours earns a boost only when it stands clear of the rest:
+# its word-index score is at least this high and within half of the best file's.
+FILE_BOOST_MIN_BM25 = 2.0
+
+
+def _favoured_file_ranks(files: list[RankedHit], query: str) -> dict[int, int]:
+    """source id -> rank (1 first) of the files that earn the file boost: the ones whose
+    NAME or title the question uses, and the ones that clearly match its words better
+    than the others. Where every file matches about equally the boost says nothing."""
+    want = _content_tokens(query)
+    best = max((float((f.payload or {}).get("bm25") or 0.0) for f in files), default=0.0)
+    out: dict[int, int] = {}
+    for fh in files:
+        pl = fh.payload or {}
+        label = f"{Path_name(str(pl.get('path') or ''))} {pl.get('title') or ''}".replace("_", " ")
+        named = bool(want & set(_tokens(label)))
+        bm = float(pl.get("bm25") or 0.0)
+        clear = bm >= FILE_BOOST_MIN_BM25 and bm >= 0.5 * best
+        if named or clear:
+            out.setdefault(int(pl.get("source_id") or 0), len(out) + 1)
+            if len(out) >= 5:
+                break
+    return out
 
 
 def expand_parents(hits: list[dict], *, max_parents: int = 8) -> list[dict]:
@@ -714,6 +909,9 @@ def _search(
     debug: bool = False,
     source_ids: list[int] | None = None,
 ) -> dict:
+    import time
+
+    started = time.monotonic()
     space = store.get_space(space_id)
     if not space:
         return {"ok": False, "error": "space not found"}
@@ -806,12 +1004,23 @@ def _search(
         named.sort(key=lambda h: seen_at.get(h.doc_id, len(seen_at)))  # stable
         channels["name"] = named
 
-    fused = fuse_channels(
-        channels,
-        k=60,
-        top_n=50 if base == "max" else (20 if base == "basic" else 30),
-        weights={"exact": EXACT_WEIGHT, "name": NAME_WEIGHT, "dense": dense_w},
-    )
+    top_n = 50 if base == "max" else (20 if base == "basic" else 30)
+    weights = {"exact": EXACT_WEIGHT, "name": NAME_WEIGHT, "dense": dense_w, "bridge": BRIDGE_WEIGHT}
+    fused = fuse_channels(channels, k=60, top_n=top_n, weights=weights)
+
+    # Second look, only when the first pass held no passage with all of the question's
+    # words: none at basic, one hop at high, two at max.
+    hop_notes: list[str] = []
+    max_hops = {"basic": 0, "high": 1, "max": 2}[base]
+    if max_hops:
+        bridged, hop_notes = bridge_hops(
+            space_id, query,
+            [str(f.payload.get("text") or "") for f in fused if not f.doc_id.startswith("file:")],
+            max_hops=max_hops, started=started,
+        )
+        if bridged:
+            channels["bridge"] = bridged
+            fused = fuse_channels(channels, k=60, top_n=top_n, weights=weights)
 
     # Keep chunk hits primarily; attach file hits as metadata boosts
     chunk_hits: list[dict] = []
@@ -838,11 +1047,15 @@ def _search(
             chunk_hits = [h for h in chunk_hits if int(h.get("source_id") or 0) in wanted]
             file_hits = [f for f in file_hits if int(f.get("source_id") or 0) in wanted]
 
-    # Prefer files that match: chunks of a file the file-level search ranked high get
-    # one more rank vote, sized like any other channel's. This was a flat +0.05,
-    # three times a first-place vote, so with more than five files in a space every
-    # chunk of a favoured file outranked the chunk that actually held the answer.
-    hot_rank = {int(f.get("source_id") or 0): i for i, f in enumerate(file_hits[:5], start=1)}
+    # Prefer a file the question names or that clearly matches it: chunks of that file get
+    # one more rank vote, sized like any other channel's. This used to boost the top five
+    # files of the file channel for every question, and only when a file row had made it
+    # into the fused top_n - so the boost came and went with the depth: it lifted every
+    # chunk of a favoured file over the one that held the answer (a space of four register
+    # files found 203 of 256 at depth high and 220 without it) and a deeper search found
+    # less than a shallower one. It now follows the file channel directly, at every depth,
+    # and only for a file that stands out.
+    hot_rank = _favoured_file_ranks(files, query)
     for h in chunk_hits:
         rank = hot_rank.get(int(h.get("source_id") or 0))
         if rank:
@@ -936,6 +1149,7 @@ def _search(
         "n_file": len(files),
         "n_fused_chunks": len(chunk_hits),
         "dense_weight": dense_w,
+        "extra_search": hop_notes,
         "fusion_note": (
             "Built-in word-piece matcher in use: its vector ranking counts for 0.6 of the "
             "word-index ranking (measured on the paraphrase test set: more questions found in "
@@ -968,5 +1182,5 @@ def _search(
         "files": file_hits[:10],
         "citations": clean_cites,
         "trace_id": trace_id,
-        "debug": payload if debug else {"expand_terms": expand_terms},
+        "debug": payload if debug else {"expand_terms": expand_terms, "extra_search": hop_notes},
     }
