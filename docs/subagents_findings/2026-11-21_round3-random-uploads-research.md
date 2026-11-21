@@ -1,4 +1,4 @@
-keywords: [round 3, RAG, random uploads, stress corpus, pandas truth, European decimals, currency, percent, banner row, semicolon csv, json records, dropped condition, multi-file, hijacked lookup, ingest speed, name channel, rare name, fusion weight, hash embedder, held-out seeds, self-tuning, Contextual Retrieval, Corrective RAG, Adaptive-RAG, merge regression, rank 1, gate floor]
+keywords: [round 3, round 3b, bridge hop, multi-hop, contextual index, depth, abstention, char-presence, CJK refusal, cross-language, Thai marks, Word tables, PDF tables, Total row, line endings, CRLF, RAG, random uploads, stress corpus, pandas truth, European decimals, currency, percent, banner row, semicolon csv, json records, dropped condition, multi-file, hijacked lookup, ingest speed, name channel, rare name, fusion weight, hash embedder, held-out seeds, self-tuning, Contextual Retrieval, Corrective RAG, Adaptive-RAG, merge regression, rank 1, gate floor]
 main_idea: A random-upload corpus with pandas truth found spreadsheet answers that were confidently wrong (7 of 20 sampled), all in one class: a parser that drops what it does not understand and still answers. Two lanes that each improved retrieval alone cut rank-1 answers from 26 to 8 of 64 when merged, and one lane had lowered gate floors to ship its own gain. Per-space self-tuning from a space's own words was measured and could not tell settings apart.
 
 # Round 3: does RAG survive random uploads, and what does current research add
@@ -95,6 +95,56 @@ main_idea: A random-upload corpus with pandas truth found spreadsheet answers th
 - **Fix:** one fold of CRLF and CR to LF for every reader, before chunking. The bench
   with CRLF files now matches the LF run exactly, and the LF numbers did not move.
 - **Invariant:** assert the artifact the user receives (the chunk text), not a hash.
+
+## Round 3b (same day): what the second pair of lanes found
+
+### Finding 8 - one presence rule caused both missing and false refusals
+
+- **Expected:** a made-up Chinese name is refused; an English question about a
+  Russian or Malay document that holds the name is answered.
+- **Actual:** abstain-control 0 of 10 in Chinese, Japanese, Korean, Arabic and
+  Thai; English questions about Russian, Malay and Spanish files refused 30, 30
+  and 24 of 30 although retrieval had the passage in the top five.
+- **Root-cause class:** `answer._token_in_blob` counted a non-Latin word as present
+  when half its characters appeared anywhere, so every invented CJK name looked
+  covered, and a real Russian name was dropped as "a word every passage holds",
+  leaving only English attribute words no foreign passage contains. One loose
+  rule, two opposite symptoms.
+- **Fix:** whole-word and whole-string matching, Arabic name pairs, a name-only
+  judgement for cross-language questions, a name lookup before judging. The
+  verifier then found Thai combining marks cut words apart (Python `\w` does not
+  match them) and Korean question words counted as missing terms; both fixed.
+
+### Finding 9 - a Total row was added to the rows it totals
+
+- **Expected:** "total Amount" over a Word table equals the pandas sum.
+- **Actual:** double the true figure (175,243.08 for 87,621.54): the table's own
+  closing Total row was summed with the body. Also: PDF tables with one-character
+  cells were all declined (a greedy cell pattern), and a table continued on page 2
+  without its header gave a page-1-only total with no caveat.
+- **Root-cause class:** a new reader trusted a document table to be pure data;
+  the builder's corpus had no total row, no single-digit cells, no page break.
+  The verifier's second corpus (different generator, different seed) found all
+  three. Assert the number against pandas on data the builder did not make.
+
+### Finding 10 - a deeper search found less than a shallow one
+
+- **Expected:** depth high never finds fewer answers than basic.
+- **Actual:** paraphrase top five 203 of 256 at high against 208 at basic. The
+  file boost gave every chunk of a favoured file one more vote, but only when a
+  file row happened to fit in the fused list, which happened at high and max and
+  not at basic.
+- **Root-cause class:** a side effect gated by an unrelated size limit. The boost
+  now reads the file channel at every depth and needs evidence (`FILE_BOOST_MIN_BM25`).
+
+### Finding 11 - a saturated metric made a strict test fail
+
+- **Expected:** the weight test separates 0.6 from 1.0.
+- **Actual:** after the bridge hop, both weights find 256 of 256 at depth high, so
+  "strictly more in the top five" failed 256 > 256. Both agents were blocked from
+  editing the test and reported it instead; the comparison now runs at depth
+  basic, where it passes at 0.6 and fails at 1.0.
+- **Invariant:** prove a gate can fail; a gate that saturates stops measuring.
 
 ## Not verified
 

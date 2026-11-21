@@ -146,6 +146,26 @@ What exists in this repo and where. Update when structure changes, not when stat
   chunk shares no other question word; its chunks are ordered by the other
   channels. `dense_weight()`: the vector channel weighs 0.6 under the hash
   embedder, 1.0 with a real model (`tests/test_dense_weight.py`).
+- `rag/retrieve.py` `bridge_hops` -- a second search when the first pass does
+  not cover the question: the rare name or code beside the question's own name
+  (in at most `BRIDGE_MAX_DF` chunks) is searched with the uncovered words and
+  fused as the `bridge` channel (`BRIDGE_WEIGHT`). None at basic, one hop at high,
+  two at max, `BRIDGE_BUDGET_S` per question; stays inside `source_ids`; the trace
+  says it in `debug.extra_search`. The file boost reads the file channel at every
+  depth (`FILE_BOOST_MIN_BM25`), so a deeper search never finds less.
+- `rag/chunking.py` `heading_paths` + `store.insert_chunk(index_context=...)` --
+  each child's heading chain goes into the keyword index only; stored and cited
+  text is unchanged. `ingest.child_vector_text` adds title and chain to the vector
+  text under a real embedding model only. `index_fingerprint` schema 3.
+- `rag/answer.py` `rescue_hits`, `_script_unfounded`, `_token_in_blob` -- refusal
+  checks match whole words (endings allowed), whole strings for Chinese, Japanese
+  and Thai, name pairs for Arabic, and judge an English question about a passage
+  in another language on the name; `rescue_hits` looks the name up before judging.
+- `rag/ingest.py` `docx_tables`, `html_tables`, `pdf_tables`, `document_tables`
+  + `rag/xlsx_sql.py` `table_frame`, `load_document_tables` -- tables in Word, web
+  pages and PDFs (pypdf layout text, aligned columns only) reach the same planner
+  as CSV, cited as "table 2 of memo.docx"; merged, nested, ragged and headerless
+  continuation tables are declined or caveated; a closing Total row is left out.
 - `rag/sheet_sql.py` `_parse_cell` -- one number reader for every table
   (European and US decimals per column, currency codes, percent; mixed
   currencies refused). `rag/xlsx_sql.py` `banner_rows_above_header`,
