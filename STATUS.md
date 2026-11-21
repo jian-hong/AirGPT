@@ -25,10 +25,11 @@
    totals checked against pandas, turns keep their files, restore, sanitizer.
    Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
    ingest, Windows line endings. Round 3b: refusals right in 8 languages,
-   Word/web/PDF tables, a second search hop, phone chat like Claude. Head
-   `edd64ca`: 1583 passed, 0 failed, 9 skipped; JS 255; browser 27/27;
-   Windows CI green on `283d149`. Seam check running. Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
+   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
+   check fixed 12 (file scope held in every lane). Code `bdb67c8`: 1594
+   passed, 0 failed, 9 skipped; JS 256; browser 27/27; Windows CI green to
+   `421c96c`. Unverified: tunnel, phone, provider, Cortex, a real embedder.
+   Owner calls: P14-P36.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
    26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
