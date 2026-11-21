@@ -1189,7 +1189,10 @@ def read_text_file(path: Path) -> tuple[str, str]:
     elif suffix in (".xlsx", ".xlsm"):
         text = _xlsx_text(path)
     elif suffix == ".csv":
-        text = _csv_text(path, _decode(raw)) or _decode(raw)
+        decoded = _decode(raw)
+        from .xlsx_sql import sniff_delimiter
+
+        text = _csv_text(path, decoded, sniff_delimiter(decoded[:65536])) or decoded
     elif suffix == ".tsv":
         text = _csv_text(path, _decode(raw), "\t") or _decode(raw)
     elif suffix == ".xml":

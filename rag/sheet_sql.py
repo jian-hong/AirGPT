@@ -875,7 +875,7 @@ _STATED_VALUE = re.compile(
 )
 
 
-def _bind_stated_values(q, df, kept, text_filters, filters, metric):
+def _bind_stated_values(q, df, kept, text_filters, filters, metric, metric_agg=None):
     """"where Product is Gizmo": the question STATES the value for a text column.
 
     Values are normally read off the data, which cannot see a value that is not there
@@ -884,7 +884,9 @@ def _bind_stated_values(q, df, kept, text_filters, filters, metric):
     answer. Bind what was stated; a value no row holds then shows as "no rows match".
     """
     by_col = {(t.column, t.negate): t for t in text_filters}
-    bound = {f.column for f in filters} | ({metric} if metric else set())
+    # "how many rows have paid no": the counted column is also the one the value belongs
+    # to, so for a count it is not skipped. Skipping it counted every row.
+    bound = {f.column for f in filters} | ({metric} if metric and metric_agg != "COUNT" else set())
     for start, end, name in kept:
         if name in bound or name not in df.columns or _numeric_ratio(df[name]) >= 0.6:
             continue
@@ -895,14 +897,22 @@ def _bind_stated_values(q, df, kept, text_filters, filters, metric):
         else:
             # "paid yes", "has shipped no": the answer word stands right behind the column.
             mb = _STATED_BOOL.match(q[end:])
-            if not mb:
-                continue
-            word = mb.group(1).casefold()
             have = {str(v).strip().casefold() for v in df[name].dropna().astype(str)}
-            if word not in have:
-                continue
-            m = mb
-            said = word
+            if not mb:
+                # "records that are not paid": a yes/no column right after "not" asks for its "no" rows.
+                have.discard("")
+                if have and have <= {"yes", "no", "true", "false"} and re.search(r"\bnot\s+(?:been\s+)?$", q[:start], re.I):
+                    said = "no" if "no" in have else "false"
+                    if said in have:
+                        m = re.match(r"(?P<w>.+)", said)
+                else:
+                    continue
+            else:
+                word = mb.group(1).casefold()
+                if word not in have:
+                    continue
+                m = mb
+                said = word
         if not m:
             continue
         # "Dept is not HR" / "Dept != HR": the same column, the value excluded.
@@ -949,6 +959,12 @@ _WHERE_CLAUSE = re.compile(
 _DATE_CUE = re.compile(
     rf"\b(?:after|before|since|until)\s+(?:{_DATE_LIT}|(?:19|20)\d\d\b)", re.I,
 )
+
+
+_FUNCTION_WORDS = {
+    "with", "from", "that", "this", "were", "was", "are", "who", "which", "what", "when", "where", "have",
+    "has", "had", "does", "did", "than", "then", "into", "over", "under", "also", "only", "each", "every",
+}
 
 
 def _condition_follows(q: str, start: int, end: int, *, foreign: bool = False) -> bool:
@@ -1165,6 +1181,13 @@ def plan_query(
                     dfil.column = name
                     filters.append(dfil)
                     continue
+            if _numeric_ratio(df[name]) >= 0.6:
+                mbt = re.match(rf"^\W*(?:(?:is|are|was|were)\s+)?between\s+{_NUM}\s+(?:and|to|-)\s+{_NUM}", q[end:next_start if next_start else len(q)], re.I)
+                if mbt:
+                    lo, hi = sorted((float(mbt.group(1)), float(mbt.group(2))))
+                    filters.append(Filter(column=name, op=">=", value=lo))
+                    filters.append(Filter(column=name, op="<=", value=hi))
+                    continue
             got = _filter_after(q, end, next_start)
             if got and _numeric_ratio(df[name]) >= 0.6:
                 op, value = got
@@ -1179,7 +1202,7 @@ def plan_query(
 
         # Words in the question that are values in a text column ("North", "Widget").
         text_filters, ambiguous_values = _find_text_filters(q, df, value_spans, set())
-        text_filters = _bind_stated_values(q, df, kept, text_filters, filters, metric)
+        text_filters = _bind_stated_values(q, df, kept, text_filters, filters, metric, metric_agg)
 
         # "by region" / "which region has the highest ...": a group-by on a text column.
         group_by, group_lead = "", ""
@@ -1306,7 +1329,17 @@ def plan_query(
             {f.column for f in filters} | {t.column for t in text_filters}
             | ({metric} if metric else set()) | ({group_by} if group_by else set())
         )
-        phrase = _unbound_phrase(q, kept, _bound_cols, filters, rows)
+        _pre_phrase = ""
+        if metric and metric_agg == "COUNT" and metric in df.columns and metric not in {t.column for t in text_filters}:
+            # "how many rows have region West" with no West in the data: the counted column
+            # is followed by a value it could not bind, so say so instead of counting all rows.
+            for _s0, _e0, _n0 in kept:
+                if _n0 == metric and _numeric_ratio(df[metric]) < 0.6:
+                    _nx = re.match(r"^\s+([A-Z][\w-]*)", q[_e0:])
+                    if _nx and _nx.group(1).casefold() not in _NOT_VALUES | _FUNCTION_WORDS:
+                        _pre_phrase = " ".join(q[_s0:_e0 + len(_nx.group(0))].split()).strip(" ?.,;")
+                        break
+        phrase = _pre_phrase or _unbound_phrase(q, kept, _bound_cols, filters, rows)
         if phrase and not ambiguous_values:
             if unbound_plan is None:
                 unbound_plan = Plan(

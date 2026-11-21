@@ -155,11 +155,40 @@ def banner_rows_above_header(rows: list) -> int:
     return 0
 
 
+def sniff_delimiter(sample: str) -> str:
+    """Comma, semicolon or pipe for a .csv: the one that splits most lines into the same width.
+
+    European spreadsheet exports use ';' (the comma is their decimal mark). Without
+    this the whole file collapsed to a few wrong columns and every number was off.
+    Comma wins ties, so an ordinary file never changes.
+    """
+    import csv as _csv
+    import io
+
+    lines = [ln for ln in sample.splitlines() if ln.strip()][:40]
+    best, best_score = ",", 0.0
+    for cand in (",", ";", "|"):
+        widths = [len(r) for r in _csv.reader(io.StringIO("\n".join(lines)), delimiter=cand) if r]
+        if not widths:
+            continue
+        modal = max(set(widths), key=widths.count)
+        if modal < 2:
+            continue
+        score = widths.count(modal) / len(widths) * min(modal, 6)
+        if score > best_score + 1e-9:
+            best, best_score = cand, score
+    return best
+
+
 def _read_delimited(path: Path, enc: str, sep: str | None):
     """(banner row count, DataFrame) for a csv/tsv, header found past any title lines."""
     import csv as _csv
 
-    delim = sep or ","
+    delim = sep
+    if not delim:
+        with open(path, newline="", encoding=enc) as fh:
+            delim = sniff_delimiter(fh.read(65536))
+        sep = delim
     head: list[list[str]] = []
     skip = 0
     with open(path, newline="", encoding=enc) as fh:

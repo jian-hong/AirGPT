@@ -168,3 +168,50 @@ def test_plain_csv_header_still_row_one(tmp_path):
     df = next(iter(load_table_file(p).values()))
     assert list(df.columns) == ["a", "b"] and len(df) == 2
     assert df.attrs["header_excel_row"] == 1
+
+
+# ---- verifier round: conditions on the counted column, between, semicolon files -------
+
+def _small():
+    df = pd.DataFrame({
+        "region": ["North", "South", "South", "North", "East"],
+        "units": ["5", "6", "7", "8", "9"],
+        "paid": ["yes", "no", "yes", "yes", "no"],
+    })
+    return {("f.csv", "f"): df}
+
+
+def _lead(hit):
+    return _text(hit).split(" ")[0].replace(",", "")
+
+
+def test_count_of_the_column_the_value_belongs_to_is_filtered():
+    fr = _small()
+    assert _lead(_ask("How many rows where paid is no?", fr)) == "2"
+    assert _lead(_ask("How many records are paid yes?", fr)) == "3"
+    assert _lead(_ask("how many records are not paid?", fr)) == "2"
+
+
+def test_a_value_no_row_holds_after_the_counted_column_is_declined_not_counted():
+    fr = _small()
+    for q in ("How many rows have region West?", "How many rows have region S?"):
+        out = _text(_ask(q, fr))
+        assert "could not apply" in out and not out.startswith("5")
+
+
+def test_between_is_a_range_filter_not_dropped():
+    fr = _small()
+    assert _lead(_ask("How many rows have units between 6 and 8?", fr)) == "3"
+
+
+def test_semicolon_csv_is_read_with_its_columns(tmp_path):
+    from rag import ingest, xlsx_sql
+
+    p = tmp_path / "semi.csv"
+    body = "item;price;qty\nbolt;1,50;10\nnut;2,25;4\nscrew;3,00;6\n"
+    p.write_text(body, encoding="utf-8")
+    df = next(iter(load_table_file(p).values()))
+    assert list(df.columns) == ["item", "price", "qty"] and len(df) == 3
+    out = _text(_ask("What is the total price?", {("semi.csv", "semi"): df}))
+    assert out.startswith("6.75")
+    assert "item | price | qty" in ingest._csv_text(p, body, xlsx_sql.sniff_delimiter(body))
