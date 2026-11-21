@@ -1138,39 +1138,35 @@ def neighbor_window(chunk_id: int, *, radius: int = 1, kind: str = "child") -> l
     return [r for r in out if r]  # type: ignore[return-value]
 
 
-def sample_parent_chunks(space_id: int, *, limit: int = 24) -> list[dict]:
+def sample_parent_chunks(space_id: int, *, limit: int = 24, source_ids: list[int] | None = None) -> list[dict]:
     """Parent (or any) chunks for space summaries and the pipeline preview.
 
     Round-robins across sources. A plain "ORDER BY id LIMIT n" let one big file
     (e.g. a workbook with many sheets) fill the whole window, so other documents
-    never appeared in the summary or the samples.
+    never appeared in the summary or the samples. `source_ids` limits the sample to
+    those files (a question the founder scoped to some files).
     """
     init()
-    diverse = (
-        "SELECT * FROM ("
-        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
-        "  FROM chunks WHERE space_id=? AND kind=?"
-        ") ORDER BY _rn ASC, source_id ASC LIMIT ?"
-    )
+    scope = sorted({int(x) for x in (source_ids or []) if str(x).strip()})
+    sc = (" AND source_id IN (" + ",".join("?" * len(scope)) + ")") if scope else ""
     with _conn() as conn:
         for kind in ("parent", None):
+            kc = " AND kind=?" if kind else ""
+            args = (int(space_id), *((kind,) if kind else ()), *scope, int(limit))
             try:
-                if kind is None:
-                    rows = conn.execute(
-                        "SELECT * FROM ("
-                        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
-                        "  FROM chunks WHERE space_id=?"
-                        ") ORDER BY _rn ASC, source_id ASC LIMIT ?",
-                        (int(space_id), int(limit)),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(diverse, (int(space_id), kind, int(limit))).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM ("
+                    "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
+                    "  FROM chunks WHERE space_id=?" + kc + sc +
+                    ") ORDER BY _rn ASC, source_id ASC LIMIT ?",
+                    args,
+                ).fetchall()
             except sqlite3.OperationalError:
-                # No window-function support — fall back to insertion order.
-                sql = "SELECT * FROM chunks WHERE space_id=?" + (
-                    " AND kind='parent'" if kind else ""
-                ) + " ORDER BY id ASC LIMIT ?"
-                rows = conn.execute(sql, (int(space_id), int(limit))).fetchall()
+                # No window-function support - fall back to insertion order.
+                rows = conn.execute(
+                    "SELECT * FROM chunks WHERE space_id=?" + kc + sc + " ORDER BY id ASC LIMIT ?",
+                    args,
+                ).fetchall()
             if rows:
                 return [_row(r) for r in rows]  # type: ignore[misc]
         return []
