@@ -2,6 +2,53 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Round 3: RAG on random uploads, research-led retrieval, phone polish
+
+- **How it was measured.** A stress corpus of 26 files (txt in UTF-8, UTF-16 and
+  GBK, md, csv with $ RM EUR, 1.234,56, percent, three date formats, a banner row
+  and a 20,000-row by 60-column sheet, xlsx with merged headers, formulas and a
+  hidden sheet, json, ndjson, pdf, docx, pptx, html, eml, code, xml, tsv, log, and
+  hostile files) with 83 questions whose answers were computed with pandas. A
+  research pass read 2024-2026 RAG work (Google File Search, Contextual Retrieval,
+  Corrective RAG, Adaptive-RAG, agentic RAG, late chunking, ColBERT, RAPTOR,
+  GraphRAG, fusion studies) and mapped it to the code. Each lane had a builder and
+  an independent verifier; a third lane in a cloud session did the screens.
+- **Spreadsheet maths.** Right answers in the mixed space went from 7 to 22 of 25;
+  every answer that was a wrong number before is now right or declined (the 3 left
+  are tables inside pdf, docx and html, which are declined in plain words). A stated
+  condition is applied or declined by name, never dropped ("paid yes", "after
+  2024-09-01", "between 6 and 8", "not paid"). European decimals, currency codes,
+  percent cells, a banner row above a CSV header, semicolon CSV files and JSON lists
+  of records all calculate. A column that mixes currencies is not added up; the
+  answer says to ask for one ("in RM"). A filter column from one file is no longer
+  ignored when another file is listed first, "total qty" works on a sheet with a
+  column called total, and a lookup ("badge number of the owner") is no longer
+  answered with a count.
+- **Retrieval.** A rare name gets its own vote, so "For how long does Wexganpim keep
+  its records?" finds the line that shares only the name. The vector channel counts
+  0.6 under the built-in word-piece matcher (1.0 with a real embedding model).
+  Paraphrase bench, seed 1, rank 1 / top 5 of 64: synonym 26/45 to 43/64, typo
+  40/49 to 40/53, property 5/17 to 5/22; seeds 2-7 agree. Multilingual retrieval is
+  the same or better in every cell.
+- **Found at the merge.** Together the two lanes dropped synonym answers at rank 1
+  from 26 to 8 of 64: the name channel ordered its chunks by how strongly the name
+  matched. It now follows the other channels at equal weight. The research lane's
+  0.25 weight finds more in the top five (227 against 203 of 256) but drops property
+  questions at rank 1 from 5 to 1; it had lowered two gate floors to ship that. The
+  floors are back, the weight is 0.6 and a test now fails below it (P32).
+- **Ingest.** A file's chunks are written on one connection: the 20,000-row CSV went
+  from 417 s to about 12 s. Hidden Excel sheets are labelled "(hidden sheet)" in
+  every citation.
+- **Not built: per-space self-tuning.** Questions made from a space's own words score
+  the same under every setting tried (33 settings, correlation 0.21 with the real
+  bench), so a tuner using them would pick at random (P33).
+- **Screens.** On phones: round + button, the reply rail hidden for a single reply,
+  message actions one height, + sheet labels aligned, the OpenIDE button on one line,
+  drawer text 4.5:1 in dark, 44 px tap areas for Marketplace, Cortex, Details folds,
+  OpenIDE controls and tablet drawer rows.
+- Suite: 1527 passed, 0 failed, 9 skipped. JS: 245 passed. Browser: 27 of 27. Not verified: a real embedding
+  model, real phone, real provider, live Cortex, Windows CI at this head.
+
 ## 2026-11-20 -- Database connections close when their block ends (Windows)
 
 - `with _connect() as conn:` in `db.py`, `agent_store.py` and `memory_index.py`

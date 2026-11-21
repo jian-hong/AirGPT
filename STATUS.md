@@ -21,14 +21,14 @@
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Round 1: shell add-ons, prompt lens, whole-app audit (156 findings).
-   Round 2: PR #90 merged in; RAG totals checked against pandas, packs
-   keep calculating, turns keep their files, agents run only their own
-   tools, restore all-or-nothing, sanitizer drops styles and page ids,
-   phone title readable, light theme readable. Head `8d0c5e8`: 1488
-   passed, 0 failed, 9 skipped; JS 235; browser 27/27; Windows CI green
-   on `8d0c5e8`. Not verified: real tunnel, real phone, real
-   provider, live Cortex, Windows restore names. Owner calls: P14-P31.
+   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
+   totals checked against pandas, turns keep their files, restore
+   all-or-nothing, sanitizer, phone title. Round 3: stress corpus (sheet
+   maths 7 to 22 of 25 right), rare-name retrieval, ingest 417 s to 12 s,
+   phone polish. Code head `4cf62bf`: 1527 passed, 0 failed, 9 skipped;
+   JS 245; browser 27/27; Windows CI pending. Round 3b running (multi-hop,
+   multilingual refusals, Word/web/PDF tables, screens). Unverified: tunnel,
+   phone, provider, Cortex, a real embedder. Owner calls: P14-P33.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
    hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
    26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
@@ -42,7 +42,7 @@
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
 2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320; decide P22-P31.
+   reliability epic and `pypdf`; re-score n=320; decide P22-P33.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP
