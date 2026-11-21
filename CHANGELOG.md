@@ -2,6 +2,38 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Round 3b screens: chat laid out like Claude, ChatGPT and Gemini on a phone
+
+- **Research.** WCAG 2.2 target size (24 px minimum, 44 px at the stricter level)
+  and non-text contrast (3:1) were read from source, plus Google's 48 dp touch
+  figure. The Claude, ChatGPT and Gemini help pages loaded but give no layout
+  sizes; Apple's and Material's pages render with script and returned titles
+  only. The checklist (one compact top bar, full-width replies, your message as a
+  bubble on the right, one row of icon actions, nothing over text, no sideways
+  scroll) is therefore partly general knowledge, and says so.
+- **Phone chat.** Copy, Reply, Prompt, Fork and Regenerate were five text buttons
+  in two uneven rows, three of them owning about 21 px of tap height. They are now
+  one row of small borderless icons, each a 44 px tap square with a screen-reader
+  label and a title; nothing was removed. The reply uses the full width (50 px left
+  margin before, 10 px now). The reply jump bar is hidden on phones and touch
+  tablets, where it covered code and text; desktop keeps it.
+- **OpenIDE on short phones.** The work panel (Browser, Terminal, app chips) took
+  about 350 px and cut or hid the start screen at 360x780, 320x568 and 390x500. It
+  now starts folded with a Show button; nothing removed.
+- **Tap areas.** The Cortex chip, drawer Search and List icons, the knowledge-space
+  Send (it sat under the report button, which now rests above the ask bar), Files
+  and scope buttons, Cortex buttons and starters, and tablet drawer actions own
+  44 px. On desktop, OpenIDE header chips, the banner close, code Copy and message
+  buttons reach the 24 px minimum.
+- **Contrast.** Drawer detail text, light-theme reply-rail dots and small grey
+  labels on dark and glass were lifted.
+- **The verifier** (separate agent, base and new side by side in a real browser)
+  confirmed the fixes and found one regression, fixed: on a tablet the wider edge
+  tab covered the OpenIDE Folder button. Left for the owner: P36.
+- Tests: `tests/visual_r3b.test.mjs` drives the real page with its own app and
+  model (8 of 9 checks fail on the base; the ninth checks that desktop did not
+  change). Two older tests that pinned the replaced layout were updated.
+
 ## 2026-11-21 -- Round 3b: a second search when one is not enough, honest refusals in every language, tables in Word, web pages and PDFs
 
 - **How.** Two local lanes (retrieval; answers and tables), each with an
