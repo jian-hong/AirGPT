@@ -35,13 +35,12 @@ import paraphrase_bench as pb  # noqa: E402
 # (floor r@1, floor r@5), exact counts out of 64. Deterministic: hash embedder, seeded.
 FLOORS = {
     "verbatim": (64, 64),    # control
-    # Raised when the vector channel was cut to a quarter weight under the hash embedder
-    # (see tests/test_dense_weight.py): r@5 rose a lot, but r@1 on synonym (26 -> 21) and
-    # property (5 -> 1) fell, which is a recorded trade, not a free win. Over seeds 1-3
-    # total r@1 is 411 against 407 before.
-    "synonym": (21, 57),     # was (26, 45)
-    "lower_typo": (47, 64),  # was (40, 49)
-    "property": (1, 35),     # was (5, 17); DELIBERATELY WEAK at rank 1
+    # Raised in round 3 by the name channel (a rare name gets its own vote, its chunks
+    # ordered by the other channels) and the vector channel at 0.6 under the hash
+    # embedder (tests/test_dense_weight.py). No r@1 floor was lowered.
+    "synonym": (39, 64),     # was (26, 45)
+    "lower_typo": (40, 53),  # was (40, 49)
+    "property": (5, 22),     # was (5, 17); DELIBERATELY WEAK: recorded weakness, not a pass
 }
 
 

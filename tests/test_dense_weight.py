@@ -3,6 +3,10 @@
 Measured on tests/RAG/paraphrase_bench.py (r@5 of 256 questions, seeds 1/2/3):
 dense 1.0 -> 175/175/173, 0.5 -> 202/197/194, 0.25 -> 220/220/217, 0.0 -> 221/221/221.
 Seed 1 picked the weight; seeds 2 and 3 are held out and agree.
+
+With the name channel added in the same round, 0.25 cost rank-1 answers (property 5 -> 1,
+synonym 26 -> 24 at seed 1), so the weight is 0.6: r@5 194 -> 203 at seed 1 over the name
+channel alone, and on seeds 1 and 4-7 no style is below the old equal weight at rank 1.
 """
 from __future__ import annotations
 
@@ -30,7 +34,19 @@ def test_weight_follows_the_active_embedder(monkeypatch):
 def test_paraphrase_total_beats_equal_weight_on_held_out_seeds(seed):
     res = pb.run(seed=seed)
     total = sum(res["styles"][s]["recall_at_5"] for s in pb.STYLES)
-    assert total >= 210, f"seed {seed}: {total}/256 (equal weights scored 173-175)"
+    assert total >= 200, f"seed {seed}: {total}/256 (equal weights scored 173-175)"
+
+
+@pytest.mark.parametrize("seed", [1, 4, 5, 6, 7])
+def test_no_style_loses_rank_one_answers_to_the_lower_weight(seed, monkeypatch):
+    """The weight may only be lowered as far as rank 1 holds: a top-five gain that moves
+    the right passage off first place is a trade, not a win (0.25 dropped property 5 -> 1)."""
+    low = pb.run(seed=seed)
+    monkeypatch.setattr(retrieve, "dense_weight", lambda: 1.0)
+    equal = pb.run(seed=seed)
+    for s in pb.STYLES:
+        got, was = low["styles"][s]["recall_at_1"], equal["styles"][s]["recall_at_1"]
+        assert got >= was, f"seed {seed} {s}: rank 1 {got} < {was} at equal weight"
 
 
 def test_trace_says_which_weight_was_used():
@@ -53,7 +69,7 @@ def test_trace_says_which_weight_was_used():
         ingest.ingest_paths(sid, [f])
         out = retrieve.search(sid, "retention period invoices", depth="high", top_k=3, debug=True)
         assert out["debug"]["dense_weight"] == retrieve.DENSE_WEIGHT_HASH
-        assert "quarter" in out["debug"]["fusion_note"]
+        assert "0.6" in out["debug"]["fusion_note"]
     finally:
         store.RAG_DIR, store.DB_PATH, store.BLOB_DIR = saved
         embed.reset_embedder_cache()
