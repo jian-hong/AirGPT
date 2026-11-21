@@ -38,7 +38,7 @@ FLOORS = {
     # Raised in round 3 by the name channel (a rare name gets its own vote, its chunks
     # ordered by the other channels) and the vector channel at 0.6 under the hash
     # embedder (tests/test_dense_weight.py). No r@1 floor was lowered.
-    "synonym": (39, 64),     # was (26, 45)
+    "synonym": (43, 64),     # was (26, 45)
     "lower_typo": (40, 53),  # was (40, 49)
     "property": (5, 22),     # was (5, 17); DELIBERATELY WEAK: recorded weakness, not a pass
 }

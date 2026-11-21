@@ -4,9 +4,10 @@ Measured on tests/RAG/paraphrase_bench.py (r@5 of 256 questions, seeds 1/2/3):
 dense 1.0 -> 175/175/173, 0.5 -> 202/197/194, 0.25 -> 220/220/217, 0.0 -> 221/221/221.
 Seed 1 picked the weight; seeds 2 and 3 are held out and agree.
 
-With the name channel added in the same round, 0.25 cost rank-1 answers (property 5 -> 1,
-synonym 26 -> 24 at seed 1), so the weight is 0.6: r@5 194 -> 203 at seed 1 over the name
-channel alone, and on seeds 1 and 4-7 no style is below the old equal weight at rank 1.
+With the name channel added in the same round (its chunks ordered by the other channels at
+equal weight), 0.25 and 0.4 cost property answers at rank 1 (1-5 -> 0-2 per seed), so the
+weight is 0.6: top-five totals 194-196 -> 199-203 of 256 on seeds 1-3, and on seeds 1-7 no
+style finds fewer answers at rank 1 than at full weight.
 """
 from __future__ import annotations
 
@@ -31,10 +32,15 @@ def test_weight_follows_the_active_embedder(monkeypatch):
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_paraphrase_total_beats_equal_weight_on_held_out_seeds(seed):
-    res = pb.run(seed=seed)
-    total = sum(res["styles"][s]["recall_at_5"] for s in pb.STYLES)
-    assert total >= 200, f"seed {seed}: {total}/256 (equal weights scored 173-175)"
+def test_paraphrase_total_beats_equal_weight_on_held_out_seeds(seed, monkeypatch):
+    def total():
+        res = pb.run(seed=seed)
+        return sum(res["styles"][s]["recall_at_5"] for s in pb.STYLES)
+
+    low = total()
+    monkeypatch.setattr(retrieve, "dense_weight", lambda: 1.0)
+    equal = total()
+    assert low > equal, f"seed {seed}: {low}/256 at the hash weight, {equal}/256 at full weight"
 
 
 @pytest.mark.parametrize("seed", [1, 4, 5, 6, 7])

@@ -269,9 +269,10 @@ NAME_WEIGHT = 1.5
 # Weight of the vector channel in the fusion. The built-in hash embedder only matches
 # shared word pieces, so its ranking is mostly noise next to the word-index channel;
 # a real embedding model earns the full weight. See dense_weight(). Measured on
-# tests/RAG/paraphrase_bench.py seeds 1 and 4-7 with the name channel on: 0.6 is the
-# lowest weight where no style finds fewer answers at rank 1 than the old equal weight
-# (0.25 finds more in the top five but drops property questions at rank 1 from 5 to 1).
+# tests/RAG/paraphrase_bench.py seeds 1-7 with the name channel on: of 0.25, 0.4, 0.6
+# and 1.0, 0.6 is the lowest weight where no style finds fewer answers at rank 1 than
+# at 1.0, and it finds more in the top five (0.4 and 0.25 find more still, but drop
+# property questions at rank 1 to 0-2).
 DENSE_WEIGHT_HASH = 0.6
 DENSE_WEIGHT_MODEL = 1.0
 _QUESTION_WORDS = frozenset(
@@ -794,10 +795,12 @@ def _search(
         # The name says WHICH few chunks; it cannot say which of them answers. Its own
         # order is how strongly the name matched, so its first-place vote went to the
         # shortest chunk with the name. Order them by what the other channels already
-        # found, so that vote goes to the chunk the rest of the question points at.
+        # found, at equal weight: among a handful of chunks the vector channel's
+        # word-piece match is what tells the reworded attribute apart, whatever its
+        # weight across the whole space.
         others = fuse_channels(
             channels, k=60, top_n=len(named) + 10**4,
-            weights={"exact": EXACT_WEIGHT, "dense": dense_w},
+            weights={"exact": EXACT_WEIGHT},
         )
         seen_at = {h.doc_id: i for i, h in enumerate(others)}
         named.sort(key=lambda h: seen_at.get(h.doc_id, len(seen_at)))  # stable
@@ -935,8 +938,8 @@ def _search(
         "dense_weight": dense_w,
         "fusion_note": (
             "Built-in word-piece matcher in use: its vector ranking counts for 0.6 of the "
-            "word-index ranking (measured on the paraphrase test set, 175 to 203 of 256 found "
-            "in the top five, none fewer at rank 1)."
+            "word-index ranking (measured on the paraphrase test set: more questions found in "
+            "the top five and none fewer at rank 1 than at full weight)."
             if dense_w < 1.0 else
             "Embedding model in use: vector ranking counts as much as the word index."
         ),
