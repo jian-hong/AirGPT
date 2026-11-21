@@ -564,6 +564,243 @@ def _docx_text(path: Path) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
+# --------------------------------------------------------------------------------------
+# Tables inside Word, web pages and PDFs, read as tables (for the same maths a CSV gets)
+# --------------------------------------------------------------------------------------
+
+TABLE_DOC_SUFFIXES = (".docx", ".html", ".htm", ".pdf")
+
+
+def _cell_text(s: str) -> str:
+    return re.sub(r"\s+", " ", s or "").strip()
+
+
+def docx_tables(path: Path) -> list[dict]:
+    """Every table of a Word file, in the order the document shows them.
+
+    Each is {"index", "rows", "issues"}. Merged cells (a span across columns or down
+    rows) and a table inside a table are not given up on silently: they are listed in
+    "issues" so the caller can say the table was not read as a table, and why.
+    """
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    try:
+        with zipfile.ZipFile(str(path)) as z:
+            root = ET.fromstring(z.read("word/document.xml"))
+    except Exception:
+        return []
+
+    def text_of(node) -> str:
+        bits: list[str] = []
+
+        def collect(el) -> None:
+            for child in el:
+                tag = _ooxml_local(child.tag)
+                if tag == "t" and child.text:
+                    bits.append(child.text)
+                elif tag in ("tab", "br", "cr"):
+                    bits.append(" ")
+                elif tag in ("tbl", "Fallback"):
+                    continue
+                else:
+                    collect(child)
+                    if tag == "p":
+                        bits.append(" ")  # two paragraphs in one cell are two words, not one
+
+        collect(node)
+        return _cell_text("".join(bits))
+
+    def one(tbl, index: int) -> dict:
+        rows: list[list[str]] = []
+        issues: list[str] = []
+        for tr in (r for r in tbl if _ooxml_local(r.tag) == "tr"):
+            cells = []
+            for tc in (c for c in tr if _ooxml_local(c.tag) == "tc"):
+                for el in tc.iter():
+                    tag = _ooxml_local(el.tag)
+                    if tag == "gridSpan" and any(v not in ("1",) for v in el.attrib.values()):
+                        issues.append("it has merged cells")
+                    elif tag == "vMerge":
+                        issues.append("it has merged cells")
+                    elif tag == "tbl" and el is not tc:
+                        issues.append("it has a table inside a cell")
+                cells.append(text_of(tc))
+            if cells:
+                rows.append(cells)
+        return {"index": index, "rows": rows, "issues": list(dict.fromkeys(issues))}
+
+    found: list[dict] = []
+
+    def walk(node) -> None:
+        for el in node:
+            tag = _ooxml_local(el.tag)
+            if tag == "tbl":
+                found.append(one(el, len(found) + 1))
+            elif tag != "Fallback":
+                walk(el)
+
+    walk(root)
+    return found
+
+
+class _TableGrab(HTMLParser):
+    """Tables of an HTML page: rows of cell text, with merged cells and nesting noted."""
+
+    _SKIP = {"script", "style", "noscript", "template", "svg", "head"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[dict] = []
+        self._stack: list[dict] = []
+        self._cell: list[str] | None = None
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._SKIP:
+            self._skip += 1
+            return
+        if self._skip:
+            return
+        if tag == "table":
+            if self._stack:
+                self._stack[-1]["issues"].append("it has a table inside a cell")
+            self._stack.append({"rows": [], "issues": [], "row": None, "nested": bool(self._stack)})
+        elif not self._stack:
+            return
+        elif tag == "tr":
+            self._stack[-1]["row"] = []
+        elif tag in ("td", "th"):
+            a = dict(attrs)
+            for key in ("colspan", "rowspan"):
+                v = str(a.get(key) or "1").strip()
+                if v.isdigit() and int(v) > 1:
+                    self._stack[-1]["issues"].append("it has merged cells")
+            self._cell = []
+        elif tag == "br" and self._cell is not None:
+            self._cell.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in self._SKIP:
+            self._skip = max(0, self._skip - 1)
+            return
+        if self._skip or not self._stack:
+            return
+        top = self._stack[-1]
+        if tag in ("td", "th") and self._cell is not None:
+            if top["row"] is None:
+                top["row"] = []
+            top["row"].append(_cell_text("".join(self._cell)))
+            self._cell = None
+        elif tag == "tr" and top["row"] is not None:
+            if top["row"]:
+                top["rows"].append(top["row"])
+            top["row"] = None
+        elif tag == "table":
+            done = self._stack.pop()
+            if not done["nested"]:
+                self.tables.append({"rows": done["rows"], "issues": list(dict.fromkeys(done["issues"]))})
+
+    def handle_data(self, data):
+        if self._cell is not None and not self._skip:
+            self._cell.append(data)
+
+
+def html_tables(html: str) -> list[dict]:
+    """Every top-level table of an HTML page, numbered in page order."""
+    p = _TableGrab()
+    try:
+        p.feed(html or "")
+        p.close()
+    except Exception:
+        pass
+    return [{"index": i, **t} for i, t in enumerate(p.tables, 1)]
+
+
+def pdf_tables(path: Path) -> list[dict]:
+    """Tables in a PDF's text layer, only where the columns come out clean.
+
+    The page is read with its layout kept (pypdf), and a block of three or more
+    consecutive lines that each split into two or more cells at a gap of two spaces or
+    more is a candidate. It is read as a table only when every row has the same number
+    of cells and each column lines up (cells start, or end, at the same place down the
+    rows). Anything else is still returned, with an issue, so the caller can say a
+    table was seen and not read as one. Each result carries its page.
+    """
+    try:
+        try:
+            from pypdf import PdfReader
+        except Exception:
+            from PyPDF2 import PdfReader  # type: ignore[no-redef]
+        reader = PdfReader(str(path))
+        if reader.is_encrypted and not reader.decrypt(""):
+            return []
+        pages = []
+        for i in range(len(reader.pages)):
+            try:
+                pages.append(reader.pages[i].extract_text(extraction_mode="layout") or "")
+            except Exception:
+                try:
+                    pages.append(reader.pages[i].extract_text() or "")
+                except Exception:
+                    pages.append("")
+    except Exception:
+        return []
+
+    def split(line: str) -> list[tuple[int, int, str]]:
+        cells = []
+        for m in re.finditer(r"\S(?:.*?\S)?(?=\s{2,}|\s*$)", line):
+            cells.append((m.start(), m.end(), m.group(0)))
+        return cells
+
+    found: list[dict] = []
+    for pno, page in enumerate(pages, 1):
+        run: list[list[tuple[int, int, str]]] = []
+
+        def flush() -> None:
+            nonlocal run
+            if len(run) >= 3:
+                issues: list[str] = []
+                widths = {len(r) for r in run}
+                if len(widths) > 1:
+                    issues.append("its rows have different numbers of cells")
+                else:
+                    for j in range(next(iter(widths))):
+                        starts = [r[j][0] for r in run]
+                        ends = [r[j][1] for r in run]
+                        if max(starts) - min(starts) > 2 and max(ends) - min(ends) > 2:
+                            issues.append("its columns do not line up in the text")
+                            break
+                found.append({"index": len(found) + 1, "page": pno,
+                              "rows": [[c[2] for c in r] for r in run], "issues": issues})
+            run = []
+
+        for line in page.splitlines():
+            cells = split(line)
+            if len(cells) >= 2:
+                run.append(cells)
+            else:
+                flush()
+        flush()
+    return found
+
+
+def document_tables(path: Path) -> list[dict]:
+    """Tables of a .docx, .html/.htm or .pdf, each {"index", "rows", "issues"}; [] for any other file."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".docx":
+            return docx_tables(path)
+        if suffix in (".html", ".htm"):
+            return html_tables(_decode(path.read_bytes()))
+        if suffix == ".pdf":
+            return pdf_tables(path)
+    except Exception:
+        return []
+    return []
+
+
 def _pptx_show_order(z, names: list[str]) -> list[str]:
     """Slide files in the order the deck shows them.
 

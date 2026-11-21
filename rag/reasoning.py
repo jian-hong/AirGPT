@@ -21,6 +21,16 @@ def _step(n: int, title: str, detail: str) -> dict[str, Any]:
     return {"n": n, "title": title, "detail": detail}
 
 
+def _where(workbook: Any, sheet: Any) -> str:
+    """"the Sales sheet of book.xlsx", or "table 2 of memo.docx" for a table inside a document."""
+    try:
+        from rag.sheet_sql import where_phrase
+
+        return where_phrase(str(workbook), str(sheet))
+    except Exception:
+        return f"the {sheet} sheet of {workbook}"
+
+
 def _plural(n: int, one: str, many: str) -> str:
     return one if n == 1 else many
 
@@ -101,7 +111,7 @@ def chain_for_sql(query: str, prov: dict | None, *, ontology_summary: Any = "") 
     if workbook and sheet:
         n += 1
         steps.append(
-            _step(n, "Where I found it", f"the {sheet} sheet of {workbook}")
+            _step(n, "Where I found it", _where(workbook, sheet))
         )
     _onto = _summary_text(ontology_summary)
     if _onto:

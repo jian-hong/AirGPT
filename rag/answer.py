@@ -568,8 +568,9 @@ def _abstention_text(hits: list[dict], why: dict, query: str = "") -> str:
         r"\b(total|sum|average|mean|how many|count|number of|highest|lowest|maximum|minimum)\b", query or "", re.I
     ):
         head += (
-            "\n\nNote: I add up and count only from spreadsheet files (xlsx, csv, tsv) and JSON lists "
-            "of records. A table inside a Word, PDF or web page is searched as text, so I did not calculate it."
+            "\n\nNote: I add up and count from spreadsheet files (xlsx, csv, tsv), JSON lists of records, and "
+            "tables in Word, web and PDF files that read cleanly as tables (a header row, then rows of the same "
+            "width). Here no such table matched the question, so the passages were searched as text and nothing was calculated."
         )
     return head
 
@@ -1644,9 +1645,9 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
                 n = int(len(df))
                 sql = f'SELECT COUNT(*) FROM "{sheet}"'
                 sheets.append({"workbook": wb, "sheet": sheet, "value": n, "rows_matched": n, "rows_total": n, "sql": sql})
-                lines.append(f"{n:,} rows in the {sheet} sheet of {wb}")
+                lines.append(f"{n:,} rows in {sheet_sql.where_phrase(wb, sheet)}")
             if len(frames) == 1:
-                head = f"{sheets[0]['value']:,} rows, counted over the whole of the {sheets[0]['sheet']} sheet of {sheets[0]['workbook']}."
+                head = f"{sheets[0]['value']:,} rows, counted over the whole of {sheet_sql.where_phrase(sheets[0]['workbook'], sheets[0]['sheet'])}."
             else:
                 head = "Row counts, every row counted: " + "; ".join(lines) + "."
             return {
@@ -1668,7 +1669,7 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
         for (wb, sheet), df in frames:
             nums = [str(c) for c in df.columns if sheet_sql._numeric_ratio(df[c]) >= 0.8]  # noqa: SLF001
             parts.append(
-                f"{sheet} sheet of {wb}: " + (", ".join(nums) if nums else "no column of numbers")
+                f"{sheet_sql.where_phrase(wb, sheet).removeprefix('the ')}: " + (", ".join(nums) if nums else "no column of numbers")
             )
         (wb0, sh0), df0 = frames[0]
         first_num = ""
@@ -1697,6 +1698,50 @@ def _no_column_ask(query: str, by_sheet: dict, owner: dict | None = None) -> dic
         return None
 
 
+def _declined_table_ask(query: str, declined: list[tuple[str, dict]], owner: dict, *, named_only: bool = False) -> dict | None:
+    """Say, in plain words, that a table the question is about was not read as a table.
+
+    Fires only for an aggregate ask (total, average, how many...) that names a word from
+    the header row of a table in a Word, web or PDF file that could not be read as a
+    table (merged cells, rows of different widths, columns that do not line up). Without
+    it such a question fell through to retrieval, which handed over a slice of text. With named_only the
+    question must also name the file ("in memo.docx"), which is when it is asking for
+    that table and not for whichever table has the column.
+    """
+    if not declined:
+        return None
+    try:
+        from rag import sheet_sql
+
+        low = (query or "").lower()
+        if not any(re.search(pat, low) for pat, _fn in sheet_sql._AGGS):  # noqa: SLF001
+            return None
+        words = set(re.findall(r"[^\W\d_]{3,}", low))
+        for wb, d in declined:
+            head = {w for cell in d.get("header") or [] for w in re.findall(r"[^\W\d_]{3,}", str(cell).lower())}
+            if not (head & words):
+                continue
+            if named_only and str(wb).lower() not in low:
+                continue
+            kind = "PDF" if str(wb).lower().endswith(".pdf") else "Word file" if str(wb).lower().endswith(".docx") else "web page"
+            return {
+                "answer": (
+                    f"I found {d['label']} of {wb} but could not read it as a table ({d['reason']}), so I did not "
+                    f"calculate a figure from it. I will not add up numbers I cannot place under the right "
+                    f"column. The same data in a spreadsheet or CSV, or the {kind} table without merged cells, "
+                    "can be totalled exactly."
+                ),
+                "citations": [{"path": (owner.get(wb) or {}).get("path") or wb, "title": wb}],
+                "provenance": {
+                    "workbook": wb, "sheet": d["label"], "abstained": True,
+                    "abstain_reason": f"the table was not read as a table: {d['reason']}",
+                },
+            }
+    except Exception:
+        return None
+    return None
+
+
 def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = None) -> dict | None:
     """Pandas-over-xlsx answers for Top-N / KPI asks. Never emits confirm UI."""
     try:
@@ -1712,6 +1757,8 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
     by_sheet: dict[tuple[str, str], object] = {}
     sheet_owner: dict[str, dict] = {}
     unreadable: list[str] = []
+    # Tables found inside Word, web and PDF files that could not be read as tables.
+    declined_tables: list[tuple[str, dict]] = []
     from rag import reveal as _reveal
 
     for src in store.list_sources(int(space_id)):
@@ -1722,10 +1769,27 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
         # is byte-identical, so reading it gives the same numbers.
         resolved, _origin = _reveal.resolve_source_path(src)
         path = resolved or str(src.get("path") or "")
-        if not path.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".json", ".ndjson", ".jsonl")):
+        doc_table = path.lower().endswith((".docx", ".html", ".htm", ".pdf"))
+        if not doc_table and not path.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".json", ".ndjson", ".jsonl")):
             continue
         p = Path(path)
         if not p.is_file():
+            continue
+        if doc_table:
+            # The same maths a CSV gets, for the tables that read cleanly as tables; the
+            # others are kept so the answer can say a table was seen and not read.
+            from rag.xlsx_sql import load_document_tables
+
+            try:
+                tables, declined = load_document_tables(p)
+            except Exception:
+                continue
+            wb_name = str(src.get("title") or p.name)
+            for _k, _df in tables.items():
+                by_sheet[(wb_name, _k)] = _df
+            if tables:
+                sheet_owner[wb_name] = {"path": path, "title": wb_name}
+            declined_tables.extend((wb_name, d) for d in declined)
             continue
         try:
             sheets = load_table_file(p)
@@ -1771,6 +1835,18 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
         for k, df in sheets.items():
             frames[f"{p.name}:{k}"] = df
         cites.append({"path": path, "title": src.get("title") or p.name})
+    # A question that names a file ("in memo.docx", "from sales.csv") is about that file's
+    # tables; another file's table that happens to share a column name is not an answer.
+    if by_sheet:
+        low_q = (query or "").lower()
+        named_files = {wb for (wb, _s) in by_sheet if str(wb).lower() in low_q and "." in str(wb)}
+        if named_files:
+            by_sheet = {k: v for k, v in by_sheet.items() if k[0] in named_files}
+    # Naming the file of a table that could not be read as one: say so, do not total
+    # another file's table that happens to share a column name.
+    named = _declined_table_ask(query, declined_tables, sheet_owner, named_only=True)
+    if named:
+        return named
     # The KPI catalogue in answer_sqlish is a fixed set of shapes. When the ask is a
     # filter-then-aggregate it does not cover, resolve it against the schema instead
     # of stopping at whatever Summary chunk retrieval liked.
@@ -1821,6 +1897,9 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
                     **({"followup_of": carried} if carried else {}),
                 },
             }
+        declined_ask = _declined_table_ask(query, declined_tables, sheet_owner)
+        if declined_ask:
+            return declined_ask
         # An aggregate ask about a table's own columns that no plan could compute:
         # say so, rather than let retrieval hand the model a slice of rows to total.
         try:
@@ -1846,7 +1925,7 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
             return ask
 
     if not frames:
-        return None
+        return _declined_table_ask(query, declined_tables, sheet_owner)
     # Flatten to bare sheet names for answer_sqlish (last workbook wins on clash)
     flat = {}
     for key, df in frames.items():

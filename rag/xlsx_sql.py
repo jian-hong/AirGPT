@@ -311,6 +311,77 @@ def _load_json_records(path: Path) -> dict[str, pd.DataFrame]:
     return {path.stem: df}
 
 
+def _is_number_cell(text: str) -> bool:
+    t = re.sub(r"[\s,$€£¥%()+\-]", "", str(text or ""))
+    t = t.replace(".", "", 1)
+    return bool(t) and t.isdigit()
+
+
+def table_frame(rows: list[list[str]]) -> tuple[pd.DataFrame | None, str]:
+    """A table from a Word file, web page or PDF as a frame, or why it is not one.
+
+    Confidence first: a header row, then body rows of the same width. A table with
+    rows of different widths, one header name used twice, an empty header cell, or a
+    first row that looks like data (a number sitting over a column of numbers, as when
+    a table continues on the next page without its header) is declined, because a
+    wrong frame would give wrong sums. Cells stay text, the way a CSV is read.
+    """
+    rows = [list(r) for r in rows if any(str(c).strip() for c in r)]
+    if len(rows) < 3:
+        return None, "it has fewer than two rows under its header"
+    width = len(rows[0])
+    if width < 2:
+        return None, "it has one column"
+    if any(len(r) != width for r in rows):
+        return None, "its rows have different numbers of cells"
+    head = [str(c).strip() for c in rows[0]]
+    if any(not h for h in head):
+        return None, "a column has no name"
+    if len({h.casefold() for h in head}) != len(head):
+        return None, "two columns have the same name"
+    body = rows[1:]
+    for j, h in enumerate(head):
+        col = [str(r[j]).strip() for r in body if str(r[j]).strip()]
+        if col and sum(_is_number_cell(c) for c in col) / len(col) >= 0.8 and _is_number_cell(h):
+            return None, "its first row looks like data, not column names"
+    df = pd.DataFrame([[str(c).strip() for c in r] for r in body], columns=head, dtype=str)
+    df.attrs["header_excel_row"] = 0
+    df.attrs["first_data_excel_row"] = 1
+    return df, ""
+
+
+def load_document_tables(path: Path) -> tuple[dict[str, pd.DataFrame], list[dict]]:
+    """The tables of a .docx, .html or .pdf that read as tables, and those that did not.
+
+    Frames are named "table N", N counting every table of the file in the order a reader
+    sees them, so "table 2 of memo.docx" is the second table of the memo whether or not
+    the first could be read. Each declined table is {"label", "reason", "header"}: the
+    caller names it in plain words instead of searching the text and calling it a total.
+    """
+    from rag import ingest
+
+    path = Path(path)
+    frames: dict[str, pd.DataFrame] = {}
+    declined: list[dict] = []
+    for t in ingest.document_tables(path):
+        label = f"table {t['index']}"
+        rows = t.get("rows") or []
+        header = [str(c) for c in (rows[0] if rows else [])]
+        if t.get("issues"):
+            declined.append({"label": label, "reason": "; ".join(t["issues"]), "header": header})
+            continue
+        df, why = table_frame(rows)
+        if df is None:
+            # A one-row or two-column strip of navigation or layout is not a table
+            # anyone asked about; only report one that had a body of rows.
+            if len(rows) >= 3:
+                declined.append({"label": label, "reason": why, "header": header})
+            continue
+        df.attrs["sheet_name"] = label
+        frames[label] = df
+    return frames, declined
+
+
 def load_sheets(path: Path) -> dict[str, pd.DataFrame]:
     wb = openpyxl.load_workbook(path, data_only=True)
     out = {}

@@ -20,6 +20,8 @@ from typing import Any
 
 # Files that hold one table, named after the file (no sheet tabs).
 ONE_TABLE_SUFFIXES = (".csv", ".tsv", ".json", ".ndjson", ".jsonl")
+# Files whose tables sit among prose: a table is named by its place, "table 2 of memo.docx".
+TABLE_IN_DOCUMENT_SUFFIXES = (".docx", ".html", ".htm", ".pdf")
 
 # Aggregate wording -> SQL function. Order matters: longer phrases first so
 # "how many" is not shadowed by "many".
@@ -1602,8 +1604,8 @@ def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | Non
         what = "a word in your question matches more than one column" if plan.ambiguous_kind == "value" else "That could mean more than one column"
         return {
             "answer": (
-                f"{what[0].upper() + what[1:]} on the {plan.sheet} sheet of "
-                f"{plan.workbook}: {opts}. Name which one and I will run it."
+                f"{what[0].upper() + what[1:]} on {where_phrase(plan.workbook, plan.sheet)}: {opts}. "
+                "Name which one and I will run it."
             ),
             "sql": None,
             "sheet": plan.sheet,
@@ -1655,7 +1657,7 @@ def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | Non
         ]
         answer = (
             f"{label.capitalize()} over {result['rows_matched']:,} rows"
-            f"{span} on the {plan.sheet} sheet of {plan.workbook} "
+            f"{span} on {where_phrase(plan.workbook, plan.sheet)} "
             f"— no column was named, so every numeric column is reported:\n"
             + "\n".join(lines)
             + f"\n\nSQL: {result['sql']}"
@@ -1720,12 +1722,20 @@ def _where_words(plan: Plan) -> str:
     return " and ".join(parts)
 
 
+def where_phrase(workbook: str, sheet: str) -> str:
+    """"the Sales sheet of book.xlsx", or "table 2 of memo.docx" for a table inside a document."""
+    wb = str(workbook or "")
+    if wb.lower().endswith(TABLE_IN_DOCUMENT_SUFFIXES):
+        return f"{sheet} of {wb}"
+    return f"the {sheet} sheet of {wb}"
+
+
 def _src(workbook: str, sheet: str) -> str:
     """How to name where a figure came from. A csv has one table: the file is it."""
     wb = str(workbook or "")
     if wb.lower().endswith(ONE_TABLE_SUFFIXES):
         return f"the file {wb}"
-    return f"the {sheet} sheet of {wb}"
+    return where_phrase(wb, sheet)
 
 
 def _skipped_note(result: dict) -> str:
@@ -2136,7 +2146,16 @@ def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict |
             cols.update(str(c) for c in df.columns)
     if not _resolve_mentions(q, cols):
         return None
-    (wb, sheet), df = max(frames.items(), key=lambda kv: len(kv[1]) if kv[1] is not None else 0)
+    # The table the question is about: the one whose columns it names most. Only
+    # among equals does the biggest one stand in. (It used to be the biggest table in
+    # the space, so a question about a Word table was answered with a spreadsheet's name.)
+    def _named(kv) -> tuple[int, int]:
+        d = kv[1]
+        if d is None or d.empty:
+            return (0, 0)
+        return (len({c for _a, _b, c in _resolve_mentions(q, {str(c) for c in d.columns})}), len(d))
+
+    (wb, sheet), df = max(frames.items(), key=_named)
     names = ", ".join(str(c) for c in list(df.columns)[:12])
     return {
         "answer": (
