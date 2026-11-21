@@ -75,3 +75,18 @@ def test_xlsx_banner_row_is_not_the_first_line_of_the_sheet():
     body = text.split("## Sheet: Stock\n", 1)[1]
     assert body.splitlines()[0] == "id | name | units"
     assert "Monthly stock report" in text.split("## Sheet: Stock")[0]  # kept, in the index
+
+
+def test_how_many_of_a_numeric_column_is_its_figure_not_a_row_count(space):
+    sid, root, ingest_ = space
+    p = root / "visits.csv"
+    rows = [("Site0", 47), ("Site1", 268), ("Site2", 713), ("Site7", 862), ("Site8", 12)]
+    p.write_text("site,visits\n" + "\n".join(f"{a},{b}" for a, b in rows) + "\n", encoding="utf-8")
+    ingest_(p)
+    df = pd.read_csv(p)
+    # "how many visits did Site7 have": the visits figure of that row (it used to say 1)
+    got = _ask(sid, "How many visits did Site7 have?")
+    assert re.match(rf"\s*{df[df.site == 'Site7'].visits.sum()}\b", got), got
+    # rows and records are still counted as rows
+    got = _ask(sid, "How many rows have visits above 100?")
+    assert re.match(rf"\s*{int((df.visits > 100).sum())}\b", got), got

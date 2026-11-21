@@ -1173,6 +1173,7 @@ def plan_query(
 
         metric: str | None = None
         metric_agg: str | None = None
+        count_read_as_total = ""
         filters: list[Filter] = []
         for i, (start, end, name) in enumerate(kept):
             prev_end = kept[i - 1][1] if i else 0
@@ -1201,6 +1202,15 @@ def plan_query(
                     continue  # "how many rows in Q1 by region": Region is the group, not a column to count
                 if fn and (fn == "COUNT" or _numeric_ratio(df[name]) >= 0.6):
                     metric, metric_agg = name, fn
+                    # "How many visits did Site7 have?" asks for the figure in the visits
+                    # column, not for how many rows hold one (which is 1). A numeric column
+                    # right after "how many" is read as its total; "rows" and "records"
+                    # still count rows.
+                    if (
+                        fn == "COUNT" and not row_count and _numeric_ratio(df[name]) >= 0.8
+                        and re.search(r"\bhow\s+many\s*$", q[:start].lower())
+                    ):
+                        metric_agg, count_read_as_total = "SUM", name
 
         # Words in the question that are values in a text column ("North", "Widget").
         text_filters, ambiguous_values = _find_text_filters(q, df, value_spans, set())
@@ -1266,6 +1276,8 @@ def plan_query(
         # "revenue by region" names the number without an aggregate word. Taking the
         # numeric column the question names is the reading; the sum is announced.
         assumed: list[str] = []
+        if count_read_as_total and metric == count_read_as_total and metric_agg == "SUM":
+            assumed.append(f"read \u201chow many {metric}\u201d as the total of the {metric} column")
         if metric is None and group_by:
             _num_cols = [
                 n for _s, _e, n in kept

@@ -1189,6 +1189,15 @@ def _word_held(t: str, words: frozenset) -> bool:
     if t in words:
         return True
     t = _bare(t)
+    hangul = all("\uac00" <= ch <= "\ud7af" for ch in t)
+    if hangul and len(t) >= 3:
+        # A Hangul word is a stem plus a particle ("상품의", "상품은"): the same stem is the
+        # same word. Only a real particle counts, so "미호승" is not held by "미호도".
+        def core(x: str) -> str:
+            return x[:-1] if len(x) >= 3 and x[-1] in "은는이가을를의에도와과로" else x
+
+        if any(core(w) == core(t) for w in words if len(w) >= 2 and all("\uac00" <= c <= "\ud7af" for c in w)):
+            return True
     if len(t) < 4:
         return False
 
@@ -1206,9 +1215,11 @@ def _word_held(t: str, words: frozenset) -> bool:
 def _token_in_blob(t: str, blob: str) -> bool:
     """Is this coverage token evidenced in the blob?
 
-    Latin words: as a substring. Chinese, Japanese and Thai pieces (overlapping
-    2-3 character cuts): as one unbroken string. Hangul, Arabic and Cyrillic words: the
-    word itself or the same word with another ending (_word_held).
+    Latin words: as a substring. Hangul, Arabic and Cyrillic words: the word itself or
+    the same word with another ending (_word_held). Chinese, Japanese and Thai pieces
+    (overlapping 2-3 character cuts) are matched loosely, for the disclosure of how
+    much of an ask a source covers; whether to REFUSE is decided on whole strings
+    (_script_unfounded), not on pieces.
 
     The old rule counted a non-Latin piece as present when its characters were found
     ANYWHERE in the blob, so a name that was not in the space still looked covered
@@ -1225,7 +1236,12 @@ def _token_in_blob(t: str, blob: str) -> bool:
     if t.isascii():
         return False
     if retrieve._is_unseg(t):
-        return False
+        # Chinese, Japanese, Thai: pieces of a reworded phrase ("损坏商品" for "损坏的商品")
+        # are matched loosely here, because this measure only discloses how much of the
+        # ask a source covers. Refusing is decided on whole strings (_script_unfounded).
+        if len(t) == 2:
+            return t[0] in blob and t[1] in blob
+        return sum(1 for ch in t if ch in blob) >= (len(t) + 1) // 2
     return _word_held(t, _blob_words(blob))
 
 
