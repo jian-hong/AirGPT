@@ -140,7 +140,10 @@ def test_overlapping_uploads_of_one_file_make_one_source(env):
     assert not errs, errs
     assert len(store.list_sources(sid)) == 1
     c = sqlite3.connect(store.DB_PATH)
-    per = c.execute("select source_id,count(*) from chunks group by source_id").fetchall()
+    try:
+        per = c.execute("select source_id,count(*) from chunks group by source_id").fetchall()
+    finally:
+        c.close()  # an open handle keeps the file locked on Windows
     assert len(per) == 1, per
     cites = _ask(sid, "Quixotic fact number 3").get("citations", [])
     assert len({c_.get("title") or c_.get("path") for c_ in cites}) == 1
@@ -164,3 +167,43 @@ def test_rebuild_of_a_row_whose_original_is_gone_replaces_it(env):
     srcs = store.list_sources(sid)
     assert len(srcs) == 1, [s["title"] for s in srcs]
     assert "Quixotic" in _ask(sid, "Quixotic widgets")["answer"]
+
+
+def test_rebuild_replaces_the_row_when_the_data_folder_path_is_not_the_resolved_one(tmp_path):
+    """The rebuild matched the stored Docs path to the re-read path as strings. One side is
+    resolved and the other is not, so on Windows (a RUNNER~1 short name) the old row stayed
+    beside the new one. Behind a folder link Linux shows the same thing."""
+    os.environ["AIRGPT_RAG_EMBED"] = "hash"
+    import rag.store as store
+    from rag import embed, ingest
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    try:
+        os.symlink(real, link, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        link = real  # no link rights (plain Windows): its temp folder is the short-name case
+    embed.reset_embedder_cache()
+    saved = (store.RAG_DIR, store.DB_PATH, store.BLOB_DIR)
+    store.RAG_DIR = link / "rag"
+    store.DB_PATH = store.RAG_DIR / "rag.db"
+    store.BLOB_DIR = store.RAG_DIR
+    store.init()
+    try:
+        sid = _space()
+        old_text = "Alpha line one\rAlpha line two about Quixotic widgets\rend"
+        (link / "cr.txt").write_bytes((old_text + "\r").encode())
+        ingest.ingest_paths(sid, [link / "cr.txt"])
+        cr = store.list_sources(sid)[0]
+        with store._conn() as conn:
+            conn.execute("update sources set content_hash=? where id=?",
+                         (hashlib.sha256(old_text.encode()).hexdigest(), cr["id"]))
+        Path(cr["meta"]["blob"]).write_text(old_text, encoding="utf-8", newline="\n")
+        (link / "cr.txt").unlink()
+        ingest.ingest_paths(sid, ingest.rebuild_source_paths(store.list_sources(sid)), force=True)
+        srcs = store.list_sources(sid)
+        assert len(srcs) == 1, [s["title"] for s in srcs]
+    finally:
+        store.RAG_DIR, store.DB_PATH, store.BLOB_DIR = saved
+        embed.reset_embedder_cache()

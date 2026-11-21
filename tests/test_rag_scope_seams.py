@@ -103,17 +103,29 @@ def test_sheet_maths_uses_only_the_chosen_files():
         assert "16150" in out["answer"]
 
 
-def test_document_table_maths_follows_the_scope():
+def _docx_with_table(rows: list[tuple[str, str]]) -> bytes:
+    """A minimal Word file built with the standard library: python-docx is optional and
+    the Windows CI runner does not have it (the app reads Word without it)."""
     import io
-    import docx
+    import zipfile
+    from xml.sax.saxutils import escape
 
-    d = docx.Document()
-    t = d.add_table(rows=3, cols=2)
-    for r, (a, b) in enumerate([("Region", "Amount"), ("North", "1,200"), ("North", "450")]):
-        t.cell(r, 0).text, t.cell(r, 1).text = a, b
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    cell = lambda t: f'<w:tc><w:p><w:r><w:t xml:space="preserve">{escape(t)}</w:t></w:r></w:p></w:tc>'
+    tbl = "<w:tbl>" + "".join("<w:tr>" + "".join(cell(c) for c in r) + "</w:tr>" for r in rows) + "</w:tbl>"
     buf = io.BytesIO()
-    d.save(buf)
-    files = {"report.docx": buf.getvalue(), "sales.csv": ALPHA}
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml",
+                   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="xml" ContentType="application/xml"/></Types>')
+        z.writestr("word/document.xml",
+                   f'<w:document xmlns:w="{ns}"><w:body><w:p><w:r><w:t>Report</w:t></w:r></w:p>{tbl}</w:body></w:document>')
+    return buf.getvalue()
+
+
+def test_document_table_maths_follows_the_scope():
+    files = {"report.docx": _docx_with_table([("Region", "Amount"), ("North", "1,200"), ("North", "450")]),
+             "sales.csv": ALPHA}
     q = "What is the total Amount for North?"
     with space(files) as sid:
         out = answer.answer(sid, q, depth="high", use_llm=False, source_ids=_source_ids(sid, "sales"))

@@ -4,6 +4,7 @@ from __future__ import annotations
 import codecs
 import hashlib
 import mimetypes
+import os
 import re
 import shutil
 import threading
@@ -1581,7 +1582,7 @@ def _drop_replaced_sources(space_id: int, original_path: str, digest: str) -> No
             # A rebuild reads the Docs copy of a file whose original is gone. That copy
             # belongs to the row it was made for; read differently now (for instance
             # after a newline fix), it replaces that row instead of sitting beside it.
-            if str(meta.get("docs_path") or "") == original_path:
+            if _same_path(str(meta.get("docs_path") or ""), original_path):
                 store.delete_source(int(old["id"]))
             continue
         if len(origins) == 1:
@@ -1593,6 +1594,22 @@ def _drop_replaced_sources(space_id: int, original_path: str, digest: str) -> No
         origins.remove(original_path)
         meta = {**meta, "original_paths": origins, "original_path": origins[0]}
         store.update_source_status(int(old["id"]), str(old.get("status") or "ready"), meta=meta)
+
+
+def _same_path(a: str, b: str) -> bool:
+    """Whether two stored path strings name one file. `original_path` is resolved and a
+    stored `docs_path` is not, so as strings they differ when the data folder sits behind
+    a link or, on Windows, a short name (RUNNER~1) or another letter case."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    try:
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+        return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
+    except OSError:
+        return os.path.normcase(a) == os.path.normcase(b)
 
 
 def _origins(meta: dict) -> list[str]:
