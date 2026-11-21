@@ -323,6 +323,6 @@
   window.PromptLens={open:open,openLatest:openLatest,close:close,refreshMeter:function(){return refreshMeter(true)}};
   if(window.AirUI)window.AirUI.addMsgAction(function(m,isAi){
     if(!isAi||m.kind!=='text')return '';
-    return '<button type="button" class="msg-lens" title="See what was sent to the model for this reply" onclick="event.stopPropagation();PromptLens.open('+Number(m.id)+')">Prompt</button>';
+    return '<button type="button" class="msg-lens" aria-label="Prompt" title="See what was sent to the model for this reply" onclick="event.stopPropagation();PromptLens.open('+Number(m.id)+')">Prompt</button>';
   });
 })();

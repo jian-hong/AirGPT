@@ -89,7 +89,9 @@ for (const [w, h] of [[390, 844], [820, 1180]]) {
   });
   test(`touch ${w}px: the buttons keep a compact look (under 44 high); only the tap area is 44`, async () => {
     const r = await tapAreas({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
-    const heavy = COMPACT.filter((s) => r[s] && !r[s].gone && r[s].h >= 44);
+    // Round 3b: on a phone the message actions are icon buttons that are themselves 44px squares (one row, like the other chat apps).
+    const iconRow = w <= 760 ? [".msg-copy", ".msg-reply", ".msg-lens", ".msg-fork"] : [];
+    const heavy = COMPACT.filter((s) => !iconRow.includes(s) && r[s] && !r[s].gone && r[s].h >= 44);
     assert.deepEqual(heavy, []);
   });
 }

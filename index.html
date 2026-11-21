@@ -14459,8 +14459,8 @@ function renderMsg(m){
     : '';
   return`<div class="msg ${me?'me':''} ${isAi?'ai-msg':''}" id="msg-${m.id}" data-ai="${isAi?'1':'0'}" data-sig="${msgSig(m)}"><div class="av">${isAi?'N':(m.device_name||'?')[0]}</div><div class="bub">
     ${author}<div class="meta"><span>${esc(who)} · ${esc(when)}</span>
-    <button type="button" class="msg-copy" onclick="event.stopPropagation();copyMessage(${m.id})">Copy</button>
-    <button type="button" class="msg-reply" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${window.AirUI?AirUI.msgActionsHtml(m,isAi):''}</div>
+    <button type="button" class="msg-copy" aria-label="Copy" title="Copy this message" onclick="event.stopPropagation();copyMessage(${m.id})">Copy</button>
+    <button type="button" class="msg-reply" aria-label="Reply" title="Reply to this message" onclick="event.stopPropagation();replyToMessage(${m.id})">Reply</button>${window.AirUI?AirUI.msgActionsHtml(m,isAi):''}</div>
     <div class="body">${inner}</div></div></div>`;
 }
 

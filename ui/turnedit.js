@@ -17,11 +17,11 @@
     if(isAi){
       var out=m.ai_status==='stopped'?'<span class="msg-stopped" title="You stopped this reply before it finished">Stopped</span>':'';
       if(window.AirUI.shareAcl()==='view')return out;
-      return out+'<button type="button" class="msg-regen" title="Ask the same question again and replace this reply" onclick="event.stopPropagation();regenerateLast()">Regenerate</button>';
+      return out+'<button type="button" class="msg-regen" aria-label="Regenerate" title="Ask the same question again and replace this reply" onclick="event.stopPropagation();regenerateLast()">Regenerate</button>';
     }
     if(m.source!=='ai-chat'||window.AirUI.shareAcl()==='view')return '';
-    return '<button type="button" class="msg-edit" title="Put this message back in the box to change it" onclick="event.stopPropagation();editLastUser()">Edit</button>'
-      +'<button type="button" class="msg-retry" title="Ask this question again" onclick="event.stopPropagation();regenerateLast()">Try again</button>';
+    return '<button type="button" class="msg-edit" aria-label="Edit" title="Put this message back in the box to change it" onclick="event.stopPropagation();editLastUser()">Edit</button>'
+      +'<button type="button" class="msg-retry" aria-label="Try again" title="Ask this question again" onclick="event.stopPropagation();regenerateLast()">Try again</button>';
   });
 
   /* Mark the last turn after every draw of the chat. Nothing is marked while a reply is streaming. */

@@ -353,11 +353,12 @@ async function showOpenIDEPage(){
         <span class="ows-stat" id="openideOnWsStat"></span>
       </div>
       <div class="openide-work-tabs">
-        <button type="button" id="openideWorkChanges" onclick="openideWorkTab('changes')">Changes</button>
-        <button type="button" class="on" id="openideWorkBrowser" onclick="openideWorkTab('browser')">Browser</button>
-        <button type="button" id="openideWorkTerminal" onclick="openideWorkTab('terminal')">Terminal</button>
-        <button type="button" id="openideWorkEditor" onclick="openideWorkTab('editor')">Files</button>
+        <button type="button" id="openideWorkChanges" onclick="openideWorkTab('changes');openideWorkOpen(true)">Changes</button>
+        <button type="button" class="on" id="openideWorkBrowser" onclick="openideWorkTab('browser');openideWorkOpen(true)">Browser</button>
+        <button type="button" id="openideWorkTerminal" onclick="openideWorkTab('terminal');openideWorkOpen(true)">Terminal</button>
+        <button type="button" id="openideWorkEditor" onclick="openideWorkTab('editor');openideWorkOpen(true)">Files</button>
         <span class="oide-work-spacer"></span>
+        <button type="button" id="openideWorkToggle" class="oide-work-toggle" aria-expanded="false" aria-controls="openidePreviewPane" title="Show the Browser and Terminal panel" onclick="openideWorkOpen()">Show ▴</button>
       </div>
       <div class="openide-preview on" id="openidePreviewPane">
         <div class="openide-browser-chrome">
@@ -488,6 +489,14 @@ function setOpenIDEView(which){
   syncOpenIDERailToggles();
   if(view==='editor')openideWorkTab('editor');
   else openideWorkTab('browser');
+}
+/* Short phones start with the work panel folded to its tab strip so the chat has room; this opens it or shuts it. */
+function openideWorkOpen(force){
+  const shell=document.querySelector('.openide-shell');if(!shell)return;
+  const on=force===true?true:!shell.classList.contains('work-open');
+  shell.classList.toggle('work-open',on);
+  const b=$('openideWorkToggle');
+  if(b){b.setAttribute('aria-expanded',on?'true':'false');b.textContent=on?'Hide ▾':'Show ▴';b.title=on?'Hide the Browser and Terminal panel':'Show the Browser and Terminal panel'}
 }
 function openideWorkTab(which){
   const tab=which==='changes'?'changes':(which==='terminal'?'terminal':(which==='editor'?'editor':'browser'));

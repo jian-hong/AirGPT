@@ -34,10 +34,10 @@ test("the + button is round like the mic button on a phone (light theme showed a
   await ctx.close();
 });
 
-test("a chat with one reply shows no reply rail on a phone (it sat over the text); several replies keep it", async () => {
+test("the reply rail is hidden on a phone, one reply or many (round 3b: it still sat over code and text at 320px with two or more)", async () => {
   const [p, ctx] = await page(`<div class="msg-jump-bar" id="one" data-n="one"><div class="msg-jump-track"></div></div><div class="msg-jump-bar" id="many" data-n="many"><div class="msg-jump-track"></div></div>`, PHONE);
   const r = await p.evaluate(() => [getComputedStyle(one).display, getComputedStyle(many).display]);
-  assert.deepEqual(r, ["none", "flex"]);
+  assert.deepEqual(r, ["none", "none"]);
   assert.match(html, /bar\.dataset\.n=n>1\?'many':'one'/, "the page must set data-n on the rail");
   await ctx.close();
 });

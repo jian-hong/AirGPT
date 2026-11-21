@@ -79,7 +79,7 @@
   if(window.AirUI)window.AirUI.addMsgAction(function(m,isAi){
     if(!isAi||m.kind!=='text')return '';
     if(window.AirUI.shareAcl())return '';  // a shared chat cannot be copied into the host's chats
-    return '<button type="button" class="msg-fork" title="Start a new chat that begins with this conversation up to here" onclick="event.stopPropagation();ChatTools.fork('+Number(m.id)+')">Fork</button>';
+    return '<button type="button" class="msg-fork" aria-label="Fork" title="Start a new chat that begins with this conversation up to here" onclick="event.stopPropagation();ChatTools.fork('+Number(m.id)+')">Fork</button>';
   });
 
   /* ---- header: Export button + tiny menu ---- */
