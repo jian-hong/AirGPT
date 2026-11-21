@@ -696,7 +696,7 @@ def _whole_word_re(term: str):
     return re.compile(r"(?<!\w)" + r"\W+".join(re.escape(x) for x in parts) + r"(?!\w)", re.I) if parts else None
 
 
-def _term_chunks(conn, space_id: int, term: str, limit: int) -> list:
+def _term_chunks(conn, space_id: int, term: str, limit: int, scope: set[int] | None = None) -> list:
     parts = re.findall(r"[^\W_]+", term.lower())
     if not parts:
         return []
@@ -714,7 +714,8 @@ def _term_chunks(conn, space_id: int, term: str, limit: int) -> list:
     except Exception:
         return []
     rx = _whole_word_re(term)
-    return [r for r in rows if rx and rx.search(str(r["text"] or ""))]
+    return [r for r in rows if rx and rx.search(str(r["text"] or ""))
+            and (not scope or int(r["source_id"] or 0) in scope)]
 
 
 def _bridge_candidates(row, anchor: str, asked: set[str], limit: int = 2) -> list[tuple[str, set[str]]]:
@@ -756,7 +757,7 @@ def _bridge_candidates(row, anchor: str, asked: set[str], limit: int = 2) -> lis
 
 
 def bridge_hops(space_id: int, query: str, fused_texts: list[str], *, max_hops: int,
-                started: float, top_k: int = 30) -> tuple[list[RankedHit], list[str]]:
+                started: float, top_k: int = 30, scope: set[int] | None = None) -> tuple[list[RankedHit], list[str]]:
     """-> (hits found by the extra look(s), what was done, in plain words)."""
     import time
 
@@ -781,7 +782,7 @@ def bridge_hops(space_id: int, query: str, fused_texts: list[str], *, max_hops: 
             for a in anchors:
                 if time.monotonic() - started > BRIDGE_BUDGET_S:
                     break
-                rows = _term_chunks(conn, space_id, a, EXACT_MAX_DF + 1)
+                rows = _term_chunks(conn, space_id, a, EXACT_MAX_DF + 1, scope)
                 if not rows or len(rows) > EXACT_MAX_DF:
                     continue
                 # A name that is the subject of the question ("for the Halvorsen account")
@@ -795,7 +796,7 @@ def bridge_hops(space_id: int, query: str, fused_texts: list[str], *, max_hops: 
                 own = {int(r["id"]) for r in rows}
                 for r in rows:
                     for b, said in _bridge_candidates(r, a, qwords | used):
-                        found = _term_chunks(conn, space_id, b, BRIDGE_MAX_DF + 1)
+                        found = _term_chunks(conn, space_id, b, BRIDGE_MAX_DF + 1, scope)
                         if not found or len(found) > BRIDGE_MAX_DF or all(int(f["id"]) in own for f in found):
                             continue
                         nxt.append((b, a, Path_name(str(r["path"] or "")), frozenset(said), frozenset(own)))
@@ -810,7 +811,8 @@ def bridge_hops(space_id: int, query: str, fused_texts: list[str], *, max_hops: 
                 rx = _whole_word_re(b)
                 # The passage that named the bridge is already in the first pass.
                 pool = [h for h in sparse_search(space_id, q2, k=top_k)
-                        if rx and rx.search(str(h.payload.get("text") or "")) and int(h.doc_id) not in own]
+                        if rx and rx.search(str(h.payload.get("text") or "")) and int(h.doc_id) not in own
+                        and (not scope or int(h.payload.get("source_id") or 0) in scope)]
                 if not pool:
                     continue
                 got_any = True
@@ -1011,12 +1013,14 @@ def _search(
     # Second look, only when the first pass held no passage with all of the question's
     # words: none at basic, one hop at high, two at max.
     hop_notes: list[str] = []
+    scope = {int(s) for s in (source_ids or []) if str(s).strip()} or None
     max_hops = {"basic": 0, "high": 1, "max": 2}[base]
     if max_hops:
         bridged, hop_notes = bridge_hops(
             space_id, query,
-            [str(f.payload.get("text") or "") for f in fused if not f.doc_id.startswith("file:")],
-            max_hops=max_hops, started=started,
+            [str(f.payload.get("text") or "") for f in fused if not f.doc_id.startswith("file:")
+             and (not scope or int(f.payload.get("source_id") or 0) in scope)],
+            max_hops=max_hops, started=started, scope=scope,
         )
         if bridged:
             channels["bridge"] = bridged

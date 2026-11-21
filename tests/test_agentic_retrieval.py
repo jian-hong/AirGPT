@@ -217,3 +217,20 @@ def test_the_hash_weight_is_not_worse_than_full_weight_and_gains_at_rank_one(dep
         assert low5 >= eq5 and low1 >= eq1, (seed, depth, (low5, low1), (eq5, eq1))
         gain += (low5 - eq5) + (low1 - eq1)
     assert gain > 0, (depth, gain)
+
+
+def test_the_second_look_stays_inside_the_files_the_user_chose():
+    """A search scoped to one file must not read the other files, or name them in the trace."""
+    other = "# Notes\n\nThe Halvorsen account note: payload ZZ-9999 stays here. Zerbruwex lives in Tromso vault.\n"
+    q = "What is the retention period for the account whose headquarters city is Tromso?"
+    with space({"register.md": _register(), "other.md": other}) as sid:
+        with store._conn() as conn:
+            rows = conn.execute("SELECT id, path FROM sources WHERE space_id=?", (sid,)).fetchall()
+        only_other = [int(r["id"]) for r in rows if "other" in str(r["path"])]
+        only_reg = [int(r["id"]) for r in rows if "register" in str(r["path"])]
+        out = retrieve.search(sid, q, depth="high", top_k=5, debug=True, source_ids=only_other)
+        assert out["debug"]["extra_search"] == []
+        assert all("ZQ-44" not in h["text"] for h in out["hits"])
+        out = retrieve.search(sid, q, depth="high", top_k=5, debug=True, source_ids=only_reg)
+        assert out["debug"]["extra_search"] and all("other.md" not in n for n in out["debug"]["extra_search"])
+        assert "ZQ-4400" in out["hits"][0]["text"]
