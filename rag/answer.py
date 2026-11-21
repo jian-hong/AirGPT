@@ -224,7 +224,7 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
 
     def _present(term: str) -> bool:
         toks = sira.tokenize(_fold(term))
-        return term.lower() in blob or (bool(toks) and all(t in blob_tokens for t in toks))
+        return term.lower() in blob or (bool(toks) and all(t in blob_tokens or _cyr_name_held(t, blob_tokens) for t in toks))
 
     terms = retrieve.identifier_terms(query)
     missing = [t for t in terms if not _present(t)]
@@ -267,7 +267,7 @@ def abstention(query: str, hits: list[dict]) -> dict | None:
         # answerable question flipped it from answered to refused.
         if t in name_toks and not t.isascii():
             # A name is not reworded by an ending: "Савич" is not held by "Савин".
-            return t in _blob_words(b)
+            return t in _blob_words(b) or _cyr_name_held(t, _blob_words(b))
         return _token_in_blob(t, b) or (t.isascii() and len(t) >= 6 and t[:5] in b)
 
     # A word most passages hold ("account" in a register of accounts) says little about
@@ -327,6 +327,8 @@ def _unseen_script_terms(query: str, blob: str) -> list[str]:
     for t in toks:
         if retrieve._is_unseg(t):
             continue
+        if "\uac00" <= t[0] <= "\ud7af" and len(t) <= 7 and t.startswith(_KO_ASK):
+            continue  # a question word ("어디입니까"), not something the space should hold
         stem = t[:-1] if len(t) >= 3 else t
         if t not in held_stems and stem not in held_stems:
             # A Korean word with its ending cut off ("창고" for "창고에는"): a prefix of a held word.
@@ -347,8 +349,14 @@ _SCRIPT_CHATTER = (
     "目前 大概 一般 通常 现在 現在 请问 請問 请 麻烦 麻煩 帮我 幫我 想知道 知道 告诉我 告訴我 能否 是否 可以 "
     "多久 多长时间 多長時間 多少 什么时候 何时 哪里 哪裡 是谁 是誰 几个 幾個 いつ どのくらい どれくらい "
     "何日 何時 何人 何個 いくつ いくら だれ どこ 現在 今 ください 教えて "
-    "ตอนนี้ ปัจจุบัน ช่วย โปรด บอก ครับ ค่ะ คะ นะ เท่าไร เท่าไหร่ เมื่อไร ใคร ที่ไหน"
+    "ตอนนี้ ปัจจุบัน ช่วย โปรด บอก ครับ ค่ะ คะ นะ เท่าไร เท่าไหร่ เมื่อไร ใคร ที่ไหน ของ อยู่ คือ"
 )
+
+
+# Not a letter: like \W, but the vowel and tone marks of Thai and the diacritics of Arabic
+# belong to the word (Python does not count combining marks as word characters, so
+# "อยู่ที่ไหน" was cut at every mark into fragments no passage holds).
+_NOT_WORD = r"[^\w\u0e31-\u0e3a\u0e47-\u0e4e\u064b-\u065f\u0300-\u036f]"
 
 
 def _script_segments(query: str) -> list[str]:
@@ -359,7 +367,7 @@ def _script_segments(query: str) -> list[str]:
         text = text.replace(w, " ")
     text = "".join(" " if c in _SCRIPT_PARTICLES else c for c in text)
     out = []
-    for run in re.split(r"[^\w]+|[A-Za-z0-9_]+", text):
+    for run in re.split(rf"{_NOT_WORD}+|[A-Za-z0-9_]+", text):
         if len(run) >= 2 and retrieve._is_unseg(run[0]):
             out.append(run)
     return out
@@ -425,7 +433,7 @@ def _script_unfounded(query: str, hits: list[dict], blob: str | None = None) -> 
     text = retrieve.fold_text(query).lower()
     for w in sorted(set(retrieve.FLUFF_PHRASES) | set(_SCRIPT_CHATTER.split()), key=len, reverse=True):
         text = text.replace(w, " ")
-    for word in re.split(r"[^\w]+", text):
+    for word in re.split(rf"{_NOT_WORD}+", text):
         if 3 <= len(word) <= 10 and "\u0e00" <= word[0] <= "\u0e7f" and word not in blob and word not in out:
             out.append(word)
     return out
@@ -1180,6 +1188,32 @@ def _bare(w: str) -> str:
     return w[2:] if len(w) > 4 and w[:2] in ("\u0627\u0644", "\u0644\u0644") else w
 
 
+_CYR_ENDING = frozenset("аяиыуюеоёьйхм")
+
+
+def _cyr_name_held(t: str, words) -> bool:
+    """A Russian name is held when the evidence has it with another case ending.
+
+    "Иванa", "Ивану" for "Иван"; "Ольги" for "Ольга"; "Смирновой" for "Смирнова". Only
+    when the words share all but a short tail of case-ending letters, so "Савин" is still
+    not held by "Савич" (the last letters differ and are not endings).
+    """
+    if not t or not ("\u0400" <= t[0] <= "\u04ff"):
+        return False
+    for w in words:
+        if not w or not ("\u0400" <= w[0] <= "\u04ff"):
+            continue
+        p = 0
+        for a, b in zip(t, w):
+            if a != b:
+                break
+            p += 1
+        if p >= 4 and p >= min(len(t), len(w)) - 1 and all(c in _CYR_ENDING for c in t[p:] + w[p:]) \
+                and len(t) - p <= 3 and len(w) - p <= 3:
+            return True
+    return False
+
+
 def _word_held(t: str, words: frozenset) -> bool:
     """A word of a spaced script (Cyrillic, Arabic, Hangul) is held when the evidence has
     that word or the same word with another ending ("клиента" for "клиент", "고객의" for
@@ -1252,6 +1286,9 @@ def _fold(text: str) -> str:
     return retrieve.fold_text(text)
 
 
+_KO_ASK = ("어디", "무엇", "뭐", "언제", "얼마", "누구", "어떻게", "어떤", "무슨", "왜", "몇", "어느")
+
+
 def _salient_tokens(query: str) -> list[str]:
     # Question/meta words are not "coverage" terms — counting them made trivial
     # queries ("what is this about") look uncovered and fabricated gap notes.
@@ -1266,6 +1303,8 @@ def _salient_tokens(query: str) -> list[str]:
         # look 50% uncovered and the answer refused.
         if t in _STOPWORDS or t in retrieve.QUESTION_FLUFF:
             continue
+        if "\uac00" <= t[0] <= "\ud7af" and len(t) <= 7 and t.startswith(_KO_ASK):
+            continue  # "어디입니까" (where is it) asks the question; no passage holds it
         if t.isascii() and len(t) < 3:
             continue
         if not t.isascii() and len(t) < 2:
@@ -1734,12 +1773,15 @@ def _declined_table_ask(query: str, declined: list[tuple[str, dict]], owner: dic
         if not any(re.search(pat, low) for pat, _fn in sheet_sql._AGGS):  # noqa: SLF001
             return None
         words = set(re.findall(r"[^\W\d_]{3,}", low))
+        asked_files = {m.group(0).lower() for m in _FILE_REF_RE.finditer(query or "")}
         for wb, d in declined:
             head = {w for cell in d.get("header") or [] for w in re.findall(r"[^\W\d_]{3,}", str(cell).lower())}
             if not (head & words):
                 continue
             if named_only and str(wb).lower() not in low:
                 continue
+            if not named_only and asked_files and str(wb).lower() not in asked_files:
+                continue  # the question is about another file; do not talk about this one
             kind = "PDF" if str(wb).lower().endswith(".pdf") else "Word file" if str(wb).lower().endswith(".docx") else "web page"
             return {
                 "answer": (
@@ -1757,6 +1799,34 @@ def _declined_table_ask(query: str, declined: list[tuple[str, dict]], owner: dic
     except Exception:
         return None
     return None
+
+
+def _document_table_notes(hit: dict, by_sheet: dict, declined: list) -> str:
+    """Plain notes under a figure read from a Word, web or PDF table.
+
+    A closing Total row that was left out, and a table of the same file with the same
+    number of columns that could not be read (a table continued on the next page with no
+    header row): the figure then covers less than the document shows, and the answer says so.
+    """
+    wb = str(hit.get("workbook") or "")
+    if not wb.lower().endswith((".docx", ".html", ".htm", ".pdf")):
+        return ""
+    notes: list[str] = []
+    width = 0
+    for (w, s), df in by_sheet.items():
+        if w != wb or (hit.get("sheet") and str(s) != str(hit.get("sheet")) and not hit.get("sheets")):
+            continue
+        width = max(width, len(df.columns))
+        dropped = getattr(df, "attrs", {}).get("dropped_total_row")
+        if dropped:
+            notes.append(f"The last row of {s} ({dropped}) repeats the column totals, so I left it out of the figure.")
+    for w, d in declined:
+        if w == wb and width and len(d.get("header") or []) == width:
+            notes.append(
+                f"{d['label']} of {wb} has the same number of columns but could not be read as a table "
+                f"({d['reason']}); if it continues this table, its rows are not in this figure."
+            )
+    return ("\n\n" + " ".join(notes)) if notes else ""
 
 
 def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = None) -> dict | None:
@@ -1885,6 +1955,8 @@ def _try_hybrid_sql_lane(space_id: int, query: str, prev_prov: dict | None = Non
             hit = None
         if hit:
             owner = sheet_owner.get(str(hit.get("workbook") or ""), {})
+            hit = dict(hit)
+            hit["answer"] = str(hit["answer"]) + _document_table_notes(hit, by_sheet, declined_tables)
             return {
                 "answer": (f"Following on from your last question, I worked out: {carried}.\n\n" if carried else "") + hit["answer"],
                 "citations": [

@@ -361,6 +361,12 @@ def table_frame(rows: list[list[str]]) -> tuple[pd.DataFrame | None, str]:
     if len({h.casefold() for h in head}) != len(head):
         return None, "two columns have the same name"
     body = rows[1:]
+    # A closing "Total" row repeats the column sums; adding it to the rows above counts
+    # every figure twice. It is left out of the frame and named in the answer.
+    dropped_total = ""
+    if len(body) >= 3 and re.fullmatch(r"(?i)(grand\s+|sub\s*)?(total|totals|sum|overall)\s*:?", str(body[-1][0]).strip()):
+        dropped_total = str(body[-1][0]).strip()
+        body = body[:-1]
     for j, h in enumerate(head):
         col = [str(r[j]).strip() for r in body if str(r[j]).strip()]
         if col and sum(_is_number_cell(c) for c in col) / len(col) >= 0.8 and _is_number_cell(h):
@@ -368,6 +374,8 @@ def table_frame(rows: list[list[str]]) -> tuple[pd.DataFrame | None, str]:
     df = pd.DataFrame([[str(c).strip() for c in r] for r in body], columns=head, dtype=str)
     df.attrs["header_excel_row"] = 0
     df.attrs["first_data_excel_row"] = 1
+    if dropped_total:
+        df.attrs["dropped_total_row"] = dropped_total
     return df, ""
 
 

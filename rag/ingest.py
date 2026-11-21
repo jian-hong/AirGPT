@@ -764,7 +764,7 @@ def pdf_tables(path: Path) -> list[dict]:
 
     def split(line: str) -> list[tuple[int, int, str]]:
         cells = []
-        for m in re.finditer(r"\S(?:.*?\S)?(?=\s{2,}|\s*$)", line):
+        for m in re.finditer(r"\S+(?: \S+)*", line):
             cells.append((m.start(), m.end(), m.group(0)))
         return cells
 
