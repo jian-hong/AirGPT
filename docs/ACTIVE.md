@@ -141,6 +141,16 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `rag/retrieve.py` `exact_term_search` -- weighted fusion channel for a rare
   code or name from the question. A code counts alone; a name needs the chunk
   to cover half of the rest; a bare number never counts.
+- `rag/retrieve.py` name channel (`exact_term_search(relaxed=True)`,
+  `NAME_WEIGHT`) -- a capitalised name in at most 3 chunks gets a vote where the
+  chunk shares no other question word; its chunks are ordered by the other
+  channels. `dense_weight()`: the vector channel weighs 0.6 under the hash
+  embedder, 1.0 with a real model (`tests/test_dense_weight.py`).
+- `rag/sheet_sql.py` `_parse_cell` -- one number reader for every table
+  (European and US decimals per column, currency codes, percent; mixed
+  currencies refused). `rag/xlsx_sql.py` `banner_rows_above_header`,
+  `sniff_delimiter`, `_load_json_records`: a CSV with a title line, semicolon
+  CSV and JSON record lists calculate like any sheet.
 - `rag/ingest.py` extractors emit structure the chunker turns into citations:
   `## Page N` (pdf), heading styles + table rows (docx), shown slide order +
   notes (pptx), headings + cells (html), `.eml`, whole json records.
