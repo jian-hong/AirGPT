@@ -180,3 +180,18 @@
   .chat-titlebar-actions .ctools-menu.inline{position:static;min-width:0;padding:0 0 0 30px;border:0;border-radius:0;background:transparent;box-shadow:none}
   .chat-titlebar-actions .ctools-menu.inline[hidden]{display:none}
 }
+
+/* Round 3 visual lane. */
+@media(max-width:760px){
+  /* The + button was a rounded square next to the round mic (light theme showed it as a grey box). */
+  .composer #attachBtn{border-radius:50%}
+  /* One reply has nothing to jump to: its rail only sat over the text (and over code at 320px). */
+  .msg-jump-bar[data-n="one"]{display:none}
+  /* Icons in the + sheet have different widths (emoji, glyphs), so the labels started at 95 to 108px. */
+  html body .plus-menu button .pm-ico{display:inline-block;width:24px;text-align:center}
+  /* OpenIDE: the empty-state hero sat 40px down in a 245px box and cut its last two button rows; the IDE button wrapped to two lines. */
+  .openide-empty-hint{margin-top:0;padding:12px 16px}
+  #openideIdeBtn{width:auto;min-width:36px;padding:0 12px;white-space:nowrap}
+  /* Copy, Reply, Prompt, Fork and Regenerate were 20px, 20px, 28px, 28px and 28px high in two uneven rows. */
+  .msg .meta button{box-sizing:border-box;height:22px;padding:0 8px;font-family:inherit;font-size:11px;line-height:1}
+}

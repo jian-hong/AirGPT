@@ -53,3 +53,45 @@
   /* Buttons stacked 8px apart would share their layers: 12px keeps each tap area its own. */
   .hub-share-row{row-gap:12px}
 }
+
+/* Round 3 visual lane: controls that still measured under 44px on a touch screen. */
+@media(pointer:coarse){
+  /* Marketplace Install/Serve/Trial and the Cortex cards were 30px to 32px. */
+  .mp-actions .btn,.cortex-card .btn{min-height:44px}
+  /* OpenIDE is dense (rows 8px apart), so its small controls keep their look and get the invisible 44px layer. */
+  :where(.openide-shell .btn,.oide-glass-btn,.oide-think-btn,.openide-chip,.openide-app-chip,#openideViewAgents,#openideViewEditor,
+    #openideWorkChanges,#openideWorkBrowser,#openideWorkTerminal,#openideRunBtn,.openide-empty-ctas button){position:relative}
+  .openide-shell .btn::after,.oide-glass-btn::after,.oide-think-btn::after,.openide-chip::after,.openide-app-chip::after,#openideViewAgents::after,#openideViewEditor::after,
+  #openideWorkChanges::after,#openideWorkBrowser::after,#openideWorkTerminal::after,#openideRunBtn::after,.openide-empty-ctas button::after{
+    content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%);
+  }
+}
+
+/* Tablets (wider than 760px) kept the drawer rows at 33px; phone.css only covers 760px and below. */
+@media(pointer:coarse){
+  .side .nav-item,.side [id^="navLabel"],.side #navHome,.side #navCortexTop,.side #navChats,.side #navApps,
+  .side .side-section-hdr,.side .hist-day-hdr,.side .session-item{min-height:44px}
+  .side .icon-btn{position:relative}
+  .side .icon-btn::after{content:"";position:absolute;inset:-5px}
+}
+
+@media(pointer:coarse){
+  /* Pin and Archive on a drawer row were 22px on tablets; the OpenIDE view switch was 31px wide. */
+  /* Same as phone.css: the strip clips a layer, so on the open row the buttons are 44px boxes and the strip is wider. */
+  .side .session-item.on .sess-actions-inline button{min-width:44px;min-height:44px}
+  .side .session-item.dense.on .sess-actions-inline{max-width:96px}
+  #openideViewEditor,#openideViewAgents{min-width:44px}
+}
+
+@media(pointer:coarse){
+  /* "Details" folds (Cortex page, the failure card) were 16px high. */
+  :where(details>summary){position:relative}
+  details>summary::after{content:"";position:absolute;left:0;right:0;top:50%;height:max(100%,44px);transform:translateY(-50%)}
+}
+
+@media(pointer:coarse){
+  /* App chips sat 6px apart, so their 44px layers shared 12px: each chip owned 32px. */
+  .openide-app-chips{row-gap:18px;padding:14px 10px}
+  .topbar #openideIdeBtn{position:relative}
+  .topbar #openideIdeBtn::after{content:"";position:absolute;inset:-4px -2px}
+}

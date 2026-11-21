@@ -146,7 +146,7 @@ function grab(name) {
 test("reply rail: hidden in OpenIDE and when the page has no replies, shown in a chat", () => {
   const mk = (n, cls) => {
     const track = { dataset: { sig: "x" }, querySelectorAll: () => [], appendChild() {} };
-    const bar = { hidden: true };
+    const bar = { hidden: true, dataset: {} };
     const nodes = Array.from({ length: n }, (_, i) => ({ id: "msg-" + i }));
     const ctx = vm.createContext({
       $: (id) => ({ msgJumpBar: bar, msgJumpTrack: track, msgJumpCount: { textContent: "" } })[id],
