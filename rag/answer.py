@@ -569,8 +569,9 @@ def _abstention_text(hits: list[dict], why: dict, query: str = "") -> str:
     ):
         head += (
             "\n\nNote: I add up and count from spreadsheet files (xlsx, csv, tsv), JSON lists of records, and "
-            "tables in Word, web and PDF files that read cleanly as tables (a header row, then rows of the same "
-            "width). Here no such table matched the question, so the passages were searched as text and nothing was calculated."
+            "from a table in a Word, PDF or web page when it reads cleanly as a table (a header row, then rows "
+            "of the same width). No such table matched this question, so the passages were searched as text "
+            "and I did not calculate anything."
         )
     return head
 

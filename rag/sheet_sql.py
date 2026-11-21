@@ -1356,6 +1356,16 @@ def plan_query(
         if sheet_name in named_set:
             score += 50.0
         stated_cur = _stated_currency(q) if metric and metric in df.columns and len(_currencies(df[metric])) > 1 else ""
+        # A header used twice: the first copy keeps its name, the others are name__2...
+        # Say which one was read, so a total is never silently about the wrong column.
+        _used = {metric, group_by, *(f.column for f in filters), *(t.column for t in text_filters)}
+        for _base, _copies in (getattr(df, "attrs", {}).get("duplicate_columns") or {}).items():
+            if _copies and _copies[0] in _used:
+                assumed.append(
+                    f"the table has {len(_copies)} columns called {_base}; I used the first, "
+                    f"and the other{'s are' if len(_copies) > 2 else ' is'} called {', '.join(_copies[1:])} "
+                    "if you meant that"
+                )
         cand = Plan(
             currency=stated_cur,
             agg=metric_agg,

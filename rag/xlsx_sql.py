@@ -61,6 +61,7 @@ def _dedupe_columns(df):
     seen: dict[str, int] = {}
     drop_positions: list[int] = []
     new_names = list(names)
+    dups: dict[str, list[str]] = {}
     for i, name in enumerate(names):
         if name not in seen:
             seen[name] = i
@@ -72,11 +73,29 @@ def _dedupe_columns(df):
         else:
             n = sum(1 for j in range(i) if names[j] == name)
             new_names[i] = f"{name}__{n + 1}"
+            dups.setdefault(name, [name]).append(new_names[i])
     df.columns = new_names
     if drop_positions:
         keep = [i for i in range(len(new_names)) if i not in set(drop_positions)]
         df = df.iloc[:, keep]
+    # The planner says which copy it used when a question names one of these.
+    df.attrs["duplicate_columns"] = dups
     return df
+
+
+_MANGLED = re.compile(r"^(.+)\.(\d+)$")
+
+
+def _unmangle_headers(names: list[str]) -> list[str]:
+    """pandas renames a repeated CSV header "score" to "score.1"; give the repeat its own name back.
+
+    Only a name whose base is also a header counts ("score" and "score.1"), so a header
+    that really is "v1.1" with no "v1" beside it is left alone. _dedupe_columns then
+    treats a CSV like a workbook: identical copies collapse, different ones are named
+    score and score__2, and the lane can say which one it used.
+    """
+    have = set(names)
+    return [m.group(1) if (m := _MANGLED.match(n)) and m.group(1) in have else n for n in names]
 
 
 def _looks_like_banner(row) -> bool:
@@ -236,9 +255,11 @@ def load_table_file(path: Path) -> dict[str, pd.DataFrame]:
             last = e
     else:
         raise last or ValueError("unreadable csv")
-    df.columns = [str(c).strip() or f"c{j}" for j, c in enumerate(df.columns)]
+    df.columns = _unmangle_headers([str(c).strip() or f"c{j}" for j, c in enumerate(df.columns)])
     df = _dedupe_columns(df)
+    dup_attr = dict(df.attrs.get("duplicate_columns") or {})
     df = df[df.apply(lambda r: any(str(v).strip() for v in r), axis=1)].reset_index(drop=True)
+    df.attrs["duplicate_columns"] = dup_attr
     df.attrs["header_excel_row"] = banner + 1
     df.attrs["first_data_excel_row"] = banner + 2
     df.attrs["sheet_name"] = path.stem
