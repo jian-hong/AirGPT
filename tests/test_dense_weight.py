@@ -34,7 +34,9 @@ def test_weight_follows_the_active_embedder(monkeypatch):
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_paraphrase_total_beats_equal_weight_on_held_out_seeds(seed, monkeypatch):
     def total():
-        res = pb.run(seed=seed)
+        # Depth basic, the single pass: at high and max the bridge hop fills the top
+        # five (256 of 256) at either weight, so only basic can tell them apart there.
+        res = pb.run(seed=seed, depth="basic")
         return sum(res["styles"][s]["recall_at_5"] for s in pb.STYLES)
 
     low = total()
