@@ -2,6 +2,18 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Files saved on Windows read like the same files saved on Linux
+
+- Windows CI failed the multilingual gate on the round 3 head: 5 Japanese name
+  questions refused where Linux refused 3. The bench writes its files in text mode,
+  so on Windows every line ends in CRLF, and `rag/ingest.read_text_file` folded CRLF
+  only for the source hash; the chunker got every carriage return. Real users on
+  Windows upload such files.
+- Every reader's text now has one line ending (CRLF and old-Mac CR become LF) before
+  chunking. The bench run with CRLF files now matches the LF run exactly; the LF
+  numbers did not move. New test `tests/test_rag_line_endings.py` (md, txt, html, csv,
+  log; Windows and old-Mac endings): md, txt and html fail without the fix.
+
 ## 2026-11-21 -- Round 3: RAG on random uploads, research-led retrieval, phone polish
 
 - **How it was measured.** A stress corpus of 26 files (txt in UTF-8, UTF-16 and

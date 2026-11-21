@@ -80,6 +80,22 @@ main_idea: A random-upload corpus with pandas truth found spreadsheet answers th
   web upload to time out. Now about 12 s.
 - **Root-cause class:** per-item transaction in a bulk path.
 
+## Finding 7 - a Windows file was read differently from the same file on Linux
+
+- **Expected:** a document gives the same chunks and answers whatever line
+  endings it was saved with.
+- **Actual:** Windows CI refused 5 Japanese name questions where Linux refused 3,
+  and the gate failed. The bench writes its files in text mode, so on Windows every
+  line ends in CRLF; `read_text_file` folded CRLF only for the source hash (with a
+  comment saying so), and the text handed to the chunker kept every carriage return.
+- **Repro:** run the multilingual bench on Linux with its files written as CRLF:
+  the Japanese name cell goes from 3 to 5 refusals, exactly the Windows number.
+- **Root-cause class:** a normalisation applied to the identity of the data but not
+  to the data itself; tests that only run on one platform's file conventions.
+- **Fix:** one fold of CRLF and CR to LF for every reader, before chunking. The bench
+  with CRLF files now matches the LF run exactly, and the LF numbers did not move.
+- **Invariant:** assert the artifact the user receives (the chunk text), not a hash.
+
 ## Not verified
 
 A real embedding model or reranker (none installed; every number is the hash

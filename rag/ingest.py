@@ -1230,6 +1230,10 @@ def read_text_file(path: Path) -> tuple[str, str]:
     else:
         text = _decode(raw)
 
+    # One line ending for every reader. A file saved on Windows (CRLF) or an old Mac (CR)
+    # must chunk and rank exactly like the same file saved on Linux; only the hash below
+    # was folded before, so the Windows CI read the same bench files differently.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     result = norm.normalize_text(text, path=path, suffix=suffix)
     # Identity is the EXTRACTED TEXT, not the container bytes. Re-ingesting an
     # .xlsx and re-ingesting its extracted .txt blob (the rebuild path) must
