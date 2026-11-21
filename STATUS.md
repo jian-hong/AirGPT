@@ -25,8 +25,8 @@
    totals checked against pandas, turns keep their files, restore
    all-or-nothing, sanitizer, phone title. Round 3: stress corpus (sheet
    maths 7 to 22 of 25 right), rare-name retrieval, ingest 417 s to 12 s,
-   phone polish. Code head `4cf62bf`: 1527 passed, 0 failed, 9 skipped;
-   JS 245; browser 27/27; Windows CI pending. Round 3b running (multi-hop,
+   phone polish, Windows line endings. Head `5a5b7bf`: 1532 passed, 0 failed,
+   9 skipped; JS 245; browser 27/27; Windows CI green. Round 3b running (multi-hop,
    multilingual refusals, Word/web/PDF tables, screens). Unverified: tunnel,
    phone, provider, Cortex, a real embedder. Owner calls: P14-P33.
 6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
