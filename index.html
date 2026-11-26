@@ -3635,6 +3635,8 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
       <button class="btn" id="mCopy">Copy</button>
+      <button class="btn" id="mOpen" style="display:none">Open</button>
+      <button class="btn" id="mSpace" style="display:none">Open in Space</button>
       <button class="btn primary" id="mSave">Download</button>
       <button class="btn primary" id="mPhotos" style="display:none">Save to Photos</button>
       <button class="btn" id="mShare">Share</button>
@@ -15407,8 +15409,35 @@ window.openItem=async function(id){
   $('mPhotos').style.display=(isIOS&&m.kind==='image')?'inline-block':'none';
   $('mSave').textContent=isIOS&&m.kind==='image'?'Save to Files':'Download';
   $('mSave').className=isIOS&&m.kind==='image'?'btn':'btn primary';
+  $('mOpen').style.display=canOpenInTab(m)?'inline-block':'none';
+  $('mSpace').style.display='none';
+  if(m.filepath&&m.kind!=='text')spaceAvailable().then(ok=>{if(ok&&curItem===m)$('mSpace').style.display='inline-block'});
   $('modal').classList.add('open');
 };
+$('mOpen').onclick=()=>{
+  if(!canOpenInTab(curItem))return;
+  const a=document.createElement('a');
+  a.href=fileUrl(curItem.filepath);a.target='_blank';a.rel='noopener noreferrer';
+  document.body.appendChild(a);a.click();a.remove();
+};
+$('mSpace').onclick=async()=>{
+  if(!curItem||!curItem.filepath)return;
+  try{
+    const r=await api('/api/space/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:curItem.filepath})});
+    const d=await r.json().catch(()=>({}));
+    toast(r.ok?'Opened in Space':(d.error||'Could not open in Space'));
+  }catch(e){toast('Could not open in Space')}
+};
+// Files a phone browser can show in place. An allowlist: html, svg, xml and anything
+// script-capable are never on it, and the server sends those as attachments anyway.
+const OPEN_EXT=/\.(pdf|docx?|xlsx?|pptx?|txt)$/i;
+function canOpenInTab(m){return !!(m&&m.filepath&&m.kind!=='image'&&m.kind!=='video'&&m.kind!=='text'&&OPEN_EXT.test(m.filename||m.filepath||''))}
+let spaceOk=null;
+async function spaceAvailable(){
+  if(spaceOk!==null)return spaceOk;
+  try{const r=await api('/api/space/status');spaceOk=r.ok&&!!(await r.json()).available}catch(e){spaceOk=false}
+  return spaceOk;
+}
 function closeModal(){$('modal').classList.remove('open');curItem=null}
 
 $('mSave').onclick=async()=>{

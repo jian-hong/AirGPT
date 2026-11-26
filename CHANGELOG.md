@@ -2,6 +2,13 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-20 -- Phone preview, video seeking, Open in Space
+
+- Stored files now answer Range requests (206, 416, Accept-Ranges) and stream,
+  so iPhone video can seek. PDF, Word, Excel, PowerPoint and text files get an
+  Open button that shows them natively in a new tab; html, svg and xml stay
+  downloads. On the host PC, Open in Space starts NetieSpace.exe on the file;
+  phones and tunnels get 403.
 ## 2026-11-21 -- Seam fixes pass on Windows: paths compared as files, tests use only listed packages
 
 - Windows CI failed two seam-check tests. The rebuild cleanup compared a stored Docs

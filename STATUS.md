@@ -36,6 +36,11 @@
    Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
    branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
 
+5. **Phone preview + Open in Space (draft PR on #91).** `/data/` serves
+   Range (206/416), streamed. Open button for pdf/office/txt. Host-only
+   `POST /api/space/open` launches NetieSpace.exe. Needs a real iPhone and a
+   Windows host to prove. Ledger rows pending in PRD-001 (founder directed).
+
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
