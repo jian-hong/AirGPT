@@ -193,14 +193,17 @@ def index_children(space_id: int, pairs: Iterable, progress=None) -> int:
     items = list(pairs)
     total = len(items)
     n = 0
-    for i, (cid, text) in enumerate(items, start=1):
-        if upsert_chunk_vector(int(cid), int(space_id), text or ""):
-            n += 1
-        if progress and (i % 8 == 0 or i == total):
-            try:
-                progress(i, total)
-            except Exception:
-                pass
+    # One connection for the whole batch: opening and committing per vector was the
+    # slowest step of a large sheet's ingest.
+    with store.session():
+        for i, (cid, text) in enumerate(items, start=1):
+            if upsert_chunk_vector(int(cid), int(space_id), text or ""):
+                n += 1
+            if progress and (i % 8 == 0 or i == total):
+                try:
+                    progress(i, total)
+                except Exception:
+                    pass
     return n
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -295,6 +296,20 @@ def _init_schema() -> None:
             """
         )
         _migrate_authority(conn)
+        _migrate_messages(conn)
+
+
+def _migrate_messages(conn: sqlite3.Connection) -> None:
+    """Chat messages keep the calculation behind a number (so a follow-up can reuse it)
+    and whether they came from an imported pack (so they never steer the model)."""
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(rag_messages)")}
+        if "provenance" not in cols:
+            conn.execute("ALTER TABLE rag_messages ADD COLUMN provenance TEXT DEFAULT ''")
+        if "imported" not in cols:
+            conn.execute("ALTER TABLE rag_messages ADD COLUMN imported INTEGER DEFAULT 0")
+    except sqlite3.Error:
+        return
 
 
 def _migrate_authority(conn: sqlite3.Connection) -> None:
@@ -357,6 +372,11 @@ def _row(r: sqlite3.Row | None) -> dict | None:
     if not r:
         return None
     d = dict(r)
+    if isinstance(d.get("provenance"), str):
+        try:
+            d["provenance"] = json.loads(d["provenance"]) if d["provenance"] else {}
+        except Exception:
+            d["provenance"] = {}
     for key in ("modalities", "config", "meta", "metrics", "counts", "citations", "phrases", "headings", "payload"):
         if key in d and isinstance(d[key], str):
             try:
@@ -549,7 +569,81 @@ def delete_source(source_id: int) -> dict:
             "UPDATE knowledge_spaces SET updated_at=? WHERE id=?",
             (time.time(), int(src["space_id"])),
         )
-        return {"ok": True, "space_id": int(src["space_id"]), "chunks_removed": len(ids)}
+        # A summary that names the deleted file and an ontology built from its tables
+        # kept answering questions about a document the user had removed.
+        row = conn.execute("SELECT config FROM knowledge_spaces WHERE id=?", (int(src["space_id"]),)).fetchone()
+        try:
+            cfg = json.loads((row["config"] if row else "") or "{}")
+        except Exception:
+            cfg = {}
+        if cfg.pop("corpus_summary", None) is not None or cfg.pop("ontology", None) is not None:
+            cfg.pop("ontology", None)
+            conn.execute(
+                "UPDATE knowledge_spaces SET config=? WHERE id=?", (json.dumps(cfg), int(src["space_id"]))
+            )
+    files_removed = _remove_source_files(int(src["space_id"]), _row(src))  # type: ignore[arg-type]
+    return {"ok": True, "space_id": int(src["space_id"]), "chunks_removed": len(ids), "files_removed": files_removed}
+
+
+def _remove_source_files(space_id: int, src: dict) -> int:
+    """Unlink a deleted source's stored files, only ever inside that space's own folder."""
+    root = (BLOB_DIR / str(int(space_id))).resolve()
+    meta = src.get("meta") if isinstance(src.get("meta"), dict) else {}
+    cands = [src.get("path"), meta.get("blob"), meta.get("docs_path"), meta.get("original_path")]
+    cands += list(meta.get("original_paths") or [])
+    n = 0
+    for raw in cands:
+        if not raw:
+            continue
+        try:
+            p = Path(str(raw)).resolve()
+            p.relative_to(root)
+        except Exception:
+            continue  # outside the space folder: the user's own file, never ours to delete
+        try:
+            if p.is_file():
+                p.unlink()
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def delete_space(space_id: int) -> dict:
+    """Delete a space for good: its rows, vectors, chats, traces and every file on disk."""
+    import shutil
+
+    init()
+    sid = int(space_id)
+    if not get_space(sid):
+        return {"ok": False, "error": "space not found"}
+    try:  # dense vectors, including a Qdrant collection when that profile is in use
+        from rag import vector_backends
+
+        vector_backends.clear_space(sid)
+    except Exception:
+        pass
+    with _conn() as conn:
+        ids = [int(r["id"]) for r in conn.execute("SELECT id FROM chunks WHERE space_id=?", (sid,))]
+        _delete_fts_by_ids(conn, "chunks_fts", "chunk_id", ids)
+        fids = [int(r["id"]) for r in conn.execute("SELECT id FROM file_index WHERE space_id=?", (sid,))]
+        _delete_fts_by_ids(conn, "file_index_fts", "file_id", fids)
+        for tbl in ("chunks", "file_index", "sources", "revisions", "ingest_jobs", "traces"):
+            conn.execute(f"DELETE FROM {tbl} WHERE space_id=?", (sid,))
+        conn.execute(
+            "DELETE FROM rag_messages WHERE chat_id IN (SELECT id FROM rag_chats WHERE space_id=?)", (sid,)
+        )
+        conn.execute("DELETE FROM rag_chats WHERE space_id=?", (sid,))
+        conn.execute("DELETE FROM knowledge_spaces WHERE id=?", (sid,))
+    root = BLOB_DIR / str(sid)
+    shutil.rmtree(root, ignore_errors=True)
+    return {"ok": True, "space_id": sid, "chunks_removed": len(ids), "folder_removed": not root.exists()}
+
+
+def get_chat(chat_id: int) -> dict | None:
+    init()
+    with _conn() as conn:
+        return _row(conn.execute("SELECT * FROM rag_chats WHERE id=?", (int(chat_id),)).fetchone())
 
 
 def purge_chat_sources(space_id: int) -> dict:
@@ -928,7 +1022,10 @@ def insert_chunk(
     token_est: int = 0,
     meta: dict | None = None,
     authority: str = "",
+    index_context: str = "",
 ) -> int:
+    """`index_context` (where the chunk sits: file title, heading chain) is searched with
+    the chunk but never stored in its text, so a citation shows the original words."""
     init()
     now = time.time()
     # Decided once, at write time. Re-deriving the class from a path regex on every
@@ -964,7 +1061,7 @@ def insert_chunk(
         cid = int(cur.lastrowid)
         conn.execute(
             "INSERT INTO chunks_fts(text, path, heading, chunk_id) VALUES(?,?,?,?)",
-            (text or "", path or "", heading or "", cid),
+            (text or "", path or "", f"{heading or ''} {index_context}".strip() if index_context else (heading or ""), cid),
         )
         return cid
 
@@ -1041,39 +1138,35 @@ def neighbor_window(chunk_id: int, *, radius: int = 1, kind: str = "child") -> l
     return [r for r in out if r]  # type: ignore[return-value]
 
 
-def sample_parent_chunks(space_id: int, *, limit: int = 24) -> list[dict]:
+def sample_parent_chunks(space_id: int, *, limit: int = 24, source_ids: list[int] | None = None) -> list[dict]:
     """Parent (or any) chunks for space summaries and the pipeline preview.
 
     Round-robins across sources. A plain "ORDER BY id LIMIT n" let one big file
     (e.g. a workbook with many sheets) fill the whole window, so other documents
-    never appeared in the summary or the samples.
+    never appeared in the summary or the samples. `source_ids` limits the sample to
+    those files (a question the founder scoped to some files).
     """
     init()
-    diverse = (
-        "SELECT * FROM ("
-        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
-        "  FROM chunks WHERE space_id=? AND kind=?"
-        ") ORDER BY _rn ASC, source_id ASC LIMIT ?"
-    )
+    scope = sorted({int(x) for x in (source_ids or []) if str(x).strip()})
+    sc = (" AND source_id IN (" + ",".join("?" * len(scope)) + ")") if scope else ""
     with _conn() as conn:
         for kind in ("parent", None):
+            kc = " AND kind=?" if kind else ""
+            args = (int(space_id), *((kind,) if kind else ()), *scope, int(limit))
             try:
-                if kind is None:
-                    rows = conn.execute(
-                        "SELECT * FROM ("
-                        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
-                        "  FROM chunks WHERE space_id=?"
-                        ") ORDER BY _rn ASC, source_id ASC LIMIT ?",
-                        (int(space_id), int(limit)),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(diverse, (int(space_id), kind, int(limit))).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM ("
+                    "  SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY id) AS _rn"
+                    "  FROM chunks WHERE space_id=?" + kc + sc +
+                    ") ORDER BY _rn ASC, source_id ASC LIMIT ?",
+                    args,
+                ).fetchall()
             except sqlite3.OperationalError:
-                # No window-function support — fall back to insertion order.
-                sql = "SELECT * FROM chunks WHERE space_id=?" + (
-                    " AND kind='parent'" if kind else ""
-                ) + " ORDER BY id ASC LIMIT ?"
-                rows = conn.execute(sql, (int(space_id), int(limit))).fetchall()
+                # No window-function support - fall back to insertion order.
+                rows = conn.execute(
+                    "SELECT * FROM chunks WHERE space_id=?" + kc + sc + " ORDER BY id ASC LIMIT ?",
+                    args,
+                ).fetchall()
             if rows:
                 return [_row(r) for r in rows]  # type: ignore[misc]
         return []
@@ -1098,6 +1191,14 @@ def create_chat(space_id: int, title: str = "New chat") -> dict:
             (int(space_id), (title or "New chat")[:120], now, now),
         )
         return _row(conn.execute("SELECT * FROM rag_chats WHERE id=?", (cur.lastrowid,)).fetchone())  # type: ignore[return-value]
+
+
+def _cut_summary(text: str, limit: int = 220) -> str:
+    """First `limit` characters, never ending inside a citation mark like "[1", "[1, 2" or "[W1"."""
+    cut = text[:limit]
+    if len(text) > limit:
+        cut = re.sub(r"\s*\[[A-Za-z]{0,2}[0-9,\s]*$", "", cut)
+    return cut
 
 
 def list_chats(space_id: int) -> list[dict]:
@@ -1129,7 +1230,7 @@ def list_chats(space_id: int) -> list[dict]:
             prev = str(d.get("preview") or "").strip()
             ans = str(d.get("last_answer") or "").strip()
             rough = (ans or prev).replace("\n", " ").strip()
-            d["summary"] = rough[:220] if rough else ""
+            d["summary"] = _cut_summary(rough)
             out.append(d)
         return out
 
@@ -1142,12 +1243,15 @@ def add_message(
     citations: list | None = None,
     trace_id: str = "",
     depth: str = "high",
+    provenance: dict | None = None,
+    imported: bool = False,
 ) -> dict:
     init()
     now = time.time()
     with _conn() as conn:
         cur = conn.execute(
-            "INSERT INTO rag_messages(chat_id,role,content,citations,trace_id,depth,created_at) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO rag_messages(chat_id,role,content,citations,trace_id,depth,created_at,provenance,imported) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 int(chat_id),
                 (role or "user")[:20],
@@ -1156,6 +1260,8 @@ def add_message(
                 (trace_id or "")[:80],
                 (depth or "high")[:20],
                 now,
+                json.dumps(provenance) if provenance else "",
+                1 if imported else 0,
             ),
         )
         conn.execute("UPDATE rag_chats SET updated_at=? WHERE id=?", (now, int(chat_id)))

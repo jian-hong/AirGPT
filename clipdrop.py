@@ -1,13 +1,16 @@
 """ClipDrop v5 — ChatGPT-style LAN chat. SQLite + multi-tunnel."""
 from __future__ import annotations
 
+import functools
 import hashlib
+import ipaddress
 import io
 import json
 import mimetypes
 import os
 import queue
 import re
+import sqlite3
 import secrets
 import shutil
 import socket
@@ -478,6 +481,18 @@ def run_analysis(msg_id: int, question: str | None = None, mode: str = "general"
         print(f"[ai] error msg {msg_id}: {e}")
 
 
+def _run_tracked(session_id: int, fn, *args) -> None:
+    """Run a background reply and list its chat as "answering" until it ends, however it ends."""
+    token = uuid.uuid4().hex
+    with _chat_streams_lock:
+        _chat_streams[token] = {"abort": threading.Event(), "session_id": int(session_id or 0), "started": time.time()}
+    try:
+        fn(*args)
+    finally:
+        with _chat_streams_lock:
+            _chat_streams.pop(token, None)
+
+
 def queue_analysis(msg_id: int, question: str | None = None, mode: str = "general", session_id: int = 0, depth: str = "normal") -> None:
     rate_err = _check_ai_rate()
     if rate_err:
@@ -490,10 +505,16 @@ def queue_analysis(msg_id: int, question: str | None = None, mode: str = "genera
             db.update_ai(msg_id, status="error", analysis=rate_err)
             bump_sync()
         return
+    sid = int(session_id or 0)
+    if question and sid:  # a question about a screenshot: the reply is being written meanwhile
+        threading.Thread(target=_run_tracked, args=(sid, run_analysis, msg_id, question, mode, session_id, depth), daemon=True).start()
+        return
     threading.Thread(target=run_analysis, args=(msg_id, question, mode, session_id, depth), daemon=True).start()
 
 
-def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+def run_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False, attachments: list | None = None) -> None:
+    if ai_engine:
+        ai_engine.set_link_fetch_restricted(restrict_links)
     blocked = _ai_lockdown_block()
     if blocked:
         db.add_message(
@@ -520,7 +541,9 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> 
         return
     try:
         business = bool((app_license.get_status() if app_license else {}).get("business_features"))
-        result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business)
+        result = ai_engine.chat_text(question, mode=mode, session_id=session_id, business_require=business, attachments=attachments)
+        if len(question or "") > ai_engine.QUESTION_LIMIT and result.get("analysis"):
+            result["analysis"] = ai_engine.QUESTION_CUT_NOTE + "\n\n" + result["analysis"]
         if result.get("error") == "ai_lockdown":
             db.add_message(
                 device_ip="127.0.0.1",
@@ -544,13 +567,13 @@ def run_text_chat(question: str, mode: str = "general", session_id: int = 0) -> 
     bump_sync()
 
 
-def queue_text_chat(question: str, mode: str = "general", session_id: int = 0) -> None:
+def queue_text_chat(question: str, mode: str = "general", session_id: int = 0, restrict_links: bool = False, attachments: list | None = None) -> None:
     rate_err = _check_ai_rate()
     if rate_err:
         db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=rate_err, kind="text", source="ai", session_id=session_id)
         bump_sync()
         return
-    threading.Thread(target=run_text_chat, args=(question, mode, session_id), daemon=True).start()
+    threading.Thread(target=_run_tracked, args=(session_id, run_text_chat, question, mode, session_id, restrict_links, attachments), daemon=True).start()
 
 
 # ---- chat_classifier wiring: one-off small-talk → shared Scratch space, no linkage ----
@@ -560,10 +583,10 @@ _scratch_ids: set[int] = set()
 
 def _get_or_create_scratch_session() -> int:
     try:
-        for s in db.list_sessions(limit=200):
-            if s.get("capture_type") == "scratch":
-                _scratch_ids.add(int(s["id"]))
-                return int(s["id"])
+        s = db.first_session_of_type("scratch")  # not list_sessions: an old Scratch chat is past its first page
+        if s:
+            _scratch_ids.add(int(s["id"]))
+            return int(s["id"])
         sess = db.create_session(_SCRATCH_TITLE, capture_type="scratch")
         _scratch_ids.add(int(sess["id"]))
         return int(sess["id"])
@@ -589,13 +612,161 @@ def _is_scratch_session(sid: int) -> bool:
     if sid in _scratch_ids:
         return True
     try:
-        for s in db.list_sessions(limit=200):
-            if int(s.get("id") or 0) == sid and s.get("capture_type") == "scratch":
-                _scratch_ids.add(sid)
-                return True
+        s = db.get_session(sid)  # by id: the chat may be past the first page of the list
+        if s and s.get("capture_type") == "scratch":
+            _scratch_ids.add(sid)
+            return True
     except Exception:
         pass
     return False
+
+
+def _attachment_files(ids, allowed_sessions) -> list[dict]:
+    """Stored non-image files the client says belong to this question.
+
+    Only files that live in this chat (or the chat it replies to) are read, so a guest
+    cannot ask the model to read a file from someone else's chat by guessing an id.
+    """
+    out: list[dict] = []
+    allowed = {int(x) for x in allowed_sessions if x}
+    seen: set[int] = set()
+    for raw in _clean_attach_ids(ids):
+        try:
+            if int(raw) in seen:
+                continue
+            seen.add(int(raw))
+            m = db.get_message(int(raw))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not m or m.get("kind") != "file" or not m.get("filepath"):
+            continue
+        if int(m.get("session_id") or 0) not in allowed:
+            continue
+        path = (db.DATA_DIR / str(m["filepath"])).resolve()
+        if db.FILES.resolve() not in path.parents:
+            continue
+        out.append({"name": m.get("filename") or path.name, "path": path})
+    return out
+
+
+# Running chat streams by id, so the Stop button can reach the one it started.
+_chat_streams: dict[str, dict] = {}
+_chat_streams_lock = threading.Lock()
+
+
+def _generating_sessions(only: int | None = None) -> dict[int, float]:
+    """Chats with a reply being written right now: {chat id: when it started}.
+
+    Read-only view of _chat_streams (the server's own record of running streams), so a
+    chat opened on another tab or device can say "still answering" instead of showing a
+    bare question. An entry lives until the reply is saved or the generation fails.
+    """
+    out: dict[int, float] = {}
+    with _chat_streams_lock:
+        for run in _chat_streams.values():
+            sid = int(run.get("session_id") or 0)
+            if sid and (only is None or sid == only):
+                out[sid] = min(out.get(sid, run["started"]), run["started"])
+    return out
+
+
+def _last_turn(session_id: int, user_msg_id: int, new_file_ids=()) -> tuple[dict | None, list[dict], str]:
+    """The last question of a chat and the replies after it, for edit and regenerate.
+
+    Only the last turn can change: older answers were written with the messages before
+    them, and branching to keep both versions is a separate feature. Returns
+    (question, replies, "") or (None, [], why-not).
+
+    `new_file_ids` are files this very request attaches to the edited question. The page
+    uploads them first, so they sit after the question; they belong to the edit and do
+    not make the question "not the last one". Any other row after it still does.
+    """
+    row = db.get_message(user_msg_id) if (session_id and user_msg_id) else None
+    if not row or int(row.get("session_id") or 0) != session_id:
+        return None, [], "That message is not in this chat."
+    if row.get("source") == "ai" or row.get("kind") != "text":
+        return None, [], "Only a question you typed can be changed."
+    after = db.get_messages(since_id=user_msg_id, limit=50, session_id=session_id)
+    mine = set(_clean_attach_ids(new_file_ids, None))
+    after = [m for m in after if not (m.get("kind") == "file" and int(m.get("id") or 0) in mine)]
+    if any(m.get("source") != "ai" or m.get("kind") != "text" for m in after):
+        return None, [], "Only your last question can be changed."
+    return row, after, ""
+
+
+def _clean_attach_ids(ids, cap: int | None = 12) -> list[int]:
+    """The attachment ids a request names, as plain ints (at most `cap`), junk dropped."""
+    out: list[int] = []
+    for raw in (ids if isinstance(ids, list) else [])[:cap]:
+        try:
+            out.append(int(raw))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return out
+
+
+def _left_out_note(left_out, allowed_sessions, sent=()) -> str:
+    """The reply's opening line naming files that did not fit in one question (empty if none).
+    Only files of this chat (or the chat it replies to) are named, never another chat's."""
+    allowed = {int(x) for x in allowed_sessions if x}
+    names = []
+    seen = {int(x) for x in sent}  # a file asked for twice, once within the cap, did go
+    for fid in left_out:
+        if fid in seen:
+            continue
+        seen.add(fid)
+        try:
+            fm = db.get_message(int(fid)) or {}
+        except (TypeError, ValueError, OverflowError):
+            continue  # a junk id is ignored, as _attachment_files does
+        if fm.get("kind") != "file" or int(fm.get("session_id") or 0) not in allowed:
+            continue
+        names.append(str(fm.get("filename") or ("file " + str(fid))))
+    if not names:
+        return ""
+    return "Only 12 files can go with one question. These were left out: " + ", ".join(names) + ".\n\n"
+
+
+def _turn_file_ids(session_id: int, user_msg_id: int) -> list[int]:
+    """Ids of the files that were sent with a question. A question saved with its
+    attachment ids gets exactly those back. Only a question saved before that was
+    recorded (no stored value) falls back to the file rows directly before it, back
+    to the previous turn. _attachment_files still checks every one of them."""
+    row = db.get_message(user_msg_id)
+    if row and row.get("attachment_ids") is not None:
+        try:
+            return _clean_attach_ids(json.loads(row["attachment_ids"]), None)  # the left-out tail too
+        except (TypeError, ValueError):
+            return []
+    out: list[int] = []
+    for m in reversed(db.get_messages_before(session_id, user_msg_id, 12)):
+        if m.get("kind") != "file":
+            break
+        out.append(int(m["id"]))
+    return out[::-1]
+
+
+def _forget_turn_memory(session_id: int, question: str) -> None:
+    """A question that was edited away or answered again must not come back as a
+    remembered "Q ... A ..." note in the next prompt, with the answer the person
+    just threw out. Drops this chat's saved gist of that question."""
+    q = (question or "").strip()
+    if not (session_id and q):
+        return
+    try:
+        import memory_index as mi
+
+        for m in mi.list_memories(session_id=session_id, kind="memory", limit=200):
+            if (int(m.get("session_id") or 0) == session_id and m.get("source") == "chat_turn"
+                    and f"Q: {q[:280]}" in str(m.get("body") or "")):
+                mi.delete_memory(int(m["id"]))
+    except Exception as e:
+        print(f"[chat] could not forget the old turn's memory note: {e!r}")
+
+
+# How many of a chat's latest messages are handed over as history. The character
+# budget in ai_engine (HISTORY_BUDGET_CHARS) is what actually trims them.
+CHAT_HISTORY_FETCH = 60
 
 
 def _build_chat_history(
@@ -604,7 +775,12 @@ def _build_chat_history(
     reply_snippet: str,
     *,
     exclude_msg_id: int = 0,
+    before_id: int = 0,
+    counts: dict | None = None,
 ) -> list[dict]:
+    """Earlier turns for the model. `before_id` is the question being asked: it and
+    anything after it is not history. `counts["older"]` gets the number of messages
+    left unread because the chat is longer than CHAT_HISTORY_FETCH."""
     history: list[dict] = []
     if reply_snippet:
         history.append({"role": "assistant", "content": f"[Replying to]: {reply_snippet[:500]}"})
@@ -620,14 +796,78 @@ def _build_chat_history(
         if content:
             history.append({"role": role, "content": content[:2000]})
     if session_id and not _is_scratch_session(session_id):  # Scratch = no linkage
-        for m in db.get_messages(session_id=session_id, limit=24):
+        if before_id:
+            rows = db.get_messages_before(session_id, before_id, CHAT_HISTORY_FETCH)
+        else:
+            rows = db.get_messages(session_id=session_id, limit=CHAT_HISTORY_FETCH)
+        if counts is not None:
+            counts["older"] = max(0, db.count_session_messages(session_id, before_id) - len(rows))
+        for m in rows:
             if exclude_msg_id and int(m.get("id") or 0) == exclude_msg_id:
                 continue
             role = "assistant" if m.get("source") == "ai" else "user"
             content = (m.get("text") or "").strip()
             if content:
                 history.append({"role": role, "content": content[:2000]})
-    return history[-12:]
+    return history
+
+
+def _cortex_prompt_trace(
+    question: str,
+    history: list[dict] | None,
+    loop_prompt: str,
+    *,
+    mode: str,
+    tier: str,
+    web_search: bool,
+    chat_block: str = "",
+    attach_block: str = "",
+    history_older: int = 0,
+) -> dict:
+    """What AirGPT handed to the Cortex agent loop for this turn.
+
+    Cortex builds the final model request on its side. Its system prompt and tool
+    schemas never come back here, so the trace names that gap instead of guessing.
+    """
+    import prompt_trace as _pt
+
+    trace = _pt.new("cortex", mode=mode, tier=tier)
+    usable = [
+        m for m in (history or [])
+        if isinstance(m, dict) and str(m.get("content") or "").strip()
+    ]
+    sent = [  # same slice the loop prompt is built from, a few lines below
+        m for m in (history or [])[-8:]
+        if isinstance(m, dict) and str(m.get("content") or "").strip()
+    ]
+    body = loop_prompt[len(chat_block):] if chat_block and loop_prompt.startswith(chat_block) else loop_prompt
+    if attach_block and body.endswith(attach_block):
+        body = body[: -len(attach_block)]
+    prior = body[: max(0, len(body) - len(question))] if sent else ""
+    cut = sum(1 for m in sent if len(str(m.get("content") or "").strip()) > 500)
+    available = len(usable) + max(0, int(history_older or 0))
+    note = f"{len(sent)} of {available} earlier messages sent, each cut to 500 characters."
+    if cut:
+        note += " 1 was longer and lost its tail." if cut == 1 else f" {cut} were longer and lost their tails."
+    _pt.add(trace, "history", "Chat history", prior, note=note)
+    trace["history"] = {
+        "available": available,
+        "sent": len(sent),
+        "dropped": available - len(sent),
+        "compressed": cut,
+    }
+    _pt.add(trace, "question", "Your message", question)
+    _pt.add(trace, "attachments", "Attached files", attach_block)
+    _pt.add(trace, "chat_instructions", "Chat instructions", chat_block)
+    if web_search:
+        trace["notes"].append("Tools requested from Cortex: web_search, web_fetch.")
+    trace["notes"].append(
+        "Sent to the Cortex agent loop (up to 6 steps). Cortex adds its own system "
+        "prompt and tool definitions on its side. AirGPT cannot see those, so they "
+        "are not counted here."
+    )
+    trace["opaque"] = True
+    return _pt.finalize(trace)
 
 
 def _chat_stream_events(
@@ -640,6 +880,8 @@ def _chat_stream_events(
     model_tier: str = "high",
     thinking: bool = True,
     web_search: bool = False,
+    attachments: list[dict] | None = None,
+    history_older: int = 0,
 ):
     """Yield stream events; respects abort flag between chunks."""
     if abort.is_set():
@@ -688,7 +930,7 @@ def _chat_stream_events(
     try:
         import cortex_client
 
-        yield {"type": "thinking", "text": "Cortex quality loop…", "session_id": session_id}
+        yield {"type": "thinking", "text": "Checking Cortex…", "session_id": session_id}
         loop_prompt = question or ""
         if history:
             prior = []
@@ -701,6 +943,22 @@ def _chat_stream_events(
                     prior.append(f"{role}: {content}")
             if prior:
                 loop_prompt = "Prior turns:\n" + "\n".join(prior) + "\n\nUser:\n" + loop_prompt
+        attach_block = ""
+        if attachments and ai_engine:
+            attach_block, _rep = ai_engine._attachments_block(attachments)
+            loop_prompt += "\n" + attach_block
+            attach_block = "\n" + attach_block
+        chat_block = ""
+        if session_id:
+            try:
+                import chat_prefs
+
+                chat_block = chat_prefs.block(chat_prefs.get(session_id))
+            except Exception as e:
+                print(f"[chat-prefs] not loaded: {str(e)[:120]}")
+        if chat_block:
+            loop_prompt = chat_block.lstrip("\n") + "\n" + loop_prompt
+            chat_block = chat_block.lstrip("\n") + "\n"
         loop_kw: dict = {
             "session_id": f"chat-{session_id}",
             "max_steps": 6,
@@ -712,6 +970,15 @@ def _chat_stream_events(
     except Exception as e:
         cortex = {"ok": False, "error": str(e)[:200]}
     if isinstance(cortex, dict) and cortex.get("ok") and (cortex.get("content") or "").strip():
+        try:
+            yield {"type": "prompt_trace", "trace": _cortex_prompt_trace(
+                question or "", history, loop_prompt, mode=mode, tier=model_tier, web_search=web_search,
+                chat_block=chat_block, attach_block=attach_block, history_older=history_older,
+            )}
+        except Exception as e:
+            # The answer is in hand. Without a record the panel says "no prompt
+            # record for this reply", which is true; losing the answer is not ok.
+            print(f"[prompt-trace] cortex record failed: {str(e)[:120]}")
         for t in ((cortex.get("telemetry") or {}).get("tools") or []):
             if not isinstance(t, dict):
                 continue
@@ -736,9 +1003,15 @@ def _chat_stream_events(
     why = ""
     if isinstance(cortex, dict):
         why = str(cortex.get("error") or cortex.get("stop_reason") or "")[:180]
+    # The raw reason is for the log; the person sees what really happens next.
+    print(f"[cortex] quality loop skipped: {why or 'no answer'}")
+    unreachable = isinstance(cortex, dict) and (
+        cortex.get("reason") in ("wrong_surface", "cortex_down") or "offline" in why.lower()
+    )
     yield {
         "type": "thinking",
-        "text": f"Quality loop skipped: {why or 'no answer'}",
+        "text": ("Cortex is not running, so your model is answering directly." if unreachable
+                 else "Cortex could not finish this one, so your model is answering directly."),
         "session_id": session_id,
     }
     if not _is_online():
@@ -761,6 +1034,8 @@ def _chat_stream_events(
             model_tier=model_tier,
             thinking=thinking,
             force_web=web_search,
+            attachments=attachments,
+            history_older=history_older,
         ):
             if abort.is_set():
                 return
@@ -992,11 +1267,58 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/desktop",     # computer-use observe/plan/click/type (host PC only)
     "/api/admin",       # admin dashboard data (covers /api/admin[/*])
     "/api/audit",       # audit trail (covers /api/audit[/*])
+    "/api/netie/",      # Netie account link / login / logout (writes the user-level account file)
+    "/api/input-notes", # keystroke-note recorder start/stop/append and the saved notes
+    "/api/restart-tunnel",  # drops the tunnel for every phone
+    "/api/optimizers/", # pip install of optional packages
+    "/api/agents",      # exact path too: "/api/agents/" alone left list + create open
+    "/api/export",      # whole-PC backup and history export (host only)
+    "/api/import",      # restore: replaces the data folder
+)
+
+# A machine-level write that only the host may do, while a read stays open (the page
+# shows the licence state on every device).
+_HOST_ONLY_WRITES: tuple[str, ...] = (
+    "/api/license",     # activate / set the account email
 )
 
 
-def _is_host_only_path(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES)
+def _is_host_only_path(path: str, method: str = "GET") -> bool:
+    if any(path == p or path.startswith(p) for p in _HOST_ONLY_PREFIXES):
+        return True
+    return method not in ("GET", "HEAD") and path in _HOST_ONLY_WRITES
+
+
+# Uploaded files a browser may show in place. Everything else is sent as a download.
+_INLINE_MIME = frozenset({
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "application/pdf", "text/plain",
+})
+
+
+def _data_file_chats(rel: str) -> set[int]:
+    """Chats whose messages point at this stored file (data-folder relative, forward slashes)."""
+    with db._lock, db._connect() as conn:
+        rows = conn.execute("SELECT session_id FROM messages WHERE filepath=? OR thumb=?", (rel, rel)).fetchall()
+    return {int(r[0] or 0) for r in rows}
+
+
+# A share guest (a token that carries a chat scope) is default-deny: it reaches the page
+# shell, the status calls the page needs, and its own chat, and nothing else. Whether a
+# given call is the guest's own chat (and whether it may write) is checked where the
+# chat id is known; this list only decides which routes are in play at all.
+_GUEST_GET: frozenset = frozenset({
+    "/", "/index.html", "/manifest.json", "/wasm_gate.js",
+    "/api/probe", "/api/health", "/healthz", "/health",
+    "/api/info", "/api/wait", "/api/history", "/api/sessions", "/api/search", "/api/vault",
+    "/api/messages", "/api/sessions/export", "/api/chat/prefs", "/api/chat/prompt-trace",
+    "/api/snippets", "/api/update", "/api/ai/config",
+})
+_GUEST_POST: frozenset = frozenset({
+    "/api/establish", "/api/messages", "/api/chat/stream", "/api/chat/project-suggest",
+    "/api/chat/prefs", "/api/presence/typing", "/api/chat/cancel",
+    "/api/snippets", "/api/snippets/delete",
+})
+_GUEST_PREFIXES: tuple[str, ...] = ("/ui/", "/OpenIDE/ui/", "/data/", "/api/auth/")
 
 
 # HOST-DEMO-02 / F8a: non-local clients must complete POST /api/establish before
@@ -1035,6 +1357,37 @@ def _is_tunnel_host(host: str) -> bool:
 TUNNEL_PEER = "tunnel-peer"
 
 
+def _host_name(host_header: str) -> str:
+    """Hostname part of a Host header: lower case, no port, no [] around IPv6."""
+    h = (host_header or "").strip().lower()
+    if h.startswith("["):
+        return h[1:].split("]")[0]
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def _is_trusted_host(host_header: str) -> bool:
+    """True when the Host header names this machine. Anything else is a remote caller.
+
+    A browser lets any web page send requests to 127.0.0.1, and DNS rebinding lets a
+    page choose the Host header, so the socket address alone must never mean "host".
+    A missing Host (HTTP/1.0 tools) cannot come from a browser and is allowed.
+    Extra names go in AIRGPT_TRUSTED_HOSTS (comma separated).
+    """
+    name = _host_name(host_header)
+    if not name or name in ("localhost", "127.0.0.1", "::1"):
+        return True
+    names = {n.strip().lower() for n in os.environ.get("AIRGPT_TRUSTED_HOSTS", "").split(",") if n.strip()}
+    try:
+        me = socket.gethostname().lower()
+        names.update((me, me + ".local"))
+        names.update(local_ips())
+        if wifi_access:
+            names.add((urlparse(wifi_access.mdns_url()).hostname or "").lower())
+    except Exception:
+        pass
+    return name in names
+
+
 def _is_host_request(headers, direct_ip: str) -> bool:
     """True only for the host machine itself, never for anything off a tunnel.
 
@@ -1044,16 +1397,28 @@ def _is_host_request(headers, direct_ip: str) -> bool:
     request carrying a tunnel Host header came from outside this machine, whatever
     any header claims.
     """
-    if _is_tunnel_host(headers.get("Host", "")):
+    if not _is_trusted_host(headers.get("Host", "")):
         return False
     return _is_local_host(_forwarded_client_ip(headers, direct_ip) or direct_ip)
 
 
+def _per_network(ip: str) -> str:
+    """An IPv6 caller usually holds a whole /64 and can pick a new address per request,
+    so count guesses per /64. IPv4 and markers such as TUNNEL_PEER pass unchanged."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return ip
+
+
 def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     """Real remote client when cloudflared (or similar) proxies on loopback."""
-    if direct_ip not in ("127.0.0.1", "::1"):
+    if not _is_local_host(direct_ip):
         return None
-    if not _is_tunnel_host(headers.get("Host", "")):
+    if _is_trusted_host(headers.get("Host", "")):
         return None
     cf = (headers.get("CF-Connecting-IP") or "").strip()
     xff = (headers.get("X-Forwarded-For") or "").strip()
@@ -1070,7 +1435,18 @@ def _forwarded_client_ip(headers, direct_ip: str) -> str | None:
     # value claiming to be this machine is always a lie. Refuse it, and fall back to
     # a marker that is deliberately not an address so nothing downstream can mistake
     # it for one.
-    if cand and not _is_local_host(cand):
+    # The value is shown in the admin page and the peer list, so it must be a real
+    # address and nothing else (no markup, no quotes).
+    # ip_address() accepts an IPv6 scope ("fe80::1%<anything>") and IPv4-mapped IPv6, so
+    # drop the scope and unwrap the mapped form before the value is stored or compared.
+    try:
+        addr = ipaddress.ip_address(cand.split("%")[0])
+    except ValueError:
+        return TUNNEL_PEER
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    cand = str(addr)
+    if not _is_local_host(cand):
         return cand
     return TUNNEL_PEER
 
@@ -1138,9 +1514,9 @@ def _compute_lan_diagnostics() -> dict:
     elif fw == "ok" and profile == "Public":
         hint = "Firewall OK but WiFi is Public -- run allow_firewall.ps1 as Admin to switch to Private, then scan LAN QR."
     elif profile == "Public":
-        hint = "LAN blocked -- run allow_firewall.ps1 as Admin (sets Private + opens port 8765). Or use Tunnel QR."
+        hint = f"LAN blocked. On Windows, run allow_firewall.ps1 as Admin (sets Private + opens port {PORT}). Or use Tunnel QR."
     else:
-        hint = "Run allow_firewall.ps1 as Admin to open port 8765. Then scan LAN QR on phone."
+        hint = f"On Windows, run allow_firewall.ps1 as Admin to open port {PORT}. Then scan LAN QR on phone."
     out = {
         "ips": ips,
         "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
@@ -1262,6 +1638,11 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
         else:
             h = hashlib.sha256(file_data).hexdigest()
         hash_preclaimed = False
+        # A file or screenshot attached in a chat is checked against that chat only:
+        # the same document in a second chat is normal use, not a duplicate. The
+        # global first-publisher-wins check stays for clipboard / drop capture.
+        if source == "chat" and session_id:
+            allow_duplicate = True
         if allow_duplicate and session_id:
             if db.hash_seen_in_session(h, session_id):
                 return None
@@ -1293,7 +1674,8 @@ def post_message(device_ip: str, device_name: str, text: str = "", file_data: by
             return None
         msg = db.add_message(
             device_ip=device_ip, device_name=device_name, text=text, kind="text",
-            source=source, content_hash=h, session_id=session_id,
+            # Typed chat text is never a duplicate ("yes please" twice is two messages).
+            source=source, content_hash=None if source == "chat" else h, session_id=session_id,
         )
         if msg:
             bump_sync()
@@ -1350,19 +1732,376 @@ def _add_waitlist(email: str, reason: str, tier: str = "pro") -> dict:
     return {"ok": True, "message": "Added to waitlist — we'll email you at launch"}
 
 
+# What a backup never contains, and why. Login, passcode and share files would hand
+# whoever holds the zip the keys to every paired phone; env.local holds the API keys.
+_BACKUP_SECRET_FILES: dict[str, str] = {
+    "auth_tokens.json": "login tokens of paired phones",
+    "token_meta.json": "login tokens of paired phones",
+    "token_session_acl.json": "login tokens of share guests",
+    "workspace.json": "the passcode (hashed)",
+    "workspace.json.bad": "the passcode (hashed)",
+    "session_shares.json": "share links",
+    "project_shares.json": "share links",
+    "join_codes.json": "join codes",
+    "license.json": "the licence key",
+}
+_BACKUP_ENV_REASON = "your API keys (env.local)"
+# Files that decide who may reach this PC or where approvals are asked. A backup can be handed
+# round or doctored, so a restore never replaces these (a backup made here still carries them).
+# Chosen over an allow-list of folders: the data folder holds many kinds of user content
+# (chats, files, apps, skills, memory...) and a list of names would silently drop new ones.
+_RESTORE_CONTROL_PREFIXES = ("access_policy", "openvault", "cortex_settings", "network", "admin_state",
+                             "host_routines", "audit", "env.", ".env")
+_WIN_DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", *(f"COM{i}" for i in range(1, 10)),
+                *(f"LPT{i}" for i in range(1, 10)), "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3"}
+
+
+def _alias_reason(rel: str) -> str:
+    """Why a path inside the data folder could land on a different file on Windows ('' if fine)."""
+    low = rel.lower()
+    if re.search(r"%(2e|2f|5c|00)", low):
+        return "a name with an escaped slash or dot"
+    for seg in rel.split("/"):
+        if seg != seg.rstrip(" .") or not seg.strip(" ."):
+            return "a name Windows reads as a different file (ends in a dot or space)"
+        if any(ord(c) < 32 or c in '<>"|?*' for c in seg):
+            return "a name Windows does not allow"
+        if re.search(r"~[0-9]+(\.|$)", seg):
+            return "a short Windows name that can point at another file"
+        if seg.split(".")[0].rstrip(" ").upper() in _WIN_DEVICES:
+            return "a reserved Windows device name"
+    return ""
+
+
+def _backup_left_out() -> list[dict]:
+    out = [{"file": n, "why": w} for n, w in _BACKUP_SECRET_FILES.items()]
+    out.append({"file": "env.local", "why": _BACKUP_ENV_REASON})
+    return out
+
+
+def _is_safety_zip(p: Path) -> bool:
+    return p.name.startswith("pre-restore-") and p.suffix == ".zip"
+
+
+def _zip_data_folder(zf, *, for_backup: bool) -> list[str]:
+    """Add the data folder to zf as data/... Returns the names added.
+    A backup leaves out secrets and safety copies; a safety copy keeps everything."""
+    added: list[str] = []
+    data_dir = DATA_DIR
+    if not data_dir.is_dir():
+        return added
+    for p in data_dir.rglob("*"):
+        if not p.is_file() or _is_safety_zip(p) or p.name.endswith((".tmp", ".restoring")):
+            continue
+        rel = p.relative_to(data_dir)
+        if for_backup and len(rel.parts) == 1 and p.name in _BACKUP_SECRET_FILES:
+            continue
+        name = (Path("data") / rel).as_posix()
+        zf.write(p, name)
+        added.append(name)
+    return added
+
+
 def _export_package() -> bytes:
     import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        data_dir = DATA_DIR
-        if data_dir.is_dir():
-            for p in data_dir.rglob("*"):
-                if p.is_file():
-                    zf.write(p, Path("data") / p.relative_to(data_dir))
-        env = ROOT / "env.local"
-        if env.is_file():
-            zf.write(env, "env.local")
+        added = _zip_data_folder(zf, for_backup=True)
+        zf.writestr("MANIFEST.json", json.dumps({
+            "app": "AirGPT backup",
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "files": len(added),
+            "left_out": _backup_left_out(),
+            "note": "Login tokens, the passcode, share links, the licence key and API keys are "
+                    "never put in a backup. Set them up again on the new PC.",
+        }, indent=2))
     return buf.getvalue()
+
+
+# Known databases, by path inside the data folder. A restore checks each one against what the app
+# itself builds: the app's own start-up code (CREATE TABLE and ALTER TABLE) is run on a copy in a
+# temporary folder, so there is no hand-kept list of columns to drift.
+_RESTORE_DB_PATHS = ("clipdrop.db", "agents.db", "rag/rag.db", "memory/index.db")
+_SCHEMA_PROBE = r"""
+import json, sqlite3, sys
+sys.path.insert(0, sys.argv[1])
+import importlib
+out = {"errors": {}, "schema": {}}
+# Some modules build their tables when first imported, so a bad database can fail at import.
+for rel, mod, fn, attr in (("clipdrop.db", "db", "init_db", "DB_PATH"), ("agents.db", "agent_store", "init", "DB_PATH"),
+                           ("rag/rag.db", "rag.store", "init", "DB_PATH"), ("memory/index.db", "memory_index", "init", "DB_PATH")):
+    m = None
+    try:
+        m = importlib.import_module(mod)
+        getattr(m, fn)(**({"force": True} if mod == "rag.store" else {}))
+    except Exception as e:
+        out["errors"][rel] = str(e)
+    if m is None:
+        continue
+    try:
+        con = sqlite3.connect(str(getattr(m, attr)))
+        out["schema"][rel] = {t: [c[1] for c in con.execute(f'PRAGMA table_info("{t}")')]
+                              for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        con.close()
+    except Exception as e:
+        out["errors"].setdefault(rel, str(e))
+print(json.dumps(out))
+"""
+_schema_reference: dict = {}
+
+
+def _probe_schema(seed: Path | None, rel: str) -> dict:
+    """Run the app's own start-up on a temporary data folder (holding a copy of `seed` at `rel`)."""
+    import sys, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        if seed is not None:
+            dest = Path(td) / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(seed, dest)
+        env = dict(os.environ, AIRGPT_DATA_DIR=td, AIRGPT_NO_BROWSER="1")
+        r = subprocess.run([sys.executable, "-c", _SCHEMA_PROBE, str(Path(__file__).resolve().parent)],
+                           capture_output=True, text=True, timeout=120, env=env)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr[-300:])
+        return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+# One backup may not unpack to more than this: the larger of 1 GiB and four times the data folder.
+_RESTORE_MIN_CAP = 1 << 30
+_RESTORE_CAP_FACTOR = 4
+_RESTORE_MAX_PATH = 4096
+_RESTORE_MAX_SEGMENT = 255
+
+
+def _db_refusal(path: Path, rel: str) -> str:
+    """'' when the database file is sound and fits what the app needs, else a short reason.
+    Missing tables are fine (the app creates them at start). A known table that is present must
+    end up with every column the app gives it, once the app's own upgrade steps have run."""
+    try:
+        with open(path, "rb") as fh:
+            if fh.read(16) != b"SQLite format 3\x00":
+                return "it is not a database file"
+        con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        try:
+            if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                return "it is damaged"
+            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            con.close()
+    except Exception:
+        return "it is not a working database"
+    key = next((k for k in _RESTORE_DB_PATHS if k == rel.lower()), None)
+    if key is None:
+        return ""
+    try:
+        if "ref" not in _schema_reference:
+            _schema_reference["ref"] = _probe_schema(None, key)["schema"]
+        ref = _schema_reference["ref"].get(key, {})
+        known = [t for t in have if t in ref]
+        if not known:
+            return "it has none of the tables this app uses"
+        got = _probe_schema(path, key)
+    except Exception:
+        return "it could not be checked against this app"
+    if key in got["errors"]:
+        return "its tables do not have the columns this app needs"
+    bad = [t for t in known if not set(ref[t]) <= set(got["schema"].get(key, {}).get(t, []))]
+    if bad:
+        return "its table " + ", ".join(sorted(bad)) + " does not have the columns this app needs"
+    return ""
+
+
+def _restore_package(blob: bytes) -> tuple[int, dict]:
+    """Restore a backup zip into DATA_DIR. Returns (http status, answer).
+    Plans first (nothing written), saves the current data as pre-restore-<time>.zip,
+    writes every file to a temporary name, then renames them into place."""
+    import zipfile
+    data_root = DATA_DIR.resolve()
+    skipped: list[dict] = []
+    plan: list[tuple[str, Path]] = []
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile:
+        return 400, {"error": "That file is not a backup zip."}
+    with zf:
+        for name in zf.namelist():
+            norm = name.replace("\\", "/")
+            if norm.endswith("/") or norm == "MANIFEST.json":
+                continue
+            if any(seg in ("", ".", "..") for seg in norm.split("/")) or norm.startswith("/") or ":" in norm:
+                skipped.append({"file": name, "why": "unsafe path"})
+                continue
+            if len(norm) > _RESTORE_MAX_PATH or any(len(seg) > _RESTORE_MAX_SEGMENT for seg in norm.split("/")):
+                return 400, {"error": "This backup has a file name that is too long to restore. Nothing was changed."}
+            if norm == "env.local":
+                skipped.append({"file": name, "why": "API keys are never restored from a backup; yours here stay as they are"})
+                continue
+            if not norm.startswith("data/"):
+                skipped.append({"file": name, "why": "not part of the data folder"})
+                continue
+            rel = norm[len("data/"):]
+            target = DATA_DIR / rel
+            try:
+                target.resolve().relative_to(data_root)
+            except (ValueError, OSError):
+                skipped.append({"file": name, "why": "outside the data folder"})
+                continue
+            why = _alias_reason(rel)
+            if why:
+                skipped.append({"file": name, "why": why})
+                continue
+            secret = next((k for k in _BACKUP_SECRET_FILES if k.lower() == rel.rstrip(" .").lower()), None)  # Windows drops trailing dots and spaces
+            if "/" not in rel and secret:
+                skipped.append({"file": name, "why": f"{_BACKUP_SECRET_FILES[secret]} stay as they are on this PC"})
+                continue
+            if "/" not in rel and rel.casefold().startswith(_RESTORE_CONTROL_PREFIXES):
+                skipped.append({"file": name, "why": "it controls who can reach this PC, so it stays as it is here"})
+                continue
+            if _is_safety_zip(target):
+                skipped.append({"file": name, "why": "an earlier safety copy"})
+                continue
+            plan.append((name, target))
+        if not plan:
+            return 400, {"error": "That backup has no data to restore.", "skipped": skipped}
+        # A file and a folder with one name cannot both be restored, here or against what is on disk.
+        names = {t.relative_to(DATA_DIR).as_posix().lower() for _, t in plan}
+        for _, t in plan:
+            r = t.relative_to(DATA_DIR)
+            clash = any("/".join(r.parts[:i]).lower() in names for i in range(1, len(r.parts))) \
+                or (t.is_dir() and not t.is_symlink()) \
+                or any(a.is_file() for a in t.parents if a != DATA_DIR and DATA_DIR in a.parents)
+            if clash:
+                return 400, {"error": f"This backup cannot be restored: \"{r.as_posix()}\" is a file in one place and a folder in another. Nothing was changed.", "skipped": skipped}
+        # Room first: the safety copy plus the restored files must fit on the disk.
+        need = sum(zf.getinfo(n).file_size for n, _ in plan)
+        have_now = 0
+        try:
+            have_now = sum(f.stat().st_size for f in DATA_DIR.rglob("*") if f.is_file())
+        except OSError:
+            pass
+        cap = max(_RESTORE_MIN_CAP, _RESTORE_CAP_FACTOR * have_now)
+        if need > cap:
+            return 400, {"error": "This backup unpacks to far more data than this PC holds, so it was not restored. Nothing was changed.", "skipped": skipped}
+        try:
+            need += have_now
+            free = shutil.disk_usage(DATA_DIR if DATA_DIR.is_dir() else DATA_DIR.parent).free
+            if need > free:
+                return 400, {"error": "There is not enough free space on this PC to restore that backup safely. Nothing was changed.", "skipped": skipped}
+        except OSError:
+            pass
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        safety = DATA_DIR / f"pre-restore-{stamp}.zip"
+        n = 1
+        while safety.exists():  # two restores in one second must not overwrite the first copy
+            n += 1
+            safety = DATA_DIR / f"pre-restore-{stamp}-{n}.zip"
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(safety, "w", zipfile.ZIP_DEFLATED) as sz:
+                _zip_data_folder(sz, for_backup=False)
+        except Exception as e:
+            try:
+                safety.unlink()
+            except OSError:
+                pass
+            return 500, {"error": f"Could not save a copy of your current data first, so nothing was changed ({e})."}
+        tmps: list[tuple[Path, Path]] = []
+        made_dirs: list[Path] = []
+        swapped: list[tuple[str, Path, bool]] = []
+        written = 0
+
+        def _undo_stage():
+            for tmp, _ in tmps:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            for d in reversed(made_dirs):
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
+        try:
+            for name, target in plan:
+                missing = [a for a in reversed(target.parents) if a != DATA_DIR and DATA_DIR in a.parents and not a.exists()]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                made_dirs.extend(missing)
+                tmp = target.with_name(target.name + ".restoring")
+                tmps.append((tmp, target))
+                # Count what is really written: a zip can state a small size and unpack to a huge one.
+                with zf.open(name) as src, open(tmp, "wb") as dst:
+                    while True:
+                        chunk = src.read(1 << 20)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > cap:
+                            _undo_stage()
+                            return 400, {"error": "This backup unpacks to far more data than this PC holds, so it was not restored. Nothing was changed. "
+                                                  f"Your data was also saved to {safety}.", "safety_copy": str(safety), "skipped": skipped}
+                        dst.write(chunk)
+                if target.suffix.lower() in (".db", ".sqlite", ".sqlite3"):
+                    why = _db_refusal(tmp, target.relative_to(DATA_DIR).as_posix())
+                    if why:
+                        _undo_stage()
+                        return 400, {"error": f"\"{name}\" in this backup is not a usable database ({why}), so nothing was changed. "
+                                              f"Your data was also saved to {safety}.", "safety_copy": str(safety), "skipped": skipped}
+        except Exception as e:
+            _undo_stage()
+            return 500, {"error": f"Restore stopped before changing anything ({e}). Your data was also saved to {safety}.", "safety_copy": str(safety)}
+        try:
+            with db._lock:
+                for (tmp, target), (name, _) in zip(tmps, plan):
+                    existed = target.is_file()
+                    if app_auth:
+                        app_auth._swap(tmp, target)
+                    else:
+                        os.replace(tmp, target)
+                    swapped.append((name, target, existed))
+        except Exception as e:
+            # Put every file already swapped back from the safety copy, remove what was new.
+            back_ok = True
+            try:
+                with zipfile.ZipFile(safety) as sz:
+                    for name, target, existed in swapped:
+                        try:
+                            if existed:
+                                tmp = target.with_name(target.name + ".restoring")
+                                with sz.open("data/" + target.relative_to(DATA_DIR).as_posix()) as src, open(tmp, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                                (app_auth._swap if app_auth else os.replace)(tmp, target)
+                            else:
+                                target.unlink()
+                        except Exception:
+                            back_ok = False
+            except Exception:
+                back_ok = False
+            _undo_stage()
+            return 500, {"error": (f"The restore failed part way ({e}). " + ("Everything was put back as it was. " if back_ok else
+                         "Some files could not be put back, so open the safety copy to recover them. ") + f"Your data from before is saved in {safety}."),
+                         "safety_copy": str(safety)}
+    # An older backup may lack tables or columns the app adds at start-up. The app is already running, so
+    # run those steps now on the restored files (otherwise chats answer 500 until the next restart).
+    upgrade_note = ""
+    try:
+        db.init_db()
+        import agent_store, memory_index
+        agent_store.init()
+        memory_index.init()
+    except Exception as e:
+        print(f"[restore] upgrade after restore failed: {e}")
+        upgrade_note = "Restart the app so it can finish updating the restored data. "
+    return 200, {
+        "ok": True,
+        "restored": len(tmps),
+        "skipped": skipped,
+        "safety_copy": str(safety),
+        "message": (
+            f"Restored {len(tmps)} files. Chats made after this backup were replaced. " + upgrade_note
+            + (f"Skipped {len(skipped)} (see the list). " if skipped else "")
+            + f"Your data from before was saved to {safety}."
+        ),
+    }
 
 
 # The Windows clipboard is a single global lock held per-thread. The 0.35s
@@ -2389,6 +3128,106 @@ def _rag_rebuild_paths(srcs: list) -> list:
     return rag_ingest.rebuild_source_paths(srcs)
 
 
+def _rag_sheet_rows(blob: str, start: int, end: int) -> tuple[str, int, int] | None:
+    """(sheet, first data row, last data row) for a span of a table's extracted text.
+
+    A workbook is stored as ``## Sheet: Name`` then the column row, then one line per
+    row, so the span's lines can be counted. Rows count below the header, the same
+    way the answer's "98 of 400 rows" does. None when the span is not in a sheet."""
+    last = None
+    for m in re.finditer(r"^## (.*)$", blob, re.M):
+        if m.start() > start:
+            break
+        last = m
+    if not last or not last.group(1).startswith("Sheet:"):
+        return None
+    nl = blob.find("\n", last.end() + 1)  # end of the column row
+    first_data = nl + 1 if nl >= 0 else len(blob)
+    if end <= first_data:
+        return None
+    first = blob.count("\n", first_data, max(start, first_data)) + 1
+    last_row = blob.count("\n", first_data, max(end - 1, first_data)) + 1
+    return last.group(1)[len("Sheet:"):].strip(), first, max(first, last_row)
+
+
+def _rag_passage(chunk_id: int, around: int = 3) -> dict | None:
+    """One cited passage with a few lines before and after, for the answer's viewer.
+
+    Read-only. Everything comes from the space's own rows and its stored text copy;
+    nothing the client sends is used as a path."""
+    from rag import reveal as rag_reveal
+    from rag import store as rag_store
+
+    ch = rag_store.get_chunk(int(chunk_id))
+    if not ch:
+        return None
+    src = rag_store.get_source(int(ch.get("source_id") or 0)) or {}
+    # The model is shown the surrounding (parent) passage of a hit, so that is what opens;
+    # showing only the narrow matching piece could miss the lines the answer used.
+    par = rag_store.get_chunk(int(ch.get("parent_id") or 0)) if ch.get("parent_id") else None
+    if par and int(par.get("source_id") or 0) == int(ch.get("source_id") or 0):
+        ch = par
+    meta = src.get("meta") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    start, end = int(ch.get("span_start") or 0), int(ch.get("span_end") or 0)
+    before = after = ""
+    sheet = rows = None
+    blob = ""
+    try:
+        bp = Path(str(meta.get("blob") or ""))
+        if bp.is_file():
+            blob = bp.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        blob = ""
+    if blob and 0 <= start < end <= len(blob):
+        n = max(0, min(int(around), 8))
+        if n:
+            # The window is cut mid-line at its far edge, so that edge says so with an ellipsis.
+            lo, hi = max(0, start - 800), min(len(blob), end + 800)
+            b_lines = blob[lo:start].rstrip("\n").split("\n")
+            before = "\n".join(b_lines[-n:])
+            if lo > 0 and len(b_lines) <= n:
+                before = "…" + before
+            a_lines = blob[end:hi].lstrip("\n").split("\n")
+            after = "\n".join(a_lines[:n])
+            if hi < len(blob) and len(a_lines) <= n:
+                after += "…"
+            # A passage that ends mid-line continues on the first line shown after it.
+            if end < len(blob) and blob[end - 1] != "\n" and blob[end] != "\n":
+                after = "…" + after
+            # A span that begins mid-line continues the last line shown before it.
+            if before and start and blob[start - 1] != "\n":
+                before += "\u2026"
+        sr = _rag_sheet_rows(blob, start, end)
+        if sr:
+            sheet, rows = sr[0], {"first": sr[1], "last": sr[2]}
+    heading = str(ch.get("heading") or "")
+    page = int(ch.get("page") or 0)
+    pm = re.match(r"^Page (\d+)\b", heading)
+    if not page and pm:
+        page = int(pm.group(1))
+    spath = str(src.get("path") or "")
+    is_url = bool(re.match(r"https?://", spath)) or str(src.get("title") or "").startswith("url_")
+    target = None if is_url else rag_reveal.resolve_source_path(src)[0]
+    return {
+        "chunk_id": int(ch["id"]),
+        "source_id": int(src.get("id") or 0),
+        "file": str(src.get("title") or Path(spath.replace("\\", "/")).name or "source"),
+        "heading": heading,
+        "page": page or None,
+        "sheet": sheet,
+        "rows": rows,
+        "text": str(ch.get("text") or "")[:6000],
+        "before": before,
+        "after": after,
+        "can_open": bool(target),
+    }
+
+
 def _rag_resolved(raw) -> Path | None:
     """Absolute path with symlinks followed and `..` collapsed, or None."""
     try:
@@ -2510,9 +3349,39 @@ def _explicit_consent(data, key: str = "yes") -> tuple[bool, str]:
     )
 
 
+class _HttpError(Exception):
+    """Raised anywhere under a handler to answer with this status and plain message."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+# Largest legitimate body: one file upload (MAX_BYTES, 100 MB) base64-wrapped or inside
+# a multipart form, and the zip restore. Everything else is a few KB of JSON.
+MAX_BODY = int(os.environ.get("AIRGPT_MAX_BODY_MB", "200") or 200) * 1024 * 1024
+
+
+_BAD_ID_SENTENCE = "That id is not valid."
+_ROUTE_FAIL_SENTENCE = "That did not work. Try again."
+
+
+def _route_int(raw, *, lo: int = 0, hi: int = 2**62) -> int | None:
+    """A whole number from a URL or body, or None. Strings, negatives and huge values are None."""
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if lo <= n <= hi else None
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ClipDrop/5"
+    # A client that connects and sends nothing must not pin a thread forever. This
+    # limits each socket read or write, not a whole request, so slow long replies
+    # (chat streams, /api/wait) and big uploads that keep moving are unaffected.
+    timeout = 120
 
     # Keep-alive safety. Early error returns (429 rate limit, 403 share ACL, 503 no
     # engine) reply before anyone reads the POST body. On HTTP/1.1 those bytes stay in
@@ -2535,6 +3404,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_one_request(self):
         self._body_consumed = False
+        self._hdr_sent = False
+        self._last_body = None
+        self._ctype = ""
         try:
             super().handle_one_request()
         except self._BENIGN_DISCONNECTS as e:
@@ -2569,7 +3441,9 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         if args and str(args[0]).startswith("GET /api"):
             return
-        print(f"[{self.client_address[0]}] {fmt % args}")
+        # A session token or one-time join token in the address must not reach the log.
+        line = re.sub(r"([?&](?:token|qr)=)[^&\s\"]+", r"\1***", fmt % args)
+        print(f"[{self.client_address[0]}] {line}")
 
     def _request_token(self, allow_query: bool = False) -> str:
         tok = self.headers.get("X-AirGPT-Token") or ""
@@ -2581,6 +3455,95 @@ class Handler(BaseHTTPRequestHandler):
             tok = parse_qs(urlparse(self.path).query).get("token", [""])[0]
         return tok
 
+    def _chat_tools_guard(self, sid: int, write: bool):
+        """None when allowed, else (status, message). Share guests only reach their own chat."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        scoped = None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            scoped = app_auth.token_session_acl(self._request_token())
+        if scoped:
+            if int(scoped["session_id"]) != int(sid):
+                return 404, "Chat not found."
+            if write and scoped.get("acl") == "view":
+                return 403, "This share is view-only."
+        return None
+
+    def _guest_scope(self, allow_query: bool = False):
+        """The chat scope of a share guest, or None (host, or a joined device's own token)."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            return app_auth.token_session_acl(self._request_token(allow_query)) or None
+        return None
+
+    def _guest_chat_refusal(self, path: str, scoped: dict):
+        """None when this guest call stays inside its own chat, else (status, message)."""
+        sid = int(scoped["session_id"])
+        cmd = self.command
+        if cmd == "POST" and path in ("/api/messages", "/api/chat/stream", "/api/chat/project-suggest", "/api/presence/typing"):
+            body, ctype = self._body(), self.headers.get("Content-Type", "")
+            try:
+                if "multipart" in ctype:
+                    data = _parse_multipart(body, ctype)
+                else:
+                    data = json.loads(body.decode("utf-8") or "{}")
+                if not isinstance(data, dict):
+                    return 400, "The request was not valid."
+                asked = int(data.get("session_id") or 0)
+                parent = int(data.get("parent_session_id") or 0)
+                msg_ids = [int(data.get("reply_to_id") or 0)] + [int(x) for x in (data.get("context_ids") or [])]  # all of them: the handler reads the first 10
+            except (ValueError, TypeError, AttributeError):
+                return 400, "The request was not valid."
+            bad = self._chat_tools_guard(asked, write=path != "/api/presence/typing")
+            if bad or parent not in (0, sid):
+                return bad or (404, "Chat not found.")
+            for mid in msg_ids:
+                row = db.get_message(mid) if mid else None
+                if row and int(row.get("session_id") or 0) != sid:
+                    return 404, "Chat not found."
+        elif cmd == "PATCH":
+            return self._chat_tools_guard(int(path.rstrip("/").rsplit("/", 1)[-1]), write=True)
+        elif cmd == "DELETE":
+            row = db.get_message(int(path.rsplit("/", 1)[-1]))
+            return self._chat_tools_guard(int((row or {}).get("session_id") or 0), write=True)
+        return None
+
+    def _gate(self, path: str) -> bool:
+        """The one gate every method runs, in this order: passcode set (S1), token,
+        host-only paths, handshake, then the share-guest scope. False after a refusal."""
+        if not self._s1_ok(path):
+            return False
+        if not self._auth_ok(path):
+            self._json(401, {"error": "auth required", "auth": True})
+            return False
+        if _is_host_only_path(path, self.command) and not _is_host_request(self.headers, self.client_address[0]):
+            self._json(403, {"error": "host only"})
+            return False
+        if not self._establish_ok(path):
+            return False
+        scoped = self._guest_scope(allow_query=path.startswith("/data/"))
+        if not scoped:
+            return True
+        cmd = self.command
+        if cmd in ("GET", "HEAD"):
+            ok = path in _GUEST_GET or path.startswith(_GUEST_PREFIXES)
+        elif cmd == "POST":
+            ok = path in _GUEST_POST or path.startswith("/api/auth/")
+        elif cmd == "PATCH":
+            ok = re.fullmatch(r"/api/sessions/\d+", path.rstrip("/")) is not None
+        elif cmd == "DELETE":
+            ok = re.fullmatch(r"/api/messages/\d+", path) is not None
+        else:
+            ok = False
+        bad = self._guest_chat_refusal(path, scoped) if ok else (403, "A shared link can only open its own chat.")
+        if bad:
+            if app_audit:
+                app_audit.log("guest_refused", ip=self._client_ip(), detail=f"{cmd} {path}", ok=False)
+            self._json(bad[0], {"ok": False, "error": bad[1]})
+            return False
+        return True
+
     def _client_ip(self) -> str:
         direct = self.client_address[0]
         return _forwarded_client_ip(self.headers, direct) or direct
@@ -2591,6 +3554,11 @@ class Handler(BaseHTTPRequestHandler):
         if not app_auth:
             return base_url, ""
         if not app_auth.status().get("needs_auth"):
+            return base_url, ""
+        # A join link is a credential: only the host machine is handed one. Any other
+        # caller (a joined phone, a share guest) gets the bare address and no token,
+        # whatever is cached for the host.
+        if not _is_host_request(self.headers, self.client_address[0]):
             return base_url, ""
         key = base_url.rstrip("/")
         cached = _qr_join_cache.get(key)
@@ -2622,6 +3590,19 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         if app_audit:
             app_audit.log("s1_passcode_required", ip=ip, detail=path, ok=False)
+        if "text/html" in (self.headers.get("Accept") or "") and self.command == "GET":
+            # A person opening the link in a browser sees why, not raw JSON.
+            page = (
+                "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+                "<meta name=color-scheme content='light dark'>"
+                "<title>AirGPT is locked</title>"
+                "<body style='font:18px/1.5 system-ui,sans-serif;max-width:30em;margin:12vh auto;padding:0 20px'>"
+                "<h1>This computer is not ready for your phone yet</h1>"
+                "<p>On the computer that runs AirGPT, open Settings, then Profile, and set a passcode.</p>"
+                "<p>Then come back here and reload this page.</p></body>"
+            ).encode()
+            self._send(403, page, "text/html; charset=utf-8")
+            return False
         self._json(403, {
             "ok": False,
             "error": "set a host passcode before LAN or tunnel access",
@@ -2631,9 +3612,9 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _auth_ok(self, path: str) -> bool:
-        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/netie/account", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
+        if path in ("/", "/index.html", "/admin", "/admin.html", "/wasm_gate.js", "/manifest.json", "/api/probe", "/api/health", "/healthz", "/health", "/api/auth/status", "/api/establish") or path.startswith("/api/qr") or path.startswith("/OpenIDE/ui/") or path.startswith("/ui/"):
             return True
-        if path.startswith("/api/auth/") or path.startswith("/api/netie/"):
+        if path.startswith("/api/auth/"):
             return True
         direct = self.client_address[0]
         if _is_local_host(direct) and not _forwarded_client_ip(self.headers, direct):
@@ -2740,6 +3721,23 @@ class Handler(BaseHTTPRequestHandler):
             "security_version": AIRGPT_SECURITY_VERSION,
         })
 
+    def _guess_key(self, ip: str) -> str:
+        """Who a passcode guess is counted against, in a form the guesser cannot change.
+
+        Over a tunnel the client address comes from a forwarded header. Only
+        cloudflared on a trycloudflare.com name is known to overwrite that header; any
+        other tunnel passes the caller's own value through, so rotating it gave every
+        guess a fresh count (a 4-character passcode fell to 40 tries). Those callers
+        share one count. A device on the LAN is counted by its socket address.
+        """
+        direct = self.client_address[0]
+        host = self.headers.get("Host", "")
+        if not _is_local_host(direct) or _is_trusted_host(host):
+            return _per_network(ip)
+        if _host_name(host).endswith(".trycloudflare.com") and (self.headers.get("CF-Connecting-IP") or "").strip():
+            return _per_network(ip)
+        return TUNNEL_PEER
+
     def _passcode_rate_limited(self, ip: str) -> bool:
         """Throttle passcode/join-code guessing. Local host is exempt.
 
@@ -2748,29 +3746,76 @@ class Handler(BaseHTTPRequestHandler):
         """
         if _is_local_host(ip):
             return False
+        key = self._guess_key(ip)
         now = time.time()
-        fails = [t for t in _auth_fails.get(ip, []) if now - t < 300]
-        _auth_fails[ip] = fails
+        fails = [t for t in _auth_fails.get(key, []) if now - t < 300]
+        _auth_fails[key] = fails
         return len(fails) >= 20
 
     def _note_passcode_fail(self, ip: str) -> None:
         if _is_local_host(ip):
             return
-        _auth_fails.setdefault(ip, []).append(time.time())
+        _auth_fails.setdefault(self._guess_key(ip), []).append(time.time())
+
+    def send_header(self, keyword, value):
+        if keyword.lower() == "content-type":
+            self._ctype = str(value)
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        self._hdr_sent = True
+        super().send_header("X-Content-Type-Options", "nosniff")
+        if getattr(self, "_ctype", "").startswith("text/html"):
+            super().send_header("X-Frame-Options", "SAMEORIGIN")
+            super().send_header("Content-Security-Policy", "frame-ancestors 'self'")
+        super().end_headers()
+
+    def _origin_ok(self) -> bool:
+        """No Origin (curl, native apps, navigations) or the page's own origin."""
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        o = origin.strip().lower().rstrip("/")
+        if not o or o == "null":
+            return False
+        if urlparse(o).netloc and urlparse(o).netloc == (self.headers.get("Host") or "").strip().lower():
+            return True
+        extra = os.environ.get("AIRGPT_ALLOWED_ORIGINS", "")
+        return o in {x.strip().lower().rstrip("/") for x in extra.split(",") if x.strip()}
+
+    def _origin_gate(self) -> bool:
+        """False after answering 403 to a request that came from another web page."""
+        path = urlparse(self.path).path
+        if self._origin_ok():
+            # A plain cross-site GET (an <img>, a link, a no-cors fetch) carries no Origin
+            # header, but the browser still says where it came from. Such a page cannot
+            # read the answer, yet the request itself would run as the host.
+            site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+            if self.headers.get("Origin") is not None or site not in ("cross-site", "same-site") or not path.startswith("/api/"):
+                return True
+        if self.command == "OPTIONS" or path.startswith(("/api/", "/data/")):
+            self._json(403, {"ok": False, "error": "Blocked: this request came from another website."})
+            return False
+        return True
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin")
+        if origin and self._origin_ok():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header(
             "Access-Control-Allow-Headers",
             "Content-Type, X-AirGPT-Token, Authorization, X-AirGPT-Session-Nonce",
         )
         self.send_header("Access-Control-Expose-Headers", SECURITY_VERSION_HEADER)
 
-    def _send(self, code, body: bytes, ctype):
+    def _send(self, code, body: bytes, ctype, headers: dict | None = None):
         try:
             self._drain_request_body()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             self.send_header(SECURITY_VERSION_HEADER, AIRGPT_SECURITY_VERSION)
             self._cors()
@@ -2781,7 +3826,55 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def _json(self, code, data):
-        self._send(code, json.dumps(data).encode(), "application/json; charset=utf-8")
+        body = json.dumps(data).encode()
+        headers: dict = {}
+        # A long chat is half a megabyte of text; send it squeezed when the client allows.
+        # Only whole JSON bodies pass through here. Streams (SSE) write their own chunks
+        # and are never compressed.
+        if len(body) >= 1024 and "gzip" in (self.headers.get("Accept-Encoding", "") or "").lower():
+            import gzip as _gzip
+
+            packed = _gzip.compress(body, 5)
+            if len(packed) < len(body):
+                body, headers = packed, {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
+        self._send(code, body, "application/json; charset=utf-8", headers)
+
+    def _send_static(self, asset: Path, mime: str) -> None:
+        """A script or stylesheet from disk: ETag and Last-Modified so an unchanged file
+        answers 304 once the 60 s cache window ends, and gzip when the client accepts it."""
+        from email.utils import formatdate, parsedate_to_datetime
+
+        body, etag = _cached_asset(asset)
+        mtime = int(asset.stat().st_mtime)
+        lastmod = formatdate(mtime, usegmt=True)
+        inm = self.headers.get("If-None-Match")
+        ims = self.headers.get("If-Modified-Since")
+        fresh = False
+        if inm:
+            fresh = etag in [t.strip().removeprefix("W/") for t in inm.split(",")] or inm.strip() == "*"
+        elif ims:
+            try:
+                fresh = mtime <= parsedate_to_datetime(ims).timestamp()
+            except (TypeError, ValueError):
+                fresh = False
+        if fresh:
+            self.send_response(304)
+        else:
+            squeeze = mime.startswith(("text/", "application/javascript", "application/json", "image/svg"))
+            payload, encoding = _maybe_gzip(body, self.headers.get("Accept-Encoding", "") if squeeze else "")
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(payload)))
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+        self.send_header("Cache-Control", "public, max-age=60")
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", lastmod)
+        self.send_header("Vary", "Accept-Encoding")
+        self._cors()
+        self.end_headers()
+        if not fresh:
+            self.wfile.write(payload)
 
     def _sse_begin(self) -> None:
         self._drain_request_body()
@@ -2862,7 +3955,36 @@ class Handler(BaseHTTPRequestHandler):
         out = project_suggest.observe(sid, str(body.get("text") or ""), current)
         return self._json(200, out)
 
+    def _handle_chat_cancel(self) -> None:
+        """Stop button: end the running reply that `stream_id` names. The partial text
+        is saved by the stream itself; this only raises the flag."""
+        try:
+            data = json.loads(self._body().decode() or "{}")
+        except json.JSONDecodeError:
+            return self._json(400, {"error": "invalid json"})
+        with _chat_streams_lock:
+            run = _chat_streams.get(str(data.get("stream_id") or ""))
+        scoped = self._guest_scope()
+        if scoped and scoped.get("acl") == "view":
+            return self._json(403, {"error": "This share is view-only"})
+        if run and scoped and int(scoped["session_id"]) != int(run["session_id"]):
+            run = None  # a share link can only stop a reply in its own chat
+        if run:
+            run["abort"].set()
+        return self._json(200, {"ok": True, "stopped": bool(run)})
+
     def _handle_chat_stream(self, ip: str, dname: str) -> None:
+        # The stream stays on the running list until its reply is saved (or it fails or
+        # is stopped), however this method ends; see _generating_sessions.
+        self._stream_ids: list[str] = []
+        try:
+            return self._handle_chat_stream_run(ip, dname)
+        finally:
+            with _chat_streams_lock:
+                for sid_ in self._stream_ids:
+                    _chat_streams.pop(sid_, None)
+
+    def _handle_chat_stream_run(self, ip: str, dname: str) -> None:
         if not ai_engine:
             return self._json(503, {"error": "ai_engine not installed"})
         blocked = _ai_lockdown_block()
@@ -2878,13 +4000,46 @@ class Handler(BaseHTTPRequestHandler):
             )
         rate_err = _check_ai_rate()
         if rate_err:
-            return self._json(429, {"error": rate_err})
+            wait = re.search(r"Wait (\d+)s", rate_err)
+            return self._json(429, {"error": rate_err, "retry_after": int(wait.group(1)) if wait else 60})
         try:
             data = json.loads(self._body().decode() or "{}")
         except json.JSONDecodeError:
             return self._json(400, {"error": "invalid json"})
 
         text = str(data.get("text", "")).strip()
+        # Change the last turn: `regenerate_msg_id` answers that question again,
+        # `replace_msg_id` swaps that question (and its answer) for `text`.
+        try:
+            regen_id = int(data.get("regenerate_msg_id") or 0)
+            replace_id = int(data.get("replace_msg_id") or 0)
+        except (TypeError, ValueError):
+            return self._json(400, {"error": "invalid message id"})
+        turn_user: dict | None = None
+        turn_replies: list[dict] = []
+        turn_files: list[int] = []
+        turn_note = ""
+        stored_tail: list[int] = []
+        claimed_id, claimed_abort = uuid.uuid4().hex, threading.Event()  # the claim made above, reused as the stream
+        if regen_id or replace_id:
+            turn_sid = int(data.get("session_id", 0) or 0)
+            # The server is the only place that knows a reply is being written: two tabs
+            # (or a tab and a phone) must not both change the same turn.
+            # Check and claim in one step: two requests at the same instant must not both pass.
+            with _chat_streams_lock:
+                if turn_sid and any(int(r.get("session_id") or 0) == turn_sid for r in _chat_streams.values()):
+                    return self._json(409, {"error": "AirGPT is still answering in this chat. Wait for it or press Stop."})
+                if turn_sid:
+                    _chat_streams[claimed_id] = {"abort": claimed_abort, "session_id": turn_sid, "started": time.time()}
+                    self._stream_ids.append(claimed_id)
+            turn_user, turn_replies, turn_err = _last_turn(
+                turn_sid, regen_id or replace_id, data.get("attachment_ids")
+            )
+            if turn_err:
+                return self._json(409, {"error": turn_err})
+            turn_files = _turn_file_ids(turn_sid, int(turn_user["id"]))  # the question's own files go again
+            if regen_id:
+                text = str(turn_user.get("text") or "").strip()
         if not text:
             return self._json(400, {"error": "text required"})
 
@@ -2894,6 +4049,25 @@ class Handler(BaseHTTPRequestHandler):
         reply_to_id = int(data.get("reply_to_id", 0) or 0)
         reply_snippet = str(data.get("reply_snippet", ""))[:500]
         context_ids = data.get("context_ids") or []
+        attach_ids = data.get("attachment_ids") or []
+        if regen_id:  # asked again with exactly the files it had; nothing else rides along
+            attach_ids = turn_files[:12]
+            turn_note = _left_out_note(turn_files[12:], (session_id, parent_session_id), turn_files[:12])
+        elif replace_id:  # the files this question was asked about (if any), then any added with the edit
+            all_new = _clean_attach_ids(attach_ids, None)
+            new_ids = all_new[:12]
+            room = 12 - len(new_ids)
+            old_sent, old_tail = turn_files[:12], turn_files[12:]  # the question stored what it sent, then what it left out
+            kept_old = old_sent[len(old_sent) - room:] if room > 0 else []
+            left_out = old_sent[:len(old_sent) - len(kept_old)] + old_tail + all_new[12:]
+            attach_ids = kept_old + new_ids
+            stored_tail = [i for i in left_out if i not in attach_ids]  # kept on the row so regenerate repeats the note
+            turn_note = _left_out_note(left_out, (session_id, parent_session_id))  # said in the reply itself
+        else:  # a fresh send: files past the cap are named, not dropped silently
+            _all = _clean_attach_ids(attach_ids, None)
+            turn_note = _left_out_note(_all[12:], (session_id, parent_session_id), _all[:12])
+            stored_tail = _all[12:]
+        attach_sessions = (session_id, parent_session_id)  # before a reply chat replaces session_id
         model_tier = str(data.get("model_tier", "high") or "high").strip().lower()
         if model_tier not in ("basic", "high", "max"):
             model_tier = "high"
@@ -2912,7 +4086,9 @@ class Handler(BaseHTTPRequestHandler):
                 reply_snippet = (rm.get("text") or rm.get("ai_analysis") or "")[:500]
 
         parent_id = parent_session_id or session_id
-        if reply_to_id or reply_snippet:
+        if turn_user:
+            reply_snippet = ""  # changing a turn stays in its own chat
+        elif reply_to_id or reply_snippet:
             title = text[:60] or "Reply"
             cat = db.MODE_TO_CATEGORY.get(mode, "general")
             sess = db.create_reply_session(parent_id, title, reply_snippet, category=cat)
@@ -2926,12 +4102,31 @@ class Handler(BaseHTTPRequestHandler):
                 sess = db.create_session("New chat", capture_type="ai", category=cat)
                 session_id = sess["id"]
 
-        db.maybe_set_ai_session_title(session_id, text[:60])
-        user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id)
-        bump_sync()
+        def _drop_old_turn() -> None:
+            """The new answer (or a stopped part of it) is saved: only now does the old
+            answer go, and for an edit the old question with it."""
+            if turn_user:
+                _forget_turn_memory(session_id, str(turn_user.get("text") or ""))
+            for old in turn_replies:
+                db.delete_message(int(old["id"]))
+
+        if regen_id:
+            user_msg = turn_user  # same question, asked again: no second copy
+        else:
+            db.maybe_set_ai_session_title(session_id, text[:60])
+            user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=session_id,
+                                      attachment_ids=_clean_attach_ids(attach_ids) + stored_tail)
+            if replace_id:  # the edited question stands in for the old turn once it is answered
+                turn_replies = [turn_user, *turn_replies]
+            bump_sync()
 
         exclude_id = int(user_msg["id"]) if user_msg else 0
-        history = _build_chat_history(session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id)
+        history_counts: dict = {}
+        history = _build_chat_history(
+            session_id, context_ids, reply_snippet, exclude_msg_id=exclude_id,
+            before_id=int(turn_user["id"]) if turn_user else exclude_id, counts=history_counts,
+        )
+        history_older = int(history_counts.get("older") or 0)
 
         # Armed skills modify THIS send only. The raw user text is what gets stored
         # above — packs are prepended to the model's copy so the transcript stays
@@ -2960,32 +4155,78 @@ class Handler(BaseHTTPRequestHandler):
             if packs:
                 question = "\n\n".join(packs) + f"\n\n---\n\n{text}"
 
-        # Reserved for explicit cancellation. Deliberately NOT tripped by the client
-        # disconnecting any more — a dropped socket used to abandon generation and
-        # discard a finished answer, which is how an iPad on a flaky tunnel ended up
-        # with its question sitting there unanswered forever.
+        # Set only by the Stop button (POST /api/chat/cancel, keyed by stream_id) and
+        # NOT by the client disconnecting — a dropped socket used to abandon generation
+        # and discard a finished answer, which is how an iPad on a flaky tunnel ended
+        # up with its question sitting there unanswered forever.
         abort = threading.Event()
+        stream_id = uuid.uuid4().hex
+        if (regen_id or replace_id) and claimed_id in self._stream_ids:
+            abort, stream_id = claimed_abort, claimed_id  # already on the running list
+        else:
+            with _chat_streams_lock:
+                _chat_streams[stream_id] = {"abort": abort, "session_id": session_id, "started": time.time()}
+            self._stream_ids.append(stream_id)
+
+        def _release() -> None:
+            """Take the chat off the "answering" list. Called once the reply is saved and
+            BEFORE the final event goes out, so the page's next waiting line (sent the
+            moment it sees that event) never meets a chat that still looks busy."""
+            with _chat_streams_lock:
+                _chat_streams.pop(stream_id, None)
+
+        def _undo_edit() -> None:
+            """The edit produced no saved text: the old question and answer stay, and the
+            edited copy of the question must not be left behind as a duplicate."""
+            if replace_id and user_msg:
+                db.delete_message(int(user_msg["id"]))
+                bump_sync()
+
         event_q: queue.Queue = queue.Queue()
-        done_ev: dict = {"analysis": "", "model": "", "error": ""}
+        done_ev: dict = {"analysis": "", "model": "", "error": "", "trace": None, "partial": ""}
+        gate = threading.Lock()  # a Stop and the producer never both touch done_ev
+
+        restrict_links = not _is_host_request(self.headers, self.client_address[0])
+        attach_files = _attachment_files(attach_ids, attach_sessions)
+        cut_note = ai_engine.QUESTION_CUT_NOTE if ai_engine and len(text) > ai_engine.QUESTION_LIMIT else ""
+        cut_note = turn_note + cut_note
 
         def _producer() -> None:
+            events = None
             try:
-                for ev in _chat_stream_events(
+                ai_engine.set_link_fetch_restricted(restrict_links)
+                if cut_note:
+                    event_q.put({"type": "token", "text": cut_note + "\n\n"})
+                    done_ev["partial"] += cut_note + "\n\n"
+                events = _chat_stream_events(
                     question, mode, history, abort,
                     session_id=session_id,
                     model_tier=model_tier,
                     thinking=thinking_flag,
                     web_search=web_search_flag,
-                ):
-                    if abort.is_set():
-                        break
-                    event_q.put(ev)
-                    if ev.get("type") == "done":
-                        done_ev["analysis"] = ev.get("analysis", "")
-                        done_ev["model"] = ev.get("model", "")
-                    elif ev.get("type") == "error":
-                        done_ev["error"] = ev.get("text", "") or ev.get("error", "")
-                        break
+                    attachments=attach_files,
+                    history_older=history_older,
+                )
+                for ev in events:
+                    with gate:
+                        if abort.is_set():
+                            break
+                        if cut_note and ev.get("type") == "done":
+                            # Said in the reply itself (and saved with it), not only in the prompt panel.
+                            ev = {**ev, "analysis": cut_note + "\n\n" + str(ev.get("analysis") or "")}
+                        if ev.get("type") == "prompt_trace":
+                            # Kept for the reply row; the client reads it back by message id.
+                            done_ev["trace"] = ev.get("trace")
+                            continue
+                        event_q.put(ev)
+                        if ev.get("type") == "token":
+                            done_ev["partial"] += str(ev.get("text") or "")
+                        elif ev.get("type") == "done":
+                            done_ev["analysis"] = ev.get("analysis", "")
+                            done_ev["model"] = ev.get("model", "")
+                        elif ev.get("type") == "error":
+                            done_ev["error"] = ev.get("text", "") or ev.get("error", "")
+                            break
             except Exception as e:
                 err = str(e)[:400]
                 done_ev["error"] = err
@@ -2994,8 +4235,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             finally:
+                if events is not None:
+                    events.close()  # a Stop reaches the model call: its connection is closed here
                 # Always close the stream so clients never hang waiting for done
-                if not done_ev["error"] and not done_ev["analysis"]:
+                if not done_ev["error"] and not done_ev["analysis"] and not abort.is_set():
                     try:
                         event_q.put({
                             "type": "error",
@@ -3006,10 +4249,11 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 event_q.put(None)
 
+        turn_started = time.time()
         threading.Thread(target=_producer, daemon=True).start()
         self._sse_begin()
         # Immediate ack so UI can adopt session before model tokens arrive
-        self._sse_send({"type": "thinking", "text": "Connected - generating...", "session_id": session_id})
+        self._sse_send({"type": "thinking", "text": "Connected - generating...", "session_id": session_id, "stream_id": stream_id})
 
         # A phone on a flaky tunnel drops the stream mid-answer constantly. Losing the
         # socket must stop the WRITING, not the WORK: the model has already been paid
@@ -3017,10 +4261,13 @@ class Handler(BaseHTTPRequestHandler):
         # on its next poll instead of the question sitting there forever unanswered.
         client_gone = False
         idle_ticks = 0
+        held_final: dict | None = None  # the done / error event, sent after the reply is saved
         while True:
             try:
                 ev = event_q.get(timeout=0.25)
             except queue.Empty:
+                if abort.is_set():
+                    break  # Stopped while the model was silent: do not wait for it
                 idle_ticks += 1
                 # Keepalive every ~2s so proxies/clients don't drop the stream
                 if idle_ticks % 8 == 0 and not client_gone:
@@ -3032,13 +4279,39 @@ class Handler(BaseHTTPRequestHandler):
                 break
             if isinstance(ev, dict):
                 ev = {**ev, "session_id": session_id}
+                if ev.get("type") in ("done", "error"):
+                    held_final = ev
+                    continue
             if not client_gone and not self._sse_send(ev):
                 client_gone = True
 
+        with gate:  # from here the producer can no longer add to what we save
+            stopped = abort.is_set() and not done_ev["analysis"] and not done_ev["error"]
+            partial = str(done_ev["partial"]).strip()
+        if stopped:
+            # Stop was pressed before the answer finished. What was written so far is
+            # kept, marked stopped; nothing more is generated or saved afterwards.
+            stop_ev: dict = {"type": "stopped", "saved": False, "session_id": session_id}
+            if partial:
+                part_row = db.add_message(
+                    device_ip="127.0.0.1", device_name="AirGPT", text=partial,
+                    kind="text", source="ai", session_id=session_id,
+                )
+                if part_row:
+                    db.set_message_ai_info(int(part_row["id"]), status="stopped")
+                    stop_ev.update(saved=True, message_id=int(part_row["id"]))
+                    _drop_old_turn()  # a stopped regenerate or edit still replaces the old turn
+                bump_sync()
+            if not stop_ev.get("saved"):
+                _undo_edit()
+            _release()
+            self._sse_send(stop_ev)
+            self._sse_end()
+            return
         # Persist whenever an answer exists. The old condition also required the client
         # to still be attached, so a tunnel hiccup silently discarded a finished reply.
         if done_ev["analysis"] and not done_ev["error"]:
-            db.add_message(
+            ai_row = db.add_message(
                 device_ip="127.0.0.1",
                 device_name="AirGPT",
                 text=done_ev["analysis"],
@@ -3046,13 +4319,35 @@ class Handler(BaseHTTPRequestHandler):
                 source="ai",
                 session_id=session_id,
             )
+            if ai_row:
+                if done_ev.get("model"):
+                    db.set_message_ai_info(int(ai_row["id"]), model=str(done_ev["model"]))
+                _drop_old_turn()  # regenerate or edit: the new reply takes the old turn's place
+            if ai_row and isinstance(done_ev.get("trace"), dict):
+                try:
+                    import prompt_trace
+
+                    done_ev["trace"]["model"] = done_ev.get("model") or ""
+                    # Wall time from send to finished answer, and the reply's size.
+                    done_ev["trace"]["elapsed_ms"] = int((time.time() - turn_started) * 1000)
+                    done_ev["trace"]["reply_chars"] = len(done_ev["analysis"])
+                    done_ev["trace"]["reply_tokens_est"] = prompt_trace.est_tokens(done_ev["analysis"])
+                    prompt_trace.save(int(ai_row["id"]), session_id, done_ev["trace"])
+                except Exception as e:
+                    # The reply is already saved; a lost trace must not lose the answer.
+                    print(f"[prompt-trace] not saved: {str(e)[:120]}")
             db.maybe_set_ai_session_title(
                 session_id,
                 _title_from_ai_text(done_ev["analysis"], fallback=text[:60]),
                 summary=done_ev["analysis"][:280].replace("\n", " "),
             )
             bump_sync()
-        elif done_ev.get("error"):
+        else:
+            _undo_edit()
+        _release()
+        if held_final and not client_gone:
+            self._sse_send(held_final)
+        elif done_ev.get("error") and not held_final:
             self._sse_send({"type": "error", "error": done_ev["error"], "session_id": session_id})
         self._sse_end()
 
@@ -3098,6 +4393,11 @@ class Handler(BaseHTTPRequestHandler):
                 chat_id = int(rag_store.create_chat(sid, (q[:60] or "New chat"))["id"])
             except Exception:
                 chat_id = 0
+        # A chat belongs to one space; answers from another space must not land in it.
+        why = rag_answer.check_chat(sid, chat_id)
+        if why:
+            return self._json(400, {"ok": False, "error": why})
+        history = rag_answer.chat_history(chat_id)
 
         self._sse_begin()
         text = ""
@@ -3105,7 +4405,8 @@ class Handler(BaseHTTPRequestHandler):
         done: dict = {}
         try:
             for ev in rag_answer.answer_events(
-                sid, q, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids
+                sid, q, depth=depth, use_llm=use_llm, use_web=use_web, source_ids=source_ids,
+                history=history,
             ):
                 t = ev.get("type")
                 if t == "thinking":
@@ -3120,6 +4421,11 @@ class Handler(BaseHTTPRequestHandler):
                         "space_id": sid,
                         "chat_id": chat_id,
                         "confidence": ev.get("confidence"),
+                        # The goal rides with the first event so the page can show the
+                        # gap box as soon as it knows; it used to be dropped here.
+                        "goal": ev.get("goal") or {},
+                        "lane": ev.get("lane"),
+                        "web_used": bool(ev.get("web_used")),
                     }
                     if not self._sse_send(payload):
                         break
@@ -3158,6 +4464,7 @@ class Handler(BaseHTTPRequestHandler):
                     chat_id, "assistant", text,
                     citations=citations,
                     depth=depth, trace_id=done.get("trace_id") or "",
+                    provenance=rag_answer.saved_provenance(done),
                 )
             except Exception:
                 pass
@@ -3180,6 +4487,21 @@ class Handler(BaseHTTPRequestHandler):
             # be indistinguishable from a first-choice reply.
             "degraded": done.get("degraded") or "",
             "chat_id": chat_id,
+            # Same fields the JSON answer carries, so the page reads one shape.
+            "goal": done.get("goal") or {},
+            "citations": citations,
+            "abstained": bool(done.get("abstained")),
+            "abstain_reason": done.get("abstain_reason") or "",
+            "web_used": bool(done.get("web_used")),
+            "lane": done.get("lane"),
+            "variant": done.get("variant"),
+            "honesty": done.get("honesty"),
+            "logic": done.get("logic"),
+            "ontology_summary": done.get("ontology_summary"),
+            "sql": done.get("sql") or "",
+            "provenance": done.get("provenance") or {},
+            "template_id": done.get("template_id"),
+            "depth": done.get("depth") or depth,
         })
         self._sse_end()
 
@@ -3246,10 +4568,60 @@ class Handler(BaseHTTPRequestHandler):
         })
         self._sse_end()
 
+    def _chat_prefs_gate(self, sid: int, write: bool):
+        """Return an error (code, body) when this caller may not touch chat `sid`, else None."""
+        if _is_host_request(self.headers, self.client_address[0]):
+            return None
+        scoped = None
+        if app_auth and hasattr(app_auth, "token_session_acl"):
+            scoped = app_auth.token_session_acl(self._request_token())
+        if scoped:
+            if int(scoped.get("session_id") or 0) != sid:
+                return 403, {"ok": False, "error": "This share only covers its own chat."}
+            if write and scoped.get("acl") == "view":
+                return 403, {"ok": False, "error": "This share is view-only."}
+        return None
+
+    def _handle_chat_prefs_post(self):
+        try:
+            data = json.loads(self._body().decode() or "{}")
+            sid = int(data.get("session_id") or 0)
+        except (ValueError, TypeError, AttributeError):
+            return self._json(400, {"ok": False, "error": "Send session_id as a number and instructions as text."})
+        denied = self._chat_prefs_gate(sid, write=True)
+        if denied:
+            return self._json(*denied)
+        if sid <= 0 or not db.get_session(sid):
+            return self._json(404, {"ok": False, "error": "This chat has not been created yet. Send a message first."})
+        import chat_prefs
+
+        text = data.get("instructions", "")
+        if text is None:
+            text = ""
+        try:
+            saved = chat_prefs.set(sid, text)
+        except ValueError as e:
+            return self._json(400, {"ok": False, "error": str(e), "limit": chat_prefs.MAX_CHARS})
+        return self._json(200, {"ok": True, "session_id": sid, "instructions": saved, "limit": chat_prefs.MAX_CHARS})
+
     def _body(self):
+        if self._last_body is not None:
+            return self._last_body  # already read (the gate peeks at it for a share guest)
         self._body_consumed = True
-        n = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(n) if n else b""
+        raw = self.headers.get("Content-Length")
+        try:
+            # No header at all is a request without a body (curl -X POST, HTTP/1.0 tools).
+            n = 0 if raw is None else int(raw)
+        except ValueError:
+            n = -1
+        if n < 0:
+            self.close_connection = True
+            raise _HttpError(400, "The request has no valid Content-Length.")
+        if n > MAX_BODY:
+            self.close_connection = True
+            raise _HttpError(413, f"That is too large to send at once (limit {MAX_BODY // (1024 * 1024)} MB).")
+        self._last_body = self.rfile.read(n) if n else b""
+        return self._last_body
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -3329,16 +4701,10 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/establish":
             return self._handle_establish()
-        if not self._establish_ok(path):
-            return
         name = device_name_from_ua(ua, ip)
         # Skip SQLite write storm on hot poll + static paths
         if path not in ("/api/wait", "/api/probe", "/api/info", "/api/health", "/healthz", "/health", "/wasm_gate.js", "/manifest.json") and not path.startswith("/OpenIDE/ui/") and not path.startswith("/ui/"):
@@ -3415,19 +4781,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = "application/javascript; charset=utf-8" if asset.suffix == ".js" else (
                 "text/css; charset=utf-8" if asset.suffix == ".css"
                 else (mimetypes.guess_type(str(asset))[0] or "application/octet-stream")
             )
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path.startswith("/OpenIDE/ui/") and ".." not in path:
             rel = path.lstrip("/")
@@ -3438,20 +4796,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "bad path"})
             if not asset.is_file():
                 return self._json(404, {"error": "not found"})
-            body = asset.read_bytes()
             mime = mimetypes.guess_type(str(asset))[0] or "application/octet-stream"
             if asset.suffix == ".js":
                 mime = "application/javascript; charset=utf-8"
             elif asset.suffix == ".css":
                 mime = "text/css; charset=utf-8"
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=60")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            return self._send_static(asset, mime)
 
         if path == "/manifest.json":
             mf = ROOT / "manifest.json"
@@ -3540,7 +4890,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 devices = []
             cortex = _cortex_info(quick=True)
-            return self._json(200, {
+            info_out = {
                 "port": PORT, "hostname": hostname(), "ips": ips,
                 "app_name": APP_NAME,
                 "app_version": APP_VERSION,
@@ -3597,7 +4947,20 @@ class Handler(BaseHTTPRequestHandler):
                 "online_personal_stub": "NEXT UPDATE: hosted AI + pay-to-continue",
                 "ai_lockdown": _ai_lockdown_payload(),
                 **share_meta,
-            })
+            }
+            if not _is_host_request(self.headers, self.client_address[0]):
+                info_out["data_dir"] = ""  # where the host keeps its files is not for a phone
+            if share_meta:
+                # A share guest needs its chat, not the host's network, other devices or notes.
+                info_out.update(
+                    ips=[], devices=[], tunnel_attempts=[], connect_methods=[], lan_url=None,
+                    wifi_url=None, mdns_url=None, recommended_connect=None, local_url="",
+                    join_url="", input_notes={"recording": False}, recommended_url=None,
+                    firewall="", network_profile="", lan_hint="",
+                    # Nor the host's computer name, licence and account, or engine details.
+                    hostname="", license={}, paywall="", cortex={},
+                )
+            return self._json(200, info_out)
 
         if path == "/api/input-notes":
             if not input_notes:
@@ -3624,9 +4987,12 @@ class Handler(BaseHTTPRequestHandler):
             hist_since = int(q.get("hist_since", ["0"])[0])
             sid_raw = q.get("session_id", [None])[0]
             sid = int(sid_raw) if sid_raw not in (None, "", "0") else None
+            gs = self._guest_scope()
+            if gs:  # a share guest hears about its own chat only
+                sid = int(gs["session_id"])
             # Non-blocking poll — long-wait starved SSE/chat threads under browser spam
             new_chat = db.get_messages(since_id=since, limit=80, session_id=sid) if since else []
-            new_hist = db.get_messages(since_id=hist_since, limit=40) if hist_since else []
+            new_hist = db.get_messages(since_id=hist_since, limit=40, session_id=sid if gs else None) if hist_since else []
             # Cheap poll: reuse cached LAN URL / tunnel only — no PowerShell/netsh every tick
             cached = _lan_diag_cache.get("value") or {}
             lan_url = cached.get("lan_url")
@@ -3651,6 +5017,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {
                 "sync_version": _sync_version,
                 "latest_id": db.latest_id(),
+                "generating": sorted(_generating_sessions(sid if gs else None)),
                 "new_chat": new_chat,
                 "new_hist": new_hist,
                 "presence": room,
@@ -3658,12 +5025,12 @@ class Handler(BaseHTTPRequestHandler):
                 "tunnel_healthy": _tunnel.get("healthy", False),
                 "tunnel_status": _tunnel.get("status"),
                 "tunnel_provider": _tunnel_provider_label(),
-                "lan_url": lan_url,
+                "lan_url": None if gs else lan_url,
                 "join_url": j_url,
                 "qr_token": qr_tok,
                 "network_epoch": _network_epoch,
                 "ai_lockdown": _ai_lockdown_payload(),
-                "app_state": _app_state_payload(q),
+                "app_state": _app_state_payload(q) if not gs else {"epoch": 0, "updates": []},
             })
 
         if path == "/api/presence":
@@ -3680,10 +5047,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/history":
             since = int(q.get("since", ["0"])[0])
+            gs = self._guest_scope()
+            gsid = int(gs["session_id"]) if gs else None  # a share guest sees its own chat only
             if since:
-                msgs = db.get_messages(since_id=since, limit=200)
+                msgs = db.get_messages(since_id=since, limit=200, session_id=gsid)
                 return self._json(200, {"messages": msgs, "latest_id": db.latest_id(), "incremental": True})
-            return self._json(200, db.messages_grouped(since_id=0, limit=500))
+            return self._json(200, db.messages_grouped(since_id=0, limit=500, session_id=gsid))
 
         if path == "/api/auth/status":
             if app_auth:
@@ -3899,18 +5268,76 @@ class Handler(BaseHTTPRequestHandler):
                 "ai_model": msg.get("ai_model", ""),
             })
 
+        if path == "/api/sessions/export":
+            try:
+                sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"error": "session_id must be a number"})
+            fmt = (q.get("format", ["md"])[0] or "md").lower()
+            if fmt not in ("md", "json"):
+                return self._json(400, {"error": "format must be md or json"})
+            bad = self._chat_tools_guard(sid, write=False)
+            if bad:
+                return self._json(bad[0], {"error": bad[1]})
+            try:
+                fname, ctype, text = db.export_session(sid, fmt)
+            except LookupError as e:
+                return self._json(404, {"error": str(e)})
+            body = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path == "/api/sessions":
             lim = min(int(q.get("limit", ["200"])[0] or 200), 500)
-            return self._json(200, {"sessions": db.list_sessions(lim)})
+            off = max(0, int(q.get("offset", ["0"])[0] or 0))
+            gs = self._guest_scope()
+            rows = db.list_sessions(1_000_000 if gs else lim, 0 if gs else off)  # a guest's old chat must not fall off the limit
+            if gs:  # a share guest lists its own chat only
+                rows = [s for s in rows if int(s["id"]) == int(gs["session_id"])]
+            busy = _generating_sessions(int(gs["session_id"]) if gs else None)
+            for r in rows:
+                if int(r["id"]) in busy:
+                    r["generating"] = True
+            total = len(rows) if gs else db.count_sessions()
+            return self._json(200, {"sessions": rows, "total": total, "offset": 0 if gs else off,
+                                    "has_more": (not gs) and off + len(rows) < total})
+
+        m_one = re.fullmatch(r"/api/sessions/(\d+)", path.rstrip("/"))
+        if m_one:  # one chat by id, so an old chat opens even when the list only holds the newest
+            row = db.get_session(int(m_one.group(1)))
+            if not row or int(row.get("archived") or 0):
+                return self._json(404, {"error": "That chat does not exist."})
+            row["msg_count"] = db.count_session_messages(int(row["id"]))
+            return self._json(200, {"session": row})
 
         if path == "/api/search":
             sq = q.get("q", [""])[0]
             date_f = q.get("date", [""])[0]
             lim = min(int(q.get("limit", ["80"])[0] or 80), 200)
-            return self._json(200, db.search_messages_and_sessions(sq, date_f, lim))
+            gs = self._guest_scope()
+            found = db.search_messages_and_sessions(sq, date_f, 5000 if gs else lim)
+            if gs:
+                own = int(gs["session_id"])
+                found["sessions"] = [s for s in found["sessions"] if int(s["id"]) == own]
+                found["messages"] = [m for m in found["messages"] if int(m.get("session_id") or 0) == own]
+            return self._json(200, found)
 
         if path == "/api/vault":
-            return self._json(200, db.list_vault_tree())
+            tree = db.list_vault_tree()
+            gs = self._guest_scope()
+            if gs:
+                own = int(gs["session_id"])
+                for cat in tree["categories"]:
+                    cat["sessions"] = [s for s in cat["sessions"] if int(s["id"]) == own]
+                tree["recent"] = [s for s in db.list_sessions(1_000_000) if int(s["id"]) == own]
+            return self._json(200, tree)
 
         if path == "/api/projects":
             # POST /api/projects has always written rows; without this nothing
@@ -3925,6 +5352,64 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/drops":
             return self._json(200, {"items": db.get_media_messages(), "latest_id": db.latest_id()})
 
+        if path == "/api/chat/prefs":
+            import chat_prefs
+
+            try:
+                sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "session_id must be a number"})
+            if sid <= 0:
+                return self._json(400, {"ok": False, "error": "session_id is required"})
+            denied = self._chat_prefs_gate(sid, write=False)
+            if denied:
+                return self._json(*denied)
+            return self._json(200, {"ok": True, "session_id": sid,
+                                    "instructions": chat_prefs.get(sid), "limit": chat_prefs.MAX_CHARS})
+
+        if path == "/api/snippets":
+            import snippets
+
+            try:
+                if self._guest_scope():
+                    # Saved prompts are the host's own library, not part of the shared chat.
+                    return self._json(200, {"ok": True, "items": [], "shared_view": True})
+                return self._json(200, {"ok": True, "items": snippets.list_all()})
+            except snippets.SnippetError as e:
+                return self._json(e.status, {"ok": False, "error": str(e)})
+
+        if path == "/api/chat/prompt-trace":
+            # What one reply was actually sent to the model (prompt lens).
+            # message_id names a reply; session_id alone returns that chat's latest.
+            try:
+                import prompt_trace
+
+                mid = int(q.get("message_id", ["0"])[0] or 0)
+                want_sid = int(q.get("session_id", ["0"])[0] or 0)
+            except ValueError:
+                return self._json(400, {"error": "message_id or session_id must be a number"})
+            rec = prompt_trace.load(mid) if mid else prompt_trace.latest_for_session(want_sid)
+            is_host = _is_host_request(self.headers, self.client_address[0])
+            if not is_host and app_auth and hasattr(app_auth, "token_session_acl"):
+                # A share guest reads its own shared chat and nothing else. Same
+                # answer for "exists elsewhere" and "does not exist".
+                scoped = app_auth.token_session_acl(self._request_token())
+                if scoped and rec and int(rec["session_id"]) != int(scoped["session_id"]):
+                    rec = None
+            if not rec:
+                return self._json(404, {
+                    "ok": False,
+                    "error": "not_recorded",
+                    "detail": "No prompt record for this reply. Replies made before this "
+                              "feature, or image and agent replies, are not recorded.",
+                })
+            trace = rec["trace"]
+            if not is_host:
+                # Memory notes come from the host's own vault. Other devices see that
+                # the block was sent and how big it was, not what it says.
+                trace = prompt_trace.redact_private(trace)
+            return self._json(200, {"ok": True, **rec, "trace": trace, "host_view": is_host})
+
         if path == "/api/messages":
             since = int(q.get("since", ["0"])[0])
             sid = q.get("session_id", [None])[0]
@@ -3935,7 +5420,15 @@ class Handler(BaseHTTPRequestHandler):
                 if scoped and not _is_local_host(ip):
                     session_id = int(scoped["session_id"])
             if q.get("full", ["0"])[0] == "1":
-                return self._json(200, db.messages_grouped(since_id=since, session_id=session_id))
+                try:  # a page of the chat; the default is the newest 500, as before
+                    page = max(1, min(int(q.get("limit", ["500"])[0] or 500), 500))
+                    before = int(q.get("before_id", ["0"])[0] or 0)
+                except ValueError:
+                    return self._json(400, {"error": "invalid limit or before_id"})
+                grouped = db.messages_grouped(since_id=since, limit=page, session_id=session_id, before_id=before)
+                if session_id:
+                    grouped["generating"] = session_id in _generating_sessions(session_id)
+                return self._json(200, grouped)
             msgs = db.get_messages(since_id=since, session_id=session_id)
             return self._json(200, {"messages": msgs, "latest_id": db.latest_id()})
 
@@ -3971,11 +5464,24 @@ class Handler(BaseHTTPRequestHandler):
             # Containment guard: absolute / drive-relative names must not
             # escape the data directory even though ".." was already rejected.
             try:
-                p.resolve().relative_to(data_root)
+                inside = p.resolve().relative_to(data_root).as_posix()
             except (ValueError, OSError):
                 return self._json(400, {"error": "bad path"})
+            if not _is_host_request(self.headers, self.client_address[0]):
+                # Everyone else gets chat attachments only: a file some message points at,
+                # and for a share guest only a message in its own chat. Never the databases,
+                # token files, passcode hash, audit log or licence at the top of the folder.
+                gs = self._guest_scope(allow_query=True)
+                owners = _data_file_chats(inside)
+                if not owners or (gs and int(gs["session_id"]) not in owners):
+                    return self._json(404, {"error": "missing"})
             mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
-            return self._send(200, p.read_bytes(), mime)
+            if mime in _INLINE_MIME or mime.startswith(("audio/", "video/")):
+                return self._send(200, p.read_bytes(), mime)
+            # Anything a browser would run (html, svg, xml, js, ...) is a download, never a page.
+            safe = re.sub(r"[^A-Za-z0-9._-]", "_", p.name)
+            return self._send(200, p.read_bytes(), "application/octet-stream",
+                              {"Content-Disposition": f'attachment; filename="{safe}"'})
 
         if path == "/api/access":
             try:
@@ -4157,13 +5663,40 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200], "skills": []})
 
+        if path.startswith("/api/agents/runs/") and path.endswith("/events"):
+            # Re-attach to a run that is still going (or just finished) after a refresh.
+            try:
+                import agent_runtime
+                import agent_store
+                rid = _route_int(path.split("/")[4])
+                q = parse_qs(urlparse(self.path).query)
+                after = _route_int((q.get("after") or ["0"])[0] or 0)
+                if rid is None or after is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
+                tail = agent_runtime.tail_run(rid, after)
+                if tail is None:
+                    agent_runtime.close_interrupted()  # an open row nothing here is running
+                    row = next((r for r in agent_store.list_runs(None, 200) if int(r["id"]) == rid), None)
+                    if not row:
+                        return self._json(404, {"error": "run not found"})
+                    return self._json(200, {"ok": True, "live": False, "run": row})
+                self._sse_begin()
+                for ev in tail:
+                    if not self._sse_send(ev):
+                        break
+                return self._sse_end()
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
+
         if path.startswith("/api/agents/") and path.endswith("/runs"):
             try:
                 import agent_store
-                aid = int(path.split("/")[-2])
+                aid = _route_int(path.split("/")[-2], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 return self._json(200, {"runs": agent_store.list_runs(aid)})
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/agents/links":
             try:
@@ -4243,6 +5776,58 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"ok": True, "sources": rag_store.list_sources(sid)})
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
+
+        if path.startswith("/api/rag/passages/"):
+            # A cited passage with its neighbours, so a [n] chip can open the source.
+            try:
+                qs = parse_qs(urlparse(self.path).query or "")
+                out = _rag_passage(int(path.rstrip("/").split("/")[-1]), int((qs.get("around") or ["3"])[0] or 3))
+                if not out:
+                    return self._json(404, {"ok": False, "error": "passage not found - the file may have been removed"})
+                return self._json(200, {"ok": True, "passage": out})
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
+
+        if path.startswith("/api/rag/sources/") and path.endswith("/file"):
+            # The original file, to read in a new tab. Host only like all of /api/rag.
+            try:
+                from rag import reveal as rag_reveal
+                from rag import store as rag_store
+
+                src = rag_store.get_source(int(path.split("/")[4]))
+                target = rag_reveal.resolve_source_path(src)[0] if src else None
+                if not target or not Path(target).is_file():
+                    return self._json(404, {"ok": False, "error": "No file on disk for this source - it may have been moved or deleted."})
+                if Path(target).stat().st_size > 200 * 1024 * 1024:
+                    return self._json(413, {"ok": False, "error": "This file is too large to open here."})
+                ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
+                # Only types a browser shows without running anything are shown in
+                # place; a document that could carry script is handed over as a download.
+                inline = ctype in ("application/pdf", "text/plain", "text/csv", "text/markdown", "application/json") or (
+                    ctype.startswith("image/") and ctype != "image/svg+xml"
+                )
+                body = Path(target).read_bytes()
+                # The name the user knows (not the stored copy's prefixed name). Header values
+                # are latin-1 only, so a non-ASCII name also goes in the RFC 5987 form.
+                name = re.sub(r'[\x00-\x1f"\\/]', "", str(src.get("title") or "") or Path(target).name) or "file"
+                from urllib.parse import quote as _q
+                _ascii = name.encode("ascii", "replace").decode().replace("?", "_")
+                self.send_response(200)
+                self.send_header("Content-Type", ctype if inline else "application/octet-stream")
+                self.send_header("Content-Disposition", f'{"inline" if inline else "attachment"}; filename="{_ascii}"; filename*=UTF-8\'\'{_q(name)}')
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "sandbox")
+                self.send_header("Content-Length", str(len(body)))
+                self._cors()
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"ok": False, "error": str(e)[:200]})
 
         if path.startswith("/api/rag/spaces/") and path.endswith("/ann-status"):
             try:
@@ -4569,9 +6154,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/csv; charset=utf-8")
                     self.send_header("Content-Disposition", 'attachment; filename="airgpt-usage.csv"')
+                    csv_bytes = csv_body.encode("utf-8")
+                    self.send_header("Content-Length", str(len(csv_bytes)))
                     self._cors()
                     self.end_headers()
-                    self.wfile.write(csv_body.encode("utf-8"))
+                    self.wfile.write(csv_bytes)
                     return
                 return self._json(200, hosting.usage_summary(lim))
             except Exception as e:
@@ -4750,28 +6337,36 @@ class Handler(BaseHTTPRequestHandler):
                     f"{base}/api/workflows/task/{tid}/events",
                     headers=cortex_client._headers(key),
                 )
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                with urllib.request.urlopen(req, timeout=300) as upstream:
-                    while True:
-                        chunk = upstream.read(1024)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
+                try:
+                    upstream = urllib.request.urlopen(req, timeout=300)
+                except Exception as e:
+                    return self._json(503, {"error": "Workflow engine is not reachable: " + str(e)[:160]})
+                with upstream:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    try:
+                        while True:
+                            chunk = upstream.read(1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                    except (BrokenPipeError, ConnectionError):
+                        pass
+                    except Exception as e:
+                        # Headers are gone: say it as an event, never as a second status line.
+                        try:
+                            err = json.dumps({"error": "Workflow stream stopped: " + str(e)[:160]})
+                            self.wfile.write(("event: error\ndata: " + err + "\n\n").encode())
+                            self.wfile.flush()
+                        except Exception:
+                            pass
                 return
             except Exception as e:
-                try:
-                    self.send_response(503)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"error": str(e)[:200]}).encode())
-                except Exception:
-                    pass
-                return
+                return self._json(503, {"error": str(e)[:200]})
 
         if path.startswith("/api/workflows/task/"):
             try:
@@ -4863,16 +6458,10 @@ class Handler(BaseHTTPRequestHandler):
         ip = self._client_ip()
         ua = self.headers.get("User-Agent", "")
         path = urlparse(self.path).path
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path) and not path.startswith("/api/auth/"):
-            return self._json(401, {"error": "auth required", "auth": True})
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/establish":
             return self._handle_establish()
-        if not self._establish_ok(path):
-            return
 
         if path == "/api/presence/typing":
             try:
@@ -4884,6 +6473,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)[:200]})
 
+        if path == "/api/chat/prefs":
+            return self._handle_chat_prefs_post()
+
+        if path == "/api/chat/cancel":
+            return self._handle_chat_cancel()
+
         if path == "/api/chat/stream":
             if app_auth and hasattr(app_auth, "token_session_acl") and not _is_local_host(ip):
                 scoped = app_auth.token_session_acl(self._request_token())
@@ -4891,6 +6486,28 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(403, {"error": "This share is view-only"})
             dname = hostname()
             return self._handle_chat_stream(ip, dname)
+
+        if path in ("/api/snippets", "/api/snippets/delete"):
+            import snippets
+
+            # Share guests (any scoped token) may read but never change the library.
+            if app_auth and hasattr(app_auth, "token_session_acl"):
+                if app_auth.token_session_acl(self._request_token()):
+                    return self._json(403, {"ok": False, "error": "Shared links cannot change saved prompts."})
+            try:
+                data = json.loads(self._body().decode() or "{}")
+                if not isinstance(data, dict):
+                    raise ValueError
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "The request was not valid."})
+            try:
+                if path == "/api/snippets/delete":
+                    snippets.delete(str(data.get("id") or ""))
+                    return self._json(200, {"ok": True})
+                item = snippets.save(data.get("title"), data.get("body"), str(data.get("id") or "") or None)
+                return self._json(200, {"ok": True, "item": item})
+            except snippets.SnippetError as e:
+                return self._json(e.status, {"ok": False, "error": str(e)})
 
         if path == "/api/chat/project-suggest":
             return self._handle_project_suggest()
@@ -4942,10 +6559,17 @@ class Handler(BaseHTTPRequestHandler):
                         if not sid:
                             daily = db.get_or_create_daily_image_session() if is_img else db.get_or_create_daily_text_session()
                             sid = daily["id"]
+                        # A document attached to a question must be in THIS chat, even when the same
+                        # file was added to another chat before (otherwise the model never reads it).
                         msg = post_message(
                             ip, dname, text=text, file_data=fdata, filename=up.get("filename"),
                             source="chat", session_id=sid, auto_analyze=not skip_ai, auto_clipboard=auto_clip,
+                            allow_duplicate=not is_img,
                         )
+                        if not msg and not is_img:
+                            msg = db.message_by_hash_in_session(hashlib.sha256(fdata).hexdigest(), sid)
+                            if msg:
+                                return self._json(200, {"ok": True, "duplicate": True, "message": msg})
                 elif text.strip():
                     if not sid:
                         daily = db.get_or_create_daily_text_session()
@@ -4992,7 +6616,8 @@ class Handler(BaseHTTPRequestHandler):
                         else:
                             sess = db.create_session("New chat", capture_type="ai")
                             sid = sess["id"]
-                    user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=sid)
+                    user_msg = db.add_message(device_ip=ip, device_name=dname, text=text, source="ai-chat", session_id=sid,
+                                              attachment_ids=_clean_attach_ids(data.get("attachment_ids")))
                     # Soft-title from first user question until AI replies
                     db.maybe_set_ai_session_title(sid, text.strip()[:60])
                     depth = str(data.get("depth", "normal"))
@@ -5007,7 +6632,16 @@ class Handler(BaseHTTPRequestHandler):
                     if target and (target.get("vision_cache") or target.get("ai_analysis")):
                         queue_analysis(int(target["id"]), text, mode=mode, session_id=sid, depth=depth)
                         return self._json(200, {"ok": True, "message": user_msg, "ai": "queued", "context_id": target["id"], "session_id": sid})
-                    queue_text_chat(text, mode=mode, session_id=sid)
+                    _all = _clean_attach_ids(data.get("attachment_ids"), None)
+                    note = _left_out_note(_all[12:], (sid, parent_session_id), _all[:12])
+                    if note:
+                        db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=note.strip(), kind="text", source="ai", session_id=sid)
+                        bump_sync()
+                    queue_text_chat(
+                        text, mode=mode, session_id=sid,
+                        restrict_links=not _is_host_request(self.headers, self.client_address[0]),
+                        attachments=_attachment_files(data.get("attachment_ids") or [], (sid, parent_session_id)),
+                    )
                     return self._json(200, {"ok": True, "message": user_msg, "ai": "queued_text", "session_id": sid})
                 if not sid:
                     daily = db.get_or_create_daily_text_session()
@@ -5015,7 +6649,17 @@ class Handler(BaseHTTPRequestHandler):
                 msg = post_message(ip, dname, text=text, source="chat", session_id=sid)
             if not msg:
                 return self._json(200, {"ok": True, "duplicate": True})
-            return self._json(200, {"ok": True, "message": msg})
+            out = {"ok": True, "message": msg}
+            if msg.get("kind") == "file" and ai_engine and msg.get("filepath"):
+                # Tell the client now whether the model will be able to read this file.
+                text, why = ai_engine.extract_attachment_text(db.DATA_DIR / msg["filepath"], msg.get("filename") or "")
+                out["attach"] = {
+                    "readable": not why,
+                    "reason": why,
+                    "chars": min(len(text), ai_engine.ATTACH_MAX_CHARS_FILE),
+                    "cut": len(text) > ai_engine.ATTACH_MAX_CHARS_FILE,
+                }
+            return self._json(200, out)
 
         if path == "/api/clipboard":
             data = json.loads(self._body().decode() or "{}")
@@ -5096,6 +6740,24 @@ class Handler(BaseHTTPRequestHandler):
             queue_analysis(mid, question, mode=mode, session_id=sid, depth=depth)
             return self._json(200, {"ok": True, "status": "queued"})
 
+        if path == "/api/sessions/fork":
+            try:
+                data = json.loads(self._body().decode() or "{}")
+                sid = int(data.get("session_id") or 0)
+                mid = int(data.get("upto_message_id") or 0)
+            except (ValueError, TypeError):
+                return self._json(400, {"error": "session_id and upto_message_id must be numbers"})
+            bad = self._chat_tools_guard(sid, write=True)
+            if bad:
+                return self._json(bad[0], {"error": bad[1]})
+            try:
+                forked = db.fork_session(sid, mid)
+                return self._json(200, forked)
+            except LookupError as e:
+                return self._json(404, {"error": str(e)})
+            except ValueError as e:
+                return self._json(400, {"error": str(e)})
+
         if path == "/api/sessions":
             data = json.loads(self._body().decode() or "{}")
             title = str(data.get("title", "New chat"))[:80]
@@ -5127,7 +6789,7 @@ class Handler(BaseHTTPRequestHandler):
                 (self.headers.get(h) or "").strip()
                 for h in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded")
             )
-            if not _is_local_host(direct) or proxied:
+            if not _is_local_host(direct) or proxied or not _is_host_request(self.headers, direct):
                 if app_audit:
                     app_audit.log("passcode_toggle", ip=ip, detail="refused: not host", ok=False)
                 return self._json(403, {"ok": False, "error": "Host only — change this on the PC"})
@@ -5246,7 +6908,13 @@ class Handler(BaseHTTPRequestHandler):
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
             data = json.loads(self._body().decode() or "{}")
-            return self._json(200, app_settings.update_settings(data))
+            out = app_settings.update_settings(data)
+            try:  # a new key means the old refusal no longer applies: try it for real
+                import ai_engine as _ae
+                _ae.clear_cooldown_for_keys(data)
+            except Exception:
+                pass
+            return self._json(200, out)
 
         if path == "/api/github/auth/start":
             if not _is_local_host(ip):
@@ -5296,6 +6964,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"ok": False, "error": "host only"})
             try:
                 import openfree
+                # Where it cannot start, say so before touching any setting.
+                if not openfree._port_open() and openfree.cannot_run():
+                    return self._json(200, openfree.enable())
                 if app_settings:
                     app_settings.update_settings(
                         {"OMNIROUTE_ENABLED": "1", "OMNIROUTE_BASE_URL": openfree.BASE_URL}
@@ -5307,6 +6978,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/init":
             if not app_auth:
                 return self._json(400, {"error": "auth unavailable"})
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"ok": False, "error": "Only the host computer can set the first passcode."})
             data = json.loads(self._body().decode() or "{}")
             return self._json(200, app_auth.init_workspace(
                 str(data.get("email", "")), str(data.get("passcode", "")),
@@ -5421,6 +7094,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/qr-redeem":
             if not app_auth:
                 return self._json(400, {"error": "auth unavailable"})
+            if self._passcode_rate_limited(ip):
+                if app_audit:
+                    app_audit.log("auth_blocked", ip=ip, detail="qr-redeem throttle", ok=False)
+                return self._json(429, {"ok": False, "error": "Too many attempts — wait a few minutes."})
             data = json.loads(self._body().decode() or "{}")
             qr_tok = str(data.get("qr_token", ""))
             # Prefer session-share redeem when token is a share token
@@ -5466,6 +7143,8 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             elif app_audit:
                 app_audit.log("auth_qr_fail", ip=ip, detail=qr_tok[:20], ok=False)
+            if not r.get("ok"):
+                self._note_passcode_fail(ip)
             return self._json(200, r)
 
         if path.endswith("/share") and path.startswith("/api/sessions/"):
@@ -5602,17 +7281,23 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import agent_store
 
-                aid = int(path.split("/")[3])
+                aid = _route_int(path.split("/")[3], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 return self._json(200, agent_store.delete_agent(aid))
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path.startswith("/api/agents/") and path.endswith("/run"):
             try:
                 import agent_runtime
                 import cortex_orchestrator
-                aid = int(path.rstrip("/").split("/")[-2])
+                aid = _route_int(path.rstrip("/").split("/")[-2], lo=1)
+                if aid is None:
+                    return self._json(400, {"error": _BAD_ID_SENTENCE})
                 data = json.loads(self._body().decode() or "{}")
+                if not isinstance(data, dict):
+                    return self._json(400, {"error": "Send the request as a JSON object with a prompt."})
                 prompt = str(data.get("prompt") or data.get("text") or "").strip()
                 if not prompt:
                     return self._json(400, {"error": "prompt required"})
@@ -5636,10 +7321,15 @@ class Handler(BaseHTTPRequestHandler):
                         backend = cursor_bridge.get_backend()
                 except Exception:
                     pass
-                self._sse_begin()
-                for ev in agent_runtime.run_agent_events(
+                import agent_store
+                if not agent_store.get_agent(aid):
+                    return self._json(404, {"error": "agent not found"})
+                # The run lives on its own thread; this connection only watches it, so a
+                # closed page no longer ends the work. Stop = /api/workflows/cancel.
+                rid = agent_runtime.start_background_run(
                     aid,
                     prompt,
+                    task=str(data.get("task") or ""),
                     session_id=session_id,
                     thinking_mode=thinking_mode,
                     max_steps=max(1, min(int(data.get("max_steps") or settings.get("max_steps") or 8), 20)),
@@ -5653,12 +7343,31 @@ class Handler(BaseHTTPRequestHandler):
                     skill_override=str(data.get("skill_pack") or data.get("skill_override") or ""),
                     parent_run_id=int(data.get("parent_run_id") or 0),
                     is_subagent=bool(data.get("is_subagent")),
-                ):
+                )
+                self._sse_begin()
+                final, failed, saw_end = "", "", False
+                for ev in agent_runtime.tail_run(rid):
+                    if ev.get("type") == "token":
+                        final += str(ev.get("text") or "")
+                    elif ev.get("type") == "done":
+                        final, saw_end = str(ev.get("analysis") or final), True
+                    elif ev.get("type") in ("error", "stopped"):
+                        failed, saw_end = str(ev.get("text") or "The agent could not finish."), True
                     if not self._sse_send(ev):
                         break
+                # The line and the answer (or the failure sentence) are saved in the chat, whole, so
+                # they survive a reload. The page shows these rows instead of a copy of its own.
+                chat_line = str(data.get("chat_line") or "").strip()
+                if chat_line and session_id and saw_end and db.get_session(session_id):
+                    um = db.add_message(device_ip="127.0.0.1", device_name="You", text=chat_line, source="ai-chat", session_id=session_id)
+                    am = db.add_message(device_ip="127.0.0.1", device_name="AirGPT", text=(failed or final or "The agent finished with nothing to say."), kind="text", source="ai", session_id=session_id)
+                    bump_sync()
+                    self._sse_send({"type": "saved", "messages": [m for m in (um, am) if m]})
                 return self._sse_end()
-            except Exception as e:
-                return self._json(500, {"error": str(e)[:200]})
+            except (ValueError, TypeError):  # a body that is not JSON or a number that is not one
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
+            except Exception:
+                return self._json(500, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/agents/link":
             try:
@@ -5733,7 +7442,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not ops:
                     return self._json(400, {"error": "path, paths, session_ids, research_ids, or urls required"})
 
-                force = bool(data.get("force", True))
+                # Adding sources never clears the space. Only Rebuild clears and re-reads
+                # every source in one go; a force here would wipe the other documents.
+                if data.get("force"):
+                    return self._json(400, {"error": "Adding sources keeps your other documents. Use Rebuild to clear and re-read everything."})
+                force = False
                 run_async = bool(data.get("async") or data.get("background"))
 
                 def _run_ops(force_flag: bool) -> dict:
@@ -5796,15 +7509,40 @@ class Handler(BaseHTTPRequestHandler):
                 updir = rag_store.BLOB_DIR / str(sid) / "uploads"
                 updir.mkdir(parents=True, exist_ok=True)
                 saved = []
+                renamed = []
+                # A name clashes only with a file a source in this space still uses. Bytes left
+                # behind by a skipped or removed upload are not a source and are replaced.
+                live = {os.path.normcase(os.path.abspath(x["path"])) for x in rag_store.list_sources(sid)}
                 for key, val in form.items():
                     if isinstance(val, dict) and val.get("data") is not None:
                         fname = Path(str(val.get("filename") or key or "upload.txt")).name
+                        # Two files with one name in one batch: the second overwrote the
+                        # first on disk and the reply still counted both. The same goes
+                        # for a name an earlier upload already used: a different file
+                        # with that name is kept beside it as name_2, never over it.
+                        first, n = fname, 1
+                        while (updir / fname) in saved or (
+                            (updir / fname).exists()
+                            and os.path.normcase(os.path.abspath(updir / fname)) in live
+                            and (updir / fname).read_bytes() != val["data"]
+                        ):
+                            n += 1
+                            fname = f"{Path(first).stem}_{n}{Path(first).suffix}"
+                        # Only a copy that is new is "renamed"; the same bytes again are not.
+                        if fname != first and not (updir / fname).exists():
+                            renamed.append({"from": first, "to": fname})
                         dest = updir / fname
                         dest.write_bytes(val["data"])
                         saved.append(dest)
                 if not saved:
                     return self._json(400, {"error": "no files in upload"})
-                out = rag_ingest.ingest_paths(sid, saved, force=str(form.get("force") or "") not in ("0", "false"))
+                # Adding files must never wipe the space. `force` used to default ON, so
+                # any caller that did not send force=0 cleared every earlier chunk while
+                # the sources list went on showing the old files. Rebuild is its own route.
+                force = str(form.get("force") or "").strip().lower() in ("1", "true")
+                out = rag_ingest.ingest_paths(sid, saved, force=force)
+                if renamed:
+                    out["renamed"] = renamed
                 return self._json(200 if out.get("ok") else 400, out)
             except Exception as e:
                 return self._json(400, {"error": str(e)[:200]})
@@ -7163,23 +8901,23 @@ class Handler(BaseHTTPRequestHandler):
                         breadth=int(data.get("breadth") or 3),
                     ),
                 )
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/cancel":
             try:
                 import workflow_engine
                 data = json.loads(self._body().decode() or "{}")
                 return self._json(200, workflow_engine.cancel(str(data.get("task_id") or "")))
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(400, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/clear":
             try:
                 import workflow_engine
                 return self._json(200, workflow_engine.clear_finished())
-            except Exception as e:
-                return self._json(400, {"error": str(e)[:200]})
+            except Exception:
+                return self._json(500, {"error": _ROUTE_FAIL_SENTENCE})
 
         if path == "/api/workflows/recognize":
             try:
@@ -7196,6 +8934,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import invoke_registry
                 data = json.loads(self._body().decode() or "{}")
+                if str(data.get("action") or "").lower() == "delete":
+                    return self._json(
+                        200, invoke_registry.delete_skill(str(data.get("id") or data.get("skill_id") or ""))
+                    )
                 if str(data.get("action") or "").lower() in ("enable", "set_scope", "scope"):
                     return self._json(
                         200,
@@ -7287,41 +9029,20 @@ class Handler(BaseHTTPRequestHandler):
             up = form.get("file")
             if not isinstance(up, dict) or not up.get("data"):
                 return self._json(400, {"error": "no file"})
-            import zipfile
-            root_resolved = ROOT.resolve()
-            _blocked = {"env.local", ".env", "license.json", "clipdrop.py", "config.py"}
-            try:
-                with zipfile.ZipFile(io.BytesIO(up["data"])) as zf:
-                    for name in zf.namelist():
-                        norm = name.replace("\\", "/")
-                        if ".." in norm.split("/") or norm.startswith("/") or ":" in norm:
-                            continue
-                        target = (ROOT / norm.replace("/", os.sep))
-                        # Zip-slip guard: resolved path must stay inside ROOT
-                        try:
-                            resolved = target.resolve()
-                            resolved.relative_to(root_resolved)
-                        except (ValueError, OSError):
-                            continue
-                        if resolved.name in _blocked:
-                            continue
-                        if name.endswith("/"):
-                            target.mkdir(parents=True, exist_ok=True)
-                        else:
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(zf.read(name))
+            if str(form.get("confirm") or "") != "1":
+                return self._json(400, {"error": "Restoring replaces the data on this PC. Confirm first."})
+            code, out = _restore_package(up["data"])
+            if code == 200:
                 bump_sync()
-                return self._json(200, {"ok": True, "message": "Import complete — refresh page"})
-            except Exception as e:
-                return self._json(400, {"error": f"import failed: {e}"})
+            return self._json(code, out)
 
         return self._json(404, {"error": "not found"})
 
     def do_PATCH(self):
         path = urlparse(self.path).path
         ip = self._client_ip()
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
+        if not self._gate(path):
+            return
         raw = self._body() or b"{}"
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
@@ -7363,6 +9084,11 @@ class Handler(BaseHTTPRequestHandler):
                 aid = int(path.rstrip("/").split("/")[-1])
             except Exception:
                 return self._json(400, {"error": "bad id"})
+            if isinstance(body.get("config"), dict) and "pinned" not in body:
+                agent = agent_store.set_agent_config(aid, body["config"])
+                if not agent:
+                    return self._json(404, {"error": "agent not found"})
+                return self._json(200, {"ok": True, "agent": agent})
             if "pinned" not in body:
                 return self._json(400, {"error": "pinned required"})
             agent = agent_store.set_agent_pinned(aid, bool(body.get("pinned")))
@@ -7393,14 +9119,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         ip = self._client_ip()
-        if not self._s1_ok(path):
+        if not self._gate(path):
             return
-        if not self._auth_ok(path):
-            return self._json(401, {"error": "auth required", "auth": True})
-        # do_GET and do_POST both carry this gate; DELETE did not, so a peer
-        # could delete under a host-only prefix it was not allowed to read.
-        if _is_host_only_path(path) and not _is_host_request(self.headers, self.client_address[0]):
-            return self._json(403, {"error": "host only"})
         if path == "/api/messages":
             # Bulk clear wipes every message for everyone — host action only.
             if not _is_local_host(ip):
@@ -7411,13 +9131,35 @@ class Handler(BaseHTTPRequestHandler):
             # Deleting a session removes another peer's chat — host action only.
             if not _is_local_host(ip):
                 return self._json(403, {"error": "host only"})
-            sid = int(path.split("/")[-1])
+            try:
+                sid = int(path.split("/")[-1])
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
             db.delete_session(sid)
             return self._json(200, {"ok": True})
         if path.startswith("/api/messages/"):
-            mid = int(path.split("/")[-1])
+            try:
+                mid = int(path.split("/")[-1])
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
             db.delete_message(mid)
             return self._json(200, {"ok": True})
+        if path.startswith("/api/rag/spaces/"):
+            # Deleting a whole space removes its files, vectors and chats: host only.
+            if not _is_local_host(ip):
+                return self._json(403, {"error": "host only"})
+            try:
+                from rag import store as rag_store
+
+                parts = path.rstrip("/").split("/")
+                if len(parts) != 5:
+                    return self._json(404, {"error": "not found"})
+                out = rag_store.delete_space(int(parts[4]))
+                return self._json(200 if out.get("ok") else 404, out)
+            except ValueError:
+                return self._json(400, {"error": "bad id"})
+            except Exception as e:
+                return self._json(400, {"error": str(e)[:200]})
         if path.startswith("/api/cortex/routines/"):
             try:
                 import cortex_client
@@ -7443,6 +9185,43 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json(503, {"ok": False, "error": str(e)[:200]})
         return self._json(404, {"error": "not found"})
+
+
+def _wrap_dispatch(name: str) -> None:
+    """One place for the cross-site guard and for turning a crash into an answer."""
+    orig = getattr(Handler, name)
+
+    @functools.wraps(orig)
+    def run(self):
+        if not self._origin_gate():
+            return
+        try:
+            return orig(self)
+        except Handler._BENIGN_DISCONNECTS:
+            raise
+        except Exception as e:
+            code, msg = 500, "Something went wrong on the server."
+            body = self._last_body
+            if isinstance(e, _HttpError):
+                code, msg = e.code, e.message
+            elif body is not None and (
+                (isinstance(e, json.JSONDecodeError) and e.doc.strip() == body.decode("utf-8", "replace").strip())
+                or (isinstance(e, UnicodeDecodeError) and e.object == body)
+            ):
+                code, msg = 400, "The request body is not valid JSON."
+            else:
+                import traceback
+                print(f"[http] {self.command} {self.path} failed: {e!r}\n{traceback.format_exc()}")
+            if self._hdr_sent:
+                self.close_connection = True
+                return
+            self._json(code, {"ok": False, "error": msg})
+
+    setattr(Handler, name, run)
+
+
+for _m in ("do_OPTIONS", "do_HEAD", "do_GET", "do_POST", "do_PATCH", "do_DELETE"):
+    _wrap_dispatch(_m)
 
 
 def _save_network_state(ips: list[str]) -> None:
@@ -7583,6 +9362,11 @@ def main():
             print(f"[license] sku={hb.get('sku')} online={hb.get('online', 'n/a')}")
     except Exception as e:
         print(f"[license] heartbeat skip: {e}")
+    try:
+        import agent_runtime
+        agent_runtime.close_interrupted(0)  # runs left open by the last run of the app
+    except Exception as e:
+        print(f"[agents] close-interrupted skip: {e}")
     threading.Thread(target=clipboard_loop, daemon=True).start()
     threading.Thread(target=screenshot_loop, daemon=True).start()
     _boot_tunnel_threads()

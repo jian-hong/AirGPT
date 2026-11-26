@@ -1,6 +1,7 @@
 """SQLite storage for ClipDrop chat messages."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -104,6 +105,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE messages ADD COLUMN ai_category TEXT DEFAULT ''")
         if "session_id" not in cols:
             conn.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER DEFAULT 0")
+        if "attachment_ids" not in cols:  # JSON list of the files sent with a question; NULL = saved before this existed
+            conn.execute("ALTER TABLE messages ADD COLUMN attachment_ids TEXT")
         # migrate chat_sessions
         scols = {r[1] for r in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         for col, sql in (
@@ -154,8 +157,21 @@ def init_db() -> None:
     ensure_default_projects()
 
 
+class ClosingConnection(sqlite3.Connection):
+    """`with _connect() as conn:` commits (or rolls back) and then CLOSES. sqlite3's own
+    context manager only commits, and on Python 3.13+ an unclosed connection lives until a
+    garbage-collection pass; on Windows that keeps the file open, so a restore cannot swap
+    it and a folder holding it cannot be removed."""
+
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, factory=ClosingConnection)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -616,6 +632,18 @@ def hash_seen_in_session(content_hash: str, session_id: int) -> bool:
     return bool(row)
 
 
+def message_by_hash_in_session(content_hash: str, session_id: int) -> dict | None:
+    """The message in this chat that already holds this file, if any."""
+    if not content_hash or not session_id:
+        return None
+    with _lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE content_hash=? AND session_id=? ORDER BY id DESC LIMIT 1",
+            (content_hash, session_id),
+        ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
 def prune_empty_screenshot_sessions() -> int:
     """Back-compat alias — prunes empty screenshot + empty daily orphans."""
     return prune_empty_orphan_sessions()
@@ -651,6 +679,7 @@ def prune_empty_orphan_sessions() -> int:
         ids = [int(r["id"]) for r in rows]
         for sid in ids:
             conn.execute("DELETE FROM chat_sessions WHERE id=?", (sid,))
+            _drop_chat_prefs(conn, sid)
         conn.commit()
     return len(ids)
 
@@ -792,7 +821,7 @@ def get_session(session_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def list_sessions(limit: int = 50) -> list[dict]:
+def list_sessions(limit: int = 50, offset: int = 0) -> list[dict]:
     try:
         prune_empty_orphan_sessions()
     except Exception:
@@ -803,10 +832,27 @@ def list_sessions(limit: int = 50) -> list[dict]:
             "(SELECT substr(COALESCE(NULLIF(m2.text,''), m2.filename, ''),1,80) FROM messages m2 "
             " WHERE m2.session_id=s.id ORDER BY m2.id DESC LIMIT 1) as preview "
             "FROM chat_sessions s WHERE COALESCE(s.archived,0)=0 "
-            "ORDER BY COALESCE(s.pinned,0) DESC, s.updated_at DESC LIMIT ?",
-            (limit,),
+            "ORDER BY COALESCE(s.pinned,0) DESC, s.updated_at DESC, s.id DESC LIMIT ? OFFSET ?",
+            (limit, max(0, int(offset))),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def first_session_of_type(capture_type: str) -> dict | None:
+    """The newest chat of a kind (e.g. 'scratch'), however old. list_sessions only sees a page."""
+    with _lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE capture_type=? AND COALESCE(archived,0)=0 "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1", (capture_type,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_sessions() -> int:
+    """Chats that show in the list (the same filter list_sessions uses)."""
+    with _lock, _connect() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM chat_sessions WHERE COALESCE(archived,0)=0").fetchone()
+    return int(row[0] or 0)
 
 
 def _resolve_date_filter(date_filter: str) -> str:
@@ -1090,18 +1136,37 @@ def touch_session(session_id: int) -> None:
         conn.commit()
 
 
+def _drop_chat_prefs(conn, session_id: int) -> None:
+    """A deleted chat takes its custom instructions with it (table is created lazily)."""
+    try:
+        conn.execute("DELETE FROM session_prefs WHERE session_id=?", (int(session_id),))
+    except sqlite3.OperationalError:
+        pass  # table never created: nothing to remove
+
+
+def _forget_chat_memory(session_ids) -> None:
+    """Memory rows, embeddings and vault notes a chat left behind go with it. A failure
+    is raised, not swallowed: a chat that looks deleted but is still quoted is the bug."""
+    import memory_index
+
+    memory_index.forget_session(session_ids)
+
+
 def delete_session(session_id: int) -> bool:
+    _forget_chat_memory({int(session_id)})
     with _lock, _connect() as conn:
         ids = [int(r[0]) for r in conn.execute("SELECT id FROM messages WHERE session_id=?", (session_id,)).fetchall()]
     for mid in ids:
         delete_message(mid)
     with _lock, _connect() as conn:
         conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))
+        _drop_chat_prefs(conn, session_id)
         conn.commit()
     return True
 
 
 def clear_all_messages() -> int:
+    _forget_chat_memory(None)
     with _lock, _connect() as conn:
         ids = [int(r[0]) for r in conn.execute("SELECT id FROM messages").fetchall()]
     for mid in ids:
@@ -1154,6 +1219,7 @@ def add_message(
     session_id: int = 0,
     allow_duplicate: bool = False,
     hash_preclaimed: bool = False,
+    attachment_ids: list | None = None,
 ) -> dict | None:
     if content_hash:
         if allow_duplicate and session_id:
@@ -1166,9 +1232,10 @@ def add_message(
     now = time.time()
     with _lock, _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO messages(device_ip,device_name,text,kind,filename,filepath,thumb,mime,size,source,content_hash,created_at,session_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (device_ip, device_name, text or "", kind, filename, filepath, thumb, mime, size, source, content_hash, now, session_id),
+            "INSERT INTO messages(device_ip,device_name,text,kind,filename,filepath,thumb,mime,size,source,content_hash,created_at,session_id,attachment_ids) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (device_ip, device_name, text or "", kind, filename, filepath, thumb, mime, size, source, content_hash, now, session_id,
+             None if attachment_ids is None else json.dumps([int(x) for x in attachment_ids])),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM messages WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -1178,6 +1245,38 @@ def add_message(
     if session_id:
         touch_session(session_id)
     return _row_to_dict(row)
+
+
+def count_session_messages(session_id: int, before_id: int = 0) -> int:
+    """How many messages a chat holds (only those before `before_id` when given)."""
+    with _lock, _connect() as conn:
+        if before_id:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE session_id=? AND id<?", (session_id, before_id)
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM messages WHERE session_id=?", (session_id,)).fetchone()
+    return int(row["n"] or 0)
+
+
+def get_messages_before(session_id: int, before_id: int, limit: int = 60) -> list[dict]:
+    """The latest `limit` messages of a chat that come before `before_id`, oldest first."""
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE session_id=? AND id<? ORDER BY id DESC LIMIT ?",
+            (session_id, before_id, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in reversed(rows)]
+
+
+def set_message_ai_info(msg_id: int, *, model: str = "", status: str = "") -> None:
+    """Record which model wrote a reply, and whether it was cut short ('stopped')."""
+    with _lock, _connect() as conn:
+        if model:
+            conn.execute("UPDATE messages SET ai_model=? WHERE id=?", (model[:80], msg_id))
+        if status:
+            conn.execute("UPDATE messages SET ai_status=? WHERE id=?", (status[:20], msg_id))
+        conn.commit()
 
 
 def get_media_messages(limit: int = 200) -> list[dict]:
@@ -1229,9 +1328,22 @@ def delete_message(msg_id: int) -> bool:
         if not row:
             return False
         conn.execute("DELETE FROM messages WHERE id=?", (msg_id,))
+        # Its prompt record (prompt_trace.py) holds the full text that was sent; deleting
+        # the reply must delete that copy too. The table only exists once a trace was saved.
+        try:
+            conn.execute("DELETE FROM prompt_traces WHERE message_id=?", (msg_id,))
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
+        # A forked chat points at the same stored file, so only remove a file
+        # once no other message still uses it.
+        still_used = {
+            rel for rel in (row["filepath"], row["thumb"]) if rel and conn.execute(
+                "SELECT 1 FROM messages WHERE filepath=? OR thumb=? LIMIT 1", (rel, rel)
+            ).fetchone()
+        }
     for rel in (row["filepath"], row["thumb"]):
-        if rel:
+        if rel and rel not in still_used:
             p = DATA_DIR / rel.replace("/", "\\") if "\\" not in rel else DATA_DIR / rel
             if not p.is_file():
                 p = ROOT / rel if (ROOT / rel).is_file() else FILES.parent / rel
@@ -1241,6 +1353,109 @@ def delete_message(msg_id: int) -> bool:
             except OSError:
                 pass
     return True
+
+
+def fork_session(session_id: int, upto_message_id: int) -> dict:
+    """Copy a chat up to and including one message into a new chat.
+
+    Same order, same sender, same text, same project, titled "<title> (fork)".
+    Attachment rows keep pointing at the same stored file (no bytes copied);
+    delete_message leaves a file alone while another row still uses it.
+    The source chat is only read. Raises LookupError (unknown chat or message)
+    or ValueError (message belongs to another chat).
+    """
+    src = get_session(session_id)
+    if not src:
+        raise LookupError("Chat not found.")
+    last = get_message(upto_message_id)
+    if not last:
+        raise LookupError("Message not found.")
+    if int(last.get("session_id") or 0) != int(session_id):
+        raise ValueError("That message is not in this chat.")
+    with _lock, _connect() as conn:
+        rows = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM messages WHERE session_id=? AND id<=? ORDER BY id ASC",
+            (int(session_id), int(upto_message_id)),
+        ).fetchall()]
+    suffix = " (fork)"
+    title = (str(src.get("title") or "New chat")[: 80 - len(suffix)]) + suffix
+    new = create_session(title, src.get("capture_type") or "manual",
+                         category=src.get("category") or "general")
+    nid = int(new["id"])
+    if src.get("project_id"):
+        update_session_meta(nid, project_id=int(src["project_id"]))
+    # A copy that answers differently is not a copy: standing instructions come along.
+    import chat_prefs
+
+    prefs_note: dict = {}
+    try:
+        text = chat_prefs.get(int(session_id))
+        if text:
+            chat_prefs.set(nid, text)
+            prefs_note["instructions_copied"] = True
+    except Exception as e:  # the fork exists; say the instructions did not come with it
+        prefs_note = {"instructions_copied": False, "instructions_error": str(e)[:160]}
+    for m in rows:
+        c = add_message(
+            device_ip=m.get("device_ip") or "", device_name=m.get("device_name") or "",
+            text=m.get("text") or "", kind=m.get("kind") or "text",
+            filename=m.get("filename"), filepath=m.get("filepath"), thumb=m.get("thumb"),
+            mime=m.get("mime"), size=int(m.get("size") or 0), source=m.get("source") or "chat",
+            session_id=nid,
+        )
+        if not c:
+            continue
+        with _lock, _connect() as conn:
+            conn.execute(
+                "UPDATE messages SET created_at=?, ai_status=?, ai_analysis=?, ai_model=?, ai_category=? WHERE id=?",
+                (m["created_at"], m.get("ai_status") or "none", m.get("ai_analysis") or "",
+                 m.get("ai_model") or "", m.get("ai_category") or "", c["id"]),
+            )
+            conn.commit()
+    sess = get_session(nid) or new
+    return {"session": sess, "copied": len(rows), **prefs_note}
+
+
+def export_session(session_id: int, fmt: str = "md") -> tuple[str, str, str]:
+    """Whole chat straight from the database. Returns (filename, content_type, text).
+    Raises LookupError for an unknown chat."""
+    sess = get_session(session_id)
+    if not sess:
+        raise LookupError("Chat not found.")
+    with _lock, _connect() as conn:
+        msgs = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM messages WHERE session_id=? ORDER BY id ASC", (int(session_id),)
+        ).fetchall()]
+    title = str(sess.get("title") or "Chat")
+
+    def who(m):
+        if m.get("source") == "ai":
+            return "AirGPT"
+        return str(m.get("device_name") or "You")
+
+    def body(m):
+        t = m.get("text") or ""
+        if m.get("kind") in ("image", "video", "file") and m.get("filename"):
+            t = (t + "\n\n" if t else "") + "[Attachment: %s]" % m["filename"]
+        return t
+
+    # ASCII only: the name goes into an HTTP header, which cannot carry other characters.
+    slug = "".join(ch if (ch.isascii() and ch.isalnum()) else "-" for ch in title.lower()).strip("-")[:40].strip("-") or "chat"
+    if fmt == "json":
+        out = {
+            "chat": {"id": sess["id"], "title": title, "created_at": sess.get("created_at"),
+                     "message_count": len(msgs)},
+            "messages": [{"id": m["id"], "who": who(m), "role": "assistant" if m.get("source") == "ai" else "user",
+                          "when": m["datetime"], "created_at": m["created_at"],
+                          "kind": m.get("kind"), "filename": m.get("filename"), "text": m.get("text") or ""}
+                         for m in msgs],
+        }
+        return f"airgpt-{slug}.json", "application/json; charset=utf-8", json.dumps(out, indent=2, ensure_ascii=False)
+    heading = " ".join(title.split()) or "Chat"   # a line break in a title would split the heading
+    lines = [f"# {heading}", "", f"{len(msgs)} messages", ""]
+    for i, m in enumerate(msgs, 1):
+        lines += [f"## {i}. {who(m)} - {m['datetime']}", "", body(m), ""]
+    return f"airgpt-{slug}.md", "text/markdown; charset=utf-8", "\n".join(lines)
 
 
 def session_latest_id(session_id: int) -> int:
@@ -1253,18 +1468,29 @@ def session_latest_id(session_id: int) -> int:
     return int(row[0] or 0)
 
 
-def messages_grouped(since_id: int = 0, limit: int = 500, session_id: int | None = None) -> dict:
-    msgs = (
-        get_messages(since_id=since_id, limit=limit, session_id=session_id)
-        if since_id
-        else get_messages(since_id=0, limit=limit, session_id=session_id)
-    )
+def messages_grouped(since_id: int = 0, limit: int = 500, session_id: int | None = None,
+                     before_id: int = 0) -> dict:
+    """Messages grouped by day. `before_id` (with a session) pages backwards: the latest
+    `limit` messages older than it. `has_more` says whether older ones remain, so the
+    page can offer "Load earlier messages" instead of silently cutting a long chat."""
+    if before_id and session_id:
+        msgs = get_messages_before(session_id, before_id, limit)
+    else:
+        msgs = get_messages(since_id=since_id, limit=limit, session_id=session_id)
+    has_more = False
+    if session_id and msgs and not since_id:
+        with _lock, _connect() as conn:
+            has_more = conn.execute(
+                "SELECT 1 FROM messages WHERE session_id=? AND id<? LIMIT 1",
+                (session_id, int(msgs[0]["id"])),
+            ).fetchone() is not None
     groups: dict[str, list] = {}
     for m in msgs:
         groups.setdefault(m["date"], []).append(m)
     by_date = [{"date": d, "label": _date_label(d), "messages": groups[d]} for d in sorted(groups.keys())]
     lid = session_latest_id(session_id) if session_id else latest_id()
-    return {"messages": msgs, "by_date": by_date, "latest_id": lid, "session_id": session_id or 0}
+    return {"messages": msgs, "by_date": by_date, "latest_id": lid, "session_id": session_id or 0,
+            "has_more": has_more}
 
 
 def _date_label(d: str) -> str:
@@ -1495,6 +1721,7 @@ def index_important_from_ditch(
                     body=body[:1500],
                     room="carry",
                     source="dsa",
+                    session_id=int(session_id or 0),
                 )
                 saved += 1
             except Exception:

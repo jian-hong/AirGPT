@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from config import DATA_DIR
+from db import ClosingConnection  # commits and closes on leaving a with-block
 
 DB_PATH = DATA_DIR / "agents.db"
 
@@ -19,7 +20,7 @@ NON_AGENT_NAMES = ("memory", "vault summarizer")
 
 def _conn() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    c = sqlite3.connect(str(DB_PATH), check_same_thread=False, factory=ClosingConnection)
     c.row_factory = sqlite3.Row
     return c
 
@@ -40,6 +41,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     run_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_runs)").fetchall()}
     if "steps" not in run_cols:
         conn.execute("ALTER TABLE agent_runs ADD COLUMN steps TEXT DEFAULT '[]'")
+    if "result_chars" not in run_cols:
+        # True length of the answer; the saved copy is cut at RESULT_KEEP characters.
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN result_chars INTEGER DEFAULT 0")
+
+
+RESULT_KEEP = 20000
+INTERRUPTED = "Interrupted when the app restarted"
 
 
 def init() -> None:
@@ -184,6 +192,22 @@ def set_agent_pinned(agent_id: int, pinned: bool) -> dict | None:
         return _agent_row(row) if row else None
 
 
+def set_agent_config(agent_id: int, config: dict) -> dict | None:
+    """Merge keys into an agent's config (e.g. the routine it is scheduled by)."""
+    init()
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM agents WHERE id=?", (int(agent_id),)).fetchone()
+        if not row:
+            return None
+        merged = {**_agent_row(row).get("config", {}), **config}
+        conn.execute(
+            "UPDATE agents SET config=?, updated_at=? WHERE id=?",
+            (json.dumps(merged), time.time(), int(agent_id)),
+        )
+        row = conn.execute("SELECT * FROM agents WHERE id=?", (int(agent_id),)).fetchone()
+        return _agent_row(row) if row else None
+
+
 def delete_agent(agent_id: int) -> dict:
     """Hard-delete an agent row (keeps run history orphaned — fine for local)."""
     init()
@@ -212,8 +236,8 @@ def claim_run(run_id: int) -> dict:
     init()
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=? WHERE id=? AND status IN ('queued','awaiting_human')",
-            ("running", int(run_id)),
+            "UPDATE agent_runs SET status=?, created_at=? WHERE id=? AND status IN ('queued','awaiting_human')",
+            ("running", time.time(), int(run_id)),
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
@@ -243,19 +267,71 @@ def finish_run(
         )
     with _conn() as conn:
         conn.execute(
-            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=? WHERE id=?",
+            # A run the user stopped stays stopped: a late result must not turn it back into done.
+            "UPDATE agent_runs SET status=?, result=?, error=?, audit_ref=?, finished_at=?, steps=?, "
+            "result_chars=? WHERE id=? AND status!='cancelled'",
             (
                 status[:40],
-                (result or "")[:20000],
+                (result or "")[:RESULT_KEEP],
                 (error or "")[:2000],
                 (audit_ref or "")[:200],
                 time.time(),
                 json.dumps(packed)[:20000],
+                len(result or ""),
                 int(run_id),
             ),
         )
         row = conn.execute("SELECT * FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
         return dict(row) if row else {}
+
+
+def is_cancelled(run_id: int) -> bool:
+    """True once the user pressed Stop on this run (the loop checks this between steps)."""
+    init()
+    with _conn() as conn:
+        row = conn.execute("SELECT status FROM agent_runs WHERE id=?", (int(run_id),)).fetchone()
+        return bool(row) and row["status"] == "cancelled"
+
+
+_OPEN_RUN_STATES = ("running", "queued", "claimed", "awaiting_human")
+
+
+def cancel_run(run_id: int, reason: str = "Stopped by you") -> bool:
+    """Mark an unfinished run stopped. False when it is missing or already finished."""
+    init()
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE agent_runs SET status='cancelled', error=?, finished_at=? "
+            "WHERE id=? AND status IN (?,?,?,?)",
+            (reason[:2000], time.time(), int(run_id), *_OPEN_RUN_STATES),
+        )
+        return cur.rowcount > 0
+
+
+def expire_stale_runs(max_age_sec: float = 3600.0) -> int:
+    """A run still 'running' long after it began lost its browser or its server."""
+    init()
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE agent_runs SET status='error', error=?, finished_at=? "
+            "WHERE status='running' AND created_at<?",
+            ("This run was abandoned (the page closed or the app restarted).", time.time(), time.time() - max_age_sec),
+        )
+        return cur.rowcount
+
+
+def close_interrupted(live_ids=(), min_age: float = 0.0) -> int:
+    """Close runs still 'running' that no thread of this app is working on (the app was
+    restarted, or the row was left behind). Runs in live_ids are never touched."""
+    init()
+    live = [int(i) for i in live_ids]
+    q = "UPDATE agent_runs SET status='error', error=?, finished_at=? WHERE status='running' AND created_at<?"
+    args: list = [INTERRUPTED, time.time(), time.time() - float(min_age)]
+    if live:
+        q += " AND id NOT IN (%s)" % ",".join("?" * len(live))
+        args += live
+    with _conn() as conn:
+        return conn.execute(q, args).rowcount
 
 
 def list_runs(agent_id: int | None = None, limit: int = 50) -> list[dict]:

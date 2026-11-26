@@ -192,7 +192,7 @@ def diagnose(a: Assessment, *, web_ran: bool = False, web_error: str = "") -> li
         out.append("Web search ran but the fetched pages did not cover the missing terms — try a narrower query, or paste a specific URL.")
 
     if a.evidence_count and a.coverage < 0.5:
-        out.append("Rebuild the space with smaller chunks so specific terms are not diluted across long passages — or remove unrelated sources (e.g. old JEPA pages) on the Build tab.")
+        out.append("Rebuild the space with smaller chunks so specific terms are not diluted across long passages - or remove sources that have nothing to do with this question on the Build tab.")
 
     return out[:5]
 

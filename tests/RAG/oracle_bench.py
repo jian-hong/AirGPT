@@ -977,12 +977,17 @@ def main() -> None:
         "signal is inconclusive."
     )
 
+    def _ontology_version() -> int:
+        from rag import ontology
+
+        return ontology.ONTOLOGY_VERSION
+
     try:
         from rag import index_fingerprint
 
         _fp = index_fingerprint.fingerprint(
             table=src.suffix.lower() in {".xlsx", ".xlsm", ".xls", ".csv"},
-            extra={"pack": args.dir, "workbook": src.name},
+            extra={"pack": args.dir, "workbook": src.name, "ontology_version": _ontology_version()},
         )
         print(f"  {index_fingerprint.describe(_fp)}", flush=True)
     except Exception as exc:

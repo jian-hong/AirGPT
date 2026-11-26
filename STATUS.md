@@ -20,11 +20,30 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
+5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
+   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
+   totals checked against pandas, turns keep their files, restore, sanitizer.
+   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
+   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
+   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
+   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
+   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
+   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
+6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
+   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
+   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
+7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
+   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
+   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
+
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
+2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
+   reliability epic and `pypdf`; re-score n=320; decide P22-P36.
+3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP
 
@@ -38,6 +57,4 @@ D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 - F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
 - DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
 
-## Demo open
-
-- `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.
+Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.

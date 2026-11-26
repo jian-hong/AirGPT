@@ -1,0 +1,17 @@
+/* turnedit: styles for /ui/turnedit.js. Uses the app's own tokens so both themes carry over. */
+.msg-edit,.msg-regen,.msg-retry{display:none;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;flex-shrink:0;font-family:inherit}
+.msg-edit:hover,.msg-regen:hover,.msg-retry:hover,.msg-edit:focus-visible,.msg-regen:focus-visible,.msg-retry:focus-visible{color:var(--text);border-color:var(--line)}
+.turn-last-user .msg-edit,.turn-last-ai .msg-regen,.turn-no-reply .msg-retry{display:inline-block}
+.msg-stopped{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);flex-shrink:0}
+/* Messages waiting for the reply to end, and the edit notice: one quiet line above the box. */
+.msg-queue-hint{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.queue-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);color:var(--text)}
+.queue-chip-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.queue-chip button,.edit-chip button{border:0;background:transparent;color:var(--muted);cursor:pointer;font:inherit;border-radius:999px;padding:0 8px;min-height:24px}
+.queue-chip button:hover,.edit-chip button:hover{color:var(--text)}
+@media(max-width:760px),(pointer:coarse){
+  /* Same pattern as Fork in chattools.css: small look, finger sized tap area. */
+  .msg .msg-edit,.msg .msg-regen,.msg .msg-retry{position:relative;padding:3px 8px}
+  .msg .msg-edit::after,.msg .msg-regen::after,.msg .msg-retry::after{content:"";position:absolute;inset:-14px -3px}
+  .queue-chip button,.edit-chip button{min-height:36px;min-width:36px}
+}

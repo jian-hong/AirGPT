@@ -1,0 +1,25 @@
+/* chattools: styles for /ui/chattools.js. Uses the app's own tokens so both themes carry over. */
+.msg-fork{font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;flex-shrink:0;font-family:inherit}
+.msg-fork:hover,.msg-fork:focus-visible{color:var(--text);border-color:var(--line)}
+.ctools-menu{
+  position:fixed;z-index:1400;min-width:150px;padding:4px;border-radius:12px;
+  background:var(--surface);color:var(--text);border:1px solid var(--line);
+  box-shadow:0 10px 30px rgba(0,0,0,.35);
+}
+body.theme-light .ctools-menu{box-shadow:0 10px 30px rgba(0,0,0,.14)}
+.ctools-menu[hidden]{display:none}
+.ctools-menu button{
+  display:block;width:100%;text-align:left;padding:9px 12px;border:0;border-radius:8px;
+  background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer;
+}
+.ctools-menu button:hover,.ctools-menu button:focus-visible{background:var(--surface2);outline:none}
+@media(max-width:760px),(pointer:coarse){
+  /* Same pattern as Copy, Reply and Prompt in phone.css: the button keeps its small
+     look and an invisible layer makes the tap area finger sized. A 44px tall box
+     here pushed Fork onto its own line and made Export taller than Share. */
+  .msg .msg-fork{position:relative;padding:3px 8px}
+  .msg .msg-fork::after{content:"";position:absolute;inset:-14px -3px}
+  .ctools-menu button{min-height:44px;font-size:15px}
+  .chat-share-btn{position:relative}
+  .chat-share-btn::after{content:"";position:absolute;inset:-7px 0}
+}

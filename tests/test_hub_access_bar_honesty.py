@@ -50,22 +50,22 @@ class HubAccessBarHonestyStaticTest(unittest.TestCase):
         """F22a / DR-0003 is still proposed. Do not make the level load-bearing."""
         self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_only_path))
         self.assertNotIn("access_level", inspect.getsource(clipdrop._is_host_request))
-        # do_DELETE joined these two: it had no host-only gate at all, so a
-        # peer could delete under a prefix the same peer could not read.
-        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST, clipdrop.Handler.do_DELETE):
-            src = inspect.getsource(meth)
-            gate_lines = [
-                line
-                for line in src.splitlines()
-                if "_is_host_only_path(path)" in line and "_is_host_request" in line
-            ]
-            self.assertTrue(gate_lines, f"host-only gate missing on {meth.__name__}")
-            for line in gate_lines:
-                self.assertNotIn("access_level", line)
+        # Every method runs the one shared gate (_gate), and the host-only line lives there:
+        # do_DELETE and do_PATCH once had none, so a peer could change what it could not read.
+        gate_lines = [
+            line
+            for line in inspect.getsource(clipdrop.Handler._gate).splitlines()
+            if "_is_host_only_path(path" in line and "_is_host_request" in line
+        ]
+        self.assertTrue(gate_lines, "host-only gate missing from _gate")
+        for line in gate_lines:
+            self.assertNotIn("access_level", line)
+        for meth in (clipdrop.Handler.do_GET, clipdrop.Handler.do_POST, clipdrop.Handler.do_PATCH, clipdrop.Handler.do_DELETE):
+            self.assertIn("self._gate(path)", inspect.getsource(meth), f"{meth.__name__} skips the shared gate")
 
     def test_host_only_prefixes_stay_closed(self):
         self.assertIn("/api/rag", clipdrop._HOST_ONLY_PREFIXES)
-        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 17)
+        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 24)  # + /api/export, /api/import
 
     def test_min_tests_stays_380(self):
         wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")

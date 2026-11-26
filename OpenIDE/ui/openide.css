@@ -5,6 +5,8 @@ body.openide-mode .connect-col,body.openide-mode .connect-collapse-btn,body.open
 body.openide-mode .lan-banner,body.openide-mode .paywall-banner,body.openide-mode .net-banner,body.openide-mode .reply-chip{display:none!important}
 body.openide-mode .app{grid-template-columns:var(--side) 1fr}
 body.openide-mode .app.side-collapsed{grid-template-columns:0 1fr}
+/* A phone is one column (see SHELL-04 in index.html); the two rules above out-rank it, which left #main zero wide. */
+@media(max-width:760px){body.openide-mode .app,body.openide-mode .app.side-collapsed{grid-template-columns:minmax(0,1fr)}}
 body.openide-mode .topbar{padding:6px 14px;background:#141414;border-bottom-color:rgba(255,255,255,.08);min-height:0}
 body.openide-mode .topbar .ai-switch,body.openide-mode .brand small{display:none!important}
 body.openide-mode .chat{max-width:none;margin:0;padding:0;overflow:hidden;height:100%}
@@ -22,6 +24,8 @@ body.claude-home .topbar{border-bottom-color:transparent;background:transparent}
   grid-template-areas:"left lsplit chat rsplit tools";
   height:100%;min-height:0;background:#0a0a0a;color:var(--text)
 }
+/* The panel is always dark; the light theme must not hand it dark ink. */
+body.theme-light .openide-shell{--text:#f2f2f2;--muted:#9a9a9a;--bg:#141414;--line:rgba(255,255,255,.12);--ok:#3dd68c}
 .openide-shell.openide-view-editor{
   --oide-left:260px;--oide-right:38%;
   grid-template-areas:"left lsplit work rsplit chat";
@@ -316,4 +320,33 @@ body:not(.openide-mode) #openideIdeBtn{display:none!important}
   .openide-shell.openide-view-editor{grid-template-areas:"work" "chat"}
   .openide-left,.oide-resizer,.openide-rail-toggle{display:none!important}
   .openide-center{border:0;border-bottom:1px solid rgba(255,255,255,.08)}
+  /* The collapsed-rail rules above out-rank the single column and, with the rail toggles hidden here,
+     could never be undone: they left the chat 200px wide with a blank row below it. One column always. */
+  .openide-shell.left-collapsed,.openide-shell.right-collapsed,.openide-shell.left-collapsed.right-collapsed{
+    grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(200px,38%);grid-template-areas:"chat" "tools";
+  }
+  .openide-shell.openide-view-editor.left-collapsed,.openide-shell.openide-view-editor.right-collapsed{grid-template-areas:"work" "chat"}
+  .openide-shell.right-collapsed .openide-workspace,.openide-shell.openide-view-editor.right-collapsed .openide-center{opacity:1;pointer-events:auto}
+  .openide-shell.openide-view-agents.right-collapsed .openide-workspace{display:flex}
+}
+/* Phone: the header buttons ran off the right edge (Vault cut, no way to scroll to it).
+   Let the action row take its own line and wrap. */
+@media(max-width:760px){
+  .openide-session-hdr{flex-wrap:wrap;row-gap:6px}
+  .openide-hdr-actions{flex-shrink:1;min-width:0}
+}
+
+/* Round 3b, phones up to 900px tall: the Browser/Terminal panel took about 300px and cut the Create an app
+   hero. It starts folded to its tab strip; Show opens it (and so does tapping a tab). Nothing is removed. */
+.oide-work-toggle{display:none}
+@media(max-width:760px) and (max-height:900px){
+  html body .openide-shell.openide-view-agents:not(.work-open),
+  html body .openide-shell.openide-view-agents.right-collapsed:not(.work-open){grid-template-rows:minmax(0,1fr) auto}
+  .openide-shell.openide-view-agents:not(.work-open) .openide-workspace>:not(.openide-work-tabs){display:none!important}
+  .openide-shell.openide-view-agents:not(.work-open) .openide-workspace{overflow:visible}
+  .openide-shell.openide-view-agents .oide-work-toggle{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--text);font:inherit;font-size:12px;cursor:pointer;position:relative}
+  .openide-shell.openide-view-agents .oide-work-toggle::after{content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
+  /* The "Cortex · Assist" chip: its tap layer was under the top bar and the Vault row. Give it air. */
+  .openide-session-hdr{row-gap:18px;padding-top:12px}
+  .openide-session-hdr .openide-chip{min-height:36px;display:inline-flex;align-items:center}
 }

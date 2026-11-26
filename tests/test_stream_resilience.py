@@ -80,7 +80,7 @@ class StreamDropTest(unittest.TestCase):
         ).encode()
         s = socket.create_connection(self.addr, timeout=10)
         s.sendall(
-            b"POST /api/chat/stream HTTP/1.1\r\nHost: x\r\n"
+            b"POST /api/chat/stream HTTP/1.1\r\nHost: 127.0.0.1\r\n"
             b"Content-Type: application/json\r\nAccept: text/event-stream\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         )
@@ -116,7 +116,7 @@ class StreamDropTest(unittest.TestCase):
         ).encode()
         s = socket.create_connection(self.addr, timeout=20)
         s.sendall(
-            b"POST /api/chat/stream HTTP/1.1\r\nHost: x\r\n"
+            b"POST /api/chat/stream HTTP/1.1\r\nHost: 127.0.0.1\r\n"
             b"Content-Type: application/json\r\nAccept: text/event-stream\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         )

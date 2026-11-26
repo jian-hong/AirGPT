@@ -1,0 +1,9 @@
+/* voice.css: the microphone button and its "listening" mark. */
+.composer button.mic-btn{width:36px;height:36px;color:var(--text);border:1px solid transparent}
+.composer button.mic-btn.listening{color:#fff;background:#d6336c;border-color:#d6336c;animation:voicePulse 1.2s ease-in-out infinite}
+.voice-status{display:flex;align-items:center;gap:8px;padding:4px 8px 0;font-size:12px;color:var(--text);width:100%}
+.voice-status[hidden]{display:none}
+.voice-dot{width:8px;height:8px;border-radius:50%;background:#d6336c;animation:voicePulse 1.2s ease-in-out infinite}
+@keyframes voicePulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.composer button.mic-btn.listening,.voice-dot{animation:none}}
+@media(max-width:760px){.composer button.mic-btn{width:44px;height:44px}}

@@ -39,6 +39,8 @@ body{
 .btn.vault{border-color:#4c3d8a;color:var(--vault);background:var(--vault-dim)}
 .grid{display:grid;grid-template-columns:1fr 320px;gap:16px}
 @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+@media(pointer:coarse),(max-width:760px){.btn{min-height:44px}}
+.worker-hdr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
 .stat{padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .stat b{display:block;font-size:22px;font-weight:700;font-family:var(--mono);margin-bottom:4px}
@@ -262,8 +264,8 @@ function renderWorkers(list){
     return;
   }
   $('workerList').innerHTML=workers.map(w=>`
-    <div class="worker" id="w-${w.id}" data-id="${w.id}">
-      <div class="worker-hdr">
+    <div class="worker" data-id="${esc(String(w.id))}">
+      <div class="worker-hdr" role="button" tabindex="0">
         <div class="av">${esc((w.name||'?').split(' ').map(x=>x[0]).join('').slice(0,2))}</div>
         <div class="w-main">
           <div class="w-name">${esc(w.name||'Unknown')}${w.validated?'<span class="validated-dot" title="Validated"></span>':''}</div>
@@ -294,13 +296,15 @@ function renderWorkers(list){
     </div>`).join('');
 
   document.querySelectorAll('.worker-hdr').forEach(hdr=>{
-    const id=hdr.closest('.worker').dataset.id;
+    const wk=hdr.closest('.worker');
+    const id=wk.dataset.id;
+    hdr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();hdr.click()}});
     hdr.addEventListener('click',()=>{
       if(clickTimer&&lastClickId===id){clearTimeout(clickTimer);clickTimer=null;return}
       lastClickId=id;
       clickTimer=setTimeout(()=>{
         clickTimer=null;
-        const el=$('w-'+id);
+        const el=wk;
         const wasOpen=el.classList.contains('open');
         document.querySelectorAll('.worker.open').forEach(x=>x.classList.remove('open'));
         document.querySelectorAll('.files.show').forEach(x=>x.classList.remove('show'));
@@ -310,7 +314,7 @@ function renderWorkers(list){
     hdr.addEventListener('dblclick',e=>{
       e.preventDefault();
       if(clickTimer){clearTimeout(clickTimer);clickTimer=null}
-      const el=$('w-'+id);
+      const el=wk;
       el.classList.add('open');
       const files=el.querySelector('[data-files]');
       if(files){

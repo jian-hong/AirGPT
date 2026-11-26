@@ -1,0 +1,192 @@
+{
+  "bench": "filetype_bench",
+  "n_per_type": 30,
+  "seed": 1,
+  "top_k": 5,
+  "n_total": 480,
+  "index_fingerprint": {
+    "schema_version": 2,
+    "chunker": {
+      "name": "parent_child_sentence",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40,
+      "table": false
+    },
+    "embed": {
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
+    },
+    "extra": {
+      "pack": "filetype_bench"
+    },
+    "id": "d89d8a69d7804e6c"
+  },
+  "honesty": "retrieval only, hash embedder, synthetic facts, no model call. Counts, not rates: n per type is too small to claim zero error.",
+  "types": {
+    "txt": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    },
+    "md": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "html": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "json": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    },
+    "csv": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    },
+    "xlsx": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "py": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "docx": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "pptx": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "pdf": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "eml": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "tsv": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    },
+    "xml": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 29,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "log": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "ipynb": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 30,
+      "locator_ok": 30,
+      "misses": []
+    },
+    "rtf": {
+      "n": 30,
+      "ingested": true,
+      "reason": "",
+      "recall_at_1": 30,
+      "recall_at_5": 30,
+      "locator_n": 0,
+      "locator_ok": 0,
+      "misses": []
+    }
+  }
+}

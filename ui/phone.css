@@ -1,0 +1,251 @@
+/* phone.css: overrides for 760px and below. Loaded after the page styles. */
+
+/* Thumb-sized hit areas. The pictured size of each control stays the same; an
+   invisible layer around it makes the tappable area at least 44px. */
+@media(max-width:760px){
+  /* Top bar buttons were 36px (switch 24px tall). */
+  .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.topbar #aiSwitchBtn,
+  /* Composer buttons were 34px tall. */
+  .composer #attachBtn,
+  /* Copy, Reply and Prompt under each message were 20px to 28px tall. */
+  .msg .msg-copy,.msg .msg-reply,.msg .msg-lens{position:relative}
+  .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after{content:"";position:absolute;inset:-6px}
+  .topbar #aiSwitchBtn::after{content:"";position:absolute;inset:-12px -3px}
+  .composer #attachBtn::after{content:"";position:absolute;inset:-7px}
+  .msg .msg-copy::after,.msg .msg-reply::after,.msg .msg-lens::after{content:"";position:absolute;inset:-14px -3px}
+
+  /* Drawer rows were 30px to 35px tall. */
+  .side .nav-item,.side [id^="navLabel"],.side #navHome,.side #navCortexTop,.side #navChats,.side #navApps{min-height:44px}
+  .side .icon-btn,.side #groupByBtn{position:relative}
+  .side .icon-btn::after{content:"";position:absolute;inset:-7px -5px}
+  .side #groupByBtn::after{content:"";position:absolute;inset:-12px -10px}
+  /* The Search and List icons sat 6px apart, so their hit layers shared the gap: 40px wide each. */
+  .side .icon-btn+.icon-btn{margin-left:4px}
+  /* Section headers (Recents, day groups) fold open and shut on tap; they were 28px to 32px tall. */
+  .side .side-section-hdr,.side .hist-day-hdr{min-height:44px}
+  /* The AirGPT logo and name in the top bar goes home on tap; it was 22px tall. The bar clips
+     overflow, so grow it with padding and cancel that with a negative margin. */
+  .topbar #brandHome{padding:11px 0;margin:-11px 0}
+  /* Pin and Archive on a chat row were 22px. */
+  .side .session-item.on .sess-actions-inline button{min-width:44px;min-height:44px}
+  /* Rename, Share and Delete under the open chat were 19px tall. */
+  /* Two 44px buttons did not fit the 72px slot, so Archive was cut to 27px wide. */
+  .side .session-item.dense:hover .sess-actions-inline,.side .session-item.dense.on .sess-actions-inline,
+  .side .session-item.dense:focus-within .sess-actions-inline,.side .session-item.dense.pinned .sess-actions-inline{max-width:96px}
+  .side .session-item .sess-actions button{min-height:44px;padding:3px 12px}
+  .side .session-item.dense,.side .session-item{min-height:44px}
+}
+
+/* Copy IP and Share in Settings were 32px tall. */
+@media(max-width:760px){
+  #settingsModal .btn{min-height:44px}
+}
+
+/* The Prompt panel close button was 36px. */
+@media(max-width:760px){
+  .plens-close{min-width:44px;min-height:44px}
+}
+
+/* The "+" menu was one long row that scrolled sideways with no scrollbar, so
+   Skills and Connectors sat off screen. Let it wrap instead. */
+@media(max-width:760px){
+  .plus-menu{flex-wrap:wrap;overflow:visible;justify-content:center;border-radius:22px}
+  .plus-menu button{min-height:44px!important}
+}
+
+/* Settings was a 220px menu beside a 140px page. Put the menu on top as a
+   sideways strip and give the page the full width. */
+@media(max-width:760px){
+  #settingsModal .settings-cursor .sc-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  #settingsModal .settings-cursor .sc-nav{height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  #settingsModal .settings-cursor .sc-nav-list{flex-direction:row;flex:none;overflow-x:auto;overflow-y:hidden;padding:6px}
+  #settingsModal .settings-cursor .sc-nav-item{white-space:nowrap;min-height:44px;flex:0 0 auto}
+  #settingsModal .settings-cursor .sc-nav-gap{height:auto;width:10px;flex:0 0 auto}
+  #settingsModal .settings-cursor .sc-nav-foot{display:none}
+  #settingsModal .settings-cursor .sc-back{min-width:44px;min-height:44px}
+  #settingsModal .settings-cursor .sc-search{min-height:44px;font-size:16px}
+  #settingsModal .settings-cursor .sc-panel{padding:16px}
+  #settingsModal .settings-cursor .connect-path-row button{min-height:44px;min-width:72px}
+}
+
+/* The floating bug-report button sat on top of Send once the message grew
+   past one line, and over the Prompt panel, Settings and the drawer. phone.js
+   keeps --phone-fab-b just above the message box; hide it while a panel is open. */
+@media(max-width:760px){
+  /* It rests in the empty strip beside the project tab, level with it, so it is never on message
+     text or on the waiting-message chip above the box (phone.js gives --phone-fab-b: the box top + 8px). */
+  #bugReportBtn{top:auto!important;left:auto!important;right:12px!important;bottom:calc(var(--phone-fab-b,120px) - 8px - var(--bump-height,34px))!important}
+  /* Any open sheet hides it, not a list of the sheets that existed when this was
+     written: it sat on the Edit button in the saved-prompts sheet. Every add-on
+     sheet is a dialog with aria-modal that takes .open; the command box opens on its root. */
+  /* OpenIDE on a phone: the button covered the end of the app chip row (openfree:20128) and, at 320px, the page body. */
+  body.openide-mode #bugReportBtn{display:none!important}
+  body:has(.side.open) #bugReportBtn,body:has(.modal.open) #bugReportBtn,body:has(.plus-menu.open) #bugReportBtn,
+  body:has([aria-modal="true"].open) #bugReportBtn,body:has(.pal-root.open) #bugReportBtn{display:none}
+}
+
+/* Text fields under 16px make iOS zoom the page when they are tapped. */
+@media(max-width:760px){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=button]):not([type=submit]),
+  textarea,select{font-size:16px!important}
+}
+
+/* Dialog buttons were 30px to 40px tall (the Settings Export/Import/Close rule out-ranked the 44px one above). */
+@media(max-width:760px){
+  .modal .btn,.modal-actions .btn,#settingsModal .modal-actions .btn,#bugDialog .btn{min-height:44px}
+  /* Small buttons keep their look; an invisible layer makes the tap area 44px. */
+  .modal .kv-group-btn,.search-filter-chip,.search-filter-menu-btn,.mem-panel-hdr .mem-x,.field-eye,.ds-ico,
+  #bgTasksPanel .bgFoot button{position:relative}
+  .modal .kv-group-btn::after,.search-filter-chip::after{content:"";position:absolute;inset:-8px 0}
+  .search-filter-menu-btn::after,.mem-panel-hdr .mem-x::after,.field-eye::after,.ds-ico::after,
+  #bgTasksPanel .bgFoot button::after{content:"";position:absolute;inset:-8px}
+  /* Settings checkbox rows were 17px to 34px tall. */
+  #settingsModal .settings-check{min-height:44px}
+}
+
+/* The report bar sat over the message box and its hint over the top bar. Dock the bar under the
+   top bar and move the mark-step hint and button to the bottom, where the dimmed page has nothing to tap. */
+@media(max-width:760px){
+  body #bugRecBar{top:calc(var(--topbar-h,56px) + 6px);bottom:auto;left:8px;right:8px;transform:none;max-width:none;border-radius:16px}
+  body #bugRecBar button{min-height:44px;padding:6px 14px}
+  body #bugOverlay .hint-bar{top:auto;bottom:72px;max-width:calc(100vw - 24px);border-radius:16px}
+  body #bugOverlay .bug-esc{top:auto;bottom:16px;right:50%;transform:translateX(50%);min-height:44px;padding:8px 18px}
+  /* Keep the last message clear of the report button that floats above the message box. */
+  .chat{padding-bottom:60px}
+  /* The "N running" pill shares the right edge with the report button: put it on the left. */
+  body #bgTasksBtn{right:auto;left:12px}
+}
+
+/* Small phones: with the Thinking button back, one row left the message box under 100px wide.
+   The box takes the whole first row; the buttons sit on a row of their own below it. */
+@media(max-width:760px){
+  @media(max-width:400px){
+    .composer-row{flex-wrap:wrap}
+    .composer-row #input{order:-1;flex:1 1 100%;min-width:0}
+    .composer-row .composer-actions{margin-left:auto}
+  }
+}
+
+/* Pin and Archive on a chat that is not open were 12x22. They keep their size; the layer makes them 20x44. */
+@media(max-width:760px){
+  .side .session-item:not(.on) .sess-actions-inline button{position:relative}
+  .side .session-item:not(.on) .sess-actions-inline button::after{content:"";position:absolute;inset:-11px -4px}
+}
+
+/* Message box on a phone: the + button is always there, and Effort, Web search, Thinking and
+   Instructions live in its sheet. Every target is 44px. */
+@media(max-width:760px){
+  .composer #attachBtn,.composer .phone-attach button{width:44px!important;height:44px!important}
+  .composer .phone-attach button{border-radius:50%}
+  .composer #modelDd,.composer #thinkBtn,.composer .cprefs-btn{display:none!important}
+  html body .plus-menu{
+    left:0;right:0;bottom:0;transform:none;width:auto;max-width:none;flex-direction:column;flex-wrap:nowrap;
+    align-items:stretch;justify-content:flex-start;border-radius:20px 20px 0 0;max-height:75vh;overflow-y:auto;
+    padding:10px 12px calc(14px + env(safe-area-inset-bottom));animation:none;
+  }
+  html body .plus-menu button{width:100%!important;min-height:44px!important;justify-content:flex-start!important;border-radius:12px!important;font-size:15px!important}
+  html body .plus-menu .pm-phone{display:flex}
+  html body .plus-menu .pm-phone[hidden]{display:none!important}
+  html body .plus-menu .pm-effort{align-items:center;gap:6px}
+  html body .plus-menu .pm-effort .pm-lab{min-width:56px;font-size:14px}
+  html body .plus-menu .pm-effort button{flex:1 1 0;width:auto!important;justify-content:center!important}
+  html body .plus-menu .pm-effort button[aria-pressed="true"]{outline:2px solid #3dd68c}
+  .composer-actions{gap:4px}
+}
+
+/* Chat title bar: the title gets the row (one line, 16px). Background tasks, Export and Share
+   fold into one small ... button (phone.js opens and closes the list); the button keeps its small
+   look and an invisible layer makes the tap area 44px. */
+@media(max-width:760px){
+  .chat-titlebar{position:relative;gap:8px}
+  .chat-titlebar-title{font-size:16px;max-width:none}
+  .chat-titlebar.more-open{z-index:30} /* above the reply rail (22) so the open menu is never under it */
+  .chat-more-btn{
+    display:inline-flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;
+    width:32px;height:32px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--text);cursor:pointer;
+  }
+  .chat-more-btn svg{width:20px;height:20px;display:block}
+  .chat-more-btn::after{content:"";position:absolute;inset:-6px}
+  .chat-titlebar-actions{display:none}
+  .chat-titlebar.more-open .chat-titlebar-actions{
+    display:flex;flex-direction:column;align-items:stretch;gap:2px;position:absolute;right:12px;top:calc(100% - 4px);
+    z-index:40;min-width:220px;padding:6px;border-radius:14px;border:1px solid var(--line);
+    background:var(--surface);box-shadow:0 10px 28px rgba(0,0,0,.35);
+  }
+  html body .chat-titlebar-actions .chat-share-btn{height:44px;justify-content:flex-start;gap:12px;padding:0 12px;border:0;background:transparent;box-shadow:none;font-size:15px}
+  html body .chat-titlebar-actions .chat-share-btn:hover,html body .chat-titlebar-actions .chat-share-btn:focus-visible{background:var(--surface2)}
+  .chat-titlebar-actions .chat-share-btn svg{width:18px;height:18px}
+  .chat-titlebar-actions .cta-lab{display:inline}
+  /* The Export formats open in place under Export (ui/chattools.js), pushing Share down. */
+  .chat-titlebar-actions .ctools-menu.inline{position:static;min-width:0;padding:0 0 0 30px;border:0;border-radius:0;background:transparent;box-shadow:none}
+  .chat-titlebar-actions .ctools-menu.inline[hidden]{display:none}
+}
+
+/* Round 3 visual lane. */
+@media(max-width:760px){
+  /* The + button was a rounded square next to the round mic (light theme showed it as a grey box). */
+  .composer #attachBtn{border-radius:50%}
+  /* One reply has nothing to jump to: its rail only sat over the text (and over code at 320px). */
+  .msg-jump-bar[data-n="one"]{display:none}
+  /* Icons in the + sheet have different widths (emoji, glyphs), so the labels started at 95 to 108px. */
+  html body .plus-menu button .pm-ico{display:inline-block;width:24px;text-align:center}
+  /* OpenIDE: the empty-state hero sat 40px down in a 245px box and cut its last two button rows; the IDE button wrapped to two lines. */
+  .openide-empty-hint{margin-top:0;padding:12px 16px}
+  #openideIdeBtn{width:auto;min-width:36px;padding:0 12px;white-space:nowrap}
+  /* Copy, Reply, Prompt, Fork and Regenerate were 20px, 20px, 28px, 28px and 28px high in two uneven rows. */
+  .msg .meta button{box-sizing:border-box;height:22px;padding:0 8px;font-family:inherit;font-size:11px;line-height:1}
+}
+
+/* Round 3b: chat messages laid out like Claude, ChatGPT and Gemini on a phone.
+   - The reply uses the full width (no avatar column); your message is a rounded bubble on the right.
+   - Under each message: one row of icon buttons (every action kept, each with a label for screen
+     readers and a hover title), each a 44px square so taps never share space. */
+@media(max-width:760px){
+  .msg[id^="msg-"]{gap:0}
+  .msg[id^="msg-"]>.av{display:none}
+  .msg.ai-msg[id^="msg-"]>.bub{max-width:100%;width:100%}
+  .msg.me[id^="msg-"]>.bub{max-width:88%}
+  .msg[id^="msg-"]>.bub{display:grid;grid-template-columns:repeat(5,44px) minmax(0,1fr);justify-content:stretch;align-content:start;column-gap:0}
+  .msg.me[id^="msg-"]>.bub{justify-items:end}
+  .msg.me[id^="msg-"]>.bub>.meta>button{justify-self:end}
+  .msg[id^="msg-"]>.bub>.meta{display:contents}
+  .msg[id^="msg-"]>.bub>.meta>span:first-child{grid-column:1/-1;order:0;margin-bottom:4px;font-size:11px;color:var(--muted)}
+  .msg.me[id^="msg-"]>.bub>.meta>span:first-child{text-align:right}
+  .msg[id^="msg-"]>.bub>.msg-author{grid-column:1/-1;order:0}
+  .msg[id^="msg-"]>.bub>.body{grid-column:1/-1;order:1;min-width:0}
+  .msg[id^="msg-"]>.bub>.meta>button{order:2}
+  .msg .meta button.msg-copy,.msg .meta button.msg-reply,.msg .meta button.msg-lens,.msg .meta button.msg-fork,.msg .meta button.msg-regen,.msg .meta button.msg-edit,.msg .meta button.msg-retry{
+    box-sizing:border-box;position:relative;width:44px;height:44px;padding:0;margin:0;border:0;border-radius:6px;
+    font-size:0;line-height:0;color:var(--muted);background:transparent;align-items:center;justify-content:center;
+  }
+  .msg .meta button.msg-copy,.msg .meta button.msg-reply,.msg .meta button.msg-lens,.msg .meta button.msg-fork,.msg.turn-last-user .meta button.msg-edit,.msg.turn-last-ai .meta button.msg-regen,.msg.turn-no-reply .meta button.msg-retry{display:inline-flex}
+  .msg .meta button.msg-copy::after,.msg .meta button.msg-reply::after,.msg .meta button.msg-lens::after,.msg .meta button.msg-edit::after,.msg .meta button.msg-retry::after,.msg .meta button.msg-fork::after,.msg .meta button.msg-regen::after{content:none}
+  .msg .meta button.msg-copy::before,.msg .meta button.msg-reply::before,.msg .meta button.msg-lens::before,
+  .msg .meta button.msg-fork::before,.msg .meta button.msg-regen::before,.msg .meta button.msg-edit::before,.msg .meta button.msg-retry::before{
+    content:"";width:20px;height:20px;background:currentColor;display:block;
+    -webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat;
+  }
+  .msg .meta button.msg-copy{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='11' height='11' rx='2'/%3E%3Cpath d='M5 15V6a2 2 0 0 1 2-2h9'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-reply{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10a6 6 0 0 1 6 6v3'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-lens{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6h16M4 12h16M4 18h10'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-fork{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='5' r='2'/%3E%3Ccircle cx='6' cy='19' r='2'/%3E%3Ccircle cx='18' cy='8' r='2'/%3E%3Cpath d='M6 7v10M18 10c0 4-12 2-12 7'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-regen{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 12a8 8 0 1 1-2.5-5.8'/%3E%3Cpath d='M20 4v5h-5'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-edit{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E")}
+  .msg .meta button.msg-retry{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 12a8 8 0 1 1-2.5-5.8'/%3E%3Cpath d='M20 4v5h-5'/%3E%3C/svg%3E")}
+  .msg[id^="msg-"]>.bub>.meta>.msg-stopped{order:3;grid-column:6;justify-self:start;align-self:center}
+  /* The Stop button of a streaming reply reuses msg-copy; it stays a readable text button, not the Copy icon. */
+  .msg .meta button#streamStopBtn{width:auto;min-width:44px;height:44px;padding:0 14px;font-size:14px;line-height:1.2;color:var(--text,inherit);border:1px solid var(--border,currentColor);background:transparent}
+  .msg .meta button#streamStopBtn::before,.msg .meta button#streamStopBtn::after{content:none;display:none}
+  .msg.stream-bub>.av{display:none}
+  .msg.ai-msg.stream-bub>.bub{max-width:100%;width:100%}
+  /* Your own message: bubble on the right and its icons under it, also on the right. */
+  .msg.me[id^="msg-"]>.bub{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;width:100%;max-width:88%;margin-left:auto}
+  .msg.me[id^="msg-"]>.bub::after{content:"";flex:0 0 100%;order:2;height:0}
+  .msg.me[id^="msg-"]>.bub>.meta>span:first-child{flex:0 0 100%;order:0}
+  .msg.me[id^="msg-"]>.bub>.msg-author{flex:0 0 100%;order:0}
+  .msg.me[id^="msg-"]>.bub>.body{flex:0 1 auto;max-width:100%;order:1;margin-left:auto}
+  .msg.me[id^="msg-"]>.bub>.meta>button{order:3}
+  /* The reply jump bar has no room beside the text on a phone, and over it hides code and words. */
+  .msg-jump-bar{display:none!important}
+}
+

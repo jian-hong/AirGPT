@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
+import shutil
+import threading
 import time
 
 from config import DATA_DIR
@@ -16,21 +19,90 @@ _tokens: dict[str, float] = {}
 _qr_tokens: dict[str, float] = {}
 
 
+_tokens_lock = threading.RLock()
+
+
 def _load_tokens() -> None:
     global _tokens
     if not TOKENS_FILE.is_file():
         return
-    try:
-        raw = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
-        now = time.time()
-        _tokens = {k: float(v) for k, v in raw.items() if float(v) > now}
-    except Exception:
-        _tokens = {}
+    with _tokens_lock:
+        try:
+            raw = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+            now = time.time()
+            _tokens = {k: float(v) for k, v in raw.items() if float(v) > now}
+        except Exception:
+            _tokens = {}
+
+
+def _swap(tmp, path) -> None:
+    """os.replace that waits out a reader. On Windows a file cannot be replaced while
+    anything (another request, a virus scanner, the indexer) still has it open."""
+    for attempt in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 39:
+                raise
+            time.sleep(0.025)
 
 
 def _save_tokens() -> None:
-    TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKENS_FILE.write_text(json.dumps(_tokens), encoding="utf-8")
+    # Swap the file in one step under the lock. Two phones joining at once used to
+    # leave it half written; the next read then emptied the list and logged everyone out.
+    with _tokens_lock:
+        TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TOKENS_FILE.with_name(TOKENS_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(_tokens), encoding="utf-8")
+        _swap(tmp, TOKENS_FILE)
+
+
+_acl_lock = threading.RLock()
+
+
+def _read_acl_map() -> dict:
+    """The share scopes, read under the same lock the writer holds.
+
+    A file that is there but cannot be read raises. It must never read as "no
+    scopes": a share guest without a scope is an ordinary device and sees every chat.
+    """
+    path = DATA_DIR / "token_session_acl.json"
+    with _acl_lock:
+        if not path.is_file():
+            return {}
+        acl_map = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(acl_map, dict):
+        raise ValueError("token_session_acl.json is not a map")
+    return acl_map
+
+
+def _update_acl_map(mutate) -> None:
+    """Change token_session_acl.json under a lock and swap the file in one step.
+
+    A reader that caught the file half-written, or a second redeem that overwrote the
+    first, made a share guest look like an ordinary device, and an ordinary device
+    sees every chat.
+    """
+    path = DATA_DIR / "token_session_acl.json"
+    with _acl_lock:
+        acl_map = _read_acl_map()  # unreadable: raise, never start again from empty
+        mutate(acl_map)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(acl_map), encoding="utf-8")
+        _swap(tmp, path)
+
+
+def _bind_scope(tok: str, scope: dict) -> None:
+    """Tie a fresh guest token to its scope. If that fails the token is withdrawn:
+    a token that exists without its scope would be a full-access device."""
+    try:
+        _update_acl_map(lambda acl_map: acl_map.__setitem__(tok, scope))
+    except Exception:
+        _tokens.pop(tok, None)
+        _save_tokens()
+        raise
 
 
 _load_tokens()
@@ -42,18 +114,41 @@ def _hash_passcode(passcode: str, salt: str) -> str:
     ).hex()
 
 
+DAMAGED_MSG = (
+    "The passcode file on the host PC is damaged, so remote access is off. "
+    "A copy was kept as workspace.json.bad in the data folder. On the host PC, "
+    "restore it from a backup or remove workspace.json and set a new passcode."
+)
+
+
 def _load() -> dict:
+    """The workspace file. A file that is there but unreadable must never read as
+    "no passcode": that would open the gate. It reads as damaged, which refuses
+    remote access, and the bad file is kept as workspace.json.bad."""
     if not WORKSPACE_FILE.is_file():
         return {}
     try:
-        return json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
     except Exception:
-        return {}
+        pass
+    bad = WORKSPACE_FILE.with_name(WORKSPACE_FILE.name + ".bad")
+    try:
+        if not bad.exists():
+            shutil.copyfile(WORKSPACE_FILE, bad)
+    except OSError:
+        pass
+    return {"_damaged": True, "pass_hash": "!damaged", "salt": "", "email": ""}
 
 
 def _save(data: dict) -> None:
+    if data.get("_damaged"):
+        raise RuntimeError(DAMAGED_MSG)
     WORKSPACE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WORKSPACE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp = WORKSPACE_FILE.with_name(WORKSPACE_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _swap(tmp, WORKSPACE_FILE)
 
 
 def passcode_required() -> bool:
@@ -73,6 +168,8 @@ def set_passcode_required(required: bool) -> dict:
     does not know who is asking.
     """
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if not ws.get("pass_hash"):
         return {"ok": False, "error": "No passcode set on this machine yet"}
     ws["passcode_off"] = not bool(required)
@@ -86,7 +183,10 @@ def status() -> dict:
     required = passcode_required()
     no_passcode = not bool(ws.get("pass_hash"))
     passcode_set = bool(ws.get("pass_hash"))
+    damaged = bool(ws.get("_damaged"))
     return {
+        "damaged": damaged,
+        "damaged_reason": DAMAGED_MSG if damaged else "",
         "initialized": passcode_set,
         "host_email": ws.get("email", ""),
         # Disarming the gate opens LAN access on purpose — the UI shows a standing
@@ -110,6 +210,8 @@ def init_workspace(email: str, passcode: str) -> dict:
     if not email or "@" not in email:
         return {"ok": False, "error": "Valid email required for host"}
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if ws.get("pass_hash"):
         return {"ok": False, "error": "Workspace already initialized on this machine"}
     salt = secrets.token_hex(16)
@@ -130,6 +232,8 @@ def init_workspace(email: str, passcode: str) -> dict:
 def join_workspace(passcode: str) -> dict:
     passcode = (passcode or "").strip()
     ws = _load()
+    if ws.get("_damaged"):
+        return {"ok": False, "error": DAMAGED_MSG}
     if not ws.get("pass_hash"):
         return {"ok": False, "error": "Host has not set up this workspace yet"}
     salt = ws.get("salt", "")
@@ -141,8 +245,9 @@ def join_workspace(passcode: str) -> dict:
 
 def _issue_token() -> str:
     tok = secrets.token_urlsafe(32)
-    _tokens[tok] = time.time() + TOKEN_TTL
-    _save_tokens()
+    with _tokens_lock:
+        _tokens[tok] = time.time() + TOKEN_TTL
+        _save_tokens()
     return tok
 
 
@@ -153,6 +258,8 @@ def verify_token(token: str | None) -> bool:
         return False
     _load_tokens()
     ws = _load()
+    if ws.get("_damaged"):
+        return False
     if not ws.get("pass_hash"):
         return True
     exp = _tokens.get(token)
@@ -238,30 +345,29 @@ _load_session_shares()
 
 
 def token_session_acl(token: str | None) -> dict | None:
-    """Return {session_id, acl, access_level, ai_mode, limited} if scoped."""
+    """Return {session_id, acl, access_level, ai_mode, limited} if scoped, else None.
+
+    None means "this token has no scope" and nothing else. A scope file that cannot
+    be read, or a damaged entry, raises instead: the caller then refuses the request
+    rather than treating a share guest as an ordinary device. The scope lasts as long
+    as the token does (verify_token decides that); it does not lapse on its own.
+    """
     if not token:
         return None
-    path = DATA_DIR / "token_session_acl.json"
-    if not path.is_file():
+    entry = _read_acl_map().get(token)
+    if entry is None:
         return None
-    try:
-        acl_map = json.loads(path.read_text(encoding="utf-8"))
-        entry = acl_map.get(token)
-        if not entry:
-            return None
-        if float(entry.get("exp", 0)) <= time.time():
-            return None
-        level = entry.get("access_level") or entry.get("acl", "view")
-        acl = entry.get("acl") or _level_to_acl(level)
-        return {
-            "session_id": int(entry.get("session_id") or 0),
-            "acl": acl,
-            "access_level": level,
-            "ai_mode": entry.get("ai_mode", "host" if level == "use_host_ai" else "own" if level == "use_own_ai" else ""),
-            "limited": bool(entry.get("limited") or level == "limited"),
-        }
-    except Exception:
-        return None
+    if not isinstance(entry, dict):
+        raise ValueError("damaged share scope")
+    level = entry.get("access_level") or entry.get("acl", "view")
+    acl = entry.get("acl") or _level_to_acl(level)
+    return {
+        "session_id": int(entry.get("session_id") or 0),
+        "acl": acl,
+        "access_level": level,
+        "ai_mode": entry.get("ai_mode", "host" if level == "use_host_ai" else "own" if level == "use_own_ai" else ""),
+        "limited": bool(entry.get("limited") or level == "limited"),
+    }
 
 
 # --- Hub access levels ---
@@ -386,12 +492,9 @@ def revoke_token(token: str) -> dict:
     _revoked_tokens.add(token)
     _tokens.pop(token, None)
     _save_tokens()
-    path = DATA_DIR / "token_session_acl.json"
-    if path.is_file():
+    if (DATA_DIR / "token_session_acl.json").is_file():
         try:
-            acl_map = json.loads(path.read_text(encoding="utf-8"))
-            acl_map.pop(token, None)
-            path.write_text(json.dumps(acl_map), encoding="utf-8")
+            _update_acl_map(lambda acl_map: acl_map.pop(token, None))
         except Exception:
             pass
     if TOKEN_META_FILE.is_file():
@@ -457,12 +560,7 @@ def redeem_session_share(share_token: str) -> dict:
     # Keep reusable for TTL (multi-device), but still issue a guest token
     tok = _issue_token()
     # Bind ACL to guest token
-    _tokens_acl = DATA_DIR / "token_session_acl.json"
-    try:
-        acl_map = json.loads(_tokens_acl.read_text(encoding="utf-8")) if _tokens_acl.is_file() else {}
-    except Exception:
-        acl_map = {}
-    acl_map[tok] = {
+    _bind_scope(tok, {
         "session_id": int(entry["session_id"]),
         "acl": entry.get("acl", "view"),
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
@@ -471,9 +569,7 @@ def redeem_session_share(share_token: str) -> dict:
         ),
         "limited": entry.get("access_level") == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }
-    _tokens_acl.parent.mkdir(parents=True, exist_ok=True)
-    _tokens_acl.write_text(json.dumps(acl_map), encoding="utf-8")
+    })
     _set_token_meta(tok, {
         "access_level": entry.get("access_level", _acl_to_level(entry.get("acl", "view"))),
         "join_method": "qr",
@@ -570,13 +666,8 @@ def redeem_project_share(share_token: str) -> dict:
         _save_project_shares()
         return {"ok": False, "error": "Share link expired — ask host for a fresh QR"}
     tok = _issue_token()
-    _tokens_acl = DATA_DIR / "token_session_acl.json"
-    try:
-        acl_map = json.loads(_tokens_acl.read_text(encoding="utf-8")) if _tokens_acl.is_file() else {}
-    except Exception:
-        acl_map = {}
     level = entry.get("access_level", "read_only")
-    acl_map[tok] = {
+    _bind_scope(tok, {
         "project_key": entry.get("project_key"),
         "acl": entry.get("acl", "view"),
         "access_level": level,
@@ -585,9 +676,7 @@ def redeem_project_share(share_token: str) -> dict:
         ),
         "limited": level == "limited",
         "exp": time.time() + TOKEN_TTL,
-    }
-    _tokens_acl.parent.mkdir(parents=True, exist_ok=True)
-    _tokens_acl.write_text(json.dumps(acl_map), encoding="utf-8")
+    })
     _set_token_meta(tok, {
         "access_level": level,
         "join_method": "qr",

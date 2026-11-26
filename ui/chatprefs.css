@@ -1,0 +1,69 @@
+/* chatprefs: styles for /ui/chatprefs.js. Same tokens and sheet pattern as promptlens.css. */
+.cprefs-root{--cp-panel:#141414;--cp-raise:rgba(255,255,255,.05);--cp-bad:#ff7a7a;--cp-on:#3dd68c}
+body.theme-light .cprefs-root{--cp-panel:#ffffff;--cp-raise:rgba(0,0,0,.04);--cp-bad:#c62828;--cp-on:#1a8f5a}
+
+/* `.composer button` makes every composer button a 40px round icon: out-rank it. */
+.composer button.cprefs-btn{
+  position:relative;display:inline-flex;align-items:center;gap:7px;width:auto;height:36px;padding:0 11px;border-radius:999px;
+  border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;opacity:1;
+  font:500 12px/1 var(--sans);white-space:nowrap;flex-shrink:0;
+}
+.composer button.cprefs-btn:hover,.composer button.cprefs-btn:focus-visible{color:var(--text);background:rgba(128,128,128,.12)}
+.composer button.cprefs-btn.on{color:var(--text);border-color:#3dd68c}
+body.theme-light .composer button.cprefs-btn.on{border-color:#1a8f5a}
+.cprefs-dot{display:none;width:7px;height:7px;border-radius:50%;background:#3dd68c}
+body.theme-light .cprefs-dot{background:#1a8f5a}
+.composer button.cprefs-btn.on .cprefs-dot{display:block}
+
+.cprefs-scrim{position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s ease}
+.cprefs-scrim.open{opacity:1;pointer-events:auto}
+.cprefs-sheet{
+  position:fixed;z-index:241;left:50%;top:50%;width:min(520px,calc(100vw - 32px));max-height:86dvh;
+  display:flex;flex-direction:column;background:var(--cp-panel);color:var(--text);
+  border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.45);
+  transform:translate(-50%,-46%);opacity:0;visibility:hidden;
+  transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .2s ease,visibility 0s linear .24s;font-family:var(--sans);
+}
+.cprefs-sheet.open{transform:translate(-50%,-50%);opacity:1;visibility:visible;transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .2s ease}
+.cprefs-grab{display:none}
+.cprefs-head{display:flex;align-items:flex-start;gap:12px;padding:18px 18px 8px}
+.cprefs-head h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+.cprefs-sub{margin:6px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+.cprefs-x{margin-left:auto;flex-shrink:0;width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:16px;cursor:pointer}
+.cprefs-x:hover{background:var(--cp-raise)}
+.cprefs-body{padding:6px 18px 4px;overflow:auto;overscroll-behavior:contain}
+.cprefs-lab{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cprefs-box{
+  display:block;width:100%;box-sizing:border-box;min-height:150px;resize:vertical;padding:12px;border-radius:12px;
+  border:1px solid var(--line);background:var(--cp-raise);color:var(--text);font:15px/1.5 var(--sans);
+}
+.cprefs-box:focus{outline:2px solid var(--text);outline-offset:1px}
+.cprefs-box:disabled{opacity:.5}
+.cprefs-meta{display:flex;justify-content:space-between;gap:12px;margin-top:8px;min-height:18px;font-size:12px}
+.cprefs-msg{color:var(--muted);line-height:1.4}
+.cprefs-msg.bad,.cprefs-count.bad{color:var(--cp-bad)}
+.cprefs-count{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cprefs-foot{display:flex;gap:8px;padding:12px 18px calc(14px + env(safe-area-inset-bottom))}
+.cprefs-act{flex:1;min-height:44px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--text);font:500 14px/1 var(--sans);cursor:pointer}
+.cprefs-act:hover{background:var(--cp-raise)}
+.cprefs-act.primary{background:var(--text);color:var(--cp-panel);border-color:transparent}
+.cprefs-act:disabled{opacity:.45;cursor:default}
+
+/* Phone: bottom sheet; the button keeps only its icon so the composer is not crowded. */
+@media(max-width:760px){
+  .cprefs-sheet{
+    left:0;right:0;top:auto;bottom:0;width:100%;max-height:90dvh;border-radius:18px 18px 0 0;border-width:1px 0 0;
+    transform:translateY(102%);opacity:1;
+  }
+  .cprefs-sheet.open{transform:none}
+  .cprefs-grab{display:block;width:38px;height:4px;border-radius:2px;background:var(--line);margin:8px auto 0}
+  .cprefs-head{padding:10px 16px 6px}
+  .cprefs-body{padding:6px 16px 4px}
+  .cprefs-foot{padding-left:16px;padding-right:16px}
+  .cprefs-meta{padding-right:56px}   /* the app's floating bug button sits above the sheet at the right edge */
+  .cprefs-box{font-size:16px}   /* 16px stops iOS zooming the page on focus */
+  .composer button.cprefs-btn{width:44px;height:44px;padding:0;justify-content:center}
+  .cprefs-label{display:none}
+  .composer button.cprefs-btn .cprefs-dot{position:absolute;top:8px;right:8px}
+}
+@media(prefers-reduced-motion:reduce){.cprefs-sheet,.cprefs-sheet.open,.cprefs-scrim{transition:none}}

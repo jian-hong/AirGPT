@@ -2,6 +2,558 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-21 -- Seam fixes pass on Windows: paths compared as files, tests use only listed packages
+
+- Windows CI failed two seam-check tests. The rebuild cleanup compared a stored Docs
+  path with the re-read path as strings, one resolved and one not; on Windows the
+  temp folder is a short name (RUNNER~1), so the old row stayed beside the new one.
+  `rag/ingest._same_path` compares them as one file. A test with the data folder
+  behind a link fails the same way on Linux without the fix.
+- A scope test built its Word file with python-docx, which is not in
+  `requirements.txt` and not on the Windows runner; it now writes the file with
+  zipfile. The suite was re-run here with python-docx blocked. A test also closes a
+  sqlite connection it had left open.
+
+## 2026-11-21 -- Round 3b seam check: questions limited to some files stay inside them
+
+- **How.** After the round 3b merge, three adversarial finders looked only where the
+  lanes meet (the RAG answer path, the RAG data path, the phone screens on a live
+  app), and an independent fixer per area reproduced each finding before fixing it
+  with a test that fails on the old code. 12 defects, all fixed.
+- **File scope.** A question limited to some files is now calculated, looked up,
+  summarised and cited from those files only. Before: a question scoped to one CSV
+  added up another (16,150 instead of 150), a Word table answered a question scoped
+  to a CSV, and "what does this space contain" named every file. With the name
+  lookup and the second search fixed earlier today, every path that goes back to the
+  store now takes the scope.
+- **Uploads and packs.** Two uploads of the same file at once no longer create two
+  sources and duplicate citations (uploads to one space now take turns). A pack lists
+  Word, web and PDF tables that come back as text and cannot be calculated, and the
+  import notice says so; a sheet with two columns called Score keeps its note after
+  import. A rebuild of a space ingested before today's line-ending fix no longer
+  leaves an empty duplicate source.
+- **Refusals.** "What is the retention period for the account whose headquarters
+  city is Tromso?" and the "has" wording are answered offline (the words "whose" and
+  "has" counted as missing). A Chinese name one character off a real one, and a
+  Japanese name built from two real names, are refused instead of answered with
+  someone else's code.
+- **Phone.** The Stop button showed the Copy icon while a reply streamed; a stopped
+  reply showed its icons on two rows. Both fixed.
+- Not verified by the fixers: the HTTP routes with a model (`use_llm=True`), PDF
+  and HTML table scoping (Word and CSV tested), light and glass themes for the two
+  phone fixes, a real Chinese or Japanese corpus for the new name rules.
+
+## 2026-11-21 -- Round 3b screens: chat laid out like Claude, ChatGPT and Gemini on a phone
+
+- **Research.** WCAG 2.2 target size (24 px minimum, 44 px at the stricter level)
+  and non-text contrast (3:1) were read from source, plus Google's 48 dp touch
+  figure. The Claude, ChatGPT and Gemini help pages loaded but give no layout
+  sizes; Apple's and Material's pages render with script and returned titles
+  only. The checklist (one compact top bar, full-width replies, your message as a
+  bubble on the right, one row of icon actions, nothing over text, no sideways
+  scroll) is therefore partly general knowledge, and says so.
+- **Phone chat.** Copy, Reply, Prompt, Fork and Regenerate were five text buttons
+  in two uneven rows, three of them owning about 21 px of tap height. They are now
+  one row of small borderless icons, each a 44 px tap square with a screen-reader
+  label and a title; nothing was removed. The reply uses the full width (50 px left
+  margin before, 10 px now). The reply jump bar is hidden on phones and touch
+  tablets, where it covered code and text; desktop keeps it.
+- **OpenIDE on short phones.** The work panel (Browser, Terminal, app chips) took
+  about 350 px and cut or hid the start screen at 360x780, 320x568 and 390x500. It
+  now starts folded with a Show button; nothing removed.
+- **Tap areas.** The Cortex chip, drawer Search and List icons, the knowledge-space
+  Send (it sat under the report button, which now rests above the ask bar), Files
+  and scope buttons, Cortex buttons and starters, and tablet drawer actions own
+  44 px. On desktop, OpenIDE header chips, the banner close, code Copy and message
+  buttons reach the 24 px minimum.
+- **Contrast.** Drawer detail text, light-theme reply-rail dots and small grey
+  labels on dark and glass were lifted.
+- **The verifier** (separate agent, base and new side by side in a real browser)
+  confirmed the fixes and found one regression, fixed: on a tablet the wider edge
+  tab covered the OpenIDE Folder button. Left for the owner: P36.
+- Tests: `tests/visual_r3b.test.mjs` drives the real page with its own app and
+  model (8 of 9 checks fail on the base; the ninth checks that desktop did not
+  change). Two older tests that pinned the replaced layout were updated.
+
+## 2026-11-21 -- Round 3b: a second search when one is not enough, honest refusals in every language, tables in Word, web pages and PDFs
+
+- **How.** Two local lanes (retrieval; answers and tables), each with an
+  independent verifier that used its own seeds and its own corpora (the screens
+  lane runs separately and gets its own entry). They found 13 more defects inside the new work: 9 are fixed (one in
+  the main session) and 4 are parked (P34, P35).
+- **Refusals in every language.** One loose rule caused two opposite bugs: a
+  non-Latin word counted as present when half its characters appeared anywhere.
+  So invented Chinese, Japanese, Korean, Arabic and Thai names were never refused
+  (0 of 10), and English questions about Russian, Malay and Spanish files were
+  refused although the passage was found (30, 30 and 24 of 30). Words are now
+  matched whole (endings allowed), Chinese, Japanese and Thai as whole strings,
+  Arabic names as pairs, and the name is looked up before judging. Multilingual
+  bench, seed 1: should-refuse 10 of 10 in all 8 languages; false refusals 0 in
+  every column; Arabic English-question answers 21 to 27 of 30. Held-out seeds
+  2-5: 9 to 10 of 10 refused, 0 false refusals. Thai vowel marks, Korean question
+  words and Russian case endings no longer cut or hide a name.
+- **Tables in Word, web pages and PDFs.** They now get the same exact maths as a
+  CSV, cited as "table 2 of memo.docx": 0 of 5 to 5 of 5 right per format against
+  pandas, on two corpora made by different generators. A closing Total row is left
+  out and the answer says so (it was doubling the sum); merged, nested and ragged
+  tables are declined in plain words; a table that continues on the next page
+  without its header is caveated, never silently half-counted. A refusal about a
+  named file no longer mentions another file's table.
+- **Small table fixes.** A CSV with two columns called score says which one it
+  used and lets you ask for the other (score__2). A workbook's banner row stays out
+  of the sheet text. "How many visits did Site7 have?" gives the visits (862), not
+  a row count (1), and says it assumed that.
+- **A second search when one is not enough** (Corrective and agentic RAG, without
+  a model). When the first pass does not cover the question, the app searches
+  again for the name it found next to the question's own (the account whose city
+  is Tromso, then that account's retention period), inside the files the user
+  chose, and says so in the trace. None at basic, one hop at high, two at max,
+  0.4 s budget. Paraphrase bench property questions: 5/22 to 64/64 (rank 1 / top
+  five of 64) on seeds 1 and 4-11. That set is synthetic and fits the hop closely,
+  so it is not a real-world rate.
+- **A deeper search never finds less.** The file boost appeared only when a file
+  row fitted in the fused list, which happened at high and max and not at basic.
+  Top five of 256 (mean of seeds 1-3): basic 208.7 to 218.3, high 201.0 to 256,
+  max 204.3 to 256; seeds 4-7 agree.
+- **Section names in the index.** Each passage's heading chain is in the keyword
+  index (the cited text is unchanged): eight policy sections that all end in
+  "### Retention" are now found at keyword rank 1 (0 of 8 before). Index schema 3.
+- Unchanged on purpose: the vector weight stays 0.6, because 0.3 or lower loses
+  Russian and Malay name questions (P35). Filetype and chunk benches are identical;
+  the 83-question stress set went from 78 to 80 right. Search at depth high costs
+  about 17 ms more on a 5,000-paragraph space.
+- Suite: 1582 passed, 0 failed, 9 skipped. JS: 245 passed. Not verified: a real
+  embedding model, real documents (both benches are synthetic), Windows CI at
+  this head, native speakers reviewing the question-word lists.
+
+## 2026-11-21 -- Files saved on Windows read like the same files saved on Linux
+
+- Windows CI failed the multilingual gate on the round 3 head: 5 Japanese name
+  questions refused where Linux refused 3. The bench writes its files in text mode,
+  so on Windows every line ends in CRLF, and `rag/ingest.read_text_file` folded CRLF
+  only for the source hash; the chunker got every carriage return. Real users on
+  Windows upload such files.
+- Every reader's text now has one line ending (CRLF and old-Mac CR become LF) before
+  chunking. The bench run with CRLF files now matches the LF run exactly; the LF
+  numbers did not move. New test `tests/test_rag_line_endings.py` (md, txt, html, csv,
+  log; Windows and old-Mac endings): md, txt and html fail without the fix.
+
+## 2026-11-21 -- Round 3: RAG on random uploads, research-led retrieval, phone polish
+
+- **How it was measured.** A stress corpus of 26 files (txt in UTF-8, UTF-16 and
+  GBK, md, csv with $ RM EUR, 1.234,56, percent, three date formats, a banner row
+  and a 20,000-row by 60-column sheet, xlsx with merged headers, formulas and a
+  hidden sheet, json, ndjson, pdf, docx, pptx, html, eml, code, xml, tsv, log, and
+  hostile files) with 83 questions whose answers were computed with pandas. A
+  research pass read 2024-2026 RAG work (Google File Search, Contextual Retrieval,
+  Corrective RAG, Adaptive-RAG, agentic RAG, late chunking, ColBERT, RAPTOR,
+  GraphRAG, fusion studies) and mapped it to the code. Each lane had a builder and
+  an independent verifier; a third lane in a cloud session did the screens.
+- **Spreadsheet maths.** Right answers in the mixed space went from 7 to 22 of 25;
+  every answer that was a wrong number before is now right or declined (the 3 left
+  are tables inside pdf, docx and html, which are declined in plain words). A stated
+  condition is applied or declined by name, never dropped ("paid yes", "after
+  2024-09-01", "between 6 and 8", "not paid"). European decimals, currency codes,
+  percent cells, a banner row above a CSV header, semicolon CSV files and JSON lists
+  of records all calculate. A column that mixes currencies is not added up; the
+  answer says to ask for one ("in RM"). A filter column from one file is no longer
+  ignored when another file is listed first, "total qty" works on a sheet with a
+  column called total, and a lookup ("badge number of the owner") is no longer
+  answered with a count.
+- **Retrieval.** A rare name gets its own vote, so "For how long does Wexganpim keep
+  its records?" finds the line that shares only the name. The vector channel counts
+  0.6 under the built-in word-piece matcher (1.0 with a real embedding model).
+  Paraphrase bench, seed 1, rank 1 / top 5 of 64: synonym 26/45 to 43/64, typo
+  40/49 to 40/53, property 5/17 to 5/22; seeds 2-7 agree. Multilingual retrieval is
+  the same or better in every cell.
+- **Found at the merge.** Together the two lanes dropped synonym answers at rank 1
+  from 26 to 8 of 64: the name channel ordered its chunks by how strongly the name
+  matched. It now follows the other channels at equal weight. The research lane's
+  0.25 weight finds more in the top five (227 against 203 of 256) but drops property
+  questions at rank 1 from 5 to 1; it had lowered two gate floors to ship that. The
+  floors are back, the weight is 0.6 and a test now fails below it (P32).
+- **Ingest.** A file's chunks are written on one connection: the 20,000-row CSV went
+  from 417 s to about 12 s. Hidden Excel sheets are labelled "(hidden sheet)" in
+  every citation.
+- **Not built: per-space self-tuning.** Questions made from a space's own words score
+  the same under every setting tried (33 settings, correlation 0.21 with the real
+  bench), so a tuner using them would pick at random (P33).
+- **Screens.** On phones: round + button, the reply rail hidden for a single reply,
+  message actions one height, + sheet labels aligned, the OpenIDE button on one line,
+  drawer text 4.5:1 in dark, 44 px tap areas for Marketplace, Cortex, Details folds,
+  OpenIDE controls and tablet drawer rows.
+- Suite: 1527 passed, 0 failed, 9 skipped. JS: 245 passed. Browser: 27 of 27. Not verified: a real embedding
+  model, real phone, real provider, live Cortex, Windows CI at this head.
+
+## 2026-11-20 -- Database connections close when their block ends (Windows)
+
+- `with _connect() as conn:` in `db.py`, `agent_store.py` and `memory_index.py`
+  only committed; the connection stayed open until a garbage-collection pass.
+  On Windows an open handle blocks deleting or replacing the file, so the new
+  restore test failed there and a restore's file swap could fail in a running
+  app. `db.ClosingConnection` now commits (or rolls back) and closes.
+- Proof: unclosed-database warnings in the restore, data and agent tests went
+  from 299 to 0; suite 1488 passed, 0 failed, 9 skipped; browser 27 of 27;
+  Windows CI green on `8d0c5e8`.
+
+## 2026-11-20 -- Round 2, final checks: 76 more findings, two critical, fixed and re-verified
+
+- After the round-2 entry below, two more adversarial passes ran on the merged
+  branch (reviewers driving the real page, plus independent cloud reviews):
+  40 findings (1 critical: a line queued during a stopped edit deleted an
+  answered turn), then 36 (1 critical: a Mermaid label could take the page's
+  ids and break the message box). 12 lanes and 2 micro-lanes fixed them, each
+  with an independent verifier, which found and fixed 12 more inside the fixes.
+- **Chat.** A queued line is always a new question. Stop on Regenerate keeps
+  the answer. Edit text is not saved as a draft. Try again keeps the box.
+  Files past 12 are named on every send path and again on Regenerate and
+  Edit. A line starting with @ goes to an agent only when an agent has that
+  name; @Agent lines, full answers and failures are saved in the chat.
+- **RAG.** "and the lowest?" follows the new direction; "by X" and bare-column
+  follow-ups carry; row counts are COUNT(*) wherever they are asked; Korean
+  stems find inflected words; imported packs keep calculating and
+  formula-looking cells stay text; GBK, Big5, Shift-JIS, EUC and UTF-16
+  without a byte-order mark are read, and detection is sampled.
+- **Agents.** The local loop offers only the agent's own tools; @Agent lights
+  Background tasks; a killed run reads interrupted; long answers are kept.
+- **Security.** The sanitizer drops ids, names and attributes that point at
+  page elements (`for`, `form`, `popover`, `list`, `usemap`, `aria-*`);
+  Mermaid output is cleaned after it draws; KaTeX, table and image sizes are
+  capped. Restore skips control files and Windows aliases, checks each
+  database by the columns the app needs (older backups restore and work at
+  once), caps unpacked size, refuses over-long paths, and is all or nothing.
+- **Screens.** On phones the chat title gets the row and its actions sit in
+  one menu; buttons look compact with 44 px tap areas; the report button
+  never covers the gear. Light theme readable on OpenForge, Marketplace,
+  Mermaid lines, the key field, the project-pick card, chips and hints. A
+  refused key and a busy provider each get their own sentence on every device.
+- Parked: P31.
+- Suite: 1488 passed, 0 failed, 9 skipped. JS: 235 passed. Browser: 27 of
+  27. Not verified: real tunnel, real phone, real provider, live Cortex,
+  Windows filesystem behaviour of restore names, Safari and Firefox.
+
+## 2026-11-20 -- Round 2: RAG numbers you can trust, turns that keep their files, agents that say what happened
+
+- **PR #90 merged in on purpose** (RAG reliability backend: 16 file types,
+  sheet chunks keep headers, 8 languages, chunker schema 2). Code merged clean.
+- **How it was built.** 9 read-only lenses (RAG, chat logic, message box,
+  agents, data, security, screens); 7 build lanes, two of them in separate
+  cloud sessions, each followed by an independent verifier. A review of the
+  merged tree found 35 defects where lanes met; 4 fix lanes and a gap round
+  fixed them. An adversarial check of the result (5 reviewers on a live app,
+  plus two independent cloud reviews) found 40 more, 1 critical; 6 last lanes
+  and 2 follow-up lanes fixed them. Every lane's verifier found defects inside
+  the fixes (about 35 in all); each is fixed or parked below.
+- **RAG numbers.** Spreadsheet totals use one aggregate path over every row,
+  sheet and CSV, with a provenance line (what was summed, where, which file,
+  sheet and rows). "excluding X", "excl. X", "not in X", "other than X" and
+  "where X is not Y" are real NOT filters (blank cells kept and said); an
+  unknown value is refused in plain words, never dropped. Two sheets or values
+  named are answered per item and combined. Follow-ups ("and for South?", "and
+  the average?") re-run totals, group-bys and rankings; one that cannot be
+  calculated says it was answered from passages. A short question is no longer
+  glued to the previous one. "by X" with no such column says so. Blank groups
+  read "(blank)".
+- **RAG trust.** Cited passages open in a viewer; answers render Markdown with
+  per-passage chips and honesty notes; the upload report names every file not
+  added and why. The server refuses binary files by decoding them, and reads
+  Windows curly quotes and UTF-16 without a byte-order mark. Exported packs
+  carry no host folder (POSIX or Windows) and carry spreadsheets as
+  values-only CSV per sheet, so an imported space still calculates. Imported
+  chats are readable but never sent to the model. Web search uses the user's
+  own words: hard-coded demo goals (the founder's name, JEPA, OpenStax) are
+  gone. URL ingest refuses private addresses, also after redirects.
+- **Chat.** Stop stops the model and keeps the partial. Edit and Regenerate
+  work on the last turn and send exactly the files the question had (stored
+  with the question). A chat that is still answering refuses an edit or
+  regenerate in plain words; the check and the claim are one step. A failed or
+  stopped edit keeps the old answer and brings the edit back. A queued line is
+  always a new question (before, a queued line could replace and delete an
+  answered turn). Files past 12 are named, never dropped silently. Waiting
+  messages survive a reload; drafts are per chat; long chats page; replies
+  compress and static files answer 304.
+- **Message box.** Attached files reach the model as one untrusted block shown
+  in the prompt lens; Word files read without python-docx; phone Return makes a
+  new line; a counter and a cut note for long messages; + menu closes on
+  Escape; voice input; the IME guard.
+- **Agents.** An agent is offered and runs only its own tools, in the local
+  loop and in the Cortex request (the card says Cortex may not follow the
+  list). Runs live on a server thread, survive a reload and stop on Stop. A
+  run no model answered is a failed run with one plain sentence; refusals name
+  no URLs or settings; an empty Cortex answer is a failure; a restart closes
+  open runs as interrupted. Background tasks uses the page's token, says agents
+  are host-only on a phone, lights up as soon as a run starts, and Clear works
+  with Cortex up or down.
+- **Data and security.** Backups are host-only and leave out keys, logins,
+  share and licence files. Restore writes only what the app's own backups
+  contain, all or nothing, names its safety copy, and never touches a secret
+  file whatever the spelling (dot segments, case, trailing dots and spaces,
+  8.3 short names, device names). Deleting a chat removes its memory and vault
+  notes. The sanitizer drops style, url-bearing attributes and page ids from
+  model, document and web markup, so an answer can no longer cover the page,
+  fetch an address or hijack the message box; KaTeX output is size-capped. The
+  RAG view never loads a document's pictures or CSS.
+- **Screens.** Light theme readable in OpenIDE, the Hub, Settings, Mermaid
+  diagrams and the API key field. Touch controls have 44 px hit areas with
+  compact visuals. On phones the chat title is readable and its actions sit in
+  one menu (the founder's note); the report button never covers the gear, text
+  or chips.
+- **Windows CI.** Two new tests could not fail on Windows or failed only there
+  (a raw path searched inside JSON text; a case-variant file name on a
+  case-insensitive disk). Both now check every spelling and were proven to
+  fail with the protection switched off.
+- Parked: P22-P30.
+- Suite: 1434 passed, 0 failed, 9 skipped. JS: 192 passed. Browser: 27 of
+  27. Windows CI green on 163220e. Not verified: real tunnel, real phone,
+  real provider, live Cortex, Windows filesystem behaviour of restore names,
+  Safari and Firefox.
+
+## 2026-11-13 -- Independent branch review, failed replies explained, code copy
+
+- Fresh review of the whole branch: four reviewers by area, every finding
+  re-tested by a different agent on a live app. 12 confirmed and fixed:
+  Max tier dropped a chat's instructions and evidence from the final answer
+  (the dual-brain verify call); deleting a reply or chat kept its prompt
+  record; passcode guesses over non-Cloudflare tunnels could rotate a
+  forwarded header for a fresh count (now one shared count; cloudflared
+  phones still counted one by one; IPv6 per /64); share guests saw the
+  host's computer name, licence and engine details, could read saved
+  prompts, and could fork into chats they could not open; the Instructions
+  sheet wiped its own save errors; the p2p page dropped unsupported photos
+  silently; OpenIDE's header ran off a phone screen.
+- A reply that fails stays in the chat as a card: what went wrong, "Add an
+  API key" (opens Settings > API) when no model is set up, "Try again"
+  (removes the unanswered copy first), raw error under Details. Before, a
+  new user with no key saw nothing: a 2.4 s toast that then hung clipped
+  off the top edge. A dropped connection is not a failure and shows no card.
+- Code blocks: language label and a Copy button that stays put while a long
+  line scrolls (`ui/codeblocks.*`).
+- User bubbles lost a blank trailing line; sidebar previews and chat titles
+  show plain words, not Markdown; inside a chat the box says "Message
+  AirGPT"; light-theme jump rail visible; Escape closes Settings.
+- A second independent agent then attacked those commits and found six
+  more, all fixed here (duplicate reply on Try again after a dropped
+  connection, unstyled card, Copy scrolling off screen, Escape over a
+  stacked dialog, Markdown in titles, IPv6 rotation).
+- Parked: P20 (project share links scope to no chat), P21 (removing a
+  device keeps its token working; non-atomic share files; KaTeX lost when
+  only DOMPurify fails).
+- Suite: 862 passed, 1 failed (`test_rag_foundation` research bridge, same
+  on `master`), 9 skipped. JS: 79 passed. Browser: 27 of 27.
+
+## 2026-11-13 -- Share scopes: safe on Windows, and unreadable means refuse
+
+- Windows CI caught it: `os.replace` cannot swap a file another thread still
+  has open, so a guest joining while any request read the scope file got an
+  error (1 of 40 in the test). Readers now take the writer's lock and the swap
+  waits out other handles (`auth._swap`, `auth._read_acl_map`).
+- `token_session_acl` no longer answers "no scope" when the file cannot be
+  read or an entry is damaged; it raises and the request is refused. "No
+  scope" means an ordinary device that sees every chat, so the old answer
+  opened everything. A join no longer restarts a damaged file from empty.
+- A guest token whose scope cannot be written is withdrawn (`_bind_scope`).
+  A scope no longer lapses before its token.
+- Suite: 855 passed, 1 failed (same RAG test), 9 skipped.
+
+## 2026-11-13 -- Whole-app audit (156 findings), nine fix lanes, merged and re-verified
+
+Audit: 11 read-only auditors over every control, screen size, route and access
+rule; security findings re-tested by a second agent. 31 findings are owner
+decisions and were not built (PARKING_LOT P14-P19, PR #91 body).
+
+- **Other web pages can no longer act as the host** (`clipdrop.py`). Host trust
+  needs a Host header that names this machine (`_is_trusted_host`; extra names
+  in `AIRGPT_TRUSTED_HOSTS`); any other Host is a remote caller. Cross-site
+  requests to `/api/` and `/data/` get 403, by `Origin` and, for plain GETs, by
+  `Sec-Fetch-Site`. No wildcard CORS (`AIRGPT_ALLOWED_ORIGINS` is the escape
+  hatch). `nosniff` everywhere, no framing by other sites. Bodies over 200 MB
+  are 413 (`AIRGPT_MAX_BODY_MB`), sockets time out after 120 s of silence, bad
+  JSON is 400 and a crash is a logged JSON 500 instead of a dropped connection.
+  Forwarded client addresses must parse as an address. The first passcode can
+  only be set from the host.
+- **Share guests are default-deny** (`Handler._gate`, `auth.py`). GET, POST,
+  PATCH and DELETE run one gate sequence; PATCH and DELETE used to skip it. A
+  share guest reaches the page, its own chat, and nothing else: lists, search
+  and history return only that chat. Join links and QR tokens are handed to
+  the host only. `/data/` serves non-host callers only files a chat they can
+  see points at; anything a browser would run (html, svg, xml, js) is a
+  download. Host-only now also covers `/api/netie/`, `/api/input-notes`,
+  `/api/restart-tunnel`, `/api/optimizers/`, `/api/agents` and licence writes.
+  Found by the verifier: a guest briefly became a full device while others
+  joined (token file race), and the gate checked 3 context ids where the
+  handler read 10.
+- **Untrusted text no longer becomes markup or script** (`index.html`,
+  `admin.html`, `p2p-drop.html`, `ui/sanitize.js`). About 56 inline handlers built
+  from data now use `data-call` and one listener. marked, DOMPurify and KaTeX
+  load as page globals (the editor's loader used to swallow them, so every
+  message went through a weak fallback). The fallback is now an allow-list.
+- **Server defects:** link fetch refuses loopback and private addresses for
+  non-host callers (the host can still fetch localhost); Usage "Export CSV"
+  finishes; a dropped agent run stops counting as running; the schedule-agent
+  link is saved; skill Delete exists and Edit opens the real text.
+- **Chat shell:** header (Export, Share) shows after the first message;
+  search's project filter applies to message hits and lists real projects; the
+  QR image is not re-requested on every poll; + menu no longer clipped.
+- **Settings:** a failed save says so; opening and closing Settings writes
+  nothing; Plan badge opens Plan & Usage; Connected Devices explains a locked
+  tunnel and a QR that could not be drawn; `Clear all history` has a button;
+  search matches text inside panels.
+- **Screen sizes:** OpenIDE works at phone width; sidebar overlays the chat
+  from 761 to 960 px instead of squeezing the message box to 81 px; Thinking
+  and the Manual/AI cue stay at 900 px and below; bug-report region marking
+  works by touch; Background tasks closes on Escape and outside click; phone
+  fields are 16 px (no iOS zoom). Laptop boxes unchanged at 1024, 1280, 1920.
+- **Clarity:** `New chat` button; Effort opens its list on tap, Enter or
+  Space (no hidden long-press); Manual mode says the AI will not reply and
+  hides AI-only controls; web search shows when it is on; Archive has Undo.
+- **Workspaces:** a new project appears at once; Cortex home echoes the message
+  and says when the engine is off; Hub access buttons open their picker;
+  `Retry health` retries; no cut-off suggested agents.
+- **Removed** (no effect, or exact duplicate in the same view): seven Settings
+  checkboxes nothing read (tips, two notification toggles, agent and subagent
+  auto-detect and auto-create), the top-bar `More` menu hidden at every width,
+  the never-shown Memory floating button, the second sidebar `Cortex` entry,
+  the sidebar `+ Project` button, the p2p round `+` button, a second
+  `showLogin`, one dead CSS rule.
+- **Kept on purpose:** the top-bar sidebar button and the edge tab (the
+  sidebar starts closed up to 1400 px; the edge tab is the only route in short
+  windows); both Background tasks buttons (same reason).
+- Suite: 852 passed, 1 failed (`test_rag_foundation` research bridge, same on
+  `master`), 9 skipped. JS: 70 passed. Browser: 27 of 27 combined checks.
+
+## 2026-11-12 -- Five shell features built in parallel, then merged and re-verified
+
+- Add-ons now hook in through `ui/ext.js` (`AirUI.addMsgAction`) and their own
+  files under `ui/`, so a feature adds files instead of editing `index.html`.
+- **Fork and export** (`ui/chattools.*`, `db.fork_session`, `db.export_session`):
+  `Fork` on every reply copies the chat up to that reply into a new chat and
+  carries the chat's own instructions; `Export` in the chat header downloads one
+  chat as Markdown or JSON. `delete_message` no longer deletes a file another
+  row still points at.
+- **Instructions for one chat** (`chat_prefs.py`, `ui/chatprefs.*`): up to 4,000
+  characters, sent on every turn of that chat on both routes, shown in the
+  prompt lens as its own block. Removed when the chat is deleted.
+- **Saved prompts** (`snippets.py`, `ui/snippets.*`): a library in
+  `DATA_DIR/snippets.json` with `{{blanks}}` filled in before the text lands in
+  the message box. Never sent automatically. Share guests cannot write.
+- **Command box** (`ui/palette.*`): Ctrl/Cmd+K on a laptop, `Commands` in the +
+  menu on a phone. Lists only commands whose function exists at run time.
+- **Phone pass** (`ui/phone.css`, `ui/phone.js`): message box hint, report
+  button no longer covers Send or any open sheet, finger-sized tap areas in the
+  top bar, drawer, composer and message rows. Laptop boxes unchanged.
+- Found by the verifiers and fixed: export crashed on non-Latin chat titles
+  (file name went into an HTTP header); deleting a chat left its instructions
+  behind; blanks named `__proto__` were never asked for; four phone tap areas
+  the first audit missed.
+- Found at merge and fixed: the command box called fork and export under names
+  the chat tools did not have, so one command failed and two never appeared;
+  the report button covered Edit in the saved-prompts sheet on a phone.
+- Suite: 759 passed, 1 failed (`test_rag_foundation` research bridge, same on
+  `master`), 9 skipped. JS: 36 passed. Browser: 27 of 27 combined checks.
+
+## 2026-11-12 -- Phone layout shows again; prompt lens shows what a reply was sent
+
+- SHELL-04 #78: at 760 px and below `.main` sat in an implicit 0-wide grid track,
+  so a phone saw a blank app. One block after `.app.no-connect` puts it in
+  column 1. Measured at 320, 375 and 760 px with the drawer closed, open and
+  re-closed; 1024 and 1280 px are unchanged.
+- Prompt lens. Each text reply has a `Prompt` button, and the composer shows a
+  small meter. Both open a panel with the blocks that were sent (system prompt,
+  instructions, your message, chat history, memory notes, web evidence, skill
+  pack, tool definitions), each with its size and its text.
+- The record is written at the lines that build the request (`prompt_trace.py`,
+  `ai_engine._prepare_text_chat`, `ai_engine.chat_text_stream`,
+  `clipdrop._cortex_prompt_trace`) and stored against the reply in a new
+  `prompt_traces` table (newest 400). `GET /api/chat/prompt-trace`.
+- Honest limits, stated in the panel: token counts are characters / 4, not a
+  tokenizer. On the Cortex route only the handover is shown; Cortex's own system
+  prompt and tools are not visible to AirGPT. Devices that are not the host get
+  memory-note sizes without the text.
+- Fixed in passing: `_standard_llm_stream` appended the security block and then
+  called `_standard_llm`, which appended it again. `_effective_system` is now
+  the one place that adds it, once.
+- `tests/test_prompt_trace.py`: 17 tests.
+## 2026-11-13 -- Wave 3: chunks keep their meaning, in any script
+
+- Chunker is now `parent_child_sentence`. Every sheet row window carries its
+  header row (3% -> 100% of windows); prose is cut at sentence ends, not by
+  character count (PDF facts on the old cut 8/15 -> 15/15 whole); the size
+  budget is per script (Chinese chunks were up to 926 tokens, now 200); xlsx
+  keeps empty cells in their column. Index fingerprint is schema 2, so older
+  retained scores read as not comparable.
+- Near-identical table rows are no longer dropped from search as duplicates.
+- Ontology: non-Latin headers get real keys (they were all ""), CJK dates,
+  tsv / json / xml records as tables, relations across file types.
+- Multilingual: an exact-match channel for names in scripts without capitals
+  (zh rank 1 8 -> 19 of 30, th 11 -> 20). The offline answer splits on CJK and
+  Arabic sentence marks. In those scripts an unfound word gets a warning line,
+  never a refusal.
+- New benches with gates: `tests/RAG/chunk_bench.py`, `tests/RAG/multilingual_bench.py`.
+- Three builders in worktrees, each attacked by an independent agent; two were
+  refused on a reproduced high defect and fixed before landing.
+- Suite 881 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
+## 2026-11-12 -- Wave 2: abstention, five more file types, the hot-file bonus
+
+- Retrieval: the flat +0.05 hot-file bonus was three rank votes; with more than
+  five files it buried the answer (log 10 of 30). Resized to one vote. All 16
+  types in one shared space: 480 of 480 in the top 5.
+- Lowercase names and typos get an ordinary-weight exact-match channel that
+  reuses `rag/spell.py`. Paraphrase bench, lowercase+typo: 10 -> 40 of 64 at rank 1.
+- Offline answer abstains when the space does not mention the name, the file or
+  the attribute asked for (20 of 20 unanswerable, 20 of 20 answerable kept).
+  A fact spread over sentences is quoted with its subject.
+- New types: `.tsv .xml .log .ipynb .rtf`. Re-ingesting a file replaces its
+  chunks instead of duplicating them.
+- Ontology: `probable_foreign_key` tier, `001` meets `1`, text dates and
+  amounts, tables profiled in full up to one million rows.
+- New `tests/RAG/paraphrase_bench.py` with a gate whose weak floors are named.
+- Built by four agents in worktrees, each attacked by an independent agent; one
+  slice was refused on a reproduced high defect and fixed before landing.
+- Suite 796 passed, 0 failed, 9 skipped (Linux, Python 3.13).
+
+## 2026-11-12 -- Every file type is found again and cited to a place
+
+- New `tests/RAG/filetype_bench.py`: 11 types in one space. First run was red:
+  json/csv/xlsx 0 of 30, python 8 of 30, recall at 5 264 of 330, and html, docx,
+  pdf and eml cited no location. Now 330 of 330 with every locator correct.
+  Synthetic facts, hash embedder, no model call.
+- Fusion gained a weighted exact-match channel for a rare code or name. Sparse
+  scores are no longer a constant 1.0.
+- Extractors: pdf pages (all of them, no 200 cap), docx headings/tables/notes,
+  pptx shown order and speaker notes, html headings and cells, `.eml`, json
+  records, BOM and UTF-16, csv empty cells kept in their column.
+- `/upload` defaulted `force` on and a second upload wiped the first. Fixed;
+  found by driving the live server, pinned in `tests/test_rag_upload_keeps_space.py`.
+- Offline answer quotes the matching sentence with its location.
+- `pypdf` declared in `requirements.txt`. A failed PDF says encrypted, corrupt
+  or scanned instead of one generic reason.
+- Five-agent adversary workflow reproduced 25 defects; 17 fixed, 8 open with
+  reasons in `docs/subagents_findings/2026-11-12_filetype-bench-adversary-wave.md`.
+- Suite 743 passed, 0 failed, 9 skipped (Linux, Python 3.13). The old
+  `test_research_bridge_and_urls` failure is fixed at its cause.
+
+## 2026-11-12 -- Ontology is induced from the data, not a keyword list (#6)
+
+- `rag/ontology.py` rewritten (`ONTOLOGY_VERSION=2`). Keys come from uniqueness
+  and relations from value containment against another table's unique column.
+  Columns carry kind, role and date format; tables carry a grain. csv and
+  cross-workbook relations are covered. The old version matched 17 English
+  keywords and joined on seven fixed column names, so anything else was
+  "Unknown" with no relations.
+- Three lies removed: the first row was taken as the header (banner rows), the
+  reasoning steps cited `SKU` / `Money` by regex when neither existed, and the
+  cached ontology survived new workbooks until `force`.
+- Design follows NVIDIA/auto-ontology (Apache-2.0), reimplemented clean-room
+  with no model call. Their Postgres + NIM stack is not used (P7).
+- `tests/test_rag_ontology.py` (9). Four guard mutations each turn it red.
+  Suite 712 passed, 9 skipped, 1 failed. The failure predates this change:
+  `test_research_bridge_and_urls` expects 1 attached file and gets 2 on a
+  machine that has `pypdf`.
+- `oracle_bench` stamps `ontology_version` into the fingerprint `extra`. The
+  n=320 `hybrid_max` score was NOT re-run (FRTR-bench is not in the clone).
+- Research survey and routing: `docs/subagents_findings/2026-11-12_rag-survey-auto-ontology.md`.
+
 ## 2026-09-11 -- Connect stays in Settings; LTX2 mock dumps ignored
 
 - Chat grid is two tracks (side + main). Connect is Settings Network only,

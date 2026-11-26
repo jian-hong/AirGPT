@@ -1,0 +1,31 @@
+/* Bar above a code block in a chat message: language on the left, Copy on the right.
+   It sits inside the <pre>; sticky at the padding edge keeps it (and Copy) in place
+   while a long line scrolls sideways. left:-14px matches the pre's side padding. */
+.msg .body pre[data-cb]{padding-top:0}
+.msg .body pre .cb-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  position:sticky;left:-14px;
+  margin:0 -14px 8px;padding:4px 6px 4px 14px;
+  border-bottom:1px solid var(--line);
+  font:500 11px/1 var(--sans);letter-spacing:.02em;color:var(--muted);
+  white-space:normal;user-select:none;-webkit-user-select:none;
+}
+.msg .body pre .cb-lang{text-transform:lowercase}
+.msg .body pre .cb-copy{
+  position:relative;padding:5px 9px;border-radius:6px;border:1px solid transparent;
+  background:transparent;color:var(--muted);font:inherit;cursor:pointer;
+}
+.msg .body pre .cb-copy:hover,.msg .body pre .cb-copy:focus-visible{color:var(--text);border-color:var(--line)}
+.msg .body pre .cb-copy.bad{color:#e66767}
+/* A finger-sized target on touch screens (the invisible 44x44 layer comes from touch.css, the button
+   keeps its small look). The layer only works if it fits inside the bar: the code block clips
+   anything past its edge, and the reply rail sits over its right side. So the bar is 44 tall,
+   and on a phone Copy stays clear of the rail. A mouse keeps the compact bar. */
+@media (pointer:coarse){
+  .msg .body pre .cb-bar{min-height:44px;padding-top:0;padding-bottom:0}
+}
+@media (max-width:760px){.msg .body pre .cb-bar{padding-right:34px}}
+/* Light theme keeps code blocks dark (--code-block-bg), so the bar uses light text on it. */
+body.theme-light .msg .body pre .cb-bar{color:rgba(232,230,225,.7);border-bottom-color:rgba(255,255,255,.12)}
+body.theme-light .msg .body pre .cb-copy{color:rgba(232,230,225,.8)}
+body.theme-light .msg .body pre .cb-copy:hover,body.theme-light .msg .body pre .cb-copy:focus-visible{color:#fff;border-color:rgba(255,255,255,.25)}

@@ -1,0 +1,155 @@
+/* touch.css: 44px tap areas on touch screens at any width (tablets included). Loaded after phone.css. */
+/* Touch screens (any width, tablets too). Buttons that sit in a row or a bar keep their small look:
+   an invisible 44x44 layer (below) makes the tap area. A mouse keeps the compact sizes. */
+@media(pointer:coarse){
+  .composer #attachBtn{min-width:44px;min-height:44px}
+  /* The project tab above the message box reads its height from this one variable. */
+  :root{--bump-height:44px}
+  /* The AI switch keeps its small pill; the button around it is 44px and draws it. */
+  #settingsModal button{min-width:44px!important;min-height:44px!important}
+  #aiSwitchBtn{transition:none;width:48px;min-width:44px;min-height:44px;background:transparent!important;border-color:transparent!important}
+  #aiSwitchBtn::before{content:"";position:absolute;left:3px;top:9px;width:42px;height:24px;box-sizing:border-box;border-radius:999px;border:1px solid var(--line);background:var(--surface2);transition:.2s}
+  #aiSwitchBtn.on::before{border-color:var(--accent);background:var(--accent)}
+  body.theme-light #aiSwitchBtn::before{background:#e8e6e0;border-color:rgba(0,0,0,.14)}
+  body.theme-light #aiSwitchBtn.on::before{background:var(--accent);border-color:var(--accent)}
+  #aiSwitchBtn .ai-switch-thumb{top:12px;left:6px}
+  #aiSwitchBtn.on .ai-switch-thumb{left:24px}
+}
+
+/* The invisible layer: centred on the control, never smaller than 44x44, never changes the layout.
+   :where() keeps position:relative from beating any control that is already positioned. */
+@media(pointer:coarse){
+  :where(#sideToggleTop,#modelBtn,#thinkBtn,#micBtn,.cprefs-btn,.plens-meter,
+    .topbar .menu-btn,.topbar #settingsBtn,.topbar #bgTasksTopBtn,.chat-titlebar-actions .chat-share-btn,.chat-more-btn,
+    .msg .meta button,.msg .cb-copy,.queue-chip button,.edit-chip button,
+    .rag-back,.rag-tabs .btn,.rag-back-sessions,.hub-share-row .btn,#hubLockdownBtn,.openide-empty-ctas button,
+    .send-fail-acts .btn,#bgTasksPanel .bgFoot button,.ds-ico){position:relative}
+  #sideToggleTop::after,#modelBtn::after,#thinkBtn::after,#micBtn::after,.cprefs-btn::after,.plens-meter::after,
+  .topbar .menu-btn::after,.topbar #settingsBtn::after,.topbar #bgTasksTopBtn::after,.chat-titlebar-actions .chat-share-btn::after,.chat-more-btn::after,
+  .msg .meta button::after,.msg .cb-copy::after,.queue-chip button::after,.edit-chip button::after,
+  .rag-back::after,.rag-tabs .btn::after,.rag-back-sessions::after,.hub-share-row .btn::after,#hubLockdownBtn::after,.openide-empty-ctas button::after,
+  .send-fail-acts .btn::after,#bgTasksPanel .bgFoot button::after,.ds-ico::after{
+    content:"";position:absolute;left:50%;top:50%;right:auto;bottom:auto;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%);
+  }
+  /* The waiting-message x and the edit Cancel were 36px boxes: small again, same tap area. */
+  .msg-queue-hint .queue-chip button,.msg-queue-hint.edit-chip button{min-width:0;min-height:24px}
+  /* Lists and fields: a taller row is the honest fix there (nothing sits beside them to crowd). */
+  .plus-menu button{min-height:44px}
+  select[data-skill-scope]{min-height:44px}
+  /* A checkbox is 13px: its label is the tap area, 44 tall and reaching 16px past each side. Margins cancel the padding. */
+  .settings-check,.hub-demo-toggle{min-height:44px;align-items:center;padding-left:16px;padding-right:16px;margin-left:-16px;margin-right:-16px;box-sizing:border-box}
+  /* Close and refresh in Background tasks are bare glyphs: a 44px box is the tap area; negative margins keep the header the same height. */
+  #bgTasksPanel .bgHead button{min-width:44px;min-height:44px;margin:-10px -4px}
+  /* Banner dismiss is a bare x: a 44px box in the banner's corner. Docs is a text link in the footer. */
+  .banner-x{min-width:44px;min-height:44px;top:0;right:4px;padding:0}
+  .lan-banner,.paywall-banner,.net-banner{min-height:46px;padding-right:48px;box-sizing:border-box}
+  .sc-docs{display:inline-flex;align-items:center;min-height:44px;min-width:44px}
+  .composer-actions{gap:8px}
+  .msg-queue-hint.edit-chip{padding-bottom:18px}
+  .openide-empty-ctas{row-gap:10px}
+  .rag-tabs{row-gap:16px}
+  .rag-space-head{margin-bottom:16px}
+  #settingsModal .settings-cursor .sc-search{min-height:44px}
+  /* Buttons stacked 8px apart would share their layers: 12px keeps each tap area its own. */
+  .hub-share-row{row-gap:12px}
+}
+
+/* Round 3 visual lane: controls that still measured under 44px on a touch screen. */
+@media(pointer:coarse){
+  /* Marketplace Install/Serve/Trial and the Cortex cards were 30px to 32px. */
+  .mp-actions .btn,.cortex-card .btn{min-height:44px}
+  /* OpenIDE is dense (rows 8px apart), so its small controls keep their look and get the invisible 44px layer. */
+  :where(.openide-shell .btn,.oide-glass-btn,.oide-think-btn,.openide-chip,.openide-app-chip,#openideViewAgents,#openideViewEditor,
+    #openideWorkChanges,#openideWorkBrowser,#openideWorkTerminal,#openideRunBtn,.openide-empty-ctas button){position:relative}
+  .openide-shell .btn::after,.oide-glass-btn::after,.oide-think-btn::after,.openide-chip::after,.openide-app-chip::after,#openideViewAgents::after,#openideViewEditor::after,
+  #openideWorkChanges::after,#openideWorkBrowser::after,#openideWorkTerminal::after,#openideRunBtn::after,.openide-empty-ctas button::after{
+    content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%);
+  }
+}
+
+/* Tablets (wider than 760px) kept the drawer rows at 33px; phone.css only covers 760px and below. */
+@media(pointer:coarse){
+  .side .nav-item,.side [id^="navLabel"],.side #navHome,.side #navCortexTop,.side #navChats,.side #navApps,
+  .side .side-section-hdr,.side .hist-day-hdr,.side .session-item{min-height:44px}
+  .side .icon-btn{position:relative}
+  .side .icon-btn::after{content:"";position:absolute;inset:-5px}
+}
+
+@media(pointer:coarse){
+  /* Pin and Archive on a drawer row were 22px on tablets; the OpenIDE view switch was 31px wide. */
+  /* Same as phone.css: the strip clips a layer, so on the open row the buttons are 44px boxes and the strip is wider. */
+  .side .session-item.on .sess-actions-inline button{min-width:44px;min-height:44px}
+  .side .session-item.dense.on .sess-actions-inline{max-width:96px}
+  #openideViewEditor,#openideViewAgents{min-width:44px}
+}
+
+@media(pointer:coarse){
+  /* "Details" folds (Cortex page, the failure card) were 16px high. */
+  :where(details>summary){position:relative}
+  details>summary::after{content:"";position:absolute;left:0;right:0;top:50%;height:max(100%,44px);transform:translateY(-50%)}
+}
+
+@media(pointer:coarse){
+  /* App chips sat 6px apart, so their 44px layers shared 12px: each chip owned 32px. */
+  .openide-app-chips{row-gap:18px;padding:14px 10px}
+  .topbar #openideIdeBtn{position:relative}
+  .topbar #openideIdeBtn::after{content:"";position:absolute;inset:-4px -2px}
+}
+
+/* Round 3b: the drawer Search and List icons were 34x34 and the sidebar edge tab 18x56. */
+@media(pointer:coarse){
+  .nav-chats-row .icon-btn{flex:0 0 44px;width:44px;height:44px}
+  .nav-chats-row .icon-btn::after{content:none}
+  .side-collapse-btn{overflow:visible}
+  .side-collapse-btn::after{content:"";position:absolute;top:0;bottom:0;left:0;right:-28px}
+}
+
+/* Round 3b sweep: controls on the knowledge-space, Cortex and OpenIDE pages that measured 20 to 36px on a touch screen. */
+@media(pointer:coarse){
+  .cortex-page .btn,.cortex-page .chip-btn{min-height:44px}
+  .cortex-page p.hint .btn{min-height:0}              /* a button inside a sentence keeps the line */
+  #ragAskScopeBtn{min-height:44px;min-width:44px}
+  #ragAskSend{width:44px;height:44px}
+  .rag-note>summary{min-height:44px;box-sizing:border-box;padding-block:12px}
+  .cortex-page details>summary{min-height:44px;box-sizing:border-box;padding-block:10px}
+  .modal input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),#openidePreviewUrl{min-height:44px;box-sizing:border-box}
+  .openide-empty-ctas button,#openideRunBtn,.openide-app-chip,#oideBgTasksBtn{min-height:44px;box-sizing:border-box}
+  .oide-think-btn{width:44px;height:44px}
+  .topbar #openideIdeBtn::after{inset:-8px -2px}
+}
+
+/* Round 3b: the chat card's detail line and its Rename/Share/Delete were 4.2 to 4.4:1 on the dark and glass themes. */
+body:not(.theme-light) .session-item .sess-detail-inner small,
+body:not(.theme-light) .session-item .sess-actions button{color:#a8a8a8}
+@media(pointer:coarse){
+  .rag-mem-actions .btn,#ragLlmBtn,#ragLlmMini,.url-box{min-height:44px;box-sizing:border-box}
+  .url-box{display:flex;align-items:center}
+  .cortex-page [data-call="useCortexSuggestion"]{min-height:44px}
+}
+
+/* Round 3b: tablets (a touch screen wider than 760px) and small desktop targets. */
+@media(pointer:coarse){
+  /* A touch screen has no hover to reveal the reply rail, its dots were 12px, and it sits over text. */
+  .msg-jump-bar{display:none!important}
+  /* Drawer: Rename/Share/Delete under the open chat were 19px, the Group icon 25x20, the command-box chip 30px, Admin link 32px. */
+  .side .session-item .sess-actions button{min-height:44px;padding:3px 12px}
+  .side #groupByBtn{min-width:44px;min-height:44px}
+  #pal-hint-btn,.pal-hint-btn,[aria-label="Open the command box"],#adminPanelLink{min-height:44px;box-sizing:border-box}
+  .rag-think-log>summary,.rag-cites>summary,.rag-cite-item>summary{min-height:44px;box-sizing:border-box;padding-block:12px}
+}
+/* Any pointer: the reply-rail dots get a 28px hit area (they were 12px), and the OpenIDE header chips are never under 24px (WCAG 2.5.8). */
+.msg-jump-node-btn::before{content:"";position:absolute;inset:-9px}
+@media(pointer:fine){.openide-chip,.openide-view-toggle button,.oide-new-agent,.openide-browse-link{min-height:24px;box-sizing:border-box}}
+/* Round 3b: any pointer. The banner close and the code Copy were 18 to 20px tall (WCAG 2.5.8 asks 24); the reply-rail dot outline was 2.4:1 on light (3:1 for a control). */
+@media(pointer:fine){.banner-x{min-height:24px;min-width:24px}.msg .body pre .cb-copy{min-height:24px;box-sizing:border-box}}
+body.theme-light .msg-jump-node-btn{border-color:rgba(0,0,0,.55)}
+@media(pointer:coarse){.rag-cite-view{min-height:44px;box-sizing:border-box}}
+@media(pointer:fine){.msg .meta button{min-height:24px;box-sizing:border-box}}
+@media(pointer:coarse) and (min-width:761px){.openide-hdr-actions .btn,.openide-view-toggle button,#openideIdeBtn{min-height:44px;box-sizing:border-box}}
+
+/* Round 3b verifier: the edge tab's wider tap layer covered the OpenIDE Folder button on a tablet. */
+body.openide-mode .side-collapse-btn::after{right:0}
+/* Round 3b verifier: small grey labels measured 3.3 to 4.4:1 on the dark and glass themes. */
+body:not(.theme-light) .side-section-hdr,body:not(.theme-light) .side-section-hdr small,
+body:not(.theme-light) .rag-ask-hint,body:not(.theme-light) .rag-ask-hint+*{color:#a8a8a8;opacity:1}
+body:not(.theme-light) #ragAboutText~*,body:not(.theme-light) .rag-mem .hint{opacity:1}

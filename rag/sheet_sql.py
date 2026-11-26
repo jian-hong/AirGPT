@@ -13,14 +13,20 @@ provenance for the founder, not something we execute against a database.
 """
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
+# Files that hold one table, named after the file (no sheet tabs).
+ONE_TABLE_SUFFIXES = (".csv", ".tsv", ".json", ".ndjson", ".jsonl")
+# Files whose tables sit among prose: a table is named by its place, "table 2 of memo.docx".
+TABLE_IN_DOCUMENT_SUFFIXES = (".docx", ".html", ".htm", ".pdf")
+
 # Aggregate wording -> SQL function. Order matters: longer phrases first so
 # "how many" is not shadowed by "many".
 _AGGS: list[tuple[str, str]] = [
-    (r"how many|number of|count of|\bcount\b", "COUNT"),
+    (r"how many|number of(?!\s+the\s+\w+\s+of\b)|count of(?!\s+the\s+\w+\s+of\b)|\bcount\b", "COUNT"),
     (r"\baverage\b|\bavg\b|\bmean\b", "AVG"),
     (r"\btotal\b|\bsum\b|\bcombined\b", "SUM"),
     (r"\bmaximum\b|\bhighest\b|\blargest\b|\bgreatest\b|\bmax\b", "MAX"),
@@ -29,11 +35,12 @@ _AGGS: list[tuple[str, str]] = [
 
 # Comparison wording -> SQL operator. Longer phrases first, again.
 _CMPS: list[tuple[str, str]] = [
+    (r"!=|<>|not equal to|does not equal|doesn't equal", "!="),
     (r"greater than or equal to|no less than|at least|>=", ">="),
     (r"less than or equal to|no more than|at most|<=", "<="),
     (r"greater than|more than|larger than|higher than|above|over|exceeds?|>", ">"),
     (r"less than|fewer than|smaller than|lower than|below|under|<", "<"),
-    (r"equal to|equals|is exactly|==|=", "="),
+    (r"equal to|equals|is exactly|==|=|(?:is|are|was)(?=\s*-?\d)", "="),
 ]
 
 _NUM = r"(-?\d+(?:\.\d+)?)"
@@ -71,9 +78,47 @@ class Filter:
     column: str
     op: str
     value: float
+    # A calendar date: `value` is its proleptic Gregorian ordinal.
+    is_date: bool = False
+
+    def iso(self) -> str:
+        import datetime as _dt
+
+        return _dt.date.fromordinal(int(self.value)).isoformat()
 
     def sql(self) -> str:
+        if self.is_date:
+            return f"{_quote(self.column)} {self.op} '{self.iso()}'"
         return f"{_quote(self.column)} {self.op} {_fmt_num(self.value)}"
+
+
+@dataclass
+class TextFilter:
+    """Column equals one of these words (or, when `negate`, none of them); case and edge
+    spaces do not matter."""
+
+    column: str
+    values: list[str]
+    negate: bool = False
+
+    def sql(self) -> str:
+        vals = [v.replace("'", "''") for v in self.values]
+        col = _quote(self.column)
+        if self.negate:
+            body = (
+                f"{col} <> '{vals[0]}'" if len(vals) == 1
+                else f"{col} NOT IN ({', '.join(repr(v) for v in vals)})"
+            )
+            # A blank cell is not the excluded value, so it stays in.
+            return f"({body} OR {col} IS NULL)"
+        if len(vals) == 1:
+            return f"{col} = '{vals[0]}'"
+        return f"{col} IN ({', '.join(repr(v) for v in vals)})"
+
+    def words(self) -> str:
+        if self.negate:
+            return f"{self.column} is not " + " and not ".join(self.values)
+        return f"{self.column} is " + " or ".join(self.values)
 
 
 @dataclass
@@ -112,15 +157,39 @@ class Plan:
     # Columns a single question word could equally have meant. Non-empty means the
     # ask is under-specified and the plan must not be executed.
     ambiguous: list[str] = field(default_factory=list)
+    text_filters: list[TextFilter] = field(default_factory=list)
+    # "revenue by region" / "which region has the highest total revenue".
+    group_by: str = ""
+    rank: str = ""  # "desc" | "asc" | "" (show every group)
+    # Things the question left open that the plan filled in. They are printed.
+    assumed: list[str] = field(default_factory=list)
+    # The sheet has the column but none of the asked-for words: report 0 rows.
+    no_match: bool = False
+    ambiguous_kind: str = "column"  # "value" when a cell value fits several columns
+    # Plain-words reason the ask cannot be run as written (a negated value that is not in
+    # the data). Non-empty means: say it, calculate nothing.
+    refuse: str = ""
+    # Sheets the ask named when it named more than one ("North and South").
+    named_sheets: list[str] = field(default_factory=list)
+    # "total amount in RM": only the cells written in this currency (a group key of _CUR_GROUPS).
+    currency: str = ""
 
     def _where(self) -> str:
-        parts = [f.sql() for f in self.filters]
+        parts = [f.sql() for f in self.filters] + [t.sql() for t in self.text_filters]
+        if self.currency and self.metric:
+            parts.append(f"currency({_quote(self.metric)}) = '{self.currency}'")
         if self.rows:
             parts.append(self.rows.sql())
         return (" WHERE " + " AND ".join(parts)) if parts else ""
 
     def sql(self) -> str:
         target = "*" if self.agg == "COUNT" and not self.metric else _quote(self.metric)
+        if self.group_by:
+            g = _quote(self.group_by)
+            return (
+                f"SELECT {g}, {self.agg}({target}) FROM {_quote(self.sheet)}"
+                f"{self._where()} GROUP BY {g}"
+            )
         return f"SELECT {self.agg}({target}) FROM {_quote(self.sheet)}{self._where()}"
 
     def sql_for(self, column: str) -> str:
@@ -264,19 +333,6 @@ def _reverse_candidates(question: str, df: Any, *, numeric_only: bool = True) ->
     return out
 
 
-def _entity_of(column: str) -> str:
-    """Ontology entity for a column name, via the shared hint vocabulary."""
-    try:
-        from rag.ontology import _ENTITY_HINTS
-    except Exception:
-        return "Unknown"
-    key = _norm(column)
-    for tip, kind in _ENTITY_HINTS.items():
-        if tip in key:
-            return kind
-    return "Unknown"
-
-
 def _agg_before(question: str, pos: int, floor: int = 0, *, window: int = 40) -> str | None:
     """Aggregate keyword in the run-up to a column mention ("average OnTimeSLA").
 
@@ -324,22 +380,663 @@ def _filter_after(question: str, end: int, ceiling: int | None = None) -> tuple[
         m = re.search(rf"^\W*(?:{pattern})\s*{_NUM}", tail)
         if m:
             return op, float(m.group(1))
-    # "BaseRate is above 1" / "where BaseRate exceeds 1" carry filler words.
+    # "BaseRate is above 1" / "where BaseRate exceeds 1" carry filler words. "is NOT above
+    # 1" among them turns the comparison round: reading it as "above 1" is the opposite rows.
     for pattern, op in _CMPS:
-        m = re.search(rf"^[a-z\s,'()]{{0,20}}(?:{pattern})\s*{_NUM}", tail)
+        m = re.search(rf"^([a-z\s,'()]{{0,20}}?)(?:{pattern})\s*{_NUM}", tail)
         if m:
-            return op, float(m.group(1))
+            if re.search(r"\bnot\b|n't\b", m.group(1)):
+                op = _NEGATED_OP[op]
+            return op, float(m.group(m.lastindex))
     return None
 
 
-def _numeric_ratio(series: Any) -> float:
+_MONTHS = {m: i + 1 for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
+_MON = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+_D_ISO = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$")
+_D_MDY_NAME = re.compile(rf"^{_MON}\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})$", re.I)
+_D_DMY_NAME = re.compile(rf"^(\d{{1,2}})(?:st|nd|rd|th)?\s+{_MON},?\s+(\d{{4}})$", re.I)
+_D_SLASH = re.compile(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$")
+_DATE_OP_WORD = {">": "after", "<": "before", ">=": "since", "<=": "until", "=": "on"}
+
+
+def _ordinal(y: int, m: int, d: int) -> int | None:
+    import datetime as _dt
+
+    try:
+        return _dt.date(y, m, d).toordinal()
+    except ValueError:
+        return None
+
+
+def _date_cell(t: str) -> tuple[int | None, str]:
+    """(ordinal, kind) for one cell; kind is "ok", "dmy" / "mdy" for a slash date that a
+    day above 12 proves, "amb" for one that could be read either way, "" for not a date."""
+    t = t.strip()
+    m = _D_ISO.match(t)
+    if m:
+        return _ordinal(int(m.group(1)), int(m.group(2)), int(m.group(3))), "ok"
+    m = _D_MDY_NAME.match(t)
+    if m:
+        return _ordinal(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2))), "ok"
+    m = _D_DMY_NAME.match(t)
+    if m:
+        return _ordinal(int(m.group(3)), _MONTHS[m.group(2).lower()], int(m.group(1))), "ok"
+    m = _D_SLASH.match(t)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if a > 12 and b <= 12:
+            return _ordinal(y, b, a), "dmy"
+        if b > 12 and a <= 12:
+            return _ordinal(y, a, b), "mdy"
+        if a == b and a <= 12:
+            return _ordinal(y, a, b), "ok"
+        if a <= 12 and b <= 12:
+            return None, "amb"
+    return None, ""
+
+
+def _date_ordinals(series: Any) -> tuple[Any, str]:
+    """(ordinals as floats with NaN for blanks and non-dates, problem text or "").
+
+    A slash date such as 03/04/2024 is day-first or month-first; it is read one way only
+    when the same column proves the style (a 29/05 or a 05/29 somewhere). Otherwise the
+    cells that cannot be told apart are reported, never guessed.
+    """
     import pandas as pd
 
-    vals = pd.to_numeric(series, errors="coerce")
-    return float(vals.notna().mean()) if len(vals) else 0.0
+    s = series.astype(str).str.strip()
+    cells = [_date_cell(v) for v in s]
+    kinds = {k for _o, k in cells}
+    style = "dmy" if ("dmy" in kinds and "mdy" not in kinds) else ("mdy" if ("mdy" in kinds and "dmy" not in kinds) else "")
+    out: list[float] = []
+    amb = 0
+    for v, (o, k) in zip(s, cells):
+        if k == "amb":
+            if style:
+                m = _D_SLASH.match(v)
+                a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                o = _ordinal(y, b, a) if style == "dmy" else _ordinal(y, a, b)
+            else:
+                amb += 1
+        out.append(float("nan") if o is None else float(o))
+    problem = ""
+    if amb:
+        problem = (
+            f"{amb:,} dates in this column are written like 03/04/2024 and cannot be told apart as "
+            f"day-first or month-first, so I did not compare them"
+        )
+    return pd.Series(out, index=series.index, dtype="float64"), problem
 
 
-def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None:
+def _date_like(series: Any) -> bool:
+    s = series.astype(str).str.strip()
+    s = s[s != ""]
+    if s.empty:
+        return False
+    head = s.head(400)
+    ok = sum(1 for v in head if _date_cell(v)[1])
+    return ok / len(head) >= 0.8
+
+
+_DATE_LIT = (
+    r"(?P<iso>\d{4}-\d{1,2}-\d{1,2})"
+    rf"|(?P<mdy>{_MON}\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}})"
+    rf"|(?P<dmy>\d{{1,2}}(?:st|nd|rd|th)?\s+{_MON},?\s+\d{{4}})"
+    r"|(?P<sl>\d{1,2}[/.]\d{1,2}[/.]\d{4})"
+)
+_DATE_COND = re.compile(
+    r"^\W*(?:(?:is|was|were|are|being)\s+)?(?:(?:dated|issued|made|raised|created|due|placed)\s+)?"
+    rf"(?P<op>on or after|on or before|after|before|since|until|from|on)\s+(?:{_DATE_LIT})",
+    re.I,
+)
+_DATE_OPS = {"on or after": ">=", "on or before": "<=", "after": ">", "before": "<", "since": ">=",
+             "until": "<=", "from": ">=", "on": "="}
+
+
+def _date_filter_after(question: str, end: int, ceiling: int | None, series: Any) -> Filter | None:
+    """"issued after 2024-09-01": a date comparison just behind a date column's name."""
+    tail = question[end:(len(question) if ceiling is None else ceiling)]
+    m = _DATE_COND.match(tail)
+    if not m or not _date_like(series):
+        return None
+    lit = next(g for g in ("iso", "mdy", "dmy", "sl") if m.group(g))
+    o, _kind = _date_cell(m.group(lit).replace(".", "/") if lit == "sl" else m.group(lit))
+    if o is None:
+        return None
+    return Filter(column="", op=_DATE_OPS[re.sub(r"\s+", " ", m.group("op").lower())], value=float(o), is_date=True)
+
+
+_NEGATED_OP = {">": "<=", ">=": "<", "<": ">=", "<=": ">", "=": "!=", "!=": "="}
+
+
+_CURRENCY_SYMBOLS = {"$": "$", "\u20ac": "EUR", "\u00a3": "GBP", "\u00a5": "JPY"}
+# "RM 5.00", "48.826,75 EUR", "USD 12": a currency code stuck to the number. A fixed list,
+# so "12kg" or "3pcs" stay words (not numbers) instead of becoming a currency.
+_CODES = (
+    "RM|MYR|USD|EUR|GBP|SGD|JPY|CNY|RMB|AUD|CAD|NZD|HKD|INR|IDR|THB|KRW|CHF|AED|SAR|PHP|"
+    "VND|BRL|MXN|ZAR|SEK|NOK|DKK|PLN|TRY|RUB|TWD|CZK|HUF|ILS|EGP|NGN|KES|PKR|BDT|LKR"
+)
+_CODE_LEAD = re.compile(rf"^({_CODES})\.?\s*(?=[-+(]?\d)", re.I)
+_CODE_TAIL = re.compile(rf"(?<=\d)\s*({_CODES})\.?$", re.I)
+_DIGITS_ONLY = re.compile(r"^[-+]?\d+$")
+_US_GROUPED = re.compile(r"^\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
+_EU_GROUPED = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
+_COMMA_DEC = re.compile(r"^\d+,\d+$")
+_DOT_DEC = re.compile(r"^\d*\.\d+$")
+# Cells the plain-number fast path cannot be trusted with: letters, a percent sign, or a
+# comma that reads as a decimal mark ("10,50", "1.234,56").
+_CAREFUL = re.compile(r"[A-Za-z%]|\d,\d{1,2}$|\d,\d{4,}|\d\.\d{3}(?:[.,]|$)|\d\.\d*,")
+
+
+def _parse_cell(raw: str, eu_column: bool = False) -> tuple[float | None, str, str]:
+    """(value, currency, mark) for one text cell. `mark` is "eu", "us" or "" (no evidence)."""
+    t = str(raw).strip()
+    if not t:
+        return None, "", ""
+    cur = ""
+    neg = False
+    if re.match(r"^\(.*\)$", t):
+        neg, t = True, t[1:-1].strip()
+    m = _CODE_LEAD.match(t)
+    if m:
+        cur, t = m.group(1).upper(), t[m.end():]
+    else:
+        m = _CODE_TAIL.search(t)
+        if m:
+            cur, t = m.group(1).upper(), t[: m.start()]
+    for sym, code in _CURRENCY_SYMBOLS.items():
+        if sym in t:
+            cur, t = code if sym != "$" else "$", t.replace(sym, "")
+    t = t.replace("%", "").replace("\u00a0", "").replace(" ", "").strip()
+    if t.startswith("(") and t.endswith(")"):
+        neg, t = True, t[1:-1]
+    if t.startswith("-"):
+        neg, t = True, t[1:]
+    elif t.startswith("+"):
+        t = t[1:]
+    mark = ""
+    if "." in t and "," in t:
+        if t.rfind(",") > t.rfind("."):
+            mark = "eu"
+            t = t.replace(".", "").replace(",", ".")
+        else:
+            mark = "us"
+            t = t.replace(",", "")
+    elif "," in t:
+        if _US_GROUPED.match(t):
+            t = t.replace(",", "")
+        elif _COMMA_DEC.match(t):
+            mark = "eu"
+            t = t.replace(",", ".")
+        else:
+            return None, cur, ""
+    elif "." in t:
+        if _EU_GROUPED.match(t) and (t.count(".") > 1 or eu_column):
+            mark = "eu"
+            t = t.replace(".", "")
+        elif _DOT_DEC.match(t) or _DIGITS_ONLY.match(t):
+            # "1.234" could be one and a bit or one thousand two hundred: no evidence.
+            mark = "us" if _DOT_DEC.match(t) and not re.fullmatch(r"\d{1,3}\.\d{3}", t) else ""
+        else:
+            return None, cur, ""
+    if not re.fullmatch(r"\d+(?:\.\d+)?|\.\d+", t):
+        return None, cur, ""
+    v = float(t)
+    if neg:
+        v = -v
+    return v, cur, mark
+
+
+def _cell_text(series: Any) -> Any:
+    return series.astype(str).str.strip()
+
+
+def _num(series: Any) -> Any:
+    """Series -> floats, the way a person reads a spreadsheet column.
+
+    Text cells such as "1,200", "$1,200.50", "(300)", "RM 5.00", "12%" and the European
+    "1.234,56" are numbers to the founder, and pd.to_numeric turns most of them into NaN,
+    which the sum then drops without a word. A comma that stands for a decimal mark must
+    never be dropped as a thousands mark (that read 1.234,56 as 1.23456). Blanks and real
+    words stay NaN.
+    """
+    import pandas as pd
+
+    kind = getattr(getattr(series, "dtype", None), "kind", "")
+    if kind in ("i", "u", "f"):
+        return pd.to_numeric(series, errors="coerce")
+    s = _cell_text(series).astype(object)
+    careful = s.str.contains(_CAREFUL).fillna(False).astype(bool)
+    neg = s.str.match(r"^\(.*\)$").fillna(False).astype(bool)
+    plain = s.str.replace(r"^\((.*)\)$", r"\1", regex=True)
+    plain = plain.str.replace(r"[,\s$\u20ac\u00a3\u00a5]", "", regex=True)
+    out = pd.to_numeric(plain, errors="coerce")
+    out = out.where(~neg, -out)
+    if careful.any():
+        out = out.astype("float64")
+        cells = s[careful]
+        parsed = {i: _parse_cell(v) for i, v in cells.items()}
+        # One decimal-mark convention per column when the evidence is one-sided, so a
+        # lone "1.000" in a column of "2,50" values reads the same way as its neighbours.
+        marks = {m for _v, _c, m in parsed.values() if m}
+        if marks == {"eu"}:
+            parsed = {i: _parse_cell(v, True) for i, v in cells.items()}
+        for i, (v, _c, _m) in parsed.items():
+            out.at[i] = float("nan") if v is None else v
+    return out
+
+
+# Tags that name the same money: "$" and "USD", "RM" and "MYR".
+_CUR_GROUPS = {"$": "$", "USD": "$", "RM": "RM", "MYR": "RM", "EUR": "EUR", "GBP": "GBP", "SGD": "SGD",
+               "JPY": "JPY", "CNY": "CNY", "RMB": "CNY", "AUD": "AUD", "CAD": "CAD", "INR": "INR"}
+_CUR_WORDS = {"dollar": "$", "dollars": "$", "usd": "$", "$": "$", "ringgit": "RM", "rm": "RM", "myr": "RM",
+              "euro": "EUR", "euros": "EUR", "eur": "EUR", "pound": "GBP", "pounds": "GBP", "gbp": "GBP",
+              "sgd": "SGD", "yen": "JPY", "jpy": "JPY", "yuan": "CNY", "cny": "CNY", "rmb": "CNY"}
+_CUR_PHRASE = re.compile(
+    r"(?<![\w$])(?:in|using|paid\s+in|priced\s+in|quoted\s+in)\s+(?:the\s+)?(\$|[A-Za-z]{2,7})(?![\w$])", re.I)
+
+
+def _cur_group(tag: str) -> str:
+    return _CUR_GROUPS.get(tag, tag)
+
+
+def _stated_currency(q: str) -> str:
+    for m in _CUR_PHRASE.finditer(q or ""):
+        g = _CUR_WORDS.get(m.group(1).lower())
+        if g:
+            return g
+    return ""
+
+
+def _cell_currency_mask(cells: Any, group: str) -> Any:
+    """True where the cell is written in this currency."""
+    s = _cell_text(cells)
+    return s.map(lambda v: _cur_group(_parse_cell(v)[1]) == group if v else False)
+
+
+def _currencies(series: Any) -> list[str]:
+    """Distinct currency tags written in a column's cells ("$", "RM", "EUR"), sorted."""
+    kind = getattr(getattr(series, "dtype", None), "kind", "")
+    if kind in ("i", "u", "f"):
+        return []
+    s = _cell_text(series)
+    s = s[s != ""]
+    if s.empty:
+        return []
+    hit = s[s.str.contains(r"[A-Za-z$\u20ac\u00a3\u00a5]")]
+    return sorted({_cur_group(_parse_cell(v)[1]) for v in hit} - {""})
+
+
+def _numeric_ratio(series: Any) -> float:
+    vals = _num(series)
+    # Blank cells say nothing about the column's type, so judge on the filled ones.
+    filled = series.notna() & (series.astype(str).str.strip() != "")
+    return float(vals[filled].notna().mean()) if filled.any() else 0.0
+
+
+_NOT_VALUES = {
+    "total", "sum", "average", "mean", "count", "max", "min", "all", "none", "nan",
+    "null", "other", "others", "number", "highest", "lowest", "each", "per", "by",
+    "and", "the", "for", "not", "yes", "no", "is", "in", "of", "or", "a", "an",
+}
+_GROUP_LEAD = re.compile(r"(?:\bby|\bper|\bfor\s+each|\beach|\bevery|\bwhich|\bwhat)\s+(?:the\s+)?$", re.I)
+_RANK_DESC = re.compile(r"\b(highest|most|largest|biggest|greatest|best|top|maximum|max)\b", re.I)
+_RANK_ASC = re.compile(r"\b(lowest|least|smallest|fewest|worst|minimum|min)\b", re.I)
+
+
+def _key(series: Any) -> Any:
+    return series.astype(str).str.strip().str.casefold()
+
+
+def _find_text_filters(
+    q: str, df: Any, spans: list[tuple[int, int, str]], skip: set[str]
+) -> tuple[list[TextFilter], list[str]]:
+    """Words in the question that are cell values of a text column ("North", "Widget").
+
+    Read off the data, not a word list: a value counts only when it stands alone in
+    the question (case-insensitive) and is not part of a column name or an aggregate
+    word. Returns (filters, ambiguous) where `ambiguous` names value/column pairs the
+    question could equally have meant.
+    """
+    low = q.lower()
+    found: dict[str, list[tuple[str, str, int]]] = {}  # value key -> [(col, shown, pos)]
+    for col in df.columns:
+        name = str(col)
+        if name in skip or _numeric_ratio(df[col]) >= 0.6:
+            continue
+        shown = df[col].dropna().astype(str).str.strip()
+        shown = shown[shown != ""].drop_duplicates()
+        if len(shown) > 5000:
+            continue
+        for v in shown:
+            k = v.casefold()
+            if len(k) < 2 or k in _NOT_VALUES or k in _STOPWORDS:
+                continue
+            m = re.search(r"(?<![a-z0-9])" + re.escape(k) + r"(?![a-z0-9])", low)
+            if not m:
+                continue
+            if any(cs <= m.start() and m.end() <= ce for cs, ce, _c in spans):
+                continue
+            found.setdefault(k, []).append((name, v, m.start()))
+    # Longest value first, so "North East" beats "North"; drop values inside a longer one.
+    kept: list[tuple[str, list[tuple[str, str, int]]]] = []
+    taken: list[tuple[int, int]] = []
+    for k in sorted(found, key=lambda x: -len(x)):
+        pos = found[k][0][2]
+        if any(a <= pos < b for a, b in taken):
+            continue
+        taken.append((pos, pos + len(k)))
+        kept.append((k, found[k]))
+    # Which kept values sit behind "excluding", "except", "not" ... Walk them left to
+    # right so "excluding HR and Ops" carries the exclusion over to Ops.
+    neg_of: dict[str, bool] = {}
+    prev_end, prev_neg = 0, False
+    for k, opts in sorted(kept, key=lambda kv: kv[1][0][2]):
+        pos = opts[0][2]
+        gap = low[prev_end:pos]
+        neg = bool(_NEG_CUE.search(gap)) or bool(prev_neg and _LIST_GAP.match(gap))
+        neg_of[k] = neg
+        prev_end, prev_neg = pos + len(k), neg
+    by_col: dict[tuple[str, bool], list[str]] = {}
+    ambiguous: list[str] = []
+    for k, opts in kept:
+        cols = {c for c, _v, _p in opts}
+        if len(cols) > 1:
+            # Prefer the column the question names right in front of the value.
+            named = [
+                c for c in cols
+                if any(ce <= opts[0][2] and opts[0][2] - ce <= 25 and nm == c
+                       for cs, ce, nm in spans)
+            ]
+            if len(named) == 1:
+                cols = set(named)
+            else:
+                ambiguous.append(f"{opts[0][1]} in " + " or ".join(sorted(cols)))
+                continue
+        col = next(iter(cols))
+        by_col.setdefault((col, neg_of[k]), []).append(next(v for c, v, _p in opts if c == col))
+    return [TextFilter(column=c, values=v, negate=n) for (c, n), v in by_col.items()], ambiguous
+
+
+# "excluding", "except (for)", "without", "other than", "not" ... right in front of a value.
+_NEG_CUE = re.compile(
+    r"(?:\b(?:excl(?:uding|udes?)?\b\.?|except(?:\s+for)?|without|other\s+than|apart\s+from|"
+    r"aside\s+from|besides|but\s+not|ignoring|minus|not|neither)|n['’]t|!=|<>)"
+    r"[\s:]*(?:(?:the|any|all|of|in)\s+)?$"
+)
+_LIST_GAP = re.compile(r"^\s*(?:,|,?\s*(?:and|or|nor))\s*(?:not\s+)?$")
+# A word after a cue that makes it something other than a value ("not above 5").
+_NEG_SKIP = re.compile(
+    r"^(?:including|only|just|more|less|many|much|exactly|equal|equals?|at|a|an|\d|[$€£]|"
+    r"(?:" + "|".join(p for p, _ in _CMPS if p[:1].isalpha()) + r")\b)",
+    re.I,
+)
+_NEG_PHRASE = re.compile(
+    r"^[\"'‘“]?([^\s,;?!.\"']+(?:\s+(?!(?:and|or|in|on|for|from|where|by|per|across|with|at|of|then)\b)"
+    r"[^\s,;?!.\"']+){0,3})",
+    re.I,
+)
+
+
+def _unmatched_negation(q: str, frames: dict, spans: list[tuple[int, int, str]]) -> str:
+    """Plain-words refusal for "excluding X" when X is not a value in any text column.
+
+    A negation we cannot apply must never turn into a positive filter or a silent
+    drop, so the ask stops here and says what it could not do.
+    """
+    low = q.lower()
+    cues = list(re.finditer(
+        r"\b(?:excl(?:uding|udes?)?|except(?:\s+for)?|without|other\s+than|apart\s+from|aside\s+from|"
+        r"besides|but\s+not|ignoring|minus|not)\b|!=|<>", low))
+    if not cues:
+        return ""
+    values: dict[str, tuple[str, str]] = {}  # casefold value -> (column, shown)
+    cols: dict[str, str] = {}
+    for df in frames.values():
+        if df is None or df.empty:
+            continue
+        for col in df.columns:
+            if _numeric_ratio(df[col]) >= 0.6:
+                continue
+            cols.setdefault(str(col), str(col))
+            for v in df[col].dropna().astype(str).str.strip().drop_duplicates().head(5000):
+                if v:
+                    values.setdefault(v.casefold(), (str(col), v))
+    for m in cues:
+        rest = low[m.end():]
+        rest = re.sub(r"^[\s:.]*(?:(?:the|any|all|of|in)\s+)?", "", rest)
+        if not rest:
+            continue
+        strong = not m.group(0).startswith(("not", "but", "!=", "<>"))
+        if _NEG_SKIP.match(rest) and not (strong and re.match(r"[\d$€£]", rest)):
+            continue
+        start = m.end() + (len(low[m.end():]) - len(rest))
+        on_col = next(((cs, ce) for cs, ce, _n in spans if cs <= start < ce), None)
+        if on_col:
+            # "excluding Refunds" where Refunds is a column: there is no value to leave
+            # out, and dropping the words would hand back the figure with it still in.
+            if re.match(r"(?:excl|except|without|minus|other|apart|aside|besides|ignoring)", m.group(0)):
+                return (
+                    f'I could not apply "{q[m.start():m.end()].strip()} {q[on_col[0]:on_col[1]]}": '
+                    f"{q[on_col[0]:on_col[1]]} is a column, not a value I can leave out. I did not calculate anything."
+                )
+            continue
+        word = re.match(r"[a-z0-9À-￿'_-]+", rest)
+        if not word or word.group(0) in _STOPWORDS or word.group(0) in _NOT_VALUES:
+            continue
+        held = [k for k in values if rest.startswith(k) and not rest[len(k):len(k) + 1].isalnum()]
+        if held:
+            k = max(held, key=len)
+            if len(k) < 2:
+                return (
+                    f'I could not apply "{q[m.start():m.end()].strip()} {values[k][1]}": a one-letter value is '
+                    "too short for me to match safely. I did not calculate anything."
+                )
+            # "excluding Eng and Hrr": the first item is real, so check the rest of the list.
+            tail = rest[len(k):]
+            while True:
+                lg = re.match(r"\s*(?:,|,?\s*(?:and|or|nor))\s*(?:not\s+)?", tail)
+                if not lg:
+                    break
+                tail = tail[lg.end():]
+                nxt = [k2 for k2 in values if tail.startswith(k2) and not tail[len(k2):len(k2) + 1].isalnum()]
+                if nxt:
+                    tail = tail[len(max(nxt, key=len)):]
+                    continue
+                w = re.match(r"[a-z0-9À-￿'_-]+", tail)
+                near2 = difflib.get_close_matches(w.group(0), list(values), n=1, cutoff=0.75) if w else []
+                if near2:
+                    return (
+                        f'I could not apply "{q[m.start():m.end()].strip()} ... {w.group(0)}": there is no such '
+                        f"value in {values[near2[0]][0]}. Did you mean {values[near2[0]][1]}? "
+                        "I did not calculate anything. Check the spelling and ask again."
+                    )
+                break
+            continue
+        # Not a value we hold: name the phrase, and the closest real value if there is one.
+        pm = _NEG_PHRASE.match(q[start:])
+        said = (pm.group(1) if pm else word.group(0)).strip()
+        said = re.split(r"\s+(?:and|or)\s+", said)[0].strip() or word.group(0)
+        cue = q[m.start():m.end()].strip()
+        near = difflib.get_close_matches(said.casefold(), list(values), n=1, cutoff=0.6)
+        named = [n for _s, _e, n in spans if n in cols]
+        where = values[near[0]][0] if near else (named[0] if named else "")
+        msg = f'I could not apply "{cue} {said}": there is no such value in {where or "the text columns of these tables"}.'
+        if near:
+            msg += f" Did you mean {values[near[0]][1]}?"
+        return msg + " I did not calculate anything. Check the spelling and ask again."
+    return ""
+
+
+_STATED_VALUE = re.compile(
+    r"^\s*(?P<op>is|are|=|==|!=|<>|equals?|equal to|:)\s*['\"\u2018\u201c]?(.+?)['\"\u2019\u201d]?"
+    r"\s*(?:$|[?.,;!]|\s+(?:and|or|but|for|in|on|from)\b)",
+    re.I,
+)
+
+
+def _bind_stated_values(q, df, kept, text_filters, filters, metric, metric_agg=None):
+    """"where Product is Gizmo": the question STATES the value for a text column.
+
+    Values are normally read off the data, which cannot see a value that is not there
+    ("Region is Papua") or one too short to trust on its own (a product called "A"). A
+    stated filter dropped on either would hand back the unfiltered total as the
+    answer. Bind what was stated; a value no row holds then shows as "no rows match".
+    """
+    by_col = {(t.column, t.negate): t for t in text_filters}
+    # "how many rows have paid no": the counted column is also the one the value belongs
+    # to, so for a count it is not skipped. Skipping it counted every row.
+    bound = {f.column for f in filters} | ({metric} if metric and metric_agg != "COUNT" else set())
+    for start, end, name in kept:
+        if name in bound or name not in df.columns or _numeric_ratio(df[name]) >= 0.6:
+            continue
+        m = _STATED_VALUE.match(q[end:])
+        said = ""
+        if m:
+            said = m.group(2).strip()
+        else:
+            # "paid yes", "has shipped no": the answer word stands right behind the column.
+            mb = _STATED_BOOL.match(q[end:])
+            have = {str(v).strip().casefold() for v in df[name].dropna().astype(str)}
+            if not mb:
+                # "records that are not paid": a yes/no column right after "not" asks for its "no" rows.
+                have.discard("")
+                if have and have <= {"yes", "no", "true", "false"} and re.search(r"\bnot\s+(?:been\s+)?$", q[:start], re.I):
+                    said = "no" if "no" in have else "false"
+                    if said in have:
+                        m = re.match(r"(?P<w>.+)", said)
+                else:
+                    continue
+            else:
+                word = mb.group(1).casefold()
+                if word not in have:
+                    continue
+                m = mb
+                said = word
+        if not m:
+            continue
+        # "Dept is not HR" / "Dept != HR": the same column, the value excluded.
+        neg = "op" in m.re.groupindex and m.group("op") in ("!=", "<>")
+        nm_ = re.match(r"^(?:not\s+|!=\s*|<>\s*)(.+)$", said, re.I)
+        if nm_:
+            neg, said = True, nm_.group(1).strip()
+        if not said:
+            continue
+        vals = df[name].dropna().astype(str).str.strip()
+        hit = vals[vals.str.casefold() == said.casefold()]
+        shown = hit.iloc[0] if len(hit) else said
+        tf = by_col.get((name, neg))
+        if tf is None:
+            tf = by_col[(name, neg)] = TextFilter(column=name, values=[], negate=neg)
+            text_filters = list(text_filters) + [tf]
+        if shown.casefold() not in {v.casefold() for v in tf.values}:
+            tf.values.append(shown)
+    return text_filters
+
+
+# "how many rows", "number of rows", "row count", "count the Q1 rows": a count of rows, no column.
+_ROW_COUNT = re.compile(
+    r"\b(?:how\s+many|number\s+of|count(?:\s+of)?)\s+(?:the\s+)?(?:\w+\s+)?rows?\b|\brows?\s+count\b|\bcount\s+(?:the\s+)?(?:\w+\s+)?rows?\b",
+    re.I,
+)
+
+
+_COND_CUE = (
+    r"(?:(?:after|before|since|until|over|under|above|below|greater|less|more|fewer|between|yes|no|true|false)\b"
+    r"|at\s+(?:least|most)\b|[<>=!]|-?\d)"
+)
+_COND_TAIL = re.compile(rf"^\s*(?:(?:is|are|was|were|has|have|=|equals?)\s+)?(?:not\s+)?{_COND_CUE}", re.I)
+_COND_LEAD = re.compile(r"\b(?:where|whose|having)\s+(?:the\s+)?$", re.I)
+_IS_VALUE_TAIL = re.compile(r"^\s*(?:is|are|was|were|=|==|equals?|equal\s+to)\s+\S", re.I)
+_FOR_LEAD = re.compile(r"\b(?:for|in|from|of)\s+(?:the\s+)?$", re.I)
+_CAP_NEXT = re.compile(r"^\s+(?:[A-Z0-9][\w-]*)")
+_WHERE_CLAUSE = re.compile(
+    r"\b(?:where|whose|having)\s+(?:the\s+)?([A-Za-z][\w ]{0,30}?)\s+"
+    r"(?:(?:is|are|was|were|equals?|above|below|over|under|after|before|more\s+than|less\s+than|greater\s+than"
+    r"|at\s+least|at\s+most)\b|[=<>!])",
+    re.I,
+)
+_DATE_CUE = re.compile(
+    rf"\b(?:after|before|since|until)\s+(?:{_DATE_LIT}|(?:19|20)\d\d\b)", re.I,
+)
+
+
+_FUNCTION_WORDS = {
+    "with", "from", "that", "this", "were", "was", "are", "who", "which", "what", "when", "where", "have",
+    "has", "had", "does", "did", "than", "then", "into", "over", "under", "also", "only", "each", "every",
+}
+
+
+def _condition_follows(q: str, start: int, end: int, *, foreign: bool = False) -> bool:
+    if _COND_TAIL.match(q[end:]) or _COND_LEAD.search(q[max(0, start - 16):start]):
+        return True
+    if foreign:
+        if _IS_VALUE_TAIL.match(q[end:]):
+            return True
+        if _FOR_LEAD.search(q[max(0, start - 8):start]) and _CAP_NEXT.match(q[end:]):
+            return True
+    return False
+
+
+def _unbound_phrase(q, kept, bound: set[str], filters, rows) -> str:
+    """The part of a question that states a condition no filter took up, or "".
+
+    A planner that treats what it could not bind as noise returns the answer for every
+    row, and a founder reads that as the answer to the filtered question. Naming the part
+    that was not understood is the honest result.
+    """
+    for s0, e0, name in kept:
+        if name in bound:
+            continue
+        if _condition_follows(q, s0, e0):
+            return " ".join(q[s0:min(len(q), e0 + 30)].split()[:4]).strip(" ?.,;")
+    for m in _WHERE_CLAUSE.finditer(q):
+        a, b = m.start(1), m.end(1)
+        if not any(cs < b and a < ce for cs, ce, _n in kept):
+            return " ".join(q[m.start():min(len(q), m.end() + 20)].split()[:5]).strip(" ?.,;")
+    if not any(getattr(f, "is_date", False) for f in filters):
+        m = _DATE_CUE.search(q)
+        if m and not rows:
+            return m.group(0).strip(" ?.,;")
+    return ""
+
+
+def _unbound_message(phrase: str, sheet: str) -> str:
+    return (
+        f"I could not apply this part of your question: \"{phrase}\". It does not match a column "
+        f"and value I can read on {sheet}, so I did not calculate anything rather than give you "
+        f"a figure for every row. Say it with a column name and a value, for example "
+        f"\"where paid is yes\"."
+    )
+
+
+_STATED_BOOL = re.compile(r"^\s*(?:(?:is|are|was|were|=|equals?)\s+)?(yes|no|true|false)\b", re.I)
+
+
+def _drop_aggregate_word_mentions(q: str, kept: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """"total qty": when the word is an aggregate and a column name comes right behind it,
+    the word is the aggregate, not a mention of a column that happens to be called total."""
+    out = []
+    for i, (s0, e0, name) in enumerate(kept):
+        nxt = kept[i + 1] if i + 1 < len(kept) else None
+        word = q[s0:e0].strip().lower()
+        if (
+            nxt
+            and any(re.fullmatch(p, word) for p, _ in _AGGS)
+            and re.fullmatch(r"\s*(?:(?:of|the)\s+)*", q[e0:nxt[0]])
+        ):
+            continue
+        out.append((s0, e0, name))
+    return out
+
+
+def plan_query(
+    question: str,
+    frames: dict[tuple[str, str], Any],
+    collect: list[Plan] | None = None,
+) -> Plan | None:
     """Best filter->aggregate plan across every (workbook, sheet) we have ingested.
 
     `frames` maps (workbook name, sheet name) -> DataFrame. Returns None when the
@@ -350,7 +1047,9 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
     if not q.strip() or not frames:
         return None
     # No aggregate word anywhere means this is not a KPI ask; do not guess one.
-    if not any(re.search(p, q.lower()) for p, _ in _AGGS):
+    if not any(re.search(p, q.lower()) for p, _ in _AGGS) and not re.search(
+        r"\b(?:by|per)\s+[a-z]|\bfor\s+each\b|\beach\b", q.lower()
+    ):
         return None
 
     rows = parse_row_range(q)
@@ -363,6 +1062,12 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
             all_columns.update(str(c) for c in _df.columns)
     global_kept = _resolve_mentions(q, all_columns)
 
+    # "excluding Hrr": a negation whose value is not in the data. Say so; never guess.
+    said = _unmatched_negation(q, frames, global_kept)
+    if said:
+        (_wb0, _sh0) = next(iter(frames))
+        return Plan(agg=_agg_anywhere(q) or "SUM", metric="", sheet=_sh0, workbook=_wb0, refuse=said)
+
     # If the ask names a sheet, that beats every other signal - row 330 and a
     # column called OnTime exist on more than one sheet, the sheet name does not.
     # But a sheet name sitting *inside* a column mention is not a reference to the
@@ -373,7 +1078,22 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
     named_sheet_spans: list[tuple[int, int]] = []
     for (_wb, sheet_name), _df in frames.items():
         for start, end in _mentions(q, sheet_name, bounded=True):
-            covered = any(cs <= start and end <= ce for cs, ce, _c in global_kept)
+            # A csv has one table and its "sheet" is the file name. "how many orders"
+            # over orders.csv names the Order column, not a choice of sheet.
+            if str(_wb).lower().endswith(ONE_TABLE_SUFFIXES) and not _in_sheet_selector_position(q, start, end):
+                continue
+            # Overlap, not containment: "how many orders" reads the Order column even
+            # though the sheet is called Orders and the match runs one letter longer.
+            covered = any(cs < end and start < ce for cs, ce, _c in global_kept)
+            # "how many orders have status closed" with a sheet called Orders: when that sheet
+            # has no status column, the word is the order_id column of the table that does.
+            if not _in_sheet_selector_position(q, start, end):
+                have = {str(c) for c in _df.columns} if _df is not None else set()
+                if any(
+                    c not in have and not (cs < end and start < ce)
+                    for cs, ce, c in global_kept
+                ):
+                    continue
             # A mention in selector position ("on Sales", "the Sales sheet") is the
             # sheet even when a column shares the name exactly. Without this the
             # covered test hands the whole phrase to the column, `named_sheet` stays
@@ -392,14 +1112,47 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
                     or _in_sheet_selector_position(q, s, e)
                 ]
 
+    # "North and South": more than one sheet named. Every one of them is asked, and the
+    # words that picked the sheets are not also values to filter on.
+    named_set = {named_sheet} if named_sheet else set()
+    value_spans = list(global_kept)
+    if named_sheet:
+        for (_wb, sn), _df in frames.items():
+            if sn in named_set:
+                continue
+            for s0, e0 in _mentions(q, sn, bounded=True):
+                if str(_wb).lower().endswith(ONE_TABLE_SUFFIXES) and not _in_sheet_selector_position(q, s0, e0):
+                    continue
+                if any(cs < e0 and s0 < ce for cs, ce, _c in global_kept) and not _in_sheet_selector_position(q, s0, e0):
+                    continue
+                if any(ss < e0 and s0 < se for ss, se in named_sheet_spans):
+                    continue
+                named_set.add(sn)
+                named_sheet_spans.append((s0, e0))
+                break
+        if len(named_set) > 1:
+            value_spans += [(a, b, "") for a, b in named_sheet_spans]
+
     best: Plan | None = None
+    lacking: list[tuple[str, str, str]] = []
+    unbound_plan: Plan | None = None
     for (wb_name, sheet_name), df in frames.items():
         if df is None or not len(df) or df.empty:
             continue
-        if named_sheet and sheet_name != named_sheet:
+        if named_set and sheet_name not in named_set:
             continue
         own = {str(c) for c in df.columns}
-        kept = [m for m in global_kept if m[2] in own]
+        # The question filters on a column this table does not have (it lives in another
+        # file): this table cannot honour the condition, so it must not answer without it.
+        foreign = [
+            m for m in global_kept
+            if m[2] not in own and _condition_follows(q, m[0], m[1], foreign=True)
+            and not any(cs < m[1] and m[0] < ce for cs, ce in named_sheet_spans)
+        ]
+        if foreign:
+            lacking.append((wb_name, sheet_name, foreign[0][2]))
+            continue
+        kept = _drop_aggregate_word_mentions(q, [m for m in global_kept if m[2] in own])
         # Drop column mentions that ARE the sheet selector. "on Sales, average" on a
         # sheet that also has a `sales` column must report every numeric column, not
         # silently narrow to the one whose name happens to match the sheet.
@@ -412,15 +1165,32 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
         # An ask can legitimately name no column directly - "rows 330 to 660, sum"
         # gives a span instead, and "the average cost" names a column only in the
         # reverse direction. Bail out only when there is no route at all.
-        if not kept and not rows and not _reverse_candidates(q, df):
-            continue
+        # "how many people work in Ops" names no column, only a value from one.
+        row_count = bool(_ROW_COUNT.search(q)) and sheet_name in named_set  # COUNT(*) of the sheet named
+        if not kept and not rows and not row_count and not _reverse_candidates(q, df):
+            if not (re.search(_AGGS[0][0], q.lower()) and _find_text_filters(q, df, value_spans, set())[0]):
+                continue
 
         metric: str | None = None
         metric_agg: str | None = None
+        count_read_as_total = ""
         filters: list[Filter] = []
         for i, (start, end, name) in enumerate(kept):
             prev_end = kept[i - 1][1] if i else 0
             next_start = kept[i + 1][0] if i + 1 < len(kept) else None
+            if _numeric_ratio(df[name]) < 0.6:
+                dfil = _date_filter_after(q, end, next_start, df[name])
+                if dfil is not None:
+                    dfil.column = name
+                    filters.append(dfil)
+                    continue
+            if _numeric_ratio(df[name]) >= 0.6:
+                mbt = re.match(rf"^\W*(?:(?:is|are|was|were)\s+)?between\s+{_NUM}\s+(?:and|to|-)\s+{_NUM}", q[end:next_start if next_start else len(q)], re.I)
+                if mbt:
+                    lo, hi = sorted((float(mbt.group(1)), float(mbt.group(2))))
+                    filters.append(Filter(column=name, op=">=", value=lo))
+                    filters.append(Filter(column=name, op="<=", value=hi))
+                    continue
             got = _filter_after(q, end, next_start)
             if got and _numeric_ratio(df[name]) >= 0.6:
                 op, value = got
@@ -428,8 +1198,36 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
                 continue
             if metric is None:
                 fn = _agg_before(q, start, prev_end)
+                if fn == "COUNT" and row_count and _numeric_ratio(df[name]) < 0.6 and _GROUP_LEAD.search(q[max(0, start - 16):start]):
+                    continue  # "how many rows in Q1 by region": Region is the group, not a column to count
                 if fn and (fn == "COUNT" or _numeric_ratio(df[name]) >= 0.6):
                     metric, metric_agg = name, fn
+                    # "How many visits did Site7 have?" asks for the figure in the visits
+                    # column, not for how many rows hold one (which is 1). A numeric column
+                    # right after "how many" is read as its total; "rows" and "records"
+                    # still count rows.
+                    if (
+                        fn == "COUNT" and not row_count and _numeric_ratio(df[name]) >= 0.8
+                        and re.search(r"\bhow\s+many\s*$", q[:start].lower())
+                    ):
+                        metric_agg, count_read_as_total = "SUM", name
+
+        # Words in the question that are values in a text column ("North", "Widget").
+        text_filters, ambiguous_values = _find_text_filters(q, df, value_spans, set())
+        text_filters = _bind_stated_values(q, df, kept, text_filters, filters, metric, metric_agg)
+
+        # "by region" / "which region has the highest ...": a group-by on a text column.
+        group_by, group_lead = "", ""
+        _bound = {f.column for f in filters} | ({metric} if metric else set())
+        for g_start, g_end, g_name in kept:
+            if g_name in _bound or g_name not in df.columns:
+                continue
+            if _numeric_ratio(df[g_name]) >= 0.6:
+                continue
+            lead = _GROUP_LEAD.search(q[max(0, g_start - 16):g_start])
+            if lead:
+                group_by, group_lead = g_name, lead.group(0).split()[0].lower()
+                break
 
         # Nothing bound by name. Try the reverse direction - a question word that
         # is a component of a column name ("cost" -> AvgCost) - before giving up.
@@ -475,12 +1273,35 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
                     metric, metric_agg = col, fn
                     break
 
+        # "revenue by region" names the number without an aggregate word. Taking the
+        # numeric column the question names is the reading; the sum is announced.
+        assumed: list[str] = []
+        if count_read_as_total and metric == count_read_as_total and metric_agg == "SUM":
+            assumed.append(f"read \u201chow many {metric}\u201d as the total of the {metric} column")
+        if metric is None and group_by:
+            _num_cols = [
+                n for _s, _e, n in kept
+                if n not in _bound and n != group_by and _numeric_ratio(df[n]) >= 0.6
+            ]
+            if not _num_cols:
+                _rc = [
+                    cols[0] for w, cols in _reverse_candidates(q, df).items()
+                    if len(cols) == 1 and cols[0] not in _bound
+                ]
+                _num_cols = _rc[:1]
+            if _num_cols:
+                metric, metric_agg = _num_cols[0], _agg_anywhere(q) or "SUM"
+
         # "how many carriers have BaseRate above 3" names no metric column - that is
         # a COUNT(*) over the filtered rows, not a failure to understand the ask.
-        if metric is None and (filters or rows) and re.search(_AGGS[0][0], q.lower()):
+        if (
+            metric is None
+            and (filters or rows or text_filters or group_by or row_count)
+            and re.search(_AGGS[0][0], q.lower())
+        ):
             metric, metric_agg = "", "COUNT"
 
-        if metric is None and ambiguous and not rows:
+        if metric is None and ambiguous and not rows and not group_by:
             # Say which columns it could have meant rather than picking one.
             return Plan(
                 agg=_agg_anywhere(q) or "SUM", metric="", sheet=sheet_name,
@@ -498,17 +1319,67 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
 
         if metric_agg is None:
             continue
-        # A bare aggregate with no filter is already served by the existing KPI
-        # catalogue; this lane exists for the filter+aggregate shape it cannot do.
-        if not filters and not rows and metric_agg != "COUNT":
+        # A group question ranks or lists groups. "Highest total revenue" is the
+        # total per group, then the top one; the word "highest" is not MAX of a row.
+        rank = ""
+        if group_by:
+            if group_lead in ("which", "what"):
+                rank = "desc" if _RANK_DESC.search(q) else ("asc" if _RANK_ASC.search(q) else "")
+            ql = q.lower()
+            if re.search(r"\btotal\b|\bsum\b|\bcombined\b", ql):
+                metric_agg = "SUM"
+            elif re.search(_AGGS[1][0], ql):
+                metric_agg = "AVG"
+            elif re.search(_AGGS[0][0], ql):
+                metric_agg = "COUNT"
+            elif rank or metric_agg is None:
+                metric_agg = "SUM"
+                assumed.append("added up each group (the question did not say total or average)")
+            if metric == "" and metric_agg != "COUNT":
+                continue
+        if ambiguous_values:
+            ambiguous = ambiguous_values
+        _bound_cols = (
+            {f.column for f in filters} | {t.column for t in text_filters}
+            | ({metric} if metric else set()) | ({group_by} if group_by else set())
+        )
+        _pre_phrase = ""
+        if metric and metric_agg == "COUNT" and metric in df.columns and metric not in {t.column for t in text_filters}:
+            # "how many rows have region West" with no West in the data: the counted column
+            # is followed by a value it could not bind, so say so instead of counting all rows.
+            for _s0, _e0, _n0 in kept:
+                if _n0 == metric and _numeric_ratio(df[metric]) < 0.6:
+                    _nx = re.match(r"^\s+([A-Z][\w-]*)", q[_e0:])
+                    if _nx and _nx.group(1).casefold() not in _NOT_VALUES | _FUNCTION_WORDS:
+                        _pre_phrase = " ".join(q[_s0:_e0 + len(_nx.group(0))].split()).strip(" ?.,;")
+                        break
+        phrase = _pre_phrase or _unbound_phrase(q, kept, _bound_cols, filters, rows)
+        if phrase and not ambiguous_values:
+            if unbound_plan is None:
+                unbound_plan = Plan(
+                    agg=metric_agg, metric=metric or "", sheet=sheet_name, workbook=wb_name,
+                    refuse=_unbound_message(phrase, sheet_name),
+                )
             continue
         # Prefer the sheet that matched the most named columns, then the one with
         # real depth - Summary-style rollups are small and are exactly the trap.
         named = len({name for _, _, name in kept})
-        score = named * 10.0 + min(len(df), 100000) / 100000.0
-        if named_sheet and sheet_name == named_sheet:
+        score = named * 10.0 + min(len(df), 100000) / 100000.0 + 5.0 * len(text_filters)
+        if sheet_name in named_set:
             score += 50.0
+        stated_cur = _stated_currency(q) if metric and metric in df.columns and len(_currencies(df[metric])) > 1 else ""
+        # A header used twice: the first copy keeps its name, the others are name__2...
+        # Say which one was read, so a total is never silently about the wrong column.
+        _used = {metric, group_by, *(f.column for f in filters), *(t.column for t in text_filters)}
+        for _base, _copies in (getattr(df, "attrs", {}).get("duplicate_columns") or {}).items():
+            if _copies and _copies[0] in _used:
+                assumed.append(
+                    f"the table has {len(_copies)} columns called {_base}; I used the first, "
+                    f"and the other{'s are' if len(_copies) > 2 else ' is'} called {', '.join(_copies[1:])} "
+                    "if you meant that"
+                )
         cand = Plan(
+            currency=stated_cur,
             agg=metric_agg,
             metric=metric or "",
             filters=filters,
@@ -517,9 +1388,30 @@ def plan_query(question: str, frames: dict[tuple[str, str], Any]) -> Plan | None
             score=score,
             rows=rows,
             all_numeric=all_numeric,
+            text_filters=text_filters,
+            group_by=group_by,
+            rank=rank,
+            assumed=assumed,
+            ambiguous=ambiguous_values,
+            ambiguous_kind="value" if ambiguous_values else "column",
+            named_sheets=sorted(named_set) if len(named_set) > 1 else [],
         )
+        if collect is not None:
+            collect.append(cand)
         if best is None or cand.score > best.score:
             best = cand
+    if best is None and unbound_plan is not None:
+        return unbound_plan
+    if best is None and lacking:
+        wb0, sh0, col0 = lacking[0]
+        return Plan(
+            agg=_agg_anywhere(q) or "SUM", metric="", sheet=sh0, workbook=wb0,
+            refuse=(
+                f"No table I can read has both the {col0} column your question filters on and "
+                f"the figure it asks for, so I did not calculate anything. Check the column name "
+                f"or ask about the file that holds it."
+            ),
+        )
     return best
 
 
@@ -563,7 +1455,15 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
     for f in plan.filters:
         if f.column not in work.columns:
             return None
-        col = pd.to_numeric(work[f.column], errors="coerce")
+        if f.is_date:
+            col, bad = _date_ordinals(work[f.column])
+            if bad:
+                return {
+                    "ok": False, "reason": bad, "sql": plan.sql(), "sheet": plan.sheet,
+                    "workbook": plan.workbook, "rows_matched": 0, "rows_total": int(len(df)),
+                }
+        else:
+            col = _num(work[f.column])
         if f.op == ">":
             mask = col > f.value
         elif f.op == ">=":
@@ -572,9 +1472,20 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
             mask = col < f.value
         elif f.op == "<=":
             mask = col <= f.value
+        elif f.op == "!=":
+            mask = col != f.value
         else:
             mask = col == f.value
         work = work[mask.fillna(False)]
+
+    for t in plan.text_filters:
+        if t.column not in work.columns:
+            return None
+        hit = _key(work[t.column]).isin({v.strip().casefold() for v in t.values})
+        work = work[~hit if t.negate else hit]
+
+    if plan.currency and plan.metric in work.columns:
+        work = work[_cell_currency_mask(work[plan.metric], plan.currency)]
 
     rows_matched = int(len(work))
 
@@ -582,7 +1493,7 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
     if plan.all_numeric:
         per_column: list[dict] = []
         for col in work.columns:
-            vals = pd.to_numeric(work[col], errors="coerce")
+            vals = _num(work[col])
             if not len(vals) or vals.notna().mean() < 0.6:
                 continue
             vals = vals.dropna()
@@ -619,20 +1530,45 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
             "row_note": row_note,
         }
 
+    pool: dict = {}
     if plan.agg == "COUNT" and not plan.metric:
         value: float = float(rows_matched)
+        pool = {"values_used": rows_matched}
     else:
         if plan.metric not in work.columns:
             return None
-        vals = pd.to_numeric(work[plan.metric], errors="coerce").dropna()
+        cells = work[plan.metric]
+        vals = _num(cells).dropna()
+        tags = _currencies(cells) if plan.agg != "COUNT" else []
+        if len(tags) > 1:
+            # $10 + RM 20 is not 30 of anything. Said, not added up.
+            return {
+                "ok": False,
+                "reason": (
+                    f"{plan.metric} mixes currencies ({', '.join(tags)}) in these rows, so a "
+                    f"{_LABEL[plan.agg]} would add unlike money. I did not calculate it. Ask for "
+                    f"one currency, for example \"{_LABEL[plan.agg]} of {plan.metric} in {tags[0]}\""
+                ),
+                "sql": plan.sql(),
+                "sheet": plan.sheet,
+                "workbook": plan.workbook,
+                "rows_matched": rows_matched,
+                "rows_total": int(len(df)),
+            }
         if plan.agg == "COUNT":
-            value = float(len(vals))
+            # SQL COUNT(col): filled cells. Counting only numbers made "how many
+            # orders" over text ids come out as 0.
+            value = float(int((cells.notna() & (cells.astype(str).str.strip() != "")).sum()))
+            pool = {"values_used": int(value)}
         elif not len(vals):
             # Filter matched nothing, or the column held no numbers. Say so rather
             # than reporting 0 as if it were a measurement.
             return {
                 "ok": False,
-                "reason": "no rows matched the filter",
+                "reason": (
+                    "no rows matched the filter" if not rows_matched
+                    else f"none of the {rows_matched:,} matching rows has a number in {plan.metric}"
+                ),
                 "sql": plan.sql(),
                 "sheet": plan.sheet,
                 "workbook": plan.workbook,
@@ -647,9 +1583,16 @@ def run_plan(plan: Plan, df: Any) -> dict | None:
             value = float(vals.max())
         else:
             value = float(vals.min())
+        if plan.agg != "COUNT":
+            pool = {
+                "values_used": int(len(vals)), "sum": float(vals.sum()),
+                "min": float(vals.min()), "max": float(vals.max()),
+            }
 
     return {
         "ok": True,
+        "_work": work,
+        **pool,
         "value": value,
         "agg": plan.agg,
         "metric": plan.metric,
@@ -669,17 +1612,22 @@ def _round(value: float) -> str:
     return text or "0"
 
 
-def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
-    """Locate the workbook/sheet, run the SELECT, and report it with provenance."""
-    plan = plan_query(question, frames)
-    if plan is None:
-        return None
+def _answer_single(plan: Plan, frames: dict[tuple[str, str], Any]) -> dict | None:
+    """One sheet, one figure (or one table of figures), with provenance."""
+    if plan.refuse:
+        return {
+            "answer": plan.refuse, "sql": None, "sheet": plan.sheet, "workbook": plan.workbook,
+            "abstained": True, "abstain_reason": plan.refuse,
+            "linked": {"sheet": plan.sheet, "workbook": plan.workbook,
+                       "metric": "", "filters": [], "all_numeric": False},
+        }
     if plan.ambiguous:
         opts = ", ".join(plan.ambiguous)
+        what = "a word in your question matches more than one column" if plan.ambiguous_kind == "value" else "That could mean more than one column"
         return {
             "answer": (
-                f"That could mean more than one column on the {plan.sheet} sheet of "
-                f"{plan.workbook}: {opts}. Name which one and I will run it."
+                f"{what[0].upper() + what[1:]} on {where_phrase(plan.workbook, plan.sheet)}: {opts}. "
+                "Name which one and I will run it."
             ),
             "sql": None,
             "sheet": plan.sheet,
@@ -718,7 +1666,7 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         }
 
     label = {"AVG": "average", "SUM": "total", "COUNT": "count", "MAX": "maximum", "MIN": "minimum"}[plan.agg]
-    where = " and ".join(f.sql() for f in plan.filters)
+    where = _where_words(plan)
     scope = f" where {where}" if where else ""
     note = result.get("row_note") or ""
     # The row mapping is the part a founder cannot check by eye, so it is stated
@@ -731,7 +1679,7 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         ]
         answer = (
             f"{label.capitalize()} over {result['rows_matched']:,} rows"
-            f"{span} on the {plan.sheet} sheet of {plan.workbook} "
+            f"{span} on {where_phrase(plan.workbook, plan.sheet)} "
             f"— no column was named, so every numeric column is reported:\n"
             + "\n".join(lines)
             + f"\n\nSQL: {result['sql']}"
@@ -750,13 +1698,14 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
 
     answer = (
         f"{_round(result['value'])} — the {label} of {plan.metric or 'matching rows'}{scope}"
-        f"{span}, over {result['rows_matched']:,} of {result['rows_total']:,} rows on the "
-        f"{plan.sheet} sheet of {plan.workbook}.\n\n"
+        f"{span}, over {result['rows_matched']:,} of {result['rows_total']:,} rows on "
+        f"{_src(plan.workbook, plan.sheet)}.{_skipped_note(result)}"
+        f"{_assumed_note(plan)}\n\n"
         f"SQL: {result['sql']}"
     )
     return {
         "answer": answer,
-        "value": result["value"],
+        "value": round(result["value"], 4),
         "sql": result["sql"],
         "sheet": plan.sheet,
         "workbook": plan.workbook,
@@ -764,4 +1713,656 @@ def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -
         "rows_total": result["rows_total"],
         "abstained": False,
         "linked": linked,
+        "operation": plan.agg,
+        "filter": where,
+        "values_used": result.get("values_used"),
+        "assumed": plan.assumed,
+        "carry": _carry(plan),
     }
+
+
+# --------------------------------------------------------------------------------------
+# Several sheets / files, group-by, and the plain-words provenance around them.
+# --------------------------------------------------------------------------------------
+
+
+def _carry(plan: Plan) -> dict:
+    """What a later short question ("and for South?") needs to repeat this calculation."""
+    return {
+        "agg": plan.agg,
+        "metric": plan.metric,
+        "sheet": plan.sheet,
+        "workbook": plan.workbook,
+        "text": [{"column": t.column, "values": list(t.values), "negate": t.negate} for t in plan.text_filters],
+        "num": [{"column": f.column, "op": f.op, "value": f.value} for f in plan.filters if not f.is_date],
+        "dates": [{"column": f.column, "op": f.op, "iso": f.iso()} for f in plan.filters if f.is_date],
+    }
+
+
+def _where_words(plan: Plan) -> str:
+    parts = [f.sql() for f in plan.filters] + [t.words() for t in plan.text_filters]
+    return " and ".join(parts)
+
+
+def where_phrase(workbook: str, sheet: str) -> str:
+    """"the Sales sheet of book.xlsx", or "table 2 of memo.docx" for a table inside a document."""
+    wb = str(workbook or "")
+    if wb.lower().endswith(TABLE_IN_DOCUMENT_SUFFIXES):
+        return f"{sheet} of {wb}"
+    return f"the {sheet} sheet of {wb}"
+
+
+def _src(workbook: str, sheet: str) -> str:
+    """How to name where a figure came from. A csv has one table: the file is it."""
+    wb = str(workbook or "")
+    if wb.lower().endswith(ONE_TABLE_SUFFIXES):
+        return f"the file {wb}"
+    return where_phrase(wb, sheet)
+
+
+def _skipped_note(result: dict) -> str:
+    used, matched = result.get("values_used"), result.get("rows_matched")
+    if isinstance(used, int) and isinstance(matched, int) and used < matched:
+        n = matched - used
+        return f" {n:,} blank or non-number {'cell was' if n == 1 else 'cells were'} left out."
+    return ""
+
+
+def _assumed_note(plan: Plan) -> str:
+    return (" I assumed: " + "; ".join(plan.assumed) + ".") if plan.assumed else ""
+
+
+_LABEL = {"AVG": "average", "SUM": "total", "COUNT": "count", "MAX": "maximum", "MIN": "minimum"}
+
+
+def _core_sig(c: Plan) -> tuple:
+    return (c.agg, c.metric, tuple(f.sql() for f in c.filters), c.group_by, c.all_numeric)
+
+
+def _siblings(plan: Plan, cands: list[Plan], frames: dict) -> list[tuple[Plan, bool]]:
+    """Every sheet that answers the same question. (plan, no_match) pairs.
+
+    Same aggregate, column and numeric filters. A sheet that lacks the asked-for words
+    (no North rows in Q3) is listed as having no matching rows; it must never fall
+    back to an unfiltered figure.
+    """
+    if plan.rows or plan.ambiguous or plan.refuse:
+        return [(plan, False)]
+    mine = {t.sql() for t in plan.text_filters}
+    out: list[tuple[Plan, bool]] = []
+    for c in cands:
+        if c.rows or c.ambiguous or _core_sig(c) != _core_sig(plan):
+            continue
+        theirs = {t.sql() for t in c.text_filters}
+        if theirs == mine:
+            out.append((c, False))
+        elif theirs < mine:
+            out.append((c, True))
+    if not any(c is plan for c, _ in out):
+        out.insert(0, (plan, False))
+    return out
+
+
+def _fingerprint(df: Any) -> tuple:
+    """Same columns and same rows (numbers compared as numbers) -> same fingerprint.
+
+    The same table uploaded as both orders.xlsx and orders.csv must be counted once
+    in a combined figure, not twice.
+    """
+    import pandas as pd
+
+    cols = []
+    for c in df.columns:
+        n = _num(df[c])
+        filled = df[c].notna() & (df[c].astype(str).str.strip() != "")
+        cols.append(n.where(filled & n.notna(), df[c].astype(str).str.strip()).astype(str))
+    norm = pd.concat(cols, axis=1) if cols else pd.DataFrame()
+    return (tuple(str(c) for c in df.columns), len(df), int(pd.util.hash_pandas_object(norm, index=False).sum()))
+
+
+def _fmt_rows(res: dict) -> str:
+    return f"{res['rows_matched']:,} of {res['rows_total']:,} rows"
+
+
+def _answer_multi(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> dict | None:
+    import pandas as pd
+
+    label = _LABEL[plan.agg]
+    where = _where_words(plan)
+    scope = f" where {where}" if where else ""
+    metric = plan.metric or "matching rows"
+    entries: list[dict] = []
+    for c, no_match in sibs:
+        df = frames.get((c.workbook, c.sheet))
+        if df is None:
+            continue
+        if no_match:
+            entries.append({"plan": c, "ok": False, "none": True, "rows_matched": 0,
+                            "rows_total": int(len(df)), "cols": tuple(map(str, df.columns)),
+                            "workbook": c.workbook, "sheet": c.sheet, "sql": c.sql()})
+            continue
+        res = run_plan(c, df)
+        if res is None:
+            continue
+        res = dict(res)
+        res["plan"], res["cols"] = c, tuple(map(str, df.columns))
+        res["fp"] = _fingerprint(df)
+        res.setdefault("workbook", c.workbook)
+        res.setdefault("sheet", c.sheet)
+        entries.append(res)
+    if not entries:
+        return None
+    lines = []
+    for e in entries:
+        who = f"{e['sheet']} ({e['workbook']})"
+        if e.get("ok"):
+            lines.append(f"- {who}: {_round(e['value'])} ({_fmt_rows(e)}){_skipped_note(e)}")
+        elif e.get("none"):
+            lines.append(f"- {who}: no rows match ({e['rows_total']:,} rows in the sheet)")
+        else:
+            lines.append(f"- {who}: nothing to {label.lower()} ({e.get('reason')})")
+    oks = [e for e in entries if e.get("ok")]
+    combined = None
+    tail = ""
+    if len(oks) >= 2:
+        same_shape = len({e["cols"] for e in entries}) == 1
+        if same_shape:
+            uniq: dict = {}
+            for e in oks:
+                uniq.setdefault(e["fp"], e)
+            dups = len(oks) - len(uniq)
+            use = list(uniq.values())
+            if plan.agg in ("SUM", "COUNT"):
+                combined = sum(e["value"] for e in use)
+            elif plan.agg == "AVG":
+                n = sum(e["values_used"] for e in use)
+                combined = (sum(e["sum"] for e in use) / n) if n else None
+            elif plan.agg == "MAX":
+                combined = max(e["value"] for e in use)
+            else:
+                combined = min(e["value"] for e in use)
+            if combined is not None:
+                used = sum(e["rows_matched"] for e in use)
+                tot = sum(e["rows_total"] for e in use)
+                if len(use) == 1:
+                    lines.append(
+                        f"These {len(oks)} hold the same rows, so they are counted once: "
+                        f"{_round(combined)} ({used:,} of {tot:,} rows)."
+                    )
+                else:
+                    word = "Both sheets" if len(use) == 2 else f"All {len(use)} sheets"
+                    lines.append(f"{word} together: {_round(combined)} ({used:,} of {tot:,} rows).")
+                    if dups:
+                        lines.append(f"{dups} sheet{'s hold' if dups > 1 else ' holds'} the same rows as another and {'were' if dups > 1 else 'was'} counted once.")
+        else:
+            tail = (
+                "\nThese sheets have different columns, so I did not add them together. "
+                "Tell me which one you mean."
+            )
+    head = f"{label.capitalize()} of {metric}{scope}, on {len(entries)} sheets that fit the question:"
+    sql = "; ".join(e["sql"] for e in entries if e.get("sql"))
+    answer = head + "\n" + "\n".join(lines) + tail + _assumed_note(plan) + f"\n\nSQL: {sql}"
+    rows_matched = sum(e["rows_matched"] for e in oks)
+    rows_total = sum(e["rows_total"] for e in entries)
+    first = oks[0] if oks else entries[0]
+    return {
+        "answer": answer,
+        "value": round(combined if combined is not None else (oks[0]["value"] if len(oks) == 1 else None), 4)
+        if (combined is not None or len(oks) == 1) else None,
+        "sql": sql,
+        "sheet": ", ".join(e["sheet"] for e in entries),
+        "workbook": first["workbook"],
+        "rows_matched": rows_matched,
+        "rows_total": rows_total,
+        "abstained": False,
+        "operation": plan.agg,
+        "filter": where,
+        "assumed": plan.assumed,
+        "carry": {**_carry(plan), "sheet": ""},
+        "sheets": [
+            {"workbook": e["workbook"], "sheet": e["sheet"],
+             "value": round(e["value"], 4) if e.get("value") is not None else None, "rows_matched": e["rows_matched"],
+             "rows_total": e["rows_total"], "values_used": e.get("values_used"),
+             "sql": e.get("sql")}
+            for e in entries
+        ],
+        "linked": {"sheet": first["sheet"], "workbook": first["workbook"], "metric": plan.metric,
+                   "filters": [f.column for f in plan.filters] + [t.column for t in plan.text_filters],
+                   "all_numeric": False},
+    }
+
+
+def _answer_group(plan: Plan, sibs: list[tuple[Plan, bool]], frames: dict) -> dict | None:
+    """'Revenue by region', 'which region has the highest total revenue'."""
+    import pandas as pd
+
+    runs = []
+    for c, no_match in sibs:
+        df = frames.get((c.workbook, c.sheet))
+        if df is None or no_match:
+            continue
+        res = run_plan(c, df)
+        if res and res.get("ok"):
+            runs.append((c, df, res))
+    if not runs:
+        return None
+    works = [r["_work"] for _c, _d, r in runs]
+    big = pd.concat(works, ignore_index=True) if len(works) > 1 else works[0]
+    keys = _key(big[plan.group_by])
+    shown = big[plan.group_by].astype(str).str.strip()
+    first_label = dict(zip(keys[::-1], shown[::-1]))  # first-seen spelling wins
+    if plan.agg == "COUNT":
+        if plan.metric:
+            c = big[plan.metric]
+            vals = (c.notna() & (c.astype(str).str.strip() != "")).astype(float)
+        else:
+            vals = pd.Series(1.0, index=big.index)
+        grouped = vals.groupby(keys, sort=False).sum()
+    else:
+        vals = _num(big[plan.metric])
+        g = vals.groupby(keys, sort=False)
+        grouped = {"SUM": g.sum, "AVG": g.mean, "MAX": g.max, "MIN": g.min}[plan.agg](min_count=1) \
+            if plan.agg == "SUM" else {"AVG": g.mean, "MAX": g.max, "MIN": g.min}[plan.agg]()
+    grouped = grouped.dropna()
+    rows_total = sum(int(len(d)) for _c, d, _r in runs)
+    rows_used = int(len(big))
+    sheets = [{"workbook": c.workbook, "sheet": c.sheet, "rows_matched": r["rows_matched"],
+               "rows_total": r["rows_total"]} for c, _d, r in runs]
+    where = _where_words(plan)
+    scope = f" where {where}" if where else ""
+    label = _LABEL[plan.agg]
+    gname = plan.group_by
+    metric = plan.metric or "rows"
+    if grouped.empty:
+        return {
+            "answer": f"No {gname} group has a number in {metric}{scope}, so there is nothing to {label.lower()}.",
+            "abstained": True, "sql": plan.sql(), "sheet": plan.sheet, "workbook": plan.workbook,
+            "sheets": sheets,
+        }
+    order = grouped.sort_values(ascending=(plan.rank == "asc"), kind="stable")
+    # A group with no name in its cell is a group all the same: "(blank)", not an empty label.
+    table = [(first_label.get(k, k) or "(blank)", float(v)) for k, v in order.items()]
+    if not plan.rank:
+        table.sort(key=lambda kv: kv[0].casefold())
+    shown_rows = "; ".join(f"{k}: {_round(v)}" for k, v in table[:25])
+    more = f"; and {len(table) - 25} more" if len(table) > 25 else ""
+    src = (
+        _src(plan.workbook, plan.sheet) if len(runs) == 1
+        else "these sheets: " + ", ".join(f"{c.sheet} ({c.workbook})" for c, _d, _r in runs)
+    )
+    if plan.rank:
+        best = table[0][1]
+        tied = [k for k, v in table if v == best]
+        word = "highest" if plan.rank == "desc" else "lowest"
+        if len(tied) > 1:
+            lead = f"{' and '.join(tied)} are tied for the {word} {label} of {metric}: {_round(best)}."
+        else:
+            lead = f"{tied[0]} has the {word} {label} of {metric}: {_round(best)}."
+        answer = f"{lead}{(' (' + where + ')') if where else ''}\n\nEvery {gname} ({label} of {metric}): {shown_rows}{more}."
+        value = best
+    else:
+        answer = f"{label.capitalize()} of {metric} by {gname}{scope}: {shown_rows}{more}."
+        value = None
+    answer += (
+        f"\n\nUsed {rows_used:,} of {rows_total:,} rows on {src}.{_assumed_note(plan)}"
+        f"\n\nSQL: " + "; ".join(c.sql() for c, _d, _r in runs)
+    )
+    return {
+        "answer": answer,
+        "value": value,
+        "sql": "; ".join(c.sql() for c, _d, _r in runs),
+        "sheet": ", ".join(c.sheet for c, _d, _r in runs),
+        "workbook": plan.workbook,
+        "rows_matched": rows_used,
+        "rows_total": rows_total,
+        "abstained": False,
+        "operation": plan.agg,
+        "filter": where,
+        "group_by": gname,
+        "groups": [{"group": k, "value": round(v, 4)} for k, v in table[:50]],
+        # What a follow-up ("and for South?") repeats: the group, the measure and, for a
+        # ranking, its direction (top one, highest or lowest).
+        "carry": {**_carry(plan), "group_by": gname, **({"rank": plan.rank} if plan.rank else {})},
+        "assumed": plan.assumed,
+        "sheets": sheets,
+        "linked": {"sheet": plan.sheet, "workbook": plan.workbook, "metric": plan.metric,
+                   "filters": [f.column for f in plan.filters] + [t.column for t in plan.text_filters],
+                   "all_numeric": False},
+    }
+
+
+def answer_filter_aggregate(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
+    """Locate the workbook/sheet(s), run the SELECT over every row, report with provenance.
+
+    When more than one sheet or file can answer, each is computed and named; sheets with
+    the same columns are also added up ("Q1: 1200, Q2: 1300, both sheets: 2500").
+    """
+    cands: list[Plan] = []
+    plan = plan_query(question, frames, cands)
+    if plan is None and (_missing_group_column(question, frames) or _ignored_time_by(question, frames)):
+        # "revenue by country in Q1": no aggregate word and a "by" that is no column. Plan
+        # the question without that tail (a plain total), and say what was left out below.
+        alt = _BY_TAIL.sub(" ", question)
+        if not any(re.search(p, alt.lower()) for p, _ in _AGGS):
+            alt = "total " + alt
+        cands = []
+        plan = plan_query(alt, frames, cands)
+    if plan is None:
+        return None
+    sibs = _siblings(plan, cands, frames)
+    hit = None
+    if plan.group_by and not plan.ambiguous:
+        hit = _answer_group(plan, sibs, frames)
+    if not hit and len(sibs) > 1 and not plan.all_numeric and not plan.group_by:
+        hit = _answer_multi(plan, sibs, frames)
+    hit = hit or _answer_single(plan, frames)
+    ghost = _missing_group_column(question, frames) if hit and not hit.get("group_by") else ""
+    if ghost and hit.get("answer") and not hit.get("abstained"):
+        # "by Colour" on a table with no Colour column: said, not dropped.
+        hit["answer"] = f"There is no {ghost} column, so I could not group by it. Here is the answer without it:\n\n{hit['answer']}"
+        hit["no_group_column"] = ghost
+    elif hit and hit.get("answer") and not hit.get("abstained"):
+        # "by next week", "by Monday", "by 2024": a time this table has no column for. Said, not dropped.
+        gone = _ignored_time_by(question, frames)
+        if gone:
+            hit["answer"] = f"I did not use \"{gone}\": I could not apply it to this table. Here is the answer without it:\n\n{hit['answer']}"
+            hit["ignored_phrase"] = gone
+    # "North and South" where one of them cannot take the question (no such column):
+    # say which was left out instead of answering as if it had not been asked for.
+    answered = {c.sheet for c, _nm in sibs} | {str(hit.get("sheet") or "")}
+    left = [n for n in plan.named_sheets if n not in answered]
+    if hit and left and hit.get("answer") and not hit.get("abstained"):
+        note = f"I left out {', '.join(left)}: {'it does' if len(left) == 1 else 'they do'} not have the columns this needs."
+        head, sep, tail = str(hit["answer"]).partition("\n\nSQL:")
+        hit["answer"] = f"{head}\n\n{note}{sep}{tail}"
+    return hit
+
+
+_BY_TAIL = re.compile(r"(?<![\w])by\s+(?:the\s+)?(?:[A-Za-z][A-Za-z_-]*|(?:19|20)\d\d)(?:\s+(?:week|month|quarter|year|weekend))?\b", re.I)
+_TIME_BY = re.compile(
+    r"(?<![\w])by\s+((?:(?:the\s+)?end\s+of\s+\w+)|(?:next|last|this|now)(?:\s+(?:week|month|quarter|year|weekend|day))?"
+    r"|today|tomorrow|yesterday|midnight|noon|(?:mon|tues?|wednes|thurs?|fri|satur|sun)day"
+    r"|january|february|march|april|may|june|july|august|september|october|november|december"
+    r"|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec|(?:19|20)\d\d)\b", re.I)
+
+
+def _ignored_time_by(question: str, frames: dict[tuple[str, str], Any]) -> str:
+    """"by next week" / "by Monday" / "by 2024" when no sheet, column or cell holds that word."""
+    for m in _TIME_BY.finditer(question or ""):
+        phrase = m.group(1)
+        words = {w.casefold() for w in re.findall(r"[^\W_]+", phrase)} - {"the", "of", "end"}
+        for (_wb, sheet), df in frames.items():
+            if df is None or df.empty:
+                continue
+            if _norm(sheet) in {_norm(w) for w in words} or any(_norm(str(c)) in {_norm(w) for w in words} for c in df.columns):
+                break
+            if any(df[c].astype(str).str.strip().str.casefold().isin(words).any() for c in df.columns):
+                break
+        else:
+            return "by " + phrase
+    return ""
+
+
+_BY_WORD = re.compile(r"(?<![\w])(?:(\w+)\s+)?by\s+(?:the\s+)?([A-Za-z][A-Za-z_-]*)", re.I)
+_NOT_A_GROUP_BY = {
+    "multiplied", "divided", "increased", "decreased", "increase", "decrease", "grew", "grow", "rose", "fell",
+    "up", "down", "followed", "close", "closer", "side", "step", "far", "growing", "rising", "falling",
+}
+
+
+def _missing_group_column(question: str, frames: dict[tuple[str, str], Any]) -> str:
+    """The word after "by" in "total Amount by Colour" when no table has such a column.
+
+    Empty when there is no such phrase, when the word is a column, a sheet or a cell value
+    (so "sold by Alice" and "by Region" are untouched), or when "by" is arithmetic.
+    """
+    for m in _BY_WORD.finditer(question or ""):
+        lead, word = (m.group(1) or "").lower(), m.group(2)
+        if (question[m.end(2): m.end(2) + 1].isdigit()  # "by Q2", "by H1": a period, not a column
+                or lead in _NOT_A_GROUP_BY or word.casefold() in _STOP_BY_WORDS):
+            continue
+        key = _norm(word)
+        found = False
+        for (_wb, sheet), df in frames.items():
+            if df is None or df.empty:
+                continue
+            named = key == _norm(sheet) or any(
+                key == _norm(str(c))
+                or any(a < m.end(2) and m.start(2) < b for a, b in _mentions(question, str(c)))
+                for c in df.columns
+            )
+            is_value = not named and any(
+                not str(df[c].dtype).startswith(("int", "float")) and df[c].astype(str).str.strip().str.casefold().eq(word.casefold()).any()
+                for c in df.columns
+            )
+            if named or is_value:
+                found = True
+                break
+        if not found:
+            return word
+    return ""
+
+
+_STOP_BY_WORDS = {"the", "a", "an", "each", "all", "every", "this", "that", "next", "last", "now", "then", "default",
+                  # "by end of March", "by Friday", "by December": a time, not a column to group on
+                  "end", "today", "tomorrow", "yesterday", "midnight", "noon", "monday", "tuesday", "wednesday",
+                  "thursday", "friday", "saturday", "sunday", "january", "february", "march", "april", "may", "june",
+                  "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr",
+                  "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
+
+
+def explain_no_plan(question: str, frames: dict[tuple[str, str], Any]) -> dict | None:
+    """The ask wants a figure from a table we hold, and no plan could produce it.
+
+    Better a plain "I did not calculate this" than handing the model a slice of the
+    rows to add up. Fires only when the question uses an aggregate word AND names a
+    column of a loaded table, so ordinary text questions are left to retrieval.
+    """
+    q = question or ""
+    low = q.lower()
+    if not frames or not any(re.search(p, low) for p, _ in _AGGS):
+        return None
+    cols: set[str] = set()
+    for _k, df in frames.items():
+        if df is not None and not df.empty:
+            cols.update(str(c) for c in df.columns)
+    if not _resolve_mentions(q, cols):
+        return None
+    # The table the question is about: the one whose columns it names most. Only
+    # among equals does the biggest one stand in. (It used to be the biggest table in
+    # the space, so a question about a Word table was answered with a spreadsheet's name.)
+    def _named(kv) -> tuple[int, int]:
+        d = kv[1]
+        if d is None or d.empty:
+            return (0, 0)
+        return (len({c for _a, _b, c in _resolve_mentions(q, {str(c) for c in d.columns})}), len(d))
+
+    (wb, sheet), df = max(frames.items(), key=_named)
+    names = ", ".join(str(c) for c in list(df.columns)[:12])
+    return {
+        "answer": (
+            f"I could not work out which figure to calculate from {_src(wb, sheet)}, so I did not "
+            f"calculate one. I will not add up a few rows and call it a total. "
+            f"It has {len(df):,} rows and these columns: {names}. "
+            "Tell me the column, and any filter such as Region is North, and I will use all the rows."
+        ),
+        "sql": None,
+        "sheet": sheet,
+        "workbook": wb,
+        "rows_total": int(len(df)),
+        "abstained": True,
+        "linked": {"sheet": sheet, "workbook": wb, "metric": "", "filters": [], "all_numeric": False},
+    }
+
+
+# --------------------------------------------------------------------------------------
+# Follow-ups: "and for South?", "what about March?", "and the average?"
+# --------------------------------------------------------------------------------------
+
+_FOLLOW_START = re.compile(r"^\W*(?:and|also|what about|how about|now|then|same|but|ok(?:ay)?)\b", re.I)
+_FOLLOW_REF = re.compile(r"\b(?:there|that|those|same|it|them)\b", re.I)
+_OP_WORD = {"SUM": "total", "AVG": "average", "COUNT": "how many", "MAX": "maximum", "MIN": "minimum"}
+
+
+def reads_as_followup(question: str, *, strict: bool = False) -> bool:
+    """A short question that may lean on the last one: the test carry_followup starts with.
+
+    `strict` is for saying a question WAS a follow-up that could not be carried: then a
+    start word, a pronoun or a very short line is needed ("how many pallets in Penang"
+    is five words and a whole question, not a follow-up).
+    """
+    q = (question or "").strip()
+    words = q.split()
+    if not q or len(words) > 14:
+        return False
+    return bool(_FOLLOW_START.match(q) or _FOLLOW_REF.search(q) or len(words) <= (3 if strict else 6))
+
+
+_FOLLOW_FILLER = {"by", "per", "for", "each", "and", "also", "what", "about", "how", "now", "then", "same", "but",
+                  "ok", "okay", "the", "in", "on", "with", "sheet", "tab", "is", "of", "it", "than"}
+
+
+def _column_followup_ok(q: str, mentions: list[tuple[int, int, str]]) -> bool:
+    """Is the question only one column and filler ("by region", "units?", "and by product")?"""
+    if len(mentions) != 1:
+        return False
+    a, b, _c = mentions[0]
+    rest = re.findall(r"[^\W_]+", (q[:a] + " " + q[b:]).lower())
+    return all(w in _FOLLOW_FILLER or re.fullmatch(r"[a-z]{0,2}\d+", w) for w in rest)
+
+
+def carry_followup(question: str, prev: dict | None, frames: dict[tuple[str, str], Any]) -> str | None:
+    """A short follow-up, made into a full question from the previous calculation.
+
+    `prev` is the "carry" saved with the previous answer: its aggregate, column, filters
+    and sheet. The follow-up can change the aggregate ("and the average?"), the sheet
+    ("and for the South sheet?") or a value ("what about March?"); everything it does
+    not change is kept. Returns None when the question is not such a follow-up (it names
+    a column itself, is long, or there is nothing to carry), so it is asked as typed.
+    """
+    if not isinstance(prev, dict) or not prev.get("agg") or not frames:
+        return None
+    q = (question or "").strip()
+    if not reads_as_followup(q):
+        return None
+    all_cols: set[str] = set()
+    for df in frames.values():
+        if df is not None and not df.empty:
+            all_cols.update(str(c) for c in df.columns)
+    mentions = _resolve_mentions(q, all_cols)
+    if mentions and not _column_followup_ok(q, mentions):
+        return None  # names a column: it is a question of its own
+    agg = _agg_anywhere(q)
+    # A rank word in the follow-up decides the direction of a carried ranking ("and the
+    # lowest?" after "which region has the highest ..."); it is not also MIN or MAX.
+    rank = str(prev.get("rank") or "") if prev.get("group_by") else ""
+    new_rank = "asc" if _RANK_ASC.search(q) else ("desc" if _RANK_DESC.search(q) else "")
+    if rank in ("desc", "asc") and new_rank:
+        rank, agg = new_rank, None
+    else:
+        new_rank = ""
+    old_sheet = str(prev.get("sheet") or "")
+    sheet = ""
+    sheet_wb = ""
+    sheet_spans: list[tuple[int, int, str]] = []
+    for (_wb, sn), _df in frames.items():
+        for a, b in _mentions(q, sn, bounded=True):
+            if str(_wb).lower().endswith(ONE_TABLE_SUFFIXES) and not _in_sheet_selector_position(q, a, b):
+                continue
+            if sn != old_sheet and not sheet:
+                sheet, sheet_wb = sn, str(_wb)
+            sheet_spans.append((a, b, ""))
+            break
+    new_text: dict[tuple[str, bool], TextFilter] = {}
+    for key, df in frames.items():
+        if df is None or df.empty:
+            continue
+        target = sheet or old_sheet
+        if target and key[1] != target:
+            continue
+        found, _amb = _find_text_filters(q, df, sheet_spans, set())
+        for t in found:
+            new_text.setdefault((t.column, t.negate), t)
+    # A new group-by or metric column ("by region", "units?"): found among the columns of the
+    # sheet the answer will come from.
+    new_group, new_metric = "", ""
+    if mentions:
+        want_wb = sheet_wb if sheet else str(prev.get("workbook") or "")
+        tgt_df = next(
+            (df for (w_, n_), df in frames.items()
+             if n_ == (sheet or old_sheet) and (not want_wb or str(w_) == want_wb)
+             and df is not None and not df.empty),
+            None,
+        )
+        col = mentions[0][2]
+        if tgt_df is None or col not in tgt_df.columns:
+            return None
+        by_lead = re.search(r"\b(?:by|per|each)\s+(?:the\s+)?$", q[:mentions[0][0]], re.I)
+        if by_lead:
+            new_group = col
+        elif _numeric_ratio(tgt_df[col]) >= 0.6:
+            new_metric = col
+        else:
+            return None  # a bare text column: grouping was not asked for, so nothing is guessed
+    # "thanks" or "what about 5?" carry nothing: a new aggregate, sheet or value must be there.
+    if not (agg or sheet or new_text or new_rank or new_group or new_metric):
+        return None
+    # A question with its own count phrase and a sheet ("how many rows in Q1") is a whole
+    # question, not a follow-up: it must read the same wherever it is asked.
+    if agg == "COUNT" and not new_text and not _FOLLOW_START.match(q) and not _FOLLOW_REF.search(
+        re.sub(r"\b(?:are|is)\s+there\b", " ", q, flags=re.I)
+    ) and (
+        sheet_spans or re.search(r"\brows?\b", q, re.I)
+    ):
+        return None
+    # An aggregate word alone is not a follow-up: "how many pallets in Penang" is a whole
+    # question. With no start word or pronoun it must be about as short as "the average?".
+    if not (sheet or new_text) and not (_FOLLOW_START.match(q) or _FOLLOW_REF.search(q)) and len(q.split()) > 3:
+        return None
+    target_sheet = sheet or old_sheet
+    # Values that only repeated the old sheet's name ("Region is North" on North) go with it.
+    drop = {old_sheet.casefold()} if sheet and sheet != old_sheet else set()
+    over = {c for c, _n in new_text}
+    parts: list[str] = []
+    for t in prev.get("text") or []:
+        vals = [v for v in t.get("values") or [] if str(v).casefold() not in drop]
+        if not vals or t.get("column") in over:
+            continue
+        parts.append(TextFilter(t["column"], vals, bool(t.get("negate"))).words())
+    for t in new_text.values():
+        parts.append(t.words())
+    for f in prev.get("num") or []:
+        parts.append(f'{f["column"]} {f["op"]} {_fmt_num(float(f["value"]))}')
+    for f in prev.get("dates") or []:
+        parts.append(f'{f["column"]} {_DATE_OP_WORD.get(f["op"], "on")} {f["iso"]}')
+    op = agg or prev["agg"]
+    metric = new_metric or str(prev.get("metric") or "")
+    group_by = new_group or str(prev.get("group_by") or "")
+    if op == "COUNT" and agg == "COUNT" and re.search(r"\brows?\b", q, re.I):
+        metric = ""  # a count of rows is COUNT(*), not a count of one column's filled cells
+    # Moving to a sheet of another file: the carried column and filters must exist there,
+    # or the old calculation would be answered under the new sheet's name.
+    if sheet and sheet != old_sheet:
+        tgt = next((df for (w_, n_), df in frames.items() if n_ == sheet and str(w_) == sheet_wb), None)
+        have = {str(c) for c in tgt.columns} if tgt is not None else set()
+        need = ([metric] if metric else []) + ([group_by] if group_by else []) + [t["column"] for t in prev.get("text") or [] if t["column"] not in over
+                                              and any(str(v).casefold() not in drop for v in t.get("values") or [])]
+        need += [f["column"] for f in prev.get("num") or []] + [f["column"] for f in prev.get("dates") or []]
+        if any(c not in have for c in need):
+            return None
+    wb_name = sheet_wb if sheet and sheet != old_sheet else str(prev.get("workbook") or "")
+    out = f"{_OP_WORD.get(op, 'total')} {metric}".strip()
+    if op == "COUNT" and not metric:
+        out = "how many rows"
+    if group_by and rank in ("desc", "asc"):
+        word = "highest" if rank == "desc" else "lowest"
+        out = f"which {group_by} has the {word} {_OP_WORD.get(op, 'total')} {metric}".strip()
+        if op == "COUNT" and not metric:
+            out = f"which {group_by} has the {word} number of rows"
+    elif group_by:
+        out += f" by {group_by}"
+    if target_sheet and not wb_name.lower().endswith(ONE_TABLE_SUFFIXES):
+        out += f" in the {target_sheet} sheet"
+    if parts:
+        out += " where " + " and ".join(parts)
+    return out
