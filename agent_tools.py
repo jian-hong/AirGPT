@@ -976,7 +976,7 @@ def tool_schemas(names: list[str] | None = None) -> list[dict]:
         "desktop_scroll": {"description": "Scroll the focused window (needs confirmed=true)", "params": ["dy", "confirmed"]},
         "desktop_drag": {"description": "Drag cursor from x1,y1 to x2,y2 (needs confirmed=true)", "params": ["x1", "y1", "x2", "y2", "confirmed"]},
         "browser_status": {"description": "Report whether host browser control is enabled. Does not launch a driver.", "params": []},
-        "browser_navigate": {"description": "Open an http(s) URL in the host browser when AIRGPT_BROWSER_MCP=1. submit=true needs confirmed=true.", "params": ["url", "submit", "confirmed"]},
+        "browser_navigate": {"description": "Open an http(s) URL in the host browser when AIRGPT_BROWSER_MCP=1. A new origin, including the first page, and submit=true need confirmed=true. Same-origin navigation does not.", "params": ["url", "submit", "confirmed"]},
         "browser_snapshot": {"description": "Read the accessibility tree and element refs. Host-only. No cookies.", "params": []},
         "browser_click": {"description": "Click an element ref from browser_snapshot (needs confirmed=true)", "params": ["ref", "confirmed"]},
         "browser_type": {"description": "Fill an element ref (needs confirmed=true). Typed text is not written to the audit log.", "params": ["ref", "text", "confirmed"]},

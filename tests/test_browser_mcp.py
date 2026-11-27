@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def live(monkeypatch):
     browser_mcp.clear_caller()
     browser_mcp.close()
     httpd, base = _serve()
-    probe = browser_mcp.navigate(base + "/index.html")
+    probe = browser_mcp.navigate(base + "/index.html", confirmed=True)
     if probe.get("error") in ("driver_missing", "driver_failed"):
         httpd.shutdown()
         browser_mcp.close()
@@ -177,6 +178,55 @@ def test_submit_navigation_requires_confirm(monkeypatch):
     assert out["error"] == "confirm_required"
     assert out["performed"] is False
     assert browser_mcp.launch_count() == before
+
+
+def test_first_navigation_requires_confirm(monkeypatch):
+    monkeypatch.setenv("AIRGPT_BROWSER_MCP", "1")
+    browser_mcp.close()
+    before = browser_mcp.launch_count()
+    out = browser_mcp.navigate("http://127.0.0.1:9/first", confirmed=False)
+    assert out["error"] == "confirm_required"
+    assert out["performed"] is False
+    assert browser_mcp.launch_count() == before
+    assert browser_mcp.session_open() is False
+
+
+def test_close_stops_the_browser_on_the_owner_thread(monkeypatch):
+    monkeypatch.setenv("AIRGPT_BROWSER_MCP", "1")
+    browser_mcp.close()
+    closed = []
+
+    class Ctx:
+        def close(self):
+            closed.append(("context", threading.get_ident()))
+
+    class Browser:
+        def close(self):
+            closed.append(("browser", threading.get_ident()))
+
+    class Pw:
+        def stop(self):
+            closed.append(("pw", threading.get_ident()))
+
+    def plant():
+        browser_mcp._session = browser_mcp._Session(
+            pw=Pw(), browser=Browser(), context=Ctx(), page=object(), refs={}
+        )
+        return {"ok": True, "owner": threading.get_ident()}
+
+    try:
+        planted = browser_mcp._on_owner(plant)
+        assert planted["ok"] is True
+        assert planted["owner"] != threading.get_ident()
+        assert browser_mcp.session_open() is True
+        out = browser_mcp.close()
+        assert out["ok"] is True
+        assert out["launched"] is False
+        assert browser_mcp.session_open() is False
+        assert [name for name, _ident in closed] == ["context", "browser", "pw"]
+        assert {ident for _name, ident in closed} == {planted["owner"]}
+    finally:
+        browser_mcp.close()
 
 
 def test_remote_caller_cannot_launch(monkeypatch):
@@ -486,6 +536,66 @@ def test_ten_local_tasks(live):
     Path("/tmp/browser_tasks.json").write_text(json.dumps({"passed": passed, "results": results}, indent=2), encoding="utf-8")
     print("BROWSER_TASKS " + json.dumps(results))
     assert passed >= 8, results
+
+
+def _pid_alive(pid):
+    if not pid or os.name == "nt":
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def test_cross_origin_navigate_needs_confirm_and_browser_closes(live):
+    httpd2 = None
+    try:
+        same = browser_mcp.navigate(live + "/details.html")
+        assert same.get("ok") is True
+        assert "Detail Panel" in (same.get("text") or "")
+        owner = browser_mcp.owner_thread_ident()
+        assert owner not in (None, threading.get_ident())
+        box = {}
+
+        def worker():
+            box["out"] = browser_mcp.snapshot()
+            box["ident"] = threading.get_ident()
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        thread.join(timeout=20)
+        assert box["out"].get("ok") is True
+        assert box["ident"] != owner
+        httpd2, other = _serve()
+        refused = browser_mcp.navigate(other + "/index.html", confirmed=False)
+        assert refused["error"] == "confirm_required"
+        assert refused["performed"] is False
+        still = browser_mcp.snapshot()
+        assert "Detail Panel" in (still.get("text") or "")
+        opened = browser_mcp.navigate(other + "/index.html", confirmed=True)
+        assert opened.get("ok") is True
+        assert "Fixture Home" in (opened.get("text") or "")
+        assert browser_mcp.bind_caller({"Host": "evil.example"}, "198.51.100.30") is False
+        blocked = browser_mcp.navigate(live + "/table.html", confirmed=True)
+        assert blocked["error"] == "host_only"
+        assert blocked["performed"] is False
+        browser_mcp.clear_caller()
+        pids = browser_mcp.browser_pids()
+        assert pids
+        closed = browser_mcp.close()
+        assert closed["ok"] is True
+        assert browser_mcp.session_open() is False
+        deadline = time.time() + 5
+        while time.time() < deadline and any(_pid_alive(pid) for pid in pids):
+            time.sleep(0.05)
+        assert not any(_pid_alive(pid) for pid in pids)
+    finally:
+        browser_mcp.clear_caller()
+        if httpd2 is not None:
+            httpd2.shutdown()
 
 
 def test_unconfirmed_does_not_change_the_page(live):

@@ -2,6 +2,15 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- BROWSER-01: confirm a new origin, close the browser on one thread (#99)
+
+- The first page, and any later page on a different scheme, host, or port,
+  needs `confirmed=true` before `page.goto`. A move inside the origin already
+  approved does not. Click, type, select, and submit stay confirm-gated.
+- Sync Playwright now lives on one owner thread. Agent runs only enqueue
+  work. That thread closes the browser when the session stops, when the
+  owner loop errors, and at process exit.
+
 ## 2026-11-27 -- BROWSER-01 follow-up: block data URLs (#99)
 
 - In-page requests may no longer use `data:` URLs. `browser_navigate` already

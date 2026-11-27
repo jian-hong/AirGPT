@@ -2,29 +2,41 @@
 
 Off unless AIRGPT_BROWSER_MCP=1. Element refs come from the accessibility
 tree. Typing, clicking, choosing a dropdown option, and submit do nothing
-unless confirmed is the boolean True. A caller bound with bind_caller who
-fails clipdrop._is_host_request gets host_only and no driver is started.
+unless confirmed is the boolean True. Opening a new origin (a different
+scheme, host, or port, including the first page) needs that same confirm.
+Same-origin navigation does not: the human already approved this origin.
+A caller bound with bind_caller who fails clipdrop._is_host_request gets
+host_only and no driver is started.
 
-Playwright is imported only when a host action actually needs a session.
-The package is optional: a missing driver returns driver_missing.
+Sync Playwright is tied to the thread that started it. One owner thread
+holds the browser. Other threads, including agent runs, only enqueue work.
+The owner closes the browser when the session stops, on error, and at
+process exit. Playwright is imported only when a host action needs a
+session. A missing driver returns driver_missing.
 """
 from __future__ import annotations
 
 import atexit
 import contextvars
 import os
+import queue
 import re
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 _FLAG = "AIRGPT_BROWSER_MCP"
 _caller: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
     "airgpt_browser_caller_host", default=None
 )
-_lock = threading.RLock()
 _launches = 0
+_state_lock = threading.Lock()
+_owner_lock = threading.RLock()
+_owner_thread: threading.Thread | None = None
+_owner_queue: queue.Queue | None = None
+_current_origin: tuple[str, str, int] | None = None
+_pids: list[int] = []
 
 _SECRET_RE = re.compile(
     r"(?i)(bearer\s+\S+|sk-[a-z0-9]{8,}|api[_-]?key[=:\s]+\S+"
@@ -197,9 +209,10 @@ def _url_block_reason(url: str) -> str | None:
     return None
 
 
-def _precheck(*, mutating: bool, confirmed: bool) -> dict | None:
+def _caller_gate(*, mutating: bool, confirmed: bool) -> dict | None:
+    """Host and confirm checks on the calling thread. Context vars do not cross threads."""
     if not enabled():
-        _shutdown()
+        _stop_owner()
         return {"ok": False, "error": "browser_mcp_disabled", "performed": False}
     if not caller_is_host():
         return {"ok": False, "error": "host_only", "performed": False}
@@ -208,9 +221,38 @@ def _precheck(*, mutating: bool, confirmed: bool) -> dict | None:
             "ok": False,
             "error": "confirm_required",
             "performed": False,
-            "hint": "Typing, clicking, and submit need confirmed=true after the human approves.",
+            "hint": "Typing, clicking, submit, and a new origin need confirmed=true after the human approves.",
         }
     return None
+
+
+def _origin_of(url: str) -> tuple[str, str, int] | None:
+    try:
+        parsed = urlparse(url or "")
+    except Exception:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+    return (parsed.scheme, parsed.hostname.lower(), int(port))
+
+
+def _is_new_origin(url: str) -> bool:
+    """True when url leaves the origin already confirmed, or there is no page yet."""
+    target = _origin_of(url)
+    with _state_lock:
+        current = _current_origin
+    if target is None or current is None:
+        return True
+    return target != current
+
+
+def _remember_origin(url: str) -> None:
+    global _current_origin
+    with _state_lock:
+        _current_origin = _origin_of(url)
 
 
 def _start_playwright():
@@ -308,14 +350,55 @@ def _ensure_session() -> tuple[_Session | None, dict | None]:
             pass
         return None, {"ok": False, "error": "driver_failed", "performed": False, "detail": _safe_detail(exc)}
     _launches += 1
-    _session = _Session(pw=pw, browser=browser, context=context, page=page, refs={})
-    return _session, None
+    created = _Session(pw=pw, browser=browser, context=context, page=page, refs={})
+    with _state_lock:
+        _session = created
+    _publish_pids(_driver_pids(browser))
+    return created, None
+
+
+def _driver_pids(browser) -> list[int]:
+    """Playwright driver pid plus its child browser processes, when we can see them."""
+    pids: list[int] = []
+    try:
+        proc = browser._impl_obj._connection._transport._proc
+        driver = int(getattr(proc, "pid", 0) or 0)
+    except Exception:
+        driver = 0
+    if not driver:
+        return pids
+    pids.append(driver)
+    if os.name == "nt":
+        return pids
+    try:
+        for name in os.listdir("/proc"):
+            if not name.isdigit() or int(name) == driver:
+                continue
+            try:
+                stat = open(f"/proc/{name}/stat", encoding="utf-8", errors="replace").read().split()
+                if int(stat[3]) == driver:
+                    pids.append(int(name))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return pids
+
+
+def _publish_pids(pids: list[int]) -> None:
+    global _pids
+    with _state_lock:
+        _pids = list(pids)
 
 
 def _shutdown() -> None:
-    global _session
-    sess = _session
-    _session = None
+    """Close Playwright. Only the owner thread may call this."""
+    global _session, _current_origin, _pids
+    with _state_lock:
+        sess = _session
+        _session = None
+        _current_origin = None
+        _pids = []
     if sess is None:
         return
     for closer in (
@@ -331,15 +414,105 @@ def _shutdown() -> None:
             pass
 
 
+def _owner_main() -> None:
+    try:
+        while True:
+            job = _owner_queue.get() if _owner_queue is not None else None
+            if job is None:
+                break
+            fn, ev, box = job
+            try:
+                box["result"] = fn()
+            except BaseException as exc:
+                box["exc"] = exc
+            finally:
+                ev.set()
+    finally:
+        try:
+            _shutdown()
+        except Exception:
+            pass
+
+
+def _ensure_owner() -> threading.Thread:
+    global _owner_thread, _owner_queue
+    with _owner_lock:
+        if _owner_thread is not None and _owner_thread.is_alive():
+            return _owner_thread
+        _owner_queue = queue.Queue()
+        thread = threading.Thread(target=_owner_main, name="airgpt-browser-owner", daemon=True)
+        _owner_thread = thread
+        thread.start()
+        return thread
+
+
+def _on_owner(fn: Callable[[], dict], timeout: float = 45) -> dict:
+    """Run fn on the Playwright owner thread. The caller thread only waits."""
+    if _owner_thread is not None and threading.current_thread() is _owner_thread:
+        return fn()
+    ev = threading.Event()
+    box: dict[str, Any] = {}
+    with _owner_lock:
+        _ensure_owner()
+        assert _owner_queue is not None
+        _owner_queue.put((fn, ev, box))
+    if not ev.wait(timeout):
+        return {"ok": False, "error": "browser_timeout", "performed": False}
+    if "exc" in box:
+        raise box["exc"]
+    return box["result"]
+
+
+def _clear_idle_origin() -> None:
+    global _current_origin, _pids
+    with _state_lock:
+        _current_origin = None
+        _pids = []
+
+
+def _stop_owner() -> None:
+    """Ask the owner to close the browser, then wait until that thread is gone."""
+    global _owner_thread
+    with _owner_lock:
+        thread = _owner_thread
+        jobs = _owner_queue
+        if thread is None or not thread.is_alive():
+            _owner_thread = None
+            _clear_idle_origin()
+            return
+        if jobs is not None:
+            jobs.put(None)
+    thread.join(timeout=15)
+    with _owner_lock:
+        if _owner_thread is thread and not thread.is_alive():
+            _owner_thread = None
+
+
 def _shutdown_at_exit() -> None:
     try:
-        with _lock:
-            _shutdown()
+        _stop_owner()
     except Exception:
         pass
 
 
 atexit.register(_shutdown_at_exit)
+
+
+def session_open() -> bool:
+    with _state_lock:
+        return _session is not None
+
+
+def browser_pids() -> list[int]:
+    with _state_lock:
+        return list(_pids)
+
+
+def owner_thread_ident() -> int | None:
+    thread = _owner_thread
+    if thread is None or not thread.is_alive():
+        return None
+    return thread.ident
 
 
 def _public_node(node: dict, counter: list, seen: dict, refs: dict, truncated: dict, depth: int) -> dict | None:
@@ -428,6 +601,10 @@ def _snapshot_dict(sess: _Session) -> dict:
 
 
 def _done(sess: _Session) -> dict:
+    try:
+        _remember_origin(sess.page.url)
+    except Exception:
+        pass
     snap = _snapshot_dict(sess)
     snap["performed"] = True
     return snap
@@ -454,14 +631,7 @@ def _perform(sess: _Session, kind: str, info: dict, *, text: str = "", option: s
         raise LookupError("unknown_kind")
 
 
-def _act(kind: str, ref: str, *, confirmed: bool, text: str = "", option: str = "") -> dict:
-    denied = _precheck(mutating=True, confirmed=confirmed)
-    if denied:
-        return denied
-    if kind == "type" and not text:
-        return {"ok": False, "error": "empty_text", "performed": False}
-    if kind == "select" and not option:
-        return {"ok": False, "error": "empty_option", "performed": False}
+def _act_impl(kind: str, ref: str, *, text: str = "", option: str = "") -> dict:
     sess, err = _ensure_session()
     if err:
         return err
@@ -477,75 +647,103 @@ def _act(kind: str, ref: str, *, confirmed: bool, text: str = "", option: str = 
     return _done(sess)
 
 
+def _navigate_impl(url: str) -> dict:
+    sess, err = _ensure_session()
+    if err:
+        return err
+    try:
+        sess.page.goto(url, wait_until="domcontentloaded")
+    except Exception as exc:
+        return {"ok": False, "error": "navigate_failed", "performed": False, "detail": _safe_detail(exc)}
+    return _done(sess)
+
+
+def _snapshot_impl() -> dict:
+    sess, err = _ensure_session()
+    if err:
+        return err
+    snap = _snapshot_dict(sess)
+    snap["performed"] = False
+    return snap
+
+
 def status() -> dict:
-    with _lock:
-        if not enabled():
-            _shutdown()
-            return {"ok": True, "enabled": False, "launched": False, "performed": False}
-        if not caller_is_host():
-            return {"ok": False, "error": "host_only", "performed": False}
-        return {
-            "ok": True,
-            "enabled": True,
-            "launched": _session is not None,
-            "performed": False,
-        }
+    if not enabled():
+        _stop_owner()
+        return {"ok": True, "enabled": False, "launched": False, "performed": False}
+    if not caller_is_host():
+        return {"ok": False, "error": "host_only", "performed": False}
+    return {
+        "ok": True,
+        "enabled": True,
+        "launched": session_open(),
+        "performed": False,
+    }
 
 
 def close() -> dict:
-    with _lock:
-        if not caller_is_host():
-            return {"ok": False, "error": "host_only", "performed": False}
-        _shutdown()
-        return {"ok": True, "enabled": enabled(), "launched": False, "performed": False}
+    if not caller_is_host():
+        return {"ok": False, "error": "host_only", "performed": False}
+    _stop_owner()
+    return {"ok": True, "enabled": enabled(), "launched": session_open(), "performed": False}
 
 
 def navigate(url: str = "", *, submit: bool = False, confirmed: bool = False) -> dict:
-    with _lock:
-        denied = _precheck(mutating=bool(submit), confirmed=confirmed)
-        if denied:
-            return denied
-        reason = _url_block_reason(url)
-        if reason:
-            return {"ok": False, "error": reason, "performed": False}
-        sess, err = _ensure_session()
-        if err:
-            return err
-        try:
-            sess.page.goto(url, wait_until="domcontentloaded")
-        except Exception as exc:
-            return {"ok": False, "error": "navigate_failed", "performed": False, "detail": _safe_detail(exc)}
-        return _done(sess)
+    if not enabled():
+        _stop_owner()
+        return {"ok": False, "error": "browser_mcp_disabled", "performed": False}
+    if not caller_is_host():
+        return {"ok": False, "error": "host_only", "performed": False}
+    reason = _url_block_reason(url)
+    if reason:
+        return {"ok": False, "error": reason, "performed": False}
+    # Same-origin GET stays unconfirmed: this scheme+host+port was already approved.
+    # The first page has no origin yet, so it is a new origin and needs confirm.
+    # submit=True is a navigation that sends the page, so it always needs confirm.
+    if (submit or _is_new_origin(url)) and confirmed is not True:
+        return {
+            "ok": False,
+            "error": "confirm_required",
+            "performed": False,
+            "hint": "Opening a new origin needs confirmed=true after the human approves.",
+        }
+    return _on_owner(lambda: _navigate_impl(url))
 
 
 def snapshot() -> dict:
-    with _lock:
-        denied = _precheck(mutating=False, confirmed=False)
-        if denied:
-            return denied
-        sess, err = _ensure_session()
-        if err:
-            return err
-        snap = _snapshot_dict(sess)
-        snap["performed"] = False
-        return snap
+    denied = _caller_gate(mutating=False, confirmed=False)
+    if denied:
+        return denied
+    return _on_owner(_snapshot_impl)
 
 
 def click(ref: str = "", *, confirmed: bool = False) -> dict:
-    with _lock:
-        return _act("click", ref, confirmed=confirmed)
+    denied = _caller_gate(mutating=True, confirmed=confirmed)
+    if denied:
+        return denied
+    return _on_owner(lambda: _act_impl("click", ref))
 
 
 def type_text(ref: str = "", text: str = "", *, confirmed: bool = False) -> dict:
-    with _lock:
-        return _act("type", ref, confirmed=confirmed, text=text or "")
+    denied = _caller_gate(mutating=True, confirmed=confirmed)
+    if denied:
+        return denied
+    if not text:
+        return {"ok": False, "error": "empty_text", "performed": False}
+    return _on_owner(lambda: _act_impl("type", ref, text=text))
 
 
 def select_option(ref: str = "", option: str = "", *, confirmed: bool = False) -> dict:
-    with _lock:
-        return _act("select", ref, confirmed=confirmed, option=option or "")
+    denied = _caller_gate(mutating=True, confirmed=confirmed)
+    if denied:
+        return denied
+    if not option:
+        return {"ok": False, "error": "empty_option", "performed": False}
+    return _on_owner(lambda: _act_impl("select", ref, option=option))
 
 
 def submit(ref: str = "", *, confirmed: bool = False) -> dict:
-    with _lock:
-        return _act("submit", ref, confirmed=confirmed)
+    denied = _caller_gate(mutating=True, confirmed=confirmed)
+    if denied:
+        return denied
+    return _on_owner(lambda: _act_impl("submit", ref))
