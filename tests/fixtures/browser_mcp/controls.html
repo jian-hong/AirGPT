@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Controls</title></head>
+<body>
+<h1>Controls</h1>
+<button type="button" id="show">Show code</button>
+<p id="code"></p>
+<label>Color
+  <select id="color">
+    <option>Red</option>
+    <option>Blue</option>
+  </select>
+</label>
+<p id="picked"></p>
+<label><input type="checkbox" id="agree"> Agree</label>
+<p id="agreed"></p>
+<label>Filter <input id="q"></label>
+<ul id="rows">
+  <li>Apple</li>
+  <li>Apricot</li>
+  <li>Banana</li>
+</ul>
+<script>
+document.getElementById("show").addEventListener("click", function () {
+  document.getElementById("code").textContent = "WIDGET-42";
+});
+document.getElementById("color").addEventListener("change", function (e) {
+  document.getElementById("picked").textContent = "picked:" + e.target.value;
+});
+document.getElementById("agree").addEventListener("change", function (e) {
+  document.getElementById("agreed").textContent = e.target.checked ? "agreed:yes" : "";
+});
+document.getElementById("q").addEventListener("input", function (e) {
+  var q = (e.target.value || "").toLowerCase();
+  var items = document.querySelectorAll("#rows li");
+  for (var i = 0; i < items.length; i++) {
+    var match = !q || items[i].textContent.toLowerCase().indexOf(q) !== -1;
+    items[i].style.display = match ? "" : "none";
+  }
+});
+</script>
+</body>
+</html>

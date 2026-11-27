@@ -789,6 +789,108 @@ def desktop_drag(x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0, confirmed: 
     return out
 
 
+def _browser_slim(out: dict) -> dict:
+    """Audit view: action codes only. Page text and typed input stay out of the log."""
+    return {
+        "ok": bool(out.get("ok")),
+        "error": out.get("error") or "",
+        "performed": bool(out.get("performed")),
+    }
+
+
+# Extra keys are ignored on purpose. A model cannot pass host=true to widen
+# access. The agent loop may also inject apply=false; confirmed is the gate.
+def browser_status(*, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.status()
+    _audit("browser_status", {}, _browser_slim(out), ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def browser_navigate(url: str = "", submit: bool = False, confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.navigate(url or "", submit=submit is True, confirmed=confirmed)
+    _audit(
+        "browser_navigate",
+        {"submit": submit is True, "confirmed": confirmed is True},
+        _browser_slim(out),
+        ok=bool(out.get("ok")),
+        run_id=run_id,
+        agent_id=agent_id,
+    )
+    return out
+
+
+def browser_snapshot(*, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.snapshot()
+    _audit("browser_snapshot", {}, _browser_slim(out), ok=bool(out.get("ok")), run_id=run_id, agent_id=agent_id)
+    return out
+
+
+def browser_click(ref: str = "", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.click(ref or "", confirmed=confirmed)
+    _audit(
+        "browser_click",
+        {"ref": ref, "confirmed": confirmed is True},
+        _browser_slim(out),
+        ok=bool(out.get("ok")),
+        run_id=run_id,
+        agent_id=agent_id,
+    )
+    return out
+
+
+def browser_type(ref: str = "", text: str = "", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.type_text(ref or "", text or "", confirmed=confirmed)
+    _audit(
+        "browser_type",
+        {"ref": ref, "chars": len(text or ""), "confirmed": confirmed is True},
+        _browser_slim(out),
+        ok=bool(out.get("ok")),
+        run_id=run_id,
+        agent_id=agent_id,
+    )
+    return out
+
+
+def browser_select(ref: str = "", option: str = "", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.select_option(ref or "", option or "", confirmed=confirmed)
+    _audit(
+        "browser_select",
+        {"ref": ref, "confirmed": confirmed is True},
+        _browser_slim(out),
+        ok=bool(out.get("ok")),
+        run_id=run_id,
+        agent_id=agent_id,
+    )
+    return out
+
+
+def browser_submit(ref: str = "", confirmed: bool = False, *, run_id: int = 0, agent_id: int = 0, **_extra) -> dict:
+    import browser_mcp
+
+    out = browser_mcp.submit(ref or "", confirmed=confirmed)
+    _audit(
+        "browser_submit",
+        {"ref": ref, "confirmed": confirmed is True},
+        _browser_slim(out),
+        ok=bool(out.get("ok")),
+        run_id=run_id,
+        agent_id=agent_id,
+    )
+    return out
+
+
 TOOLS: dict[str, Callable[..., dict]] = {
     "vault_read": vault_read,
     "vault_write": vault_write,
@@ -822,6 +924,13 @@ TOOLS: dict[str, Callable[..., dict]] = {
     "desktop_type": desktop_type,
     "desktop_scroll": desktop_scroll,
     "desktop_drag": desktop_drag,
+    "browser_status": browser_status,
+    "browser_navigate": browser_navigate,
+    "browser_snapshot": browser_snapshot,
+    "browser_click": browser_click,
+    "browser_type": browser_type,
+    "browser_select": browser_select,
+    "browser_submit": browser_submit,
     # Handled specially in agent_runtime (needs parent run context); stub keeps schema discovery working
     "subagent_dispatch": lambda prompt="", text="", agent_id=0, run_id=0, **kw: {
         "ok": False,
@@ -866,6 +975,13 @@ def tool_schemas(names: list[str] | None = None) -> list[dict]:
         "desktop_type": {"description": "Type/paste text into the focused app (needs confirmed=true)", "params": ["text", "confirmed"]},
         "desktop_scroll": {"description": "Scroll the focused window (needs confirmed=true)", "params": ["dy", "confirmed"]},
         "desktop_drag": {"description": "Drag cursor from x1,y1 to x2,y2 (needs confirmed=true)", "params": ["x1", "y1", "x2", "y2", "confirmed"]},
+        "browser_status": {"description": "Report whether host browser control is enabled. Does not launch a driver.", "params": []},
+        "browser_navigate": {"description": "Open an http(s) URL in the host browser when AIRGPT_BROWSER_MCP=1. submit=true needs confirmed=true.", "params": ["url", "submit", "confirmed"]},
+        "browser_snapshot": {"description": "Read the accessibility tree and element refs. Host-only. No cookies.", "params": []},
+        "browser_click": {"description": "Click an element ref from browser_snapshot (needs confirmed=true)", "params": ["ref", "confirmed"]},
+        "browser_type": {"description": "Fill an element ref (needs confirmed=true). Typed text is not written to the audit log.", "params": ["ref", "text", "confirmed"]},
+        "browser_select": {"description": "Choose a dropdown option by its visible label (needs confirmed=true)", "params": ["ref", "option", "confirmed"]},
+        "browser_submit": {"description": "Activate a submit control (needs confirmed=true)", "params": ["ref", "confirmed"]},
         "subagent_dispatch": {
             "description": "Queue an isolated child subagent (deep mode only, max 2)",
             "params": ["prompt", "agent_id"],

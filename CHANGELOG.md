@@ -2,6 +2,21 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- BROWSER-01 host-only Playwright browser tools (#99)
+
+- `browser_mcp.py` opens a local Playwright session from accessibility refs.
+  The tool stays off unless `AIRGPT_BROWSER_MCP=1`. Click, type, select, and
+  submit return `confirm_required` and do not touch the page unless `confirmed`
+  is boolean true. A caller bound through the host gate who is not the host
+  gets `host_only` and no driver starts. Typed text is not written to the
+  audit log. Password values, cookies, and token-shaped strings are removed
+  from the tool result.
+- Wrappers live in `agent_tools.py` (`browser_status`, `browser_navigate`,
+  `browser_snapshot`, `browser_click`, `browser_type`, `browser_select`,
+  `browser_submit`). Plain chat cannot call them. `tests/test_browser_mcp.py`
+  drives ten local fixture tasks when a driver is present and skips that
+  file's live cases only when the driver cannot start.
+
 ## 2026-11-20 -- Phone preview, video seeking, Open in Space
 
 - Stored files now answer Range requests (206, 416, Accept-Ranges) and stream,

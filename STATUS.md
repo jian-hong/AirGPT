@@ -19,27 +19,15 @@
    `GET /api/update` = `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
-   totals checked against pandas, turns keep their files, restore, sanitizer.
-   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
-   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
-   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
-   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
-   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
-6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
-   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
-   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
-7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
-   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
-   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
-
-5. **Phone preview + Open in Space (draft PR on #91).** `/data/` serves
-   Range (206/416), streamed. Open button for pdf/office/txt. Host-only
-   `POST /api/space/open` launches NetieSpace.exe. Needs a real iPhone and a
-   Windows host to prove. Ledger rows pending in PRD-001 (founder directed).
+   Rounds 1-3b are on that branch. Unverified: tunnel, phone, provider,
+   Cortex, a real embedder. Owner calls: P14-P36. PR #90 is in #91.
+6. **Phone preview + Open in Space.** `/data/` Range (206/416). Open for
+   pdf/office/txt. Host-only `POST /api/space/open`. Needs a real iPhone
+   and a Windows host. Ledger rows pending in PRD-001.
+7. **BROWSER-01 (#99).** Host-only Playwright tools in `browser_mcp.py`.
+   Flag `AIRGPT_BROWSER_MCP` default off. Click, type, and submit stay
+   confirm-gated.
 
 ## Next
 
@@ -52,14 +40,14 @@
 
 ## WIP
 
-Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56,
-D10 #71/#74 (S1), D11 #72/#73 (research). Parked leftover:
-D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
+GitHub still lists D09 #56 and D10 #71 OPEN; the work is on local
+`fix/guest-boundary-and-phone-shell`, not pushed. Closed: D03 #26/#69,
+D05 #55, D06 #37, D07 #36, D08 #38, D09 #56, D10 #71/#74, D11 #72/#73.
+Parked: D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 
 ## Later
 
 - P1 50GB / P2 Meta SIRA / P4 vault-first / P7 NVIDIA
 - F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
 - DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
-
-Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.
+- Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.
