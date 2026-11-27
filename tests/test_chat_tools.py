@@ -65,7 +65,9 @@ def test_internal_params_are_never_advertised() -> None:
 @pytest.mark.parametrize(
     "blocked",
     ["fs_write", "fs_patch", "vault_write", "run_command", "app_scaffold",
-     "dms_action", "desktop_click", "desktop_type", "desktop_scroll", "desktop_drag"],
+     "dms_action", "desktop_click", "desktop_type", "desktop_scroll", "desktop_drag",
+     "browser_click", "browser_type", "browser_select", "browser_submit",
+     "browser_navigate", "browser_snapshot"],
 )
 def test_write_and_desktop_tools_are_refused_in_chat(blocked: str) -> None:
     """Chat has no approval gate, so it must not reach anything that mutates.

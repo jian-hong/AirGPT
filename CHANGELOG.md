@@ -26,6 +26,37 @@ Append-only. Never edited, only added to. Newest first.
 - FRTR-bench is gitignored. CI uses `tests/RAG/fixtures/frtr_min` (one workbook, 6 questions). frtr_eval 6/6, frtr_cross both variants 6/6, frtr_sql_batch 0/6 (different ask path). Ops fixture `tests/RAG/fixtures/ops/payroll_ops.xlsx`: 32/32. edge_probe --offline 8/9 (the old live Cortex trace is not reproducible here). warehouse --skip-gen 10/10.
 - No new runtime flag. Bench scripts only. `rag/ingest.py` not edited.
 
+## 2026-11-27 -- BROWSER-01: confirm a new origin, close the browser on one thread (#99)
+
+- The first page, and any later page on a different scheme, host, or port,
+  needs `confirmed=true` before `page.goto`. A move inside the origin already
+  approved does not. Click, type, select, and submit stay confirm-gated.
+- Sync Playwright now lives on one owner thread. Agent runs only enqueue
+  work. That thread closes the browser when the session stops, when the
+  owner loop errors, and at process exit.
+
+## 2026-11-27 -- BROWSER-01 follow-up: block data URLs (#99)
+
+- In-page requests may no longer use `data:` URLs. `browser_navigate` already
+  refused any scheme other than http or https. A missing
+  `AIRGPT_BROWSER_EXECUTABLE` path is skipped. Closing the session needs the
+  host even when the flag is off.
+
+## 2026-11-27 -- BROWSER-01 host-only Playwright browser tools (#99)
+
+- `browser_mcp.py` opens a local Playwright session from accessibility refs.
+  The tool stays off unless `AIRGPT_BROWSER_MCP=1`. Click, type, select, and
+  submit return `confirm_required` and do not touch the page unless `confirmed`
+  is boolean true. A caller bound through the host gate who is not the host
+  gets `host_only` and no driver starts. Typed text is not written to the
+  audit log. Password values, cookies, and token-shaped strings are removed
+  from the tool result.
+- Wrappers live in `agent_tools.py` (`browser_status`, `browser_navigate`,
+  `browser_snapshot`, `browser_click`, `browser_type`, `browser_select`,
+  `browser_submit`). Plain chat cannot call them. `tests/test_browser_mcp.py`
+  drives ten local fixture tasks when a driver is present and skips that
+  file's live cases only when the driver cannot start.
+
 ## 2026-11-27 -- CU-01: map screenshot clicks back to the screen
 
 - `AIRGPT_DESKTOP_SCALE=1` (default off) maps `click`, `drag`, and
