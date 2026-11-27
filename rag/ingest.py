@@ -2,16 +2,21 @@
 from __future__ import annotations
 
 import codecs
+import fnmatch
 import hashlib
+import json
 import mimetypes
 import os
 import re
 import shutil
+import tempfile
 import threading
+import urllib.error
+import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from rag import chunking, sira, store, vectors
 
@@ -1639,15 +1644,28 @@ def ingest_paths(
     force: bool = False,
     progress=None,
     authority: str = "",
+    path_label: Callable[[Path], str] | None = None,
+    source_meta_for: Callable[[Path], dict] | None = None,
 ) -> dict:
     """One ingest at a time per space.
 
     Two uploads of the same file (a double click, two tabs) used to both find the first
     row still "indexing", skip the content-hash dedupe, and index every passage twice.
     Taking turns lets the second see the first one's finished row.
+
+    ``path_label`` and ``source_meta_for`` are optional. Left unset, chunk paths and
+    source meta stay exactly as they were. GitHub ingest uses them to cite ``path@sha``.
     """
     with _space_lock(space_id):
-        return _ingest_paths(space_id, paths, force=force, progress=progress, authority=authority)
+        return _ingest_paths(
+            space_id,
+            paths,
+            force=force,
+            progress=progress,
+            authority=authority,
+            path_label=path_label,
+            source_meta_for=source_meta_for,
+        )
 
 
 def _ingest_paths(
@@ -1657,6 +1675,8 @@ def _ingest_paths(
     force: bool = False,
     progress=None,
     authority: str = "",
+    path_label: Callable[[Path], str] | None = None,
+    source_meta_for: Callable[[Path], dict] | None = None,
 ) -> dict:
     """Ingest files/folders into a knowledge space and rebuild the local hybrid index.
 
@@ -1813,6 +1833,18 @@ def _ingest_paths(
             }
             if docs_path:
                 meta_src["docs_path"] = docs_path
+            if source_meta_for is not None:
+                extra = source_meta_for(path) or {}
+                if isinstance(extra, dict):
+                    for key, val in extra.items():
+                        # Identity keys stay owned by this function.
+                        if key in ("blob", "authority", "original_path", "original_name", "table", "docs_path", "original_paths"):
+                            continue
+                        meta_src[key] = val
+            cite_path = str(path)
+            if path_label is not None:
+                cite_path = str(path_label(path))
+                meta_src["locator"] = cite_path
             # A file re-uploaded with new content is the same file, not a second one:
             # its old source and chunks go, so the answer cannot cite both versions.
             # Identity is the resolved original path (an upload always lands on the
@@ -1890,24 +1922,32 @@ def _ingest_paths(
             parent_row_ids: list[int] = []
             with store.session():
                 for pdraft in parents:
+                    parent_meta = pdraft.meta
+                    if path_label is not None:
+                        parent_meta = dict(pdraft.meta or {})
+                        parent_meta["locator"] = cite_path
                     pid = store.insert_chunk(
                         space_id=space_id,
                         source_id=source_id,
                         revision_id=rev_id,
                         text=pdraft.text,
                         kind="parent",
-                        path=str(path),
+                        path=cite_path,
                         heading=pdraft.heading,
                         span_start=pdraft.span_start,
                         span_end=pdraft.span_end,
                         token_est=pdraft.token_est,
-                        meta=pdraft.meta,
+                        meta=parent_meta,
                         authority=file_authority,
                     )
                     parent_row_ids.append(pid)
                     chunk_count += 1
                 for cdraft in children:
                     parent_id = parent_row_ids[cdraft.parent_index] if 0 <= cdraft.parent_index < len(parent_row_ids) else 0
+                    child_meta = {"context": cdraft.context} if cdraft.context else None
+                    if path_label is not None:
+                        child_meta = dict(child_meta or {})
+                        child_meta["locator"] = cite_path
                     cid = store.insert_chunk(
                         space_id=space_id,
                         source_id=source_id,
@@ -1915,13 +1955,13 @@ def _ingest_paths(
                         text=cdraft.text,
                         kind="child",
                         parent_id=parent_id,
-                        path=str(path),
+                        path=cite_path,
                         heading=cdraft.heading,
                         span_start=cdraft.span_start,
                         span_end=cdraft.span_end,
                         token_est=cdraft.token_est,
                         authority=file_authority,
-                        meta={"context": cdraft.context} if cdraft.context else None,
+                        meta=child_meta,
                         index_context=cdraft.context if cdraft.context != cdraft.heading else "",
                     )
                     chunk_count += 1
@@ -1938,7 +1978,7 @@ def _ingest_paths(
             store.insert_file_index(
                 space_id=space_id,
                 source_id=source_id,
-                path=str(path),
+                path=cite_path,
                 title=path.name,
                 phrases=phrases,
                 headings=headings,
@@ -2352,4 +2392,825 @@ def ingest_urls(space_id: int, urls: list[str], *, force: bool = False, max_byte
     out["failed_urls"] = failed
     if out.get("ok"):
         out["urls_attached"] = len(files)
+    return out
+
+
+# --- GitHub repo and depth-capped site (RAG-SRC-01). Both default off. ---
+#
+# GitHub: AIRGPT_RAG_SOURCES_GITHUB=1. A repo is ingested at one pinned 40-hex
+# commit. Citations and chunk locators are "{posix-path}@{sha}". Ignore globs
+# (defaults below, plus any the caller passes) drop vendor trees. Binary
+# suffixes and looks_binary drop blobs. A private repo's token is read from
+# OpenVault only (openvault_bridge.github_token); it is never taken from the
+# environment, from userinfo in the URL, or copied into an error string.
+# Re-ingesting the same bytes does not mint new chunk ids (content-hash dedup).
+# `root` is an on-disk fixture and performs no network I/O. API downloads are
+# capped at 200 files and 1_000_000 bytes each, and a truncated Git tree is
+# refused rather than indexed as if it were complete.
+#
+# Crawl: AIRGPT_RAG_CRAWL=1. Breadth-first from the start URL. `depth` is the
+# maximum link distance (the start page is distance 0) and is hard-capped at 2.
+# `max_links` counts indexed pages and is hard-capped at 20. robots.txt is
+# fetched once and does not count toward that cap. User-agent is AirGPT-RAG/1.0.
+# A group whose User-agent matches that token wins; otherwise User-agent: *.
+# Disallow is a path prefix. Allow rules are not applied. A missing robots.txt
+# (404 or 410) allows every same-site path; any other robots failure is reported
+# as unavailable and does not by itself block the crawl. Only http(s) links on
+# the same scheme, host and port are requested. Other hosts, mailto, javascript
+# and fragment-only duplicates are not requested. Redirects are followed only
+# while they stay on that site, at most 3 hops. Loopback, link-local and private
+# addresses are refused the same way as ingest_urls, unless the caller passes
+# allow_private=True for a local fixture it already trusts. That switch is not
+# an environment flag. Fetches are one at a time. A page with under 80 characters
+# of extracted text is not indexed and its links are not followed. ingest_urls
+# itself is unchanged: the crawl flag does not turn a single-page fetch into a crawl.
+
+_GITHUB_FLAG = "AIRGPT_RAG_SOURCES_GITHUB"
+_CRAWL_FLAG = "AIRGPT_RAG_CRAWL"
+_CRAWL_UA = "AirGPT-RAG/1.0"
+_CRAWL_MAX_DEPTH = 2
+_CRAWL_MAX_LINKS = 20
+_GITHUB_MAX_FILES = 200
+_GITHUB_MAX_BYTES = 1_000_000
+_GH_OFF = "GitHub sources are off (set AIRGPT_RAG_SOURCES_GITHUB=1)"
+_GH_TOKEN_MISSING = "private repository needs a GitHub token in OpenVault"
+_GH_REFUSED = "GitHub refused the request"
+_GH_UNREACHABLE = "GitHub could not be reached"
+_CRAWL_OFF = "site crawl is off (set AIRGPT_RAG_CRAWL=1)"
+_PRIVATE_URL = (
+    "not opened: this link points to a private or internal address "
+    "(this computer or your network)"
+)
+_DEFAULT_REPO_IGNORES = (
+    ".git/**",
+    "node_modules/**",
+    "vendor/**",
+    "dist/**",
+    "build/**",
+    "__pycache__/**",
+    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.ico", "*.bmp",
+    "*.exe", "*.dll", "*.so", "*.dylib", "*.bin", "*.zip", "*.gz", "*.tgz",
+    "*.woff", "*.woff2", "*.mp3", "*.mp4", "*.pyc", "*.class", "*.jar", "*.wasm",
+)
+_REPO_BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp",
+    ".exe", ".dll", ".so", ".dylib", ".bin", ".zip", ".gz", ".tgz", ".bz2",
+    ".woff", ".woff2", ".mp3", ".mp4", ".pyc", ".class", ".jar", ".wasm",
+}
+_REDIRECTS = {301, 302, 303, 307, 308}
+_REPO_URL_RE = re.compile(
+    r"^https?://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$"
+)
+_REPO_SLUG_RE = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def github_sources_enabled() -> bool:
+    """True only when AIRGPT_RAG_SOURCES_GITHUB is exactly '1'."""
+    return (os.environ.get(_GITHUB_FLAG) or "").strip() == "1"
+
+
+def crawl_enabled() -> bool:
+    """True only when AIRGPT_RAG_CRAWL is exactly '1'."""
+    return (os.environ.get(_CRAWL_FLAG) or "").strip() == "1"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Do not follow redirects. Callers decide, so a token cannot ride to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class _OffSite(Exception):
+    def __init__(self, url: str) -> None:
+        super().__init__(url)
+        self.url = url
+
+
+class _FetchFailed(Exception):
+    def __init__(self, status: int) -> None:
+        super().__init__(str(status))
+        self.status = int(status)
+
+
+def _redact(text: str, secret: str) -> str:
+    msg = str(text or "")
+    if secret:
+        msg = msg.replace(secret, "[redacted]")
+        encoded = urllib.parse.quote(secret, safe="")
+        if encoded and encoded != secret:
+            msg = msg.replace(encoded, "[redacted]")
+    msg = msg.strip()
+    return msg[:240]
+
+
+def _path_key(path: Path) -> str:
+    try:
+        return os.path.normcase(str(path.resolve()))
+    except OSError:
+        return os.path.normcase(str(path))
+
+
+def _safe_rel(rel: str) -> str:
+    """Repo-relative posix path, or '' when the path would escape the tree."""
+    text = (rel or "").replace("\\", "/").strip()
+    if not text or text.startswith("/"):
+        return ""
+    parts = [p for p in text.split("/") if p and p != "."]
+    if not parts or any(p == ".." for p in parts):
+        return ""
+    return "/".join(parts)
+
+
+def _path_ignored(rel: str, patterns: list[str]) -> bool:
+    rel = _safe_rel(rel)
+    if not rel:
+        return True
+    # Case-fold so Node_Modules and LOGO.PNG match on Linux and Windows alike.
+    rel_cf = rel.casefold()
+    name = rel_cf.rsplit("/", 1)[-1]
+    parts = rel_cf.split("/")
+    for raw in patterns:
+        pat = (raw or "").replace("\\", "/").strip().lstrip("./")
+        if not pat:
+            continue
+        pat_cf = pat.casefold()
+        if pat_cf.endswith("/**"):
+            base = pat_cf[:-3].rstrip("/")
+            if base and (rel_cf == base or rel_cf.startswith(base + "/")):
+                return True
+            continue
+        if "/" not in pat_cf and "*" not in pat_cf and "?" not in pat_cf and pat_cf in parts:
+            return True
+        if fnmatch.fnmatch(name, pat_cf) or fnmatch.fnmatch(rel_cf, pat_cf):
+            return True
+    return False
+
+
+def _parse_github_repo(spec: str) -> tuple[str, str] | None:
+    """owner, name. Userinfo in a URL is stripped and never used as a token."""
+    cleaned = (spec or "").strip()
+    cleaned = re.sub(r"^(https?://)[^/@\s]+@", r"\1", cleaned, count=1)
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[:-4]
+    cleaned = cleaned.rstrip("/")
+    match = _REPO_URL_RE.match(cleaned) or _REPO_SLUG_RE.match(cleaned)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _openvault_github_token() -> str:
+    """Token from OpenVault only. Empty when none is stored. Never logged."""
+    try:
+        import openvault_bridge
+
+        tok = openvault_bridge.github_token()
+    except Exception:
+        return ""
+    if not isinstance(tok, str):
+        return ""
+    tok = tok.strip()
+    if not tok or any(ch in tok for ch in "\r\n\x00 "):
+        return ""
+    return tok
+
+
+def _urlopen(req: urllib.request.Request, timeout: int):
+    opener = getattr(_urlopen, "_opener", None)
+    if opener is None:
+        opener = urllib.request.build_opener(_NoRedirect)
+        _urlopen._opener = opener  # type: ignore[attr-defined]
+    return opener.open(req, timeout=timeout)
+
+
+def _github_open(url: str, token: str, accept: str) -> tuple[int, bytes]:
+    """GET one GitHub URL. The token is a header, never part of the URL."""
+    if token and token in (url or ""):
+        raise RuntimeError("refusing to put a token in a URL")
+    headers = {"User-Agent": _CRAWL_UA, "Accept": accept}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with _urlopen(req, 20) as resp:
+            status = int(getattr(resp, "status", 200) or 200)
+            data = resp.read(_GITHUB_MAX_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read(256)
+        except Exception:
+            pass
+        return int(exc.code), b""
+    if len(data) > _GITHUB_MAX_BYTES:
+        return 413, b""
+    return status, data
+
+
+def _github_json(url: str, token: str) -> tuple[int, dict | None]:
+    status, data = _github_open(url, token, "application/vnd.github+json")
+    if status != 200 or not data:
+        return status, None
+    try:
+        parsed = json.loads(data.decode("utf-8"))
+    except Exception:
+        return status, None
+    return status, parsed if isinstance(parsed, dict) else None
+
+
+def _github_status_error(status: int, token: str) -> str:
+    if status in (401, 403, 404) and not token:
+        return _GH_TOKEN_MISSING
+    if status in (401, 403, 404):
+        return _GH_REFUSED
+    return _GH_UNREACHABLE
+
+
+def _repo_suffixes() -> set[str]:
+    suffixes = set(TEXT_SUFFIXES)
+    if pdf_supported():
+        suffixes.add(".pdf")
+    return suffixes
+
+
+def _repo_keep(
+    root: Path, extra_ignore: list[str] | None
+) -> tuple[list[tuple[Path, str]], list[dict]]:
+    patterns = list(_DEFAULT_REPO_IGNORES)
+    for item in extra_ignore or []:
+        text = str(item or "").strip()
+        if text:
+            patterns.append(text)
+    suffixes = _repo_suffixes()
+    root = root.resolve()
+    kept: list[tuple[Path, str]] = []
+    skipped: list[dict] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            rel = _safe_rel(path.resolve().relative_to(root).as_posix())
+        except (ValueError, OSError):
+            skipped.append({"path": path.name, "reason": "outside repository"})
+            continue
+        if not rel or _path_ignored(rel, patterns):
+            skipped.append({"path": rel or path.name, "reason": "ignored"})
+            continue
+        suffix = path.suffix.lower()
+        if suffix in _REPO_BINARY_SUFFIXES:
+            skipped.append({"path": rel, "reason": "binary"})
+            continue
+        if suffix not in suffixes:
+            skipped.append({"path": rel, "reason": "unsupported"})
+            continue
+        if looks_binary(path):
+            skipped.append({"path": rel, "reason": "binary"})
+            continue
+        kept.append((path, rel))
+    kept.sort(key=lambda item: item[1])
+    if len(kept) > _GITHUB_MAX_FILES:
+        for _path, rel in kept[_GITHUB_MAX_FILES:]:
+            skipped.append({"path": rel, "reason": "over file cap"})
+        kept = kept[:_GITHUB_MAX_FILES]
+    return kept, skipped
+
+
+def _ingest_repo_root(
+    space_id: int,
+    root: Path,
+    repo: str,
+    sha: str,
+    ignore: list[str] | None,
+    force: bool,
+    prior_skipped: list[dict] | None = None,
+) -> dict:
+    kept, skipped = _repo_keep(root, ignore)
+    skipped = list(prior_skipped or []) + skipped
+    if not kept:
+        return {
+            "ok": False,
+            "error": "no files to ingest",
+            "repo": repo,
+            "sha": sha,
+            "files": [],
+            "locators": [],
+            "skipped": skipped,
+        }
+    rel_by_key = {_path_key(path): rel for path, rel in kept}
+
+    def path_label(path: Path) -> str:
+        rel = rel_by_key.get(_path_key(path)) or _safe_rel(path.name) or path.name
+        return f"{rel}@{sha}"
+
+    def source_meta_for(path: Path) -> dict:
+        rel = rel_by_key.get(_path_key(path)) or ""
+        return {
+            "github_repo": repo,
+            "github_sha": sha,
+            "github_path": rel,
+            "locator": f"{rel}@{sha}",
+        }
+
+    from rag import authority as authority_mod
+
+    out = ingest_paths(
+        space_id,
+        [path for path, _rel in kept],
+        force=force,
+        authority=authority_mod.DOCUMENT,
+        path_label=path_label,
+        source_meta_for=source_meta_for,
+    )
+    out["repo"] = repo
+    out["sha"] = sha
+    out["files"] = [rel for _path, rel in kept]
+    out["locators"] = [f"{rel}@{sha}" for _path, rel in kept]
+    out["skipped"] = list(out.get("skipped") or []) + skipped
+    return out
+
+
+def _resolve_github_sha(owner: str, name: str, ref: str, token: str) -> tuple[str, int]:
+    safe_ref = urllib.parse.quote((ref or "HEAD").strip() or "HEAD", safe="")
+    url = f"https://api.github.com/repos/{owner}/{name}/commits/{safe_ref}"
+    status, payload = _github_json(url, token)
+    sha = str((payload or {}).get("sha") or "").strip().lower()
+    if status == 200 and _SHA_RE.fullmatch(sha):
+        return sha, status
+    return "", status
+
+
+def _ingest_github_api(
+    space_id: int,
+    owner: str,
+    name: str,
+    sha: str,
+    ignore: list[str] | None,
+    force: bool,
+    token: str,
+) -> dict:
+    repo = f"{owner}/{name}"
+    status, payload = _github_json(
+        f"https://api.github.com/repos/{owner}/{name}/git/trees/{sha}?recursive=1",
+        token,
+    )
+    if status != 200 or not isinstance(payload, dict):
+        return {"ok": False, "error": _github_status_error(status, token), "repo": repo, "sha": sha}
+    if payload.get("truncated"):
+        return {
+            "ok": False,
+            "error": "repository tree is too large to ingest in one pass",
+            "repo": repo,
+            "sha": sha,
+        }
+    patterns = list(_DEFAULT_REPO_IGNORES)
+    for item in ignore or []:
+        text = str(item or "").strip()
+        if text:
+            patterns.append(text)
+    suffixes = _repo_suffixes()
+    download: list[str] = []
+    skipped: list[dict] = []
+    for entry in payload.get("tree") or []:
+        if not isinstance(entry, dict) or entry.get("type") != "blob":
+            continue
+        rel = _safe_rel(str(entry.get("path") or ""))
+        if not rel:
+            skipped.append({"path": str(entry.get("path") or ""), "reason": "outside repository"})
+            continue
+        try:
+            size = int(entry.get("size") or 0)
+        except (TypeError, ValueError):
+            size = 0
+        if size > _GITHUB_MAX_BYTES:
+            skipped.append({"path": rel, "reason": "too large"})
+            continue
+        if _path_ignored(rel, patterns):
+            skipped.append({"path": rel, "reason": "ignored"})
+            continue
+        suffix = Path(rel).suffix.lower()
+        if suffix in _REPO_BINARY_SUFFIXES:
+            skipped.append({"path": rel, "reason": "binary"})
+            continue
+        if suffix not in suffixes:
+            skipped.append({"path": rel, "reason": "unsupported"})
+            continue
+        download.append(rel)
+    download = download[:_GITHUB_MAX_FILES]
+    tmp = Path(tempfile.mkdtemp(prefix="airgpt-gh-"))
+    try:
+        for rel in download:
+            quoted = urllib.parse.quote(rel, safe="/")
+            file_url = (
+                f"https://api.github.com/repos/{owner}/{name}/contents/{quoted}?ref={sha}"
+            )
+            file_status, data = _github_open(file_url, token, "application/vnd.github.raw")
+            if file_status != 200 or not data:
+                skipped.append({"path": rel, "reason": _github_status_error(file_status, token)})
+                continue
+            dest = tmp / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # Refuse a joined path that left the temp tree.
+            try:
+                dest.resolve().relative_to(tmp.resolve())
+            except ValueError:
+                skipped.append({"path": rel, "reason": "outside repository"})
+                continue
+            dest.write_bytes(data)
+        if not any(tmp.rglob("*")):
+            return {
+                "ok": False,
+                "error": "no files to ingest",
+                "repo": repo,
+                "sha": sha,
+                "files": [],
+                "locators": [],
+                "skipped": skipped,
+            }
+        return _ingest_repo_root(space_id, tmp, repo, sha, ignore, force, skipped)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def ingest_github(
+    space_id: int,
+    repo: str,
+    *,
+    ref: str = "",
+    sha: str = "",
+    ignore: list[str] | None = None,
+    root: str | Path | None = None,
+    force: bool = False,
+    private: bool = False,
+) -> dict:
+    """Ingest a GitHub repository at one pinned commit.
+
+    See the block above this function for flags, ignore rules, citation shape
+    and where the token comes from. `ingest_urls` is not used and is unchanged.
+    """
+    if not github_sources_enabled():
+        return {"ok": False, "error": _GH_OFF, "disabled": True}
+    parsed = _parse_github_repo(repo)
+    if not parsed:
+        return {"ok": False, "error": "repository must be owner/name or a github.com URL"}
+    owner, name = parsed
+    full = f"{owner}/{name}"
+    pinned = (sha or "").strip().lower()
+    token = ""
+    try:
+        if root is not None:
+            if not _SHA_RE.fullmatch(pinned):
+                return {
+                    "ok": False,
+                    "error": "a pinned 40-character commit SHA is required",
+                    "repo": full,
+                }
+            root_path = Path(root)
+            if not root_path.is_dir():
+                return {"ok": False, "error": "repository root is not a directory", "repo": full, "sha": pinned}
+            return _ingest_repo_root(int(space_id), root_path, full, pinned, ignore, force)
+        token = _openvault_github_token()
+        if private and not token:
+            return {"ok": False, "error": _GH_TOKEN_MISSING, "repo": full}
+        if pinned and not _SHA_RE.fullmatch(pinned):
+            return {"ok": False, "error": "sha must be a 40-character commit id", "repo": full}
+        if not pinned:
+            pinned, status = _resolve_github_sha(owner, name, ref, token)
+            if not pinned:
+                return {"ok": False, "error": _github_status_error(status, token), "repo": full}
+        return _ingest_github_api(int(space_id), owner, name, pinned, ignore, force, token)
+    except Exception as exc:
+        return {"ok": False, "error": _redact(str(exc), token) or _GH_UNREACHABLE, "repo": full}
+
+
+def _norm_crawl_url(url: str) -> str:
+    parts = urllib.parse.urlsplit((url or "").strip())
+    host = (parts.hostname or "").lower()
+    if not host:
+        return ""
+    port = parts.port
+    netloc = host
+    if port and not (
+        (parts.scheme == "http" and port == 80) or (parts.scheme == "https" and port == 443)
+    ):
+        netloc = f"{host}:{port}"
+    path = parts.path or "/"
+    if path != "/" and path.endswith("/"):
+        path = path[:-1]
+    return urllib.parse.urlunsplit((parts.scheme.lower(), netloc, path, parts.query, ""))
+
+
+def _same_site(url: str, origin: str) -> bool:
+    a, b = urllib.parse.urlsplit(url), urllib.parse.urlsplit(origin)
+    return (
+        a.scheme == b.scheme
+        and (a.hostname or "").lower() == (b.hostname or "").lower()
+        and a.port == b.port
+    )
+
+
+def _robots_disallow_prefixes(text: str) -> list[str]:
+    """Disallow prefixes for AirGPT-RAG, else for '*'. Allow rules are ignored."""
+    groups: list[tuple[list[str], list[str]]] = []
+    agents: list[str] = []
+    rules: list[str] = []
+
+    def flush() -> None:
+        nonlocal agents, rules
+        if agents or rules:
+            groups.append((agents, rules))
+        agents, rules = [], []
+
+    for raw in (text or "").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            flush()
+            continue
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        key, val = key.strip().lower(), val.strip()
+        if key == "user-agent":
+            if rules:
+                flush()
+            agents.append(val.lower())
+        elif key == "disallow":
+            rules.append(val)
+    flush()
+    specific: list[str] = []
+    wildcard: list[str] = []
+    for group_agents, group_rules in groups:
+        if "*" in group_agents:
+            wildcard.extend(group_rules)
+        if any(agent != "*" and _CRAWL_UA.lower().startswith(agent) for agent in group_agents):
+            specific.extend(group_rules)
+    chosen = specific if specific else wildcard
+    return [rule for rule in chosen if rule]
+
+
+def _robots_blocks(path: str, prefixes: list[str]) -> bool:
+    path = path or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    for prefix in prefixes:
+        rule = prefix if prefix.startswith("/") else "/" + prefix
+        if path.startswith(rule):
+            return True
+    return False
+
+
+class _HtmlLinks(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        for key, val in attrs:
+            if key.lower() == "href" and val and val.strip():
+                self.hrefs.append(val.strip())
+
+
+def _page_links(html: str, base: str) -> list[str]:
+    parser = _HtmlLinks()
+    try:
+        parser.feed(html or "")
+    except Exception:
+        return []
+    out: list[str] = []
+    for href in parser.hrefs:
+        low = href.lower()
+        if low.startswith(("#", "mailto:", "javascript:", "tel:", "data:")):
+            continue
+        absolute = urllib.parse.urljoin(base, href)
+        normed = _norm_crawl_url(absolute)
+        if normed and urllib.parse.urlsplit(normed).scheme in ("http", "https"):
+            out.append(normed)
+    return out
+
+
+def _crawl_fetch(url: str, *, allow_private: bool, origin: str) -> tuple[str, str, bytes]:
+    """GET one URL. Off-site and (unless allow_private) non-public addresses are not opened."""
+    import ai_engine
+
+    current = url
+    opener = urllib.request.build_opener(_NoRedirect)
+    for _hop in range(4):
+        current = _norm_crawl_url(current)
+        if not current or not _same_site(current, origin):
+            raise _OffSite(current or url)
+        if not allow_private:
+            ai_engine._check_public_url(current)  # noqa: SLF001
+        req = urllib.request.Request(current, headers={"User-Agent": _CRAWL_UA}, method="GET")
+        resp = None
+        try:
+            try:
+                resp = opener.open(req, timeout=15)
+            except urllib.error.HTTPError as exc:
+                resp = exc
+                if exc.code in _REDIRECTS:
+                    loc = ""
+                    if exc.headers is not None:
+                        loc = exc.headers.get("Location") or ""
+                    if not loc:
+                        raise _FetchFailed(exc.code)
+                    current = urllib.parse.urljoin(current, loc)
+                    continue
+                raise _FetchFailed(int(exc.code))
+            status = int(getattr(resp, "status", 200) or 200)
+            headers = getattr(resp, "headers", None)
+            if status in _REDIRECTS:
+                loc = headers.get("Location") if headers is not None else ""
+                if not loc:
+                    raise _FetchFailed(status)
+                current = urllib.parse.urljoin(current, loc)
+                continue
+            if status != 200:
+                raise _FetchFailed(status)
+            ctype = (headers.get("Content-Type") if headers is not None else "") or ""
+            return current, ctype.lower(), resp.read(2_000_000)
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+    raise _FetchFailed(310)
+
+
+def _decode_page(data: bytes, ctype: str) -> str:
+    charset = "utf-8"
+    if "charset=" in ctype:
+        charset = ctype.split("charset=")[-1].split(";")[0].strip() or "utf-8"
+    try:
+        return data.decode(charset, errors="replace")
+    except Exception:
+        return data.decode("utf-8", errors="replace")
+
+
+def ingest_crawl(
+    space_id: int,
+    start_url: str,
+    *,
+    depth: int = 2,
+    max_links: int = 20,
+    allow_private: bool = False,
+    force: bool = False,
+) -> dict:
+    """Crawl one site breadth-first and index the pages.
+
+    Limits and robots rules are the block comment above `github_sources_enabled`.
+    `depth` and `max_links` above the caps are clamped, not honoured. Off-site
+    links are listed under `offsite` and are not requested.
+    """
+    if not crawl_enabled():
+        return {"ok": False, "error": _CRAWL_OFF, "disabled": True}
+    try:
+        depth_n = max(0, min(int(depth), _CRAWL_MAX_DEPTH))
+        link_cap = max(1, min(int(max_links), _CRAWL_MAX_LINKS))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "depth and max_links must be integers"}
+    start = _norm_crawl_url(str(start_url or ""))
+    parts = urllib.parse.urlsplit(start)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return {"ok": False, "error": "only http(s) links"}
+
+    robots_url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
+    robots_state = "absent"
+    prefixes: list[str] = []
+    try:
+        _final, _ctype, body = _crawl_fetch(robots_url, allow_private=allow_private, origin=start)
+        robots_text = body.decode("utf-8", "replace")
+        prefixes = _robots_disallow_prefixes(robots_text)
+        robots_state = "applied" if robots_text.strip() else "absent"
+    except _FetchFailed as exc:
+        robots_state = "absent" if exc.status in (404, 410) else "unavailable"
+    except _OffSite:
+        robots_state = "unavailable"
+    except Exception as exc:
+        if type(exc).__name__ == "_PrivateAddress":
+            return {"ok": False, "error": _PRIVATE_URL, "urls": [], "robots": "unavailable"}
+        robots_state = "unavailable"
+
+    queue: list[tuple[str, int]] = [(start, 0)]
+    seen: set[str] = set()
+    pages: list[tuple[str, str, str]] = []
+    offsite: list[str] = []
+    blocked: list[str] = []
+    failed: list[dict] = []
+    indexed: set[str] = set()
+
+    while queue and len(pages) < link_cap:
+        url, dist = queue.pop(0)
+        url = _norm_crawl_url(url)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        if not _same_site(url, start):
+            offsite.append(url)
+            continue
+        path = urllib.parse.urlsplit(url).path or "/"
+        if _robots_blocks(path, prefixes):
+            blocked.append(url)
+            continue
+        try:
+            final, ctype, data = _crawl_fetch(url, allow_private=allow_private, origin=start)
+        except _OffSite as exc:
+            offsite.append(exc.url or url)
+            continue
+        except _FetchFailed as exc:
+            failed.append({"url": url, "reason": f"HTTP {exc.status}"})
+            continue
+        except Exception as exc:
+            if type(exc).__name__ == "_PrivateAddress":
+                return {
+                    "ok": False,
+                    "error": _PRIVATE_URL,
+                    "urls": [],
+                    "offsite": offsite,
+                    "robots_blocked": blocked,
+                    "robots": robots_state,
+                }
+            failed.append({"url": url, "reason": _redact(str(exc), "")[:120] or "fetch failed"})
+            continue
+        final = _norm_crawl_url(final)
+        if not _same_site(final, start):
+            offsite.append(final)
+            continue
+        if final in indexed:
+            continue
+        body = _decode_page(data, ctype)
+        links: list[str] = []
+        title = ""
+        if "html" in ctype or body.lstrip()[:1] == "<":
+            title, text = html_to_text(body)
+            links = _page_links(body, final)
+        elif any(kind in ctype for kind in ("text/", "markdown", "json", "xml")) or not ctype:
+            text = body
+        else:
+            failed.append({"url": final, "reason": f"unsupported content-type {ctype[:40] or 'unknown'}"})
+            continue
+        text = (text or "").strip()
+        if len(text) < 80:
+            failed.append({"url": final, "reason": "no extractable text"})
+            continue
+        indexed.add(final)
+        pages.append((final, title, text))
+        if dist < depth_n:
+            for link in links:
+                if link not in seen:
+                    queue.append((link, dist + 1))
+
+    base = {
+        "urls": [url for url, _title, _text in pages],
+        "offsite": offsite,
+        "robots_blocked": blocked,
+        "failed": failed,
+        "robots": robots_state,
+        "depth": depth_n,
+        "max_links": link_cap,
+    }
+    if not pages:
+        return {"ok": False, "error": "no pages ingested", **base}
+
+    out_dir = store.BLOB_DIR / str(int(space_id)) / "sources"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files: list[Path] = []
+    label_by_key: dict[str, str] = {}
+    for url, title, text in pages:
+        slug = re.sub(r"[^\w-]+", "-", url.split("//", 1)[-1])[:50].strip("-") or "page"
+        dest = out_dir / f"crawl_{slug}.md"
+        n = 2
+        while dest.exists():
+            dest = out_dir / f"crawl_{slug}_{n}.md"
+            n += 1
+        dest.write_text(
+            f"# {title or url}\n\nSource: {url}\n\n{text}\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        label_by_key[_path_key(dest)] = url
+        files.append(dest)
+
+    def path_label(path: Path) -> str:
+        return label_by_key.get(_path_key(path)) or str(path)
+
+    def source_meta_for(path: Path) -> dict:
+        url = label_by_key.get(_path_key(path)) or ""
+        return {"crawl_url": url, "locator": url}
+
+    from rag import authority as authority_mod
+
+    out = ingest_paths(
+        int(space_id),
+        files,
+        force=force,
+        authority=authority_mod.WEB,
+        path_label=path_label,
+        source_meta_for=source_meta_for,
+    )
+    out.update(base)
+    if out.get("ok"):
+        out["pages_attached"] = len(pages)
     return out

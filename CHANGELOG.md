@@ -51,6 +51,20 @@ Append-only. Never edited, only added to. Newest first.
   taking effect scored 0/50 at 150%. Local pytest of the two desktop
   modules: 16 passed. `MIN_TESTS` stays 380.
 
+## 2026-11-27 -- GitHub repo and depth-capped site as knowledge sources
+
+- `ingest_github` reads a repository at a pinned commit. Citations are
+  `path@sha`. Ignore globs skip `node_modules` and binaries. The same SHA
+  ingested again does not mint new chunk ids. Off unless
+  `AIRGPT_RAG_SOURCES_GITHUB=1`.
+- A private repository token is read from OpenVault (`github_token`) and is
+  not taken from the environment, from a URL, or copied into the error text.
+- `ingest_crawl` walks one site breadth-first. Depth is capped at 2 and pages
+  at 20. Off-site links are not requested. `robots.txt` Disallow is honored.
+  Off unless `AIRGPT_RAG_CRAWL=1`. Loopback is refused unless the caller
+  passes `allow_private` for a local fixture.
+- File-type bench artifact is unchanged (480/480).
+
 ## 2026-11-20 -- Phone preview, video seeking, Open in Space
 
 - Stored files now answer Range requests (206, 416, Accept-Ranges) and stream,
