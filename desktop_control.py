@@ -5,6 +5,12 @@ require confirmed=True - same pattern as dms_action.
 
 Soft-fail without win32 / PIL. Never raises out of the package.
 Host-only: callers must gate via clipdrop _HOST_ONLY + local IP.
+
+AIRGPT_DESKTOP_SCALE=1 (default off) maps click, drag, and scroll
+coordinates from the last downscaled screenshot back onto the screen,
+and on Windows sets per-monitor DPI awareness so ImageGrab and
+SetCursorPos share that space. With the flag unset, coordinates are
+passed through as before.
 """
 from __future__ import annotations
 
@@ -15,6 +21,124 @@ import platform
 import sys
 import time
 from typing import Any
+
+# Last successful screenshot: (full_w, full_h, displayed_w, displayed_h).
+# Screenshot pixels are displayed; the cursor lives in full pixels.
+_frame_box: list[tuple[int, int, int, int]] = [(0, 0, 0, 0)]
+_dpi_done = False
+_dpi_mode = ""
+
+
+def _scale_enabled() -> bool:
+    return os.environ.get("AIRGPT_DESKTOP_SCALE", "").strip() == "1"
+
+
+def _windows() -> bool:
+    return sys.platform.startswith("win")
+
+
+def _remember_frame(full_w: int, full_h: int, disp_w: int, disp_h: int) -> None:
+    _frame_box[0] = (int(full_w), int(full_h), int(disp_w), int(disp_h))
+
+
+def _screen_xy(x: int, y: int) -> tuple[int, int]:
+    """Screenshot pixels -> screen pixels. Identity when the flag is off.
+
+    Mapping uses the last screenshot's real sizes (after integer resize),
+    not the pre-resize ratio, so a truncated edge still lines up.
+    screen = round(screenshot * full / displayed).
+    """
+    if not _scale_enabled():
+        return int(x), int(y)
+    fw, fh, dw, dh = _frame_box[0]
+    if fw <= 0 or fh <= 0 or dw <= 0 or dh <= 0 or (fw == dw and fh == dh):
+        return int(x), int(y)
+    sx = int(round(float(x) * float(fw) / float(dw)))
+    sy = int(round(float(y) * float(fh) / float(dh)))
+    if sx < 0:
+        sx = 0
+    elif sx >= fw:
+        sx = fw - 1
+    if sy < 0:
+        sy = 0
+    elif sy >= fh:
+        sy = fh - 1
+    return sx, sy
+
+
+def _grab_primary():
+    from PIL import ImageGrab
+
+    return ImageGrab.grab()
+
+
+def _set_cursor(x: int, y: int) -> None:
+    import ctypes
+
+    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+
+
+def _mouse(dw_flags: int, dx: int, dy: int, dw_data: int, dw_extra: int) -> None:
+    import ctypes
+
+    ctypes.windll.user32.mouse_event(
+        int(dw_flags), int(dx), int(dy), int(dw_data), int(dw_extra)
+    )
+
+
+def _os_set_dpi_aware() -> str:
+    """Best-effort per-monitor DPI awareness. Never raises.
+
+    Per-monitor v2 makes ImageGrab's bitmap and SetCursorPos use the
+    same physical pixels. A process that is already aware returns
+    already_set; the two APIs still share one space.
+    """
+    import ctypes
+
+    try:
+        user32 = ctypes.windll.user32
+        fn = user32.SetProcessDpiAwarenessContext
+        fn.restype = ctypes.c_bool
+        fn.argtypes = [ctypes.c_void_p]
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4
+        if fn(ctypes.c_void_p(-4)):
+            return "per_monitor_v2"
+    except Exception:
+        pass
+    try:
+        shcore = ctypes.windll.shcore
+        fn = shcore.SetProcessDpiAwareness
+        fn.restype = ctypes.c_long
+        fn.argtypes = [ctypes.c_int]
+        hr = int(fn(2))  # PROCESS_PER_MONITOR_DPI_AWARE
+        if hr == 0 or (hr & 0xFFFFFFFF) == 0x80070005:
+            return "per_monitor" if hr == 0 else "already_set"
+    except Exception:
+        pass
+    try:
+        user32 = ctypes.windll.user32
+        fn = user32.SetProcessDPIAware
+        fn.restype = ctypes.c_bool
+        fn.argtypes = []
+        if fn():
+            return "system_aware"
+    except Exception:
+        pass
+    return "unavailable"
+
+
+def _enable_dpi_awareness() -> None:
+    """Set DPI awareness once, only when the scale flag is on."""
+    global _dpi_done, _dpi_mode
+    if not _scale_enabled() or not _windows():
+        return
+    if _dpi_done:
+        return
+    _dpi_done = True
+    try:
+        _dpi_mode = _os_set_dpi_aware()
+    except Exception:
+        _dpi_mode = "unavailable"
 
 
 def available() -> dict[str, Any]:
@@ -150,28 +274,39 @@ def list_windows(*, limit: int = 40) -> dict[str, Any]:
 
 
 def screenshot(*, max_side: int = 1280, as_b64: bool = True) -> dict[str, Any]:
-    """Capture primary monitor. Returns PNG bytes (b64) + size for microanalysis."""
-    try:
-        from PIL import ImageGrab
+    """Capture primary monitor. Returns PNG bytes (b64) + size for microanalysis.
 
-        im = ImageGrab.grab()
+    width/height are the image the model sees. full_width/full_height are
+    the grab, which is the cursor space once DPI awareness matches.
+    When AIRGPT_DESKTOP_SCALE=1, scale (and scale_y) is displayed/full:
+    screen pixels = round(screenshot pixels / scale).
+    """
+    try:
+        _enable_dpi_awareness()
+        im = _grab_primary()
         w, h = im.size
-        scale = 1.0
         if max(w, h) > max_side:
-            scale = max_side / float(max(w, h))
-            im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+            fit = max_side / float(max(w, h))
+            im = im.resize((max(1, int(w * fit)), max(1, int(h * fit))))
         buf = io.BytesIO()
         im.convert("RGB").save(buf, format="PNG", optimize=True)
         raw = buf.getvalue()
+        disp_w, disp_h = im.size
+        _remember_frame(w, h, disp_w, disp_h)
         out: dict[str, Any] = {
             "ok": True,
-            "width": im.size[0],
-            "height": im.size[1],
+            "width": disp_w,
+            "height": disp_h,
             "full_width": w,
             "full_height": h,
             "bytes": len(raw),
             "mime": "image/png",
         }
+        if _scale_enabled():
+            # scale: screenshot = screen * scale. dpi: awareness call result.
+            out["scale"] = (float(disp_w) / float(w)) if w else 1.0
+            out["scale_y"] = (float(disp_h) / float(h)) if h else 1.0
+            out["dpi"] = _dpi_mode
         if as_b64:
             out["png_b64"] = base64.b64encode(raw).decode("ascii")
         else:
@@ -195,17 +330,16 @@ def click(x: int, y: int, *, button: str = "left", confirmed: bool = False) -> d
     blocked = _require_confirm(confirmed)
     if blocked:
         return blocked
-    if not sys.platform.startswith("win"):
+    if not _windows():
         return {"ok": False, "error": "windows_only"}
     try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        user32.SetCursorPos(int(x), int(y))
+        _enable_dpi_awareness()
+        sx, sy = _screen_xy(int(x), int(y))
+        _set_cursor(sx, sy)
         down, up = (0x0002, 0x0004) if button != "right" else (0x0008, 0x0010)
-        user32.mouse_event(down, 0, 0, 0, 0)
-        user32.mouse_event(up, 0, 0, 0, 0)
-        return {"ok": True, "x": int(x), "y": int(y), "button": button}
+        _mouse(down, 0, 0, 0, 0)
+        _mouse(up, 0, 0, 0, 0)
+        return {"ok": True, "x": sx, "y": sy, "button": button}
     except Exception as e:
         return {"ok": False, "error": str(e)[:160]}
 
@@ -216,38 +350,53 @@ def drag(
     blocked = _require_confirm(confirmed)
     if blocked:
         return blocked
-    if not sys.platform.startswith("win"):
+    if not _windows():
         return {"ok": False, "error": "windows_only"}
     try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        user32.SetCursorPos(int(x1), int(y1))
-        user32.mouse_event(0x0002, 0, 0, 0, 0)  # left down
+        _enable_dpi_awareness()
+        x1, y1 = _screen_xy(int(x1), int(y1))
+        x2, y2 = _screen_xy(int(x2), int(y2))
+        _set_cursor(x1, y1)
+        _mouse(0x0002, 0, 0, 0, 0)  # left down
         n = max(2, int(steps))
         for i in range(1, n + 1):
             x = int(x1 + (x2 - x1) * i / n)
             y = int(y1 + (y2 - y1) * i / n)
-            user32.SetCursorPos(x, y)
+            _set_cursor(x, y)
             time.sleep(0.01)
-        user32.mouse_event(0x0004, 0, 0, 0, 0)  # left up
+        _mouse(0x0004, 0, 0, 0, 0)  # left up
         return {"ok": True, "from": [int(x1), int(y1)], "to": [int(x2), int(y2)]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:160]}
 
 
-def scroll(dy: int = -3, *, confirmed: bool = False) -> dict[str, Any]:
+def scroll(
+    dy: int = -3,
+    *,
+    x: int | None = None,
+    y: int | None = None,
+    confirmed: bool = False,
+) -> dict[str, Any]:
     blocked = _require_confirm(confirmed)
     if blocked:
         return blocked
-    if not sys.platform.startswith("win"):
+    if not _windows():
         return {"ok": False, "error": "windows_only"}
     try:
-        import ctypes
-
+        moved = None
+        # A point is only honoured with the scale flag. Off, scroll stays
+        # at the current cursor, which is what callers get today.
+        if _scale_enabled() and x is not None and y is not None:
+            _enable_dpi_awareness()
+            sx, sy = _screen_xy(int(x), int(y))
+            _set_cursor(sx, sy)
+            moved = (sx, sy)
         # WHEEL_DELTA = 120
-        ctypes.windll.user32.mouse_event(0x0800, 0, 0, int(dy) * 120, 0)
-        return {"ok": True, "dy": int(dy)}
+        _mouse(0x0800, 0, 0, int(dy) * 120, 0)
+        out: dict[str, Any] = {"ok": True, "dy": int(dy)}
+        if moved is not None:
+            out["x"], out["y"] = moved
+        return out
     except Exception as e:
         return {"ok": False, "error": str(e)[:160]}
 

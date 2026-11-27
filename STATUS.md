@@ -19,27 +19,19 @@
    `GET /api/update` = `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-
-5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
-   totals checked against pandas, turns keep their files, restore, sanitizer.
-   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
-   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
-   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
-   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
-   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
-6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
-   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
-   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
-7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
-   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
-   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
-
-5. **Phone preview + Open in Space (draft PR on #91).** `/data/` serves
-   Range (206/416), streamed. Open button for pdf/office/txt. Host-only
-   `POST /api/space/open` launches NetieSpace.exe. Needs a real iPhone and a
-   Windows host to prove. Ledger rows pending in PRD-001 (founder directed).
+5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
+   Rounds 1-3b: shell, lens, stress corpus, 8-language refusals, phone
+   chat. Code `e4d0ab5`: 1595/0/9; JS 256; browser 27/27; Windows CI green
+   on `a507281`. Unverified: tunnel, phone, provider, Cortex, embedder.
+   Owner calls: P14-P36. RAG #90 is inside #91 (n=320 not re-run).
+6. GitHub still lists D09 #56 and D10 #71 OPEN. Done locally on
+   `fix/guest-boundary-and-phone-shell`, not pushed.
+7. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
+   Host-only `POST /api/space/open`. Needs a real iPhone and Windows host.
+8. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
+   On, screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps
+   to screen (1280, 720). Drawn-grid bench (not a live 150% display):
+   flag off 0/50 at 100% and at 150%; flag on 50/50 at both.
 
 ## Next
 

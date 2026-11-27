@@ -221,3 +221,12 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `marketplace.py` -- catalog + fit. `bind_serve` is a recipe, not a pid
   (DR-0007 accepted). Constructor blurb is a hub card, not a Cortex-hosted
   LLM server.
+- `desktop_control.py` -- screenshot pixels vs screen pixels.
+  `AIRGPT_DESKTOP_SCALE=1` (default off) maps `click`, `drag`, and
+  `scroll` (when given x, y) from the last downscaled shot back onto the
+  framebuffer, and on Windows sets per-monitor DPI awareness so ImageGrab
+  and SetCursorPos share one space. The screenshot payload then carries
+  `scale` (displayed/full), `scale_y`, and `dpi`, plus the existing
+  `width`/`height` and `full_width`/`full_height`. Confirm gate unchanged.
+  Tests: `tests/test_desktop_computer_use.py`,
+  `tests/test_desktop_click_bench.py`.
