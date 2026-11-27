@@ -2,6 +2,13 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- BROWSER-01 follow-up: block data URLs (#99)
+
+- In-page requests may no longer use `data:` URLs. `browser_navigate` already
+  refused any scheme other than http or https. A missing
+  `AIRGPT_BROWSER_EXECUTABLE` path is skipped. Closing the session needs the
+  host even when the flag is off.
+
 ## 2026-11-27 -- BROWSER-01 host-only Playwright browser tools (#99)
 
 - `browser_mcp.py` opens a local Playwright session from accessibility refs.

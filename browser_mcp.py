@@ -222,7 +222,7 @@ def _start_playwright():
 def _candidate_executables() -> list[str | None]:
     found: list[str | None] = []
     env = (os.environ.get("AIRGPT_BROWSER_EXECUTABLE") or "").strip()
-    if env:
+    if env and os.path.isfile(env):
         found.append(env)
     found.append(None)
     for path in (
@@ -253,7 +253,7 @@ def _headless() -> bool:
 
 
 def _allow_request(url: str) -> bool:
-    return url.startswith(("http://", "https://", "about:", "data:", "blob:"))
+    return url.startswith(("http://", "https://", "about:", "blob:"))
 
 
 def _ensure_session() -> tuple[_Session | None, dict | None]:
@@ -494,7 +494,7 @@ def status() -> dict:
 
 def close() -> dict:
     with _lock:
-        if enabled() and not caller_is_host():
+        if not caller_is_host():
             return {"ok": False, "error": "host_only", "performed": False}
         _shutdown()
         return {"ok": True, "enabled": enabled(), "launched": False, "performed": False}

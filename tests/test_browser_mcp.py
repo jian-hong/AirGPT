@@ -233,6 +233,35 @@ def test_credential_url_is_refused_and_not_echoed(monkeypatch):
     assert browser_mcp.launch_count() == before
 
 
+def test_data_url_is_blocked(monkeypatch):
+    monkeypatch.setenv("AIRGPT_BROWSER_MCP", "1")
+    before = browser_mcp.launch_count()
+    out = browser_mcp.navigate("data:text/html,hi")
+    assert out["error"] == "unsupported_scheme"
+    assert out["performed"] is False
+    assert "text/html" not in json.dumps(out)
+    assert browser_mcp.launch_count() == before
+    assert browser_mcp._allow_request("data:text/html,hi") is False
+    assert browser_mcp._allow_request("http://127.0.0.1/index.html") is True
+
+
+def test_missing_browser_executable_is_not_a_candidate(monkeypatch, tmp_path):
+    missing = tmp_path / "no-such-browser"
+    monkeypatch.setenv("AIRGPT_BROWSER_EXECUTABLE", str(missing))
+    assert str(missing) not in browser_mcp._candidate_executables()
+
+
+def test_remote_cannot_close(monkeypatch):
+    monkeypatch.delenv("AIRGPT_BROWSER_MCP", raising=False)
+    assert browser_mcp.bind_caller({"Host": "evil.example"}, "198.51.100.22") is False
+    try:
+        out = browser_mcp.close()
+        assert out["error"] == "host_only"
+        assert out["performed"] is False
+    finally:
+        browser_mcp.clear_caller()
+
+
 def test_javascript_url_is_refused(monkeypatch):
     monkeypatch.setenv("AIRGPT_BROWSER_MCP", "1")
     before = browser_mcp.launch_count()
