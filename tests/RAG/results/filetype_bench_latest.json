@@ -5,7 +5,7 @@
   "top_k": 5,
   "n_total": 480,
   "index_fingerprint": {
-    "schema_version": 2,
+    "schema_version": 3,
     "chunker": {
       "name": "parent_child_sentence",
       "child_tokens": 200,
@@ -24,7 +24,7 @@
     "extra": {
       "pack": "filetype_bench"
     },
-    "id": "d89d8a69d7804e6c"
+    "id": "dea9d5e775603915"
   },
   "honesty": "retrieval only, hash embedder, synthetic facts, no model call. Counts, not rates: n per type is too small to claim zero error.",
   "types": {
@@ -52,7 +52,7 @@
       "n": 30,
       "ingested": true,
       "reason": "",
-      "recall_at_1": 29,
+      "recall_at_1": 30,
       "recall_at_5": 30,
       "locator_n": 30,
       "locator_ok": 30,
@@ -188,5 +188,9 @@
       "locator_ok": 0,
       "misses": []
     }
-  }
+  },
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:46:32Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths.",
+  "metric_note": "recall_at_1 and recall_at_5 are success@k counts: how many questions placed their one gold passage in the top k. They are not set-recall. With one gold passage the count matches recall@k. See rag/metrics.py."
 }

@@ -14,7 +14,7 @@ from frtr_eval import BENCH, RESULTS, SANITIZED, extract_questions, sanitize_wor
 from frtr_sql_baseline import answer_sqlish, load_sheets  # noqa: E402
 
 
-def main(limit_wb: int = 12) -> None:
+def main(limit_wb: int = 12, out: str = "") -> None:
     sources = sorted(BENCH.glob("frtr_*.xlsx"))[:limit_wb]
     rows = []
     correct = 0
@@ -72,9 +72,16 @@ def main(limit_wb: int = 12) -> None:
             for k, v in by_wb.items()
         },
     }
-    payload = {"ok": True, "honesty": "Cortex-direct demo path", "summary": summary, "rows": rows}
+    payload = {"ok": True, "honesty": "Cortex-direct demo path", "summary": summary, "rows": rows,
+               "corpus": str(BENCH)}
+    from bench_stamp import write_json
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / "frtr_batch_latest.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    dest = Path(out) if out else RESULTS / "frtr_batch_latest.json"
+    write_json(dest, payload)
+    if out:
+        print(json.dumps(summary, indent=2), flush=True)
+        print(f"wrote {dest}", flush=True)
+        return
 
     import openpyxl
     from openpyxl.styles import Font
@@ -100,5 +107,9 @@ def main(limit_wb: int = 12) -> None:
 
 
 if __name__ == "__main__":
-    lim = int(sys.argv[1]) if len(sys.argv) > 1 else 12
-    main(lim)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--limit", type=int, default=12)
+    ap.add_argument("--out", default="")
+    ns = ap.parse_args()
+    main(ns.limit, ns.out)

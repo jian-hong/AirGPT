@@ -484,6 +484,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--out", default="")
     ap.add_argument("--no-write", action="store_true")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
@@ -491,6 +492,7 @@ if __name__ == "__main__":
     res = run(args.n, args.seed)
     print(render_board(res))
     if not args.no_write:
-        RESULTS.parent.mkdir(parents=True, exist_ok=True)
-        RESULTS.write_text(json.dumps(res, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"wrote {RESULTS}")
+        from bench_stamp import write_json
+        dest = Path(args.out) if args.out else RESULTS
+        write_json(dest, res, retrieval=True)
+        print(f"wrote {dest}")

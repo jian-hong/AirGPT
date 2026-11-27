@@ -6,11 +6,13 @@ oracle_cross_latest.json and fails when either variant, the shared question
 set, or an F13 field is missing. It does not re-score (n=320 is a documented
 regenerate, not CI).
 
-Regenerate (small, frtr_0001, one ask per family):
+Regenerate the n=7 smoke from the committed primary50 workbook (FRTR-bench
+is gitignored and not in a fresh clone):
 
-    python tests/RAG/oracle_bench.py --dir FRTR-bench --workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
+    python tests/RAG/oracle_bench.py --dir primary50 --workbook p50_01_sales_messy.xlsx --n 7 --seed 1 --variants sira_max,hybrid_max
 
-n=320 (primary50, four workbooks, seeds 1-4) is the F13b pack gate below, not a re-score.
+n=320 (primary50, four workbooks, seeds 1-4) is the F13b pack gate below.
+`tests/RAG/regen_latest.py --check` re-runs it.
 Do not write precision@k / recall@k / PR-AUC / MAP.
 """
 from __future__ import annotations
@@ -125,8 +127,8 @@ def test_one_variant_payload_is_rejected():
 def test_retained_oracle_cross_has_sira_and_hybrid():
     assert ARTIFACT.is_file(), (
         f"missing {ARTIFACT.as_posix()}. "
-        "python tests/RAG/oracle_bench.py --dir FRTR-bench "
-        "--workbook frtr_0001_quarterly-summary.xlsx --n 7 --seed 1 "
+        "python tests/RAG/oracle_bench.py --dir primary50 "
+        "--workbook p50_01_sales_messy.xlsx --n 7 --seed 1 "
         "--variants sira_max,hybrid_max"
     )
     data = json.loads(ARTIFACT.read_text(encoding="utf-8"))

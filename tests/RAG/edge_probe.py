@@ -49,22 +49,15 @@ def _check(row: dict) -> bool:
     return True
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--space-id", type=int, default=8)
-    args = ap.parse_args()
-
-    from rag import answer, demo_variants, store
-
-    store.init()
-    demo_variants.select_variant(args.space_id, "hybrid_max")
+def _score(space_id: int, *, use_llm: bool) -> tuple[list[dict], int]:
+    from rag import answer
 
     rows = []
     ok = 0
     for p in PROBES:
         t0 = time.perf_counter()
         try:
-            out = answer.answer(args.space_id, p["q"], depth="max", use_llm=True)
+            out = answer.answer(space_id, p["q"], depth="max", use_llm=use_llm, use_web=False)
             ans = str(out.get("answer") or "")
             err = None if out.get("ok") else out.get("error")
         except Exception as e:
@@ -82,8 +75,79 @@ def main() -> None:
         safe = (ans[:120] or "").encode("ascii", "replace").decode("ascii")
         print(f"[{mark}] {p['id']} {row['ms']}ms :: {safe!r}", flush=True)
         rows.append(row)
+    return rows, ok
 
-    # Cortex online
+
+def _write(payload: dict, outp: Path) -> None:
+    from bench_stamp import write_json
+    write_json(outp, payload)
+    print(json.dumps({"passed": payload["passed"], "n": payload["n"], "ok": payload["ok"]}, indent=2))
+    print(f"wrote {outp}")
+
+
+def run_offline(outp: Path) -> None:
+    """Score the probes against the committed warehouse workbook. No Cortex, no LLM."""
+    import os
+    import tempfile
+
+    os.environ["AIRGPT_RAG_EMBED"] = "hash"
+    import rag.store as store
+    from rag import embed, ingest
+
+    embed.reset_embedder_cache()
+    saved = (store.RAG_DIR, store.DB_PATH, store.BLOB_DIR)
+    tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+    try:
+        root = Path(tmp.name)
+        store.RAG_DIR = root / "rag"
+        store.DB_PATH = store.RAG_DIR / "rag.db"
+        store.BLOB_DIR = store.RAG_DIR
+        store.init()
+        sid = int(store.create_space("edge offline", depth_default="max")["id"])
+        wh = ROOT / "warehouse" / "wh_01_sales_core.xlsx"
+        res = ingest.ingest_paths(sid, [str(wh)])
+        if not res.get("ok"):
+            raise SystemExit(f"offline ingest failed: {res}")
+        rows, ok = _score(sid, use_llm=False)
+    finally:
+        store.RAG_DIR, store.DB_PATH, store.BLOB_DIR = saved
+        embed.reset_embedder_cache()
+        tmp.cleanup()
+    payload = {
+        "ok": ok == len(rows),
+        "passed": ok,
+        "n": len(rows),
+        "accuracy": round(ok / max(1, len(rows)), 3),
+        "honesty": (
+            "Offline regen: hash embedder, use_llm=False, warehouse wh_01 only. "
+            "Does not dial Cortex. The previous live-host trace could not be "
+            "reproduced in CI."
+        ),
+        "mode": "offline",
+        "cortex": {"ok": False, "status": "not_called", "reason": "offline regen does not dial Cortex"},
+        "rows": rows,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    _write(payload, outp)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--space-id", type=int, default=8)
+    ap.add_argument("--offline", action="store_true")
+    ap.add_argument("--out", default="")
+    args = ap.parse_args()
+    outp = Path(args.out) if args.out else ROOT / "results" / "edge_probe_latest.json"
+    if args.offline:
+        run_offline(outp)
+        return
+
+    from rag import demo_variants, store
+
+    store.init()
+    demo_variants.select_variant(args.space_id, "hybrid_max")
+    rows, ok = _score(args.space_id, use_llm=True)
+
     cortex = {"ok": False}
     try:
         import cortex_client
@@ -98,14 +162,12 @@ def main() -> None:
         "n": len(rows),
         "accuracy": round(ok / max(1, len(rows)), 3),
         "honesty": demo_variants.HONESTY,
+        "mode": "live",
         "cortex": cortex,
         "rows": rows,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
-    outp = ROOT / "results" / "edge_probe_latest.json"
-    outp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(json.dumps({"passed": ok, "n": len(rows), "cortex_ok": cortex.get("ok")}, indent=2))
-    print(f"wrote {outp}")
+    _write(payload, outp)
 
 
 if __name__ == "__main__":

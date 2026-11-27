@@ -1,0 +1,74 @@
+{
+  "bench": "real_doc_bench",
+  "n": 200,
+  "top_k": 10,
+  "depth": "high",
+  "success_at_1": {
+    "hit": 120,
+    "n": 200,
+    "rate": 0.6
+  },
+  "success_at_5": {
+    "hit": 120,
+    "n": 200,
+    "rate": 0.6
+  },
+  "ndcg_at_10": 0.6,
+  "by_style": {
+    "verbatim": {
+      "n": 80,
+      "success_at_1": 80,
+      "success_at_5": 80,
+      "ndcg_at_10": 1.0
+    },
+    "synonym": {
+      "n": 40,
+      "success_at_1": 40,
+      "success_at_5": 40,
+      "ndcg_at_10": 1.0
+    },
+    "cross_file": {
+      "n": 80,
+      "success_at_1": 0,
+      "success_at_5": 0,
+      "ndcg_at_10": 0.0
+    }
+  },
+  "sample_misses": {
+    "verbatim": [],
+    "synonym": [],
+    "cross_file": [
+      "x-001 What is the penalty code for the account headquartered in Tromso?",
+      "x-002 What is the penalty code for the account headquartered in Bergen?",
+      "x-003 What is the penalty code for the account headquartered in Stavanger?"
+    ]
+  },
+  "harder_than_paraphrase_success_at_5": true,
+  "index_fingerprint": {
+    "schema_version": 3,
+    "chunker": {
+      "name": "parent_child_sentence",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40,
+      "table": false
+    },
+    "embed": {
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
+    },
+    "extra": {
+      "pack": "real_doc_bench"
+    },
+    "id": "dea9d5e775603915"
+  },
+  "metric_note": "success_at_1 and success_at_5 count questions whose gold value string appears in the top 1 or top 5 hit texts. One gold value per question, so this is success@k, not set-recall. ndcg_at_10 is binary nDCG with one relevant hit (see ndcg_at_10 in this harness and rag/metrics.py). It is not success@k.",
+  "honesty": "Retrieval only, hash embedder, committed documents under tests/RAG/real_docs, no model call. Gold is a value (a code), not merely that some passage was returned. cross_file asks for a code that is not in the memo the city appears in. Measures; rag/ was not tuned to this pack. A saturated success@5 would mean the pack is not harder than the paraphrase board.",
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:46:48Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
+}

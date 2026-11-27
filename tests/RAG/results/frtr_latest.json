@@ -1,16 +1,16 @@
 {
   "summary": {
     "ok": true,
-    "space_id": 6,
+    "space_id": 1,
     "n": 6,
     "correct": 6,
     "accuracy": 1.0,
     "depth": "max",
-    "use_llm": true,
+    "use_llm": false,
     "hybrid_sql": true,
     "by_difficulty": {
       "Easy": {
-        "n": 3,
+        "n": 2,
         "accuracy": 1.0
       },
       "Medium": {
@@ -18,29 +18,17 @@
         "accuracy": 1.0
       },
       "Hard": {
-        "n": 1,
+        "n": 2,
         "accuracy": 1.0
       }
     },
     "by_reasoning": {
       "Aggregation": {
-        "n": 2,
+        "n": 4,
         "accuracy": 1.0
       },
       "Comparison": {
-        "n": 1,
-        "accuracy": 1.0
-      },
-      "Computation": {
-        "n": 1,
-        "accuracy": 1.0
-      },
-      "TrendReasoning": {
-        "n": 1,
-        "accuracy": 1.0
-      },
-      "Lookup/Count": {
-        "n": 1,
+        "n": 2,
         "accuracy": 1.0
       }
     },
@@ -50,104 +38,119 @@
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 1,
-      "question": "What is total revenue in Q2 2024?",
+      "question": "On the Revenue sheet, sum Qty for rows 2 to 21",
       "reasoning_type": "Aggregation",
       "difficulty": "Easy",
-      "gold": "2176251.169851399",
-      "raw_answer": "See Summary!B4",
-      "pred": "2176251.169851399",
+      "gold": "159",
+      "raw_answer": "159",
+      "pred": "159 — the total of Qty across spreadsheet rows 2-21 (data rows 1-20 of 120), over 20 of 120 rows on the Revenue sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT SUM(Qty) FROM Revenue WHERE _excel_row BETWEEN 2 AND 21",
       "correct": true,
       "match_reason": "substring",
-      "lane": "sql",
-      "ms": 166.7,
+      "lane": "rag",
+      "ms": 89.3,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     },
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 2,
-      "question": "Which quarter has the highest gross margin dollars?",
-      "reasoning_type": "Comparison",
-      "difficulty": "Medium",
-      "gold": "Q2 2024",
-      "raw_answer": "Max of Summary!D3:D6",
-      "pred": "Q2 2024",
+      "question": "On the Revenue sheet, total Revenue for rows 2 to 21",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Easy",
+      "gold": "653.5",
+      "raw_answer": "653.5",
+      "pred": "653.5 — the total of Revenue across spreadsheet rows 2-21 (data rows 1-20 of 120), over 20 of 120 rows on the Revenue sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT SUM(Revenue) FROM Revenue WHERE _excel_row BETWEEN 2 AND 21",
       "correct": true,
       "match_reason": "substring",
-      "lane": "sql",
-      "ms": 2.6,
+      "lane": "rag",
+      "ms": 26.5,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     },
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 3,
-      "question": "What is the gross margin percentage in Q3 2024?",
-      "reasoning_type": "Computation",
-      "difficulty": "Easy",
-      "gold": "0.4429409225701213",
-      "raw_answer": "See Summary!E5",
-      "pred": "0.4429409225701213",
+      "question": "On the Expenses sheet, sum Units for rows 2 to 16",
+      "reasoning_type": "Aggregation",
+      "difficulty": "Medium",
+      "gold": "76",
+      "raw_answer": "76",
+      "pred": "76 — the total of Units across spreadsheet rows 2-16 (data rows 1-15 of 80), over 15 of 80 rows on the Expenses sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT SUM(Units) FROM Expenses WHERE _excel_row BETWEEN 2 AND 16",
       "correct": true,
       "match_reason": "substring",
-      "lane": "sql",
-      "ms": 1.2,
+      "lane": "rag",
+      "ms": 18.6,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     },
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 4,
-      "question": "What is total expenses in Q1 2024?",
+      "question": "On the Expenses sheet, total Amount for rows 2 to 16",
       "reasoning_type": "Aggregation",
-      "difficulty": "Easy",
-      "gold": "1016549.3740205832",
-      "raw_answer": "See Summary!C3",
-      "pred": "1016549.374020583",
+      "difficulty": "Medium",
+      "gold": "176.25",
+      "raw_answer": "176.25",
+      "pred": "176.25 — the total of Amount across spreadsheet rows 2-16 (data rows 1-15 of 80), over 15 of 80 rows on the Expenses sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT SUM(Amount) FROM Expenses WHERE _excel_row BETWEEN 2 AND 16",
       "correct": true,
-      "match_reason": "numeric_1pct",
-      "lane": "sql",
-      "ms": 1.0,
+      "match_reason": "substring",
+      "lane": "rag",
+      "ms": 20.8,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     },
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 5,
-      "question": "Does the revenue trend in the chart increase from Q1 to Q4?",
-      "reasoning_type": "TrendReasoning",
-      "difficulty": "Medium",
-      "gold": "No",
-      "raw_answer": "Yes",
-      "pred": "1966567.302699234",
+      "question": "On the Revenue sheet, maximum Qty for rows 12 to 41",
+      "reasoning_type": "Comparison",
+      "difficulty": "Hard",
+      "gold": "17",
+      "raw_answer": "17",
+      "pred": "17 — the maximum of Qty across spreadsheet rows 12-41 (data rows 11-40 of 120), over 30 of 120 rows on the Revenue sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT MAX(Qty) FROM Revenue WHERE _excel_row BETWEEN 12 AND 41",
       "correct": true,
-      "match_reason": "gold_value",
-      "lane": "sql",
-      "ms": 0.8,
+      "match_reason": "substring",
+      "lane": "rag",
+      "ms": 25.0,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     },
     {
       "workbook": "frtr_0001_quarterly-summary.xlsx",
       "qid": 6,
-      "question": "Which region appears most frequently in revenue records?",
-      "reasoning_type": "Lookup/Count",
+      "question": "On the Expenses sheet, minimum Units for rows 7 to 26",
+      "reasoning_type": "Comparison",
       "difficulty": "Hard",
-      "gold": "West",
-      "raw_answer": "INDEX(UNIQUE(B4:B579),XMATCH(MAX(COUNTIF(B4:B579,UNIQUE(B4:B579))),COUNTIF(B4:B579,UNIQUE(B4:B579)))) OR West",
-      "pred": "West",
+      "gold": "1",
+      "raw_answer": "1",
+      "pred": "1 — the minimum of Units across spreadsheet rows 7-26 (data rows 6-25 of 80), over 20 of 80 rows on the Expenses sheet of frtr_0001_quarterly-summary.xlsx.\n\nSQL: SELECT MIN(Units) FROM Expenses WHERE _excel_row BETWEEN 7 AND 26",
       "correct": true,
       "match_reason": "substring",
-      "lane": "sql",
-      "ms": 4.5,
+      "lane": "rag",
+      "ms": 17.1,
       "error": null,
-      "citations": [],
+      "citations": [
+        "/tmp/rag-data-o6i6h46k/frtr_latest.json/rag/1/Docs/eb26bbc1_frtr_0001_quarterly-summary.xlsx"
+      ],
       "model": "pandas-sql"
     }
-  ]
+  ],
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:47:14Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

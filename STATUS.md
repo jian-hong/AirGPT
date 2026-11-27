@@ -21,33 +21,26 @@
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 
 5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
-   totals checked against pandas, turns keep their files, restore, sanitizer.
-   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
-   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
-   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
-   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
-   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
-6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
-   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
-   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
+   Rounds 1-3b landed (shell, RAG scope, phone chat). Code `e4d0ab5`.
+   Unverified: tunnel, phone, provider, Cortex, a real embedder.
+6. **RAG benches (#93).** Job `rag-benches` regenerates every
+   `*_latest.json`. Paraphrase success@5 64/64 all styles (stale file was
+   45/64 and 17/64). File types success@5 480/480. Real-doc n=200:
+   success@1 120/200, success@5 120/200, nDCG@10 0.6 (cross-file 0/80).
+   primary50 equivalent n=320: hybrid 320/320, sira 44/320. Original
+   primary50 bytes were not in the clone.
 7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
-   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
-   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
-
-5. **Phone preview + Open in Space (draft PR on #91).** `/data/` serves
-   Range (206/416), streamed. Open button for pdf/office/txt. Host-only
-   `POST /api/space/open` launches NetieSpace.exe. Needs a real iPhone and a
-   Windows host to prove. Ledger rows pending in PRD-001 (founder directed).
+   Scope is on `fix/guest-boundary-and-phone-shell`, NOT pushed.
+8. **Phone preview.** `/data/` Range 206/416. Open in Space is host-only.
+   Needs a real iPhone and a Windows host.
 
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
-2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320; decide P22-P36.
+2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm `pypdf`;
+   decide P22-P36. n=320 was re-run on the seeded equivalent only.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

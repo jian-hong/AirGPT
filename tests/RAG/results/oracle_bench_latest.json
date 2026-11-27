@@ -1,447 +1,548 @@
 {
   "ok": true,
-  "workbook": "frtr_00027_supply-chain-regional.xlsx",
+  "workbook": "p50_01_sales_messy.xlsx",
   "seed": 42,
   "n": 21,
   "correct": 21,
   "accuracy": 1.0,
   "schema_link_recall": 1.0,
+  "schema_link_rule": 2,
   "right_value_wrong_binding": 0,
   "by_family": {
     "row_range_agg": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "row_range_nocol": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "filter_agg": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "filter_count": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "combined": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "paraphrase": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 0,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 0.0
     },
     "out_of_range": {
       "n": 3,
       "ok": 3,
-      "linked": 3
+      "linked": 3,
+      "abstained": 3,
+      "value_accuracy": 1.0,
+      "schema_link_accuracy": 1.0,
+      "abstention_rate": 1.0
     }
   },
   "header_drift": [],
   "rows": [
     {
       "family": "row_range_agg",
-      "question": "On the Summary sheet, total TotalShipments for rows 31 to 58",
+      "question": "On the Sales sheet, maximum Qty for rows 74 to 151",
       "ok": true,
-      "why": "0.0",
-      "ms": 52.3,
+      "why": "79.0",
+      "ms": 22.5,
       "linked_ok": true,
       "link_why": "sheet + columns bound",
-      "sql": "SELECT SUM(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 31 AND 58",
-      "sheet": "Summary",
+      "sql": "SELECT MAX(Qty) FROM Sales WHERE _excel_row BETWEEN 74 AND 151",
+      "sheet": "Sales",
       "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "TotalShipments",
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Qty",
         "filters": [],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "row_range_nocol",
-      "question": "select rows 247 to 332 on Carriers, total",
-      "ok": true,
-      "why": "2 columns match",
-      "ms": 3.7,
-      "linked_ok": true,
-      "link_why": "bound sheet, all numeric columns",
-      "sql": "SELECT SUM(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 247 AND 332; SELECT SUM(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 247 AND 332",
-      "sheet": "Carriers",
-      "linked": {
-        "sheet": "Carriers",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "",
-        "filters": [],
-        "all_numeric": true
-      }
-    },
-    {
-      "family": "filter_agg",
-      "question": "On Carriers, what is the average BaseRate where on time sla at most 0.95",
-      "ok": true,
-      "why": "1.5038604353393088",
-      "ms": 5.2,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT AVG(BaseRate) FROM Carriers WHERE OnTimeSLA <= 0.95",
-      "sheet": "Carriers",
-      "linked": {
-        "sheet": "Carriers",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "BaseRate",
-        "filters": [
-          "OnTimeSLA"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "filter_count",
-      "question": "On Shipments, how many rows have weight lb at most 275.6",
-      "ok": true,
-      "why": "110331.0",
-      "ms": 25.5,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT COUNT(*) FROM Shipments WHERE WeightLb <= 275.6",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "",
-        "filters": [
-          "WeightLb"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "combined",
-      "question": "On the Shipments sheet, mean WeightLb for rows 24315 to 24544 where on time greater than 1.0",
-      "ok": true,
-      "why": "refused, and there was nothing to compute",
-      "ms": 4.8,
-      "linked_ok": true,
-      "link_why": "refused, bound correctly, no rows matched",
-      "sql": "SELECT AVG(WeightLb) FROM Shipments WHERE OnTime > 1 AND _excel_row BETWEEN 24315 AND 24544",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "WeightLb",
-        "filters": [
-          "OnTime"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "paraphrase",
-      "question": "On the Shipments sheet, maximum OnTime for rows 120438 to 121952",
-      "ok": true,
-      "why": "1.0 (3 phrasings agree)",
-      "ms": 4.8,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 120438 AND 121952",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTime",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "out_of_range",
-      "question": "On the Summary sheet, minimum TotalShipments for rows 41276 to 41376",
-      "ok": true,
-      "why": "refused as it should",
-      "ms": 1.2,
-      "linked_ok": true,
-      "link_why": "refused: rows outside the sheet",
-      "sql": "SELECT MIN(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 41276 AND 41376",
-      "sheet": "Summary",
-      "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "TotalShipments",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "row_range_agg",
-      "question": "On the Shipments sheet, maximum OnTime for rows 18236 to 19698",
-      "ok": true,
-      "why": "1.0",
-      "ms": 1.5,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT MAX(OnTime) FROM Shipments WHERE _excel_row BETWEEN 18236 AND 19698",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTime",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "row_range_nocol",
-      "question": "select rows 956 to 2727 on Carriers, maximum",
-      "ok": true,
-      "why": "2 columns match",
-      "ms": 5.6,
-      "linked_ok": true,
-      "link_why": "bound sheet, all numeric columns",
-      "sql": "SELECT MAX(BaseRate) FROM Carriers WHERE _excel_row BETWEEN 956 AND 2727; SELECT MAX(OnTimeSLA) FROM Carriers WHERE _excel_row BETWEEN 956 AND 2727",
-      "sheet": "Carriers",
-      "linked": {
-        "sheet": "Carriers",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "",
-        "filters": [],
-        "all_numeric": true
-      }
-    },
-    {
-      "family": "filter_agg",
-      "question": "On Carriers, what is the highest OnTimeSLA where base rate at least 1.58",
-      "ok": true,
-      "why": "0.99",
-      "ms": 1.8,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT MAX(OnTimeSLA) FROM Carriers WHERE BaseRate >= 1.58",
-      "sheet": "Carriers",
-      "linked": {
-        "sheet": "Carriers",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTimeSLA",
-        "filters": [
-          "BaseRate"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "filter_count",
-      "question": "On Shipments, how many rows have cost usd at least 273.76",
-      "ok": true,
-      "why": "92921.0",
-      "ms": 17.0,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT COUNT(*) FROM Shipments WHERE CostUSD >= 273.76",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "",
-        "filters": [
-          "CostUSD"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "combined",
-      "question": "On the Shipments sheet, maximum CostUSD for rows 85011 to 86433 where weight lb at least 275.6",
-      "ok": true,
-      "why": "974.27",
-      "ms": 4.5,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT MAX(CostUSD) FROM Shipments WHERE WeightLb >= 275.6 AND _excel_row BETWEEN 85011 AND 86433",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "CostUSD",
-        "filters": [
-          "WeightLb"
-        ],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "paraphrase",
-      "question": "On the Shipments sheet, maximum CostUSD for rows 148685 to 149137",
-      "ok": true,
-      "why": "897.71 (3 phrasings agree)",
-      "ms": 5.6,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT MAX(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 148685 AND 149137",
-      "sheet": "Shipments",
-      "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "CostUSD",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "out_of_range",
-      "question": "On the Summary sheet, mean OnTimeRate for rows 31026 to 31126",
-      "ok": true,
-      "why": "refused as it should",
-      "ms": 0.9,
-      "linked_ok": true,
-      "link_why": "refused: rows outside the sheet",
-      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 31026 AND 31126",
-      "sheet": "Summary",
-      "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTimeRate",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "row_range_agg",
-      "question": "On the Summary sheet, mean OnTimeRate for rows 34 to 58",
-      "ok": true,
-      "why": "0.0",
-      "ms": 5.0,
-      "linked_ok": true,
-      "link_why": "sheet + columns bound",
-      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 34 AND 58",
-      "sheet": "Summary",
-      "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTimeRate",
-        "filters": [],
-        "all_numeric": false
-      }
-    },
-    {
-      "family": "row_range_nocol",
-      "question": "select rows 28 to 66 on Summary, highest",
+      "question": "select rows 18 to 46 on Sales, total",
       "ok": true,
       "why": "3 columns match",
-      "ms": 2.4,
+      "ms": 16.6,
       "linked_ok": true,
-      "link_why": "bound sheet, all numeric columns",
-      "sql": "SELECT MAX(Month) FROM Summary WHERE _excel_row BETWEEN 28 AND 66; SELECT MAX(TotalShipments) FROM Summary WHERE _excel_row BETWEEN 28 AND 66; SELECT MAX(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 28 AND 66; SELECT MAX(AvgCost) FROM Summary WHERE _excel_row BETWEEN 28 AND 66",
-      "sheet": "Summary",
+      "link_why": "bound sheet, all numeric columns delivered",
+      "sql": "SELECT SUM(Qty) FROM Sales WHERE _excel_row BETWEEN 18 AND 46; SELECT SUM(UnitPrice) FROM Sales WHERE _excel_row BETWEEN 18 AND 46; SELECT SUM(Revenue) FROM Sales WHERE _excel_row BETWEEN 18 AND 46",
+      "sheet": "Sales",
       "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
         "metric": "",
         "filters": [],
         "all_numeric": true
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "filter_agg",
-      "question": "On Shipments, what is the mean WeightLb where cost usd above 273.76",
+      "question": "On Sales, what is the average Qty where unit price at most 21.04",
       "ok": true,
-      "why": "355.3155767699163",
-      "ms": 21.1,
+      "why": "42.209",
+      "ms": 11.0,
       "linked_ok": true,
       "link_why": "sheet + columns bound",
-      "sql": "SELECT AVG(WeightLb) FROM Shipments WHERE CostUSD > 273.76",
-      "sheet": "Shipments",
+      "sql": "SELECT AVG(Qty) FROM Sales WHERE UnitPrice <= 21.04",
+      "sheet": "Sales",
       "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "WeightLb",
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Qty",
         "filters": [
-          "CostUSD"
+          "UnitPrice"
         ],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "filter_count",
-      "question": "On Carriers, how many rows have on time sla at most 0.95",
+      "question": "On Costs, how many rows have units less than 19.0",
       "ok": true,
-      "why": "3124.0",
-      "ms": 1.6,
+      "why": "78.0",
+      "ms": 3.3,
       "linked_ok": true,
       "link_why": "sheet + columns bound",
-      "sql": "SELECT COUNT(*) FROM Carriers WHERE OnTimeSLA <= 0.95",
-      "sheet": "Carriers",
+      "sql": "SELECT COUNT(*) FROM Costs WHERE Units < 19",
+      "sheet": "Costs",
       "linked": {
-        "sheet": "Carriers",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
         "metric": "",
         "filters": [
-          "OnTimeSLA"
+          "Units"
         ],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "combined",
-      "question": "On the Summary sheet, sum OnTimeRate for rows 37 to 78 where avg cost below 0.0",
+      "question": "On the Sales sheet, maximum Qty for rows 197 to 240 where unit price less than 21.04",
       "ok": true,
-      "why": "refused, and there was nothing to compute",
-      "ms": 3.7,
+      "why": "78.0",
+      "ms": 11.3,
       "linked_ok": true,
-      "link_why": "refused, bound correctly, no rows matched",
-      "sql": "SELECT SUM(OnTimeRate) FROM Summary WHERE AvgCost < 0 AND _excel_row BETWEEN 37 AND 78",
-      "sheet": "Summary",
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(Qty) FROM Sales WHERE UnitPrice < 21.04 AND _excel_row BETWEEN 197 AND 240",
+      "sheet": "Sales",
       "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTimeRate",
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Qty",
         "filters": [
-          "AvgCost"
+          "UnitPrice"
         ],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "paraphrase",
-      "question": "On the Shipments sheet, mean CostUSD for rows 189295 to 189321",
+      "question": "On the Costs sheet, minimum Units for rows 50 to 129",
       "ok": true,
-      "why": "330.5944444444445 (3 phrasings agree)",
-      "ms": 5.6,
+      "why": "1.0 (3 phrasings agree)",
+      "ms": 6.9,
       "linked_ok": true,
       "link_why": "sheet + columns bound",
-      "sql": "SELECT AVG(CostUSD) FROM Shipments WHERE _excel_row BETWEEN 189295 AND 189321",
-      "sheet": "Shipments",
+      "sql": "SELECT MIN(Units) FROM Costs WHERE _excel_row BETWEEN 50 AND 129",
+      "sheet": "Costs",
       "linked": {
-        "sheet": "Shipments",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "CostUSD",
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Units",
         "filters": [],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": false
     },
     {
       "family": "out_of_range",
-      "question": "On the Summary sheet, average OnTimeRate for rows 46077 to 46177",
+      "question": "On the Sales sheet, highest Revenue for rows 43239 to 43339",
       "ok": true,
       "why": "refused as it should",
-      "ms": 0.5,
+      "ms": 9.4,
       "linked_ok": true,
-      "link_why": "refused: rows outside the sheet",
-      "sql": "SELECT AVG(OnTimeRate) FROM Summary WHERE _excel_row BETWEEN 46077 AND 46177",
-      "sheet": "Summary",
+      "link_why": "refused: sheet + columns bound",
+      "sql": "SELECT MAX(Revenue) FROM Sales WHERE _excel_row BETWEEN 43239 AND 43339",
+      "sheet": "Sales",
       "linked": {
-        "sheet": "Summary",
-        "workbook": "frtr_00027_supply-chain-regional.xlsx",
-        "metric": "OnTimeRate",
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Revenue",
         "filters": [],
         "all_numeric": false
-      }
+      },
+      "malformed": false,
+      "abstained": true
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, sum Revenue for rows 61 to 250",
+      "ok": true,
+      "why": "159334.38",
+      "ms": 9.5,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT SUM(Revenue) FROM Sales WHERE _excel_row BETWEEN 61 AND 250",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Revenue",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 37 to 81 on Costs, average",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 2.3,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns delivered",
+      "sql": "SELECT AVG(Units) FROM Costs WHERE _excel_row BETWEEN 37 AND 81; SELECT AVG(Amount) FROM Costs WHERE _excel_row BETWEEN 37 AND 81",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Costs, what is the mean Amount where units at least 19.0",
+      "ok": true,
+      "why": "105.0298",
+      "ms": 3.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(Amount) FROM Costs WHERE Units >= 19",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Amount",
+        "filters": [
+          "Units"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Sales, how many rows have qty at most 41.0",
+      "ok": true,
+      "why": "201.0",
+      "ms": 15.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Sales WHERE Qty <= 41",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "Qty"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Costs sheet, maximum Units for rows 107 to 141 where amount less than 103.06",
+      "ok": true,
+      "why": "40.0",
+      "ms": 3.8,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(Units) FROM Costs WHERE Amount < 103.06 AND _excel_row BETWEEN 107 AND 141",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Units",
+        "filters": [
+          "Amount"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Costs sheet, mean Units for rows 85 to 118",
+      "ok": true,
+      "why": "18.2647 (3 phrasings agree)",
+      "ms": 6.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(Units) FROM Costs WHERE _excel_row BETWEEN 85 AND 118",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Units",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Costs sheet, minimum Amount for rows 22520 to 22620",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 2.1,
+      "linked_ok": true,
+      "link_why": "refused: sheet + columns bound",
+      "sql": "SELECT MIN(Amount) FROM Costs WHERE _excel_row BETWEEN 22520 AND 22620",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Amount",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": true
+    },
+    {
+      "family": "row_range_agg",
+      "question": "On the Sales sheet, highest Qty for rows 105 to 274",
+      "ok": true,
+      "why": "80.0",
+      "ms": 8.9,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT MAX(Qty) FROM Sales WHERE _excel_row BETWEEN 105 AND 274",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Qty",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "row_range_nocol",
+      "question": "select rows 14 to 39 on Costs, mean",
+      "ok": true,
+      "why": "2 columns match",
+      "ms": 2.1,
+      "linked_ok": true,
+      "link_why": "bound sheet, all numeric columns delivered",
+      "sql": "SELECT AVG(Units) FROM Costs WHERE _excel_row BETWEEN 14 AND 39; SELECT AVG(Amount) FROM Costs WHERE _excel_row BETWEEN 14 AND 39",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "",
+        "filters": [],
+        "all_numeric": true
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "filter_agg",
+      "question": "On Sales, what is the mean Qty where unit price at most 21.04",
+      "ok": true,
+      "why": "42.209",
+      "ms": 10.4,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(Qty) FROM Sales WHERE UnitPrice <= 21.04",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Qty",
+        "filters": [
+          "UnitPrice"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "filter_count",
+      "question": "On Costs, how many rows have units below 19.0",
+      "ok": true,
+      "why": "78.0",
+      "ms": 3.1,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT COUNT(*) FROM Costs WHERE Units < 19",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "",
+        "filters": [
+          "Units"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "combined",
+      "question": "On the Costs sheet, mean Amount for rows 69 to 89 where units over 19.0",
+      "ok": true,
+      "why": "104.7856",
+      "ms": 3.6,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(Amount) FROM Costs WHERE Units > 19 AND _excel_row BETWEEN 69 AND 89",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Amount",
+        "filters": [
+          "Units"
+        ],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "paraphrase",
+      "question": "On the Costs sheet, mean Units for rows 22 to 90",
+      "ok": true,
+      "why": "19.6812 (3 phrasings agree)",
+      "ms": 6.7,
+      "linked_ok": true,
+      "link_why": "sheet + columns bound",
+      "sql": "SELECT AVG(Units) FROM Costs WHERE _excel_row BETWEEN 22 AND 90",
+      "sheet": "Costs",
+      "linked": {
+        "sheet": "Costs",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Units",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": false
+    },
+    {
+      "family": "out_of_range",
+      "question": "On the Sales sheet, highest Revenue for rows 6678 to 6778",
+      "ok": true,
+      "why": "refused as it should",
+      "ms": 9.0,
+      "linked_ok": true,
+      "link_why": "refused: sheet + columns bound",
+      "sql": "SELECT MAX(Revenue) FROM Sales WHERE _excel_row BETWEEN 6678 AND 6778",
+      "sheet": "Sales",
+      "linked": {
+        "sheet": "Sales",
+        "workbook": "p50_01_sales_messy.xlsx",
+        "metric": "Revenue",
+        "filters": [],
+        "all_numeric": false
+      },
+      "malformed": false,
+      "abstained": true
     }
   ],
-  "oracle": "openpyxl direct cell reads by spreadsheet row - shares no code with the lane"
+  "malformed_asks": 0,
+  "malformed_ask_rate": 0.0,
+  "abstention_rate": 0.1429,
+  "index_fingerprint": {
+    "schema_version": 3,
+    "chunker": {
+      "name": "parent_child_sentence",
+      "child_tokens": 200,
+      "parent_max_tokens": 900,
+      "child_overlap": 40,
+      "table": true
+    },
+    "embed": {
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
+    },
+    "extra": {
+      "pack": "primary50",
+      "workbook": "p50_01_sales_messy.xlsx",
+      "ontology_version": 4
+    },
+    "id": "749bc46a36e36171"
+  },
+  "oracle": "openpyxl direct cell reads by spreadsheet row. Shares no code with the lane AND uses a different header signal: the lane picks by modal body width, this picks by type transition (last text row above the first row containing a number). They disagree in both directions on synthetic sheets, which is what makes the drift check meaningful. Shared residual: both fall back to the pre-#31 first-wide-row rule when their primary signal is inconclusive.",
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:48:32Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

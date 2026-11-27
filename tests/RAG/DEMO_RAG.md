@@ -9,7 +9,7 @@ Branch: `demo/rag-cross-compare` | Epic [#6](https://github.com/jian-hong/AirGPT
 |-------|---------|-------|----------|
 | FRTR `frtr_0001` cross | hybrid_max **6/6**, sira_max 3/6 (`--no-llm`) | `tests/RAG/results/frtr_cross_latest.xlsx` |
 | Oracle F13 A/B `frtr_0001` n=7 | hybrid_max value **7/7**, sira_max **1/7** (abstain) | `tests/RAG/results/oracle_cross_latest.json` |
-| Oracle F13b primary50 n=320 | hybrid_max **320/320**, sira_max **44/320** (out_of_range only) | `tests/RAG/results/oracle_cross_primary50.json` |
+| Oracle F13b primary50 n=320 | hybrid_max **320/320**, sira_max **44/320** (value: out_of_range only; schema-link on that family is 0). Seeded equivalent workbooks, not the gitignored 2026-08-26 bytes. Judge accepts the lane's 4-decimal values. | `tests/RAG/results/oracle_cross_primary50.json` |
 | Warehouse 6 workbooks | hybrid_max | **10/10 = 1.000** | `tests/RAG/results/warehouse_hybrid_latest.xlsx` |
 | FRTR SQL batch (8 books) | hybrid_sql_only | **10/44 = 0.227** (0001 still 6/6) | `tests/RAG/results/frtr_batch_latest.xlsx` |
 | Edge / injection | hybrid_max space 8 | **9/9 = 1.000** | `tests/RAG/results/edge_probe_latest.json` |

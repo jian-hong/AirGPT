@@ -11,6 +11,16 @@ recall. With one relevant document per query the two happen to coincide, so the
 number was never wrong - the name was, and it stopped being harmless the moment
 precision-recall was asked for by name.
 
+The retrieval benches under `tests/RAG/` (`filetype_bench`, `paraphrase_bench`,
+`multilingual_bench`) publish the same idea as integer counts in fields named
+`recall_at_1` and `recall_at_5`: how many questions placed their one gold
+passage in the top k. Those fields are success@k counts. They equal recall@k
+only because each question has one gold passage. The real-document pack
+(`tests/RAG/real_doc_bench.py`) reports `success_at_1`, `success_at_5` and
+`ndcg_at_10` by those names. `ndcg_at_10` is binary nDCG with one relevant hit
+(1/log2(rank+2) when the gold value is in the top 10, else 0). It is not
+success@k.
+
 Three things this module refuses to do:
 
 1. Report precision@k without its ceiling. With one relevant document, precision@10

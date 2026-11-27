@@ -2,6 +2,16 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- RAG-BENCH-17: CI regenerates benches, harder real-doc pack (#93)
+
+- New job `rag-benches` (windows-latest) runs `tests/RAG/regen_latest.py --check`. It regenerates every committed `tests/RAG/results/*_latest.json` and fails on drift. Each file carries `commit_sha` and `generated_at`. The compare ignores those stamps. Suite `MIN_TESTS` stays 380.
+- Paraphrase, hash embedder, n=64 per style. Stale file: synonym success@5 45/64, property 17/64. This harness: verbatim 64/64 and 64/64, synonym 43/64 and 64/64, lower_typo 56/64 and 64/64, property 64/64 and 64/64. `recall_at_k` on these boards is success@k (one gold passage). Documented in `rag/metrics.py`.
+- File types n=480. success@5 stayed 480/480. success@1 was 473/480 in the stale file and 474/480 on this run.
+- Real-document pack `tests/RAG/real_doc_bench.py`, n=200, value-level gold. success@1 120/200 (0.6), success@5 120/200 (0.6), nDCG@10 0.6. Verbatim 80/80, synonym 40/40, cross-file 0/80. Harder than the paraphrase board.
+- The 2026-08-26 primary50 workbooks were gitignored and are not in this clone, so those asks cannot be re-run. A seeded equivalent is committed under `tests/RAG/primary50/` (four workbooks plus SHA256SUMS). n=320 on those asks: first run hybrid_max 280/320 because `close()` rejected values the SQL lane publishes at 4 decimals (example: got 42.6346, want 42.63461538461539; all 40 misses were that class). After `oracle_bench.close` also accepts `round(a, 4) == round(b, 4)`: hybrid_max 320/320 every family, sira_max 44/320 all from out_of_range value hits. sira schema-link on out_of_range is 0/44 (a refusal does not bind the sheet). malformed 0. F13b floors hold. Not a re-score of the original bytes.
+- FRTR-bench is gitignored. CI uses `tests/RAG/fixtures/frtr_min` (one workbook, 6 questions). frtr_eval 6/6, frtr_cross both variants 6/6, frtr_sql_batch 0/6 (different ask path). Ops fixture `tests/RAG/fixtures/ops/payroll_ops.xlsx`: 32/32. edge_probe --offline 8/9 (the old live Cortex trace is not reproducible here). warehouse --skip-gen 10/10.
+- No new runtime flag. Bench scripts only. `rag/ingest.py` not edited.
+
 ## 2026-11-20 -- Phone preview, video seeking, Open in Space
 
 - Stored files now answer Range requests (206, 416, Accept-Ranges) and stream,

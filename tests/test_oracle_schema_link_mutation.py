@@ -10,9 +10,9 @@ and asserts the scorer says False. It is table-driven over `oracle_bench.FAMILIE
 and asserts that tuple is fully covered, so a family added later cannot silently
 skip the check.
 
-It calls `link_check` directly and never opens a workbook: `tests/RAG/primary50/`
-is gitignored and founder-local, so a gate that needed it would not run on a
-fresh clone - which is exactly the hole this ticket exists to close.
+It calls `link_check` directly and never opens a workbook. The four primary50
+files are now committed (a seeded equivalent of the gitignored originals), but
+this gate still does not need them.
 """
 from __future__ import annotations
 

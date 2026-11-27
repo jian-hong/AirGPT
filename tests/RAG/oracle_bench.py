@@ -430,7 +430,12 @@ def close(a: float | None, b: float | None) -> bool:
         return a is b
     if b == 0:
         return abs(a) < TOL
-    return abs(a - b) <= max(TOL, abs(b) * 1e-9)
+    if abs(a - b) <= max(TOL, abs(b) * 1e-9):
+        return True
+    # sheet_sql publishes round(value, 4). Scoring 42.6346 against
+    # 42.63461538461539 as a miss makes value accuracy unreadable: every
+    # inexact average fails while the lane is doing what it documents.
+    return round(float(a), 4) == round(float(b), 4)
 
 
 def required_links(case: dict) -> tuple[str, set[str]]:
@@ -920,7 +925,13 @@ def main() -> None:
         out = Path(args.out) if args.out else RESULTS / "oracle_cross_primary50.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         pooled["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        out.write_text(json.dumps(pooled, indent=2), encoding="utf-8")
+        pooled["corpus"] = (
+            "tests/RAG/primary50 seeded equivalent. The 2026-08-26 primary50 "
+            "workbooks were gitignored and are not in this clone, so this pack "
+            "is not those bytes and not those asks."
+        )
+        from bench_stamp import write_json
+        write_json(out, pooled)
         print(f"pack n={pooled['n']} wrote {out}", flush=True)
         for v in pooled.get("variants") or []:
             _print_f13(f"pack {v['name']}", v)
@@ -1054,8 +1065,8 @@ def main() -> None:
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         out = Path(args.out) if args.out else RESULTS / "oracle_cross_latest.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        from bench_stamp import write_json
+        write_json(out, payload)
         print(f"wrote {out}", flush=True)
         # Named --out must not clobber the n=7 CI smoke at oracle_cross_latest.json.
         # F13b pack runs write oracle_cross_primary50_*.json instead.
@@ -1100,7 +1111,8 @@ def main() -> None:
         "oracle": oracle_note,
     }
     out = Path(args.out) if args.out else RESULTS / "oracle_bench_latest.json"
-    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from bench_stamp import write_json
+    write_json(out, payload)
     print(f"wrote {out}", flush=True)
     if total_ok != len(rows):
         raise SystemExit(1)
