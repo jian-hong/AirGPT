@@ -135,6 +135,18 @@ What exists in this repo and where. Update when structure changes, not when stat
 - `clipdrop._rag_check_build_paths` -- `/build` paths must be this space.
 - `rag/ingest.py` — `revision_profile` stamps saved architecture on rebuild
   (DR-0006 / #33). `table=True` for xlsx/csv. Rebuild prefers Docs original.
+- `rag/ingest.py` `ingest_github` — a repository at one pinned commit. Citations
+  are `path@sha`. Ignore globs and binaries are skipped. Same SHA again does
+  not mint chunk ids. Private tokens come only from
+  `openvault_bridge.github_token` (OpenVault `/api/keys/GH_TOKEN`, then
+  `GITHUB_TOKEN`). Off unless `AIRGPT_RAG_SOURCES_GITHUB=1`. `root=` is the
+  offline fixture and does not use the network.
+- `rag/ingest.py` `ingest_crawl` — breadth-first site crawl. Depth hard-capped
+  at 2 (start page is distance 0), pages hard-capped at 20. Same scheme, host
+  and port only. `robots.txt` Disallow for `AirGPT-RAG` else `*`; Allow is not
+  applied; a missing robots file allows the site. Redirects stay on-site (3
+  hops). Private addresses refused unless `allow_private=True` (fixture only,
+  not an env flag). Off unless `AIRGPT_RAG_CRAWL=1`. `ingest_urls` is unchanged.
 - `tests/RAG/filetype_bench.py` -- 11 file types in one space, planted facts,
   recall at 1/5 and whether the hit names a place. Live gate
   `tests/test_filetype_bench_gate.py` (n=10). No model call.

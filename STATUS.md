@@ -14,9 +14,8 @@
    Password. FreeRoute brief is `openvault_vault_sealed`. **NO** AirGPT
    PRD-002.
 3. **Research (D11).** Live artifact GET 200 for three packaged runs
-   (md/docx/pdf/tex; stages named). Background `deep_research`
-   `wf_a563c9a4cb1d` shows 4 `think` rows on `:8765`. Not arXiv.
-   `GET /api/update` = `no_update_server`.
+   (md/docx/pdf/tex; stages named). Not arXiv. `GET /api/update` =
+   `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
@@ -32,6 +31,9 @@
    On, screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps
    to screen (1280, 720). Drawn-grid bench (not a live 150% display):
    flag off 0/50 at 100% and at 150%; flag on 50/50 at both.
+9. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
+   `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
+   Tokens from OpenVault only. File-type bench artifact stays 480/480.
 
 ## Next
 

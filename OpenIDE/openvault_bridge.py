@@ -285,6 +285,56 @@ def keyvault_upsert(
         return {"ok": False, "openvault_url": base, "error": str(e)[:240]}
 
 
+def _secret_from_payload(data: dict[str, Any], env_key: str) -> str:
+    """Pull one secret out of an OpenVault JSON body. Empty if it is not there."""
+    if not isinstance(data, dict):
+        return ""
+    for field in ("secret", "value", "token"):
+        raw = data.get(field)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    for bucket in ("secrets", "keys"):
+        raw_map = data.get(bucket)
+        if isinstance(raw_map, dict):
+            raw = raw_map.get(env_key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return ""
+
+
+def _openvault_secret(env_key: str) -> str:
+    """Read one secret from OpenVault. Empty on any failure. The value is not logged."""
+    if not env_key.isidentifier() or not env_key.isupper():
+        return ""
+    base = openvault_url().rstrip("/")
+    urls = (
+        f"{base}/api/keys/{env_key}",
+        f"{base}/api/keyvault/secret?env_key={env_key}",
+    )
+    for url in urls:
+        try:
+            data = _http_json("GET", url, timeout=5.0)
+        except Exception:
+            continue
+        got = _secret_from_payload(data, env_key)
+        if got:
+            return got
+    return ""
+
+
+def github_token() -> str:
+    """GitHub token stored in OpenVault (GH_TOKEN, then GITHUB_TOKEN).
+
+    Empty when OpenVault has none or cannot be reached. This does not read the
+    process environment or env.local, and it does not log the value.
+    """
+    for key in ("GH_TOKEN", "GITHUB_TOKEN"):
+        got = _openvault_secret(key)
+        if got:
+            return got
+    return ""
+
+
 def gate_check(
     *,
     action: str = "run",
