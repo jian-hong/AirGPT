@@ -14,32 +14,17 @@
    Password. FreeRoute brief is `openvault_vault_sealed`. **NO** AirGPT
    PRD-002.
 3. **Research (D11).** Live artifact GET 200 for three packaged runs
-   (md/docx/pdf/tex; stages named). Background `deep_research`
-   `wf_a563c9a4cb1d` shows 4 `think` rows on `:8765`. Not arXiv.
-   `GET /api/update` = `no_update_server`.
+   (md/docx/pdf/tex; stages named). Not arXiv. `GET /api/update` =
+   `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-
-5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-2: shell add-ons, prompt lens, audit, PR #90 merged in, RAG
-   totals checked against pandas, turns keep their files, restore, sanitizer.
-   Round 3: stress corpus (sheet maths 7 to 22 of 25), rare names, fast
-   ingest, Windows line endings. Round 3b: refusals right in 8 languages,
-   Word/web/PDF tables, a second search hop, phone chat like Claude; seam
-   check fixed 12 (file scope held in every lane). Code `e4d0ab5`: 1595/0/9;
-   JS 256; browser 27/27; Windows CI green on `a507281`. Unverified: tunnel,
-   phone, provider, Cortex, a real embedder. Owner calls: P14-P36.
-6. **RAG reliability (PR #90, merged into #91).** Synthetic benches,
-   hash embedder: 16 file types 480/480 top-5 cited; 8 languages top-5
-   26-30 of 30. Chunker schema 2; n=320 NOT re-run (bench not here).
-7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
-   Their scope (and EPIC-D12, EPIC-D13) is done on the founder's local
-   branch `fix/guest-boundary-and-phone-shell`, NOT pushed.
-
-5. **Phone preview + Open in Space (draft PR on #91).** `/data/` serves
-   Range (206/416), streamed. Open button for pdf/office/txt. Host-only
-   `POST /api/space/open` launches NetieSpace.exe. Needs a real iPhone and a
-   Windows host to prove. Ledger rows pending in PRD-001 (founder directed).
+5. **Phone preview + Open in Space.** `/data/` Range (206/416). Open for
+   pdf/office/txt. Host-only `POST /api/space/open`. Needs a real iPhone
+   and a Windows host. RAG UI rounds stay on draft PR #91.
+6. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
+   `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
+   Tokens from OpenVault only. File-type bench artifact stays 480/480.
+   D09/D10 scope is on `fix/guest-boundary-and-phone-shell`, not pushed.
 
 ## Next
 
