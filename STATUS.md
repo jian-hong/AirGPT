@@ -14,25 +14,24 @@
    Password. FreeRoute brief is `openvault_vault_sealed`. **NO** AirGPT
    PRD-002.
 3. **Research (D11).** Live artifact GET 200 for three packaged runs
-   (md/docx/pdf/tex; stages named). Background `deep_research`
-   `wf_a563c9a4cb1d` shows 4 `think` rows on `:8765`. Not arXiv.
-   `GET /api/update` = `no_update_server`.
+   (md/docx/pdf/tex; stages named). Not arXiv. `GET /api/update` =
+   `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-
-5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-3b landed (shell, RAG scope, phone chat). Code `e4d0ab5`.
-   Unverified: tunnel, phone, provider, Cortex, a real embedder.
-6. **RAG benches (#93).** Job `rag-benches` regenerates every
-   `*_latest.json`. Paraphrase success@5 64/64 all styles (stale file was
-   45/64 and 17/64). File types success@5 480/480. Real-doc n=200:
-   success@1 120/200, success@5 120/200, nDCG@10 0.6 (cross-file 0/80).
-   primary50 equivalent n=320: hybrid 320/320, sira 44/320. Original
-   primary50 bytes were not in the clone.
-7. GitHub says D09 #56 and D10 #71 are OPEN; WIP below says closed.
-   Scope is on `fix/guest-boundary-and-phone-shell`, NOT pushed.
-8. **Phone preview.** `/data/` Range 206/416. Open in Space is host-only.
-   Needs a real iPhone and a Windows host.
+5. **UI PR #91 (draft).** Rounds 1-3b. Code `e4d0ab5`. Unverified: tunnel,
+   phone, provider, Cortex, embedder.
+6. **RAG benches (#93).** `rag-benches` regenerates every `*_latest.json`.
+   Paraphrase success@5 64/64. File types 480/480. Real-doc n=200:
+   120/200 at 1 and 5, nDCG@10 0.6. primary50 equivalent hybrid 320/320,
+   sira 44/320. Original bytes were not in the clone.
+7. **CU-01 (#94).** `AIRGPT_DESKTOP_SCALE` default off. On, screenshot
+   (640, 360) of 2560x1440 shown at 1280x720 maps to (1280, 720). Bench:
+   flag off 0/50, flag on 50/50, at 100% and at 150%.
+8. **RAG sources (#97).** GitHub ingest and a depth-capped crawl, flags
+   `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
+9. GitHub lists D09 #56 and D10 #71 OPEN. Done on
+   `fix/guest-boundary-and-phone-shell`, not pushed.
+10. **Phone preview.** `/data/` Range 206/416. Open in Space is host-only.
 
 ## Next
 
