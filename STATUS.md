@@ -19,15 +19,17 @@
    `GET /api/update` = `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-5. **UI branch `claude/rag-ui-improvements-qgauwt`, PR #91 (draft).**
-   Rounds 1-3b are on that branch. Unverified: tunnel, phone, provider,
-   Cortex, a real embedder. Owner calls: P14-P36. PR #90 is in #91.
-6. **Phone preview + Open in Space.** `/data/` Range (206/416). Open for
-   pdf/office/txt. Host-only `POST /api/space/open`. Needs a real iPhone
-   and a Windows host. Ledger rows pending in PRD-001.
-7. **BROWSER-01 (#99).** Host-only Playwright tools in `browser_mcp.py`.
-   Flag `AIRGPT_BROWSER_MCP` default off. Click, type, and submit stay
-   confirm-gated.
+5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
+   Rounds 1-3b landed there. Unverified: tunnel, phone, provider, Cortex,
+   embedder. Owner calls: P14-P36. RAG #90 is inside #91.
+6. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
+   Host-only `POST /api/space/open`. Needs a real iPhone and Windows host.
+7. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
+   Screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps to
+   screen (1280, 720). Drawn-grid bench: flag off 0/50, flag on 50/50.
+8. **BROWSER-01 (#99).** Host-only Playwright tools, flag default off.
+   A new origin, including the first page, needs `confirmed=true`.
+   One owner thread holds the browser and closes it on shutdown.
 
 ## Next
 
@@ -40,7 +42,7 @@
 
 ## WIP
 
-GitHub still lists D09 #56 and D10 #71 OPEN; the work is on local
+GitHub still lists D09 #56 and D10 #71 OPEN; done locally on
 `fix/guest-boundary-and-phone-shell`, not pushed. Closed: D03 #26/#69,
 D05 #55, D06 #37, D07 #36, D08 #38, D09 #56, D10 #71/#74, D11 #72/#73.
 Parked: D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
