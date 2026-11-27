@@ -2,6 +2,10 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- suite: stamp test must not call git for parents
+
+- Run 45931649892: `rag-benches` passed (18 artifacts matched a fresh run). `suite` failed one new test: `git rev-parse HEAD^@` is empty on the depth-1 checkout, so `assert parents` saw `[]`. 1620 passed, 9 skipped. The test now stubs both git calls. Floors unchanged. `MIN_TESTS` stays 380.
+
 ## 2026-11-27 -- rag-benches stamp check on a depth-1 merge checkout
 
 - The first CI run of `rag-benches` (45931231274) failed in the stamp check, before any bench ran. Actions checked out merge commit `1fea9ee` at depth 1, so `9118e72` was not an object and `merge-base --is-ancestor` returned false. The job now fetches full history, and a stamp that is a parent SHA written on the commit still counts when those objects are missing. No floor moved.

@@ -91,29 +91,34 @@ def test_metrics_module_calls_bench_recall_fields_success_at_k():
 
 
 def test_stamp_sha_that_is_a_parent_counts_when_merge_base_cannot_see_it():
-    """A depth-1 PR checkout has the merge commit but not its parent objects."""
+    """A depth-1 PR checkout has the merge commit but not its parent objects.
+
+    The suite job uses that checkout, so this test must not ask git for the
+    real parents: `git rev-parse HEAD^@` returns nothing there.
+    """
     import subprocess
 
-    head = bench_stamp.git_sha()
-    parents = subprocess.check_output(
-        ["git", "rev-parse", f"{head}^@"], text=True
-    ).split()
-    assert parents
+    parent = "9118e72f7250d85768fd4a3802c6fe82c3ed32e2"
     real = subprocess.run
 
+    class Proc:
+        def __init__(self, code, out):
+            self.returncode = code
+            self.stdout = out
+            self.stderr = ""
+
     def hidden_parent(cmd, **kwargs):
-        if list(cmd[:3]) == ["git", "merge-base", "--is-ancestor"]:
-            class Proc:
-                returncode = 1
-                stdout = ""
-                stderr = "shallow"
-            return Proc()
+        args = list(cmd)
+        if args[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return Proc(1, "")
+        if args[:2] == ["git", "rev-parse"] and str(args[2]).endswith("^@"):
+            return Proc(0, parent + "\n")
         return real(cmd, **kwargs)
 
     subprocess.run = hidden_parent
     try:
-        assert bench_stamp.is_ancestor(parents[0], head)
-        assert bench_stamp.is_ancestor("a" * 40, head) is False
+        assert bench_stamp.is_ancestor(parent, "HEAD")
+        assert bench_stamp.is_ancestor("a" * 40, "HEAD") is False
     finally:
         subprocess.run = real
 
