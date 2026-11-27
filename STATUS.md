@@ -19,18 +19,17 @@
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
 5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
-   Rounds 1-3b: shell, lens, stress corpus, 8-language refusals, phone
-   chat. Code `e4d0ab5`: 1595/0/9; JS 256; browser 27/27; Windows CI green
-   on `a507281`. Unverified: tunnel, phone, provider, Cortex, embedder.
-   Owner calls: P14-P36. RAG #90 is inside #91 (n=320 not re-run).
-6. GitHub still lists D09 #56 and D10 #71 OPEN. Done locally on
-   `fix/guest-boundary-and-phone-shell`, not pushed.
-7. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
+   Rounds 1-3b landed there. Unverified: tunnel, phone, provider, Cortex,
+   embedder. Owner calls: P14-P36. RAG #90 is inside #91.
+6. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
    Host-only `POST /api/space/open`. Needs a real iPhone and Windows host.
-8. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
+7. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
    On, screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps
    to screen (1280, 720). Drawn-grid bench (not a live 150% display):
    flag off 0/50 at 100% and at 150%; flag on 50/50 at both.
+8. **BROWSER-01 (#99).** Host-only Playwright tools, flag default off.
+   A new origin, including the first page, needs `confirmed=true`.
+   One owner thread holds the browser and closes it on shutdown.
 9. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
    `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
    Tokens from OpenVault only. File-type bench artifact stays 480/480.
@@ -46,14 +45,14 @@
 
 ## WIP
 
-Closed: D03 #26/#69, D05 #55, D06 #37, D07 #36, D08 #38, D09 #56,
-D10 #71/#74 (S1), D11 #72/#73 (research). Parked leftover:
-D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
+GitHub still lists D09 #56 and D10 #71 OPEN; done locally on
+`fix/guest-boundary-and-phone-shell`, not pushed. Closed: D03 #26/#69,
+D05 #55, D06 #37, D07 #36, D08 #38, D09 #56, D10 #71/#74, D11 #72/#73.
+Parked: D04 #22, P11 #9/#10, D01 #6, HOST-DEMO-02 #42.
 
 ## Later
 
 - P1 50GB / P2 Meta SIRA / P4 vault-first / P7 NVIDIA
 - F86 phone DISTILL after D10. F88 CF Containers = OV. F89 AGI dump refused.
 - DR-0007 accepted: marketplace is catalog+recipe, not a serving plane.
-
-Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.
+- Demo: `tests/RAG/DEMO_RAG.md`. Build tab: Copilot pack + Ops card.

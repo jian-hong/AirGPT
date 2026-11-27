@@ -19,6 +19,8 @@ except ImportError:
 WRITE_TOOLS = frozenset({
     "fs_write", "fs_patch", "vault_write",
     "desktop_click", "desktop_type", "desktop_scroll", "desktop_drag",
+    "browser_click", "browser_type", "browser_select", "browser_submit",
+    "browser_navigate",
 })
 FILE_MENTION_RE = re.compile(r"@([\w.\-/\\]+(?:\.\w+)?)")
 CORTEX_RESEARCH_PROMPT_ID = "research.idea_to_paper"

@@ -118,6 +118,17 @@ What exists in this repo and where. Update when structure changes, not when stat
   body), `stub_cortex.py` (keywords STUBSLOW, STUBFAIL, STUBEMPTY,
   STUBTOOLFAIL), `run_app.py` (any port, own data folder), `integ.js` (27
   browser checks), `composer.js`.
+- `browser_mcp.py` -- host-only Playwright session using accessibility refs
+  (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,
+  `browser_select`, `browser_submit` in `agent_tools.py`). Off unless
+  `AIRGPT_BROWSER_MCP=1`. Click, type, select, submit, and a new origin
+  (including the first page) do nothing unless `confirmed` is boolean true.
+  Same-origin navigation stays open because that origin was already approved.
+  One owner thread holds the sync browser and closes it on shutdown, error,
+  and process exit. Not in `CHAT_SAFE_TOOLS`. A caller bound through
+  `clipdrop._is_host_request` who is not the host gets `host_only` and no
+  driver starts. Tests: `tests/test_browser_mcp.py` and
+  `tests/fixtures/browser_mcp/`.
 - `commands.py` `peel_skill_slash` — `/skill`, `/skill:`, `/skill-`,
   `/anthropic-skills:` arm a pack; remainder is the job (SHELL-03).
 - `openpyxl` and `pandas` are product xlsx deps (`rag/ingest.py`,

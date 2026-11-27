@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Draft form</title></head>
+<body>
+<h1>Draft form</h1>
+<label>Name <input id="name"></label>
+<button type="button" id="save">Save draft</button>
+<p id="draft"></p>
+<form id="job">
+  <label>Job <input id="jobfield"></label>
+  <button type="submit">Send job</button>
+</form>
+<p id="sent"></p>
+<script>
+document.getElementById("save").addEventListener("click", function () {
+  document.getElementById("draft").textContent = "draft:" + document.getElementById("name").value;
+});
+document.getElementById("job").addEventListener("submit", function (e) {
+  e.preventDefault();
+  document.getElementById("sent").textContent = "submitted:" + document.getElementById("jobfield").value;
+});
+</script>
+</body>
+</html>

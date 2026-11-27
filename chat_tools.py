@@ -17,11 +17,12 @@ hand-copied, so a parameter rename cannot silently desynchronise the advertised
 schema from the code that receives it.
 
 Why an allowlist instead of every tool: `agent_tools` also exposes `fs_write`,
-`run_command` and the `desktop_*` family. Those run behind `agent_runtime`'s
-approval gate (`WRITE_TOOLS` -> write_preview -> human approve/reject). Ordinary
+`run_command`, the `desktop_*` family, and the `browser_*` family. Those run
+behind `agent_runtime`'s approval gate (`WRITE_TOOLS` -> write_preview -> human
+approve/reject) or, for the browser, a confirm flag on the host only. Ordinary
 chat has no such gate, so it gets the read-only half. Widening this set without
 first giving chat an approval step would hand a text box the ability to write files
-and drive the mouse.
+and drive the mouse or a browser.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ import agent_tools
 
 # Read-only, no side effects the user has to undo, safe without an approval gate.
 # Deliberately excludes: fs_write, fs_patch, vault_write, run_command, app_scaffold,
-# dms_action, subagent_dispatch and every desktop_* mutation.
+# dms_action, subagent_dispatch, every desktop_* mutation, and every browser_* tool.
 CHAT_SAFE_TOOLS: tuple[str, ...] = (
     "memory_search",
     "memory_add",
