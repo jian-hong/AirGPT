@@ -2,7 +2,7 @@
   "bench": "chunk_bench",
   "seed": 1,
   "index_fingerprint": {
-    "schema_version": 2,
+    "schema_version": 3,
     "chunker": {
       "name": "parent_child_sentence",
       "child_tokens": 200,
@@ -21,7 +21,7 @@
     "extra": {
       "pack": "chunk_bench"
     },
-    "id": "d89d8a69d7804e6c"
+    "id": "dea9d5e775603915"
   },
   "old_code_baseline": {
     "commit": "37c6bfc",
@@ -148,5 +148,8 @@
         "max": 199.4
       }
     }
-  }
+  },
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:46:33Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

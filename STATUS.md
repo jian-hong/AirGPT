@@ -18,29 +18,29 @@
    `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
-   Rounds 1-3b landed there. Unverified: tunnel, phone, provider, Cortex,
-   embedder. Owner calls: P14-P36. RAG #90 is inside #91.
-6. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
-   Host-only `POST /api/space/open`. Needs a real iPhone and Windows host.
-7. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
-   On, screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps
-   to screen (1280, 720). Drawn-grid bench (not a live 150% display):
-   flag off 0/50 at 100% and at 150%; flag on 50/50 at both.
-8. **BROWSER-01 (#99).** Host-only Playwright tools, flag default off.
-   A new origin, including the first page, needs `confirmed=true`.
-   One owner thread holds the browser and closes it on shutdown.
-9. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
-   `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
-   Tokens from OpenVault only. File-type bench artifact stays 480/480.
+5. **UI PR #91 (draft).** Rounds 1-3b. Unverified: tunnel, phone,
+   provider, Cortex, embedder.
+6. **RAG benches (#93).** Paraphrase success@5 64/64. File types 480/480.
+   Real-doc 120/200 at 1 and 5, nDCG@10 0.6. primary50 equivalent, strict
+   `close()`, scalar gold at 4 decimals: hybrid 320/320, sira 44/320.
+7. **CU-01 (#94).** `AIRGPT_DESKTOP_SCALE` default off. Screenshot
+   (640, 360) of 2560x1440 at 1280x720 maps to (1280, 720). Bench:
+   flag off 0/50, flag on 50/50, at 100% and at 150%.
+8. **BROWSER-01 (#99).** Host-only Playwright, flag default off. A new
+   origin needs `confirmed=true`. One thread closes the browser.
+9. **RAG sources (#97).** Flags `AIRGPT_RAG_SOURCES_GITHUB` and
+   `AIRGPT_RAG_CRAWL`, both default off.
+10. D09 #56 and D10 #71 are OPEN on GitHub. Done on
+    `fix/guest-boundary-and-phone-shell`, not pushed.
+11. **Phone preview.** `/data/` Range 206/416. Open in Space is host-only.
 
 ## Next
 
 0. Do not kill `:8765`. Create a Google App Password (16 chars) and
    put it in Crew Gmail keys, then re-run `rt-547f4184`.
 1. Unseal OpenVault for FreeRoute briefs.
-2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm the RAG
-   reliability epic and `pypdf`; re-score n=320; decide P22-P36.
+2. NEEDS-YOU: push `fix/guest-boundary-and-phone-shell`; confirm `pypdf`;
+   decide P22-P36. n=320 was re-run on the seeded equivalent only.
 3. Fork NVIDIA/auto-ontology by hand (session scope blocked it).
 
 ## WIP

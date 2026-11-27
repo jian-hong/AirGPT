@@ -404,11 +404,13 @@ def render(res: dict) -> str:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--out", default="")
     ap.add_argument("--no-write", action="store_true")
     args = ap.parse_args()
     res = run(args.seed)
     print(render(res))
     if not args.no_write:
-        RESULTS.parent.mkdir(parents=True, exist_ok=True)
-        RESULTS.write_text(json.dumps(res, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"wrote {RESULTS}")
+        from bench_stamp import write_json
+        dest = Path(args.out) if args.out else RESULTS
+        write_json(dest, res)
+        print(f"wrote {dest}")

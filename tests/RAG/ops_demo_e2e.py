@@ -24,7 +24,19 @@ if str(ROOT) not in sys.path:
 
 from rag import ops_amend  # noqa: E402
 
-FIXTURE = ROOT / "tests" / "RAG" / "messy" / "ops" / "messy_payroll_ops.xlsx"
+def _fixture() -> Path:
+    """The 120MB messy payroll file is gitignored. CI uses the committed stand-in."""
+    import os
+    raw = (os.environ.get("AIRGPT_OPS_FIXTURE") or "").strip()
+    if raw:
+        return Path(raw)
+    big = ROOT / "tests" / "RAG" / "messy" / "ops" / "messy_payroll_ops.xlsx"
+    if big.is_file():
+        return big
+    return ROOT / "tests" / "RAG" / "fixtures" / "ops" / "payroll_ops.xlsx"
+
+
+FIXTURE = _fixture()
 RESULTS = ROOT / "tests" / "RAG" / "results"
 SCRATCH = RESULTS / "ops" / "e2e_payroll_copy.xlsx"
 
@@ -179,6 +191,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import argparse
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--out", default="")
+    _args = _ap.parse_args()
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
     try:
         rc = main()
@@ -194,25 +210,23 @@ if __name__ == "__main__":
         rc = 1
 
     RESULTS.mkdir(parents=True, exist_ok=True)
-    artifact = RESULTS / "ops_demo_e2e_latest.json"
-    artifact.write_text(
-        json.dumps(
-            {
-                "ok": ok,
-                "epic": "EPIC-D02",
-                "tickets": [17, 18, 19],
-                "honesty": "Cortex-direct demo ops - not OpenVault-gated",
-                "fixture": str(FIXTURE),
-                "scratch": str(SCRATCH),
-                "started": started,
-                "finished": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "passed": sum(1 for s in STEPS if s["ok"]),
-                "total": len(STEPS),
-                "steps": STEPS,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+    artifact = Path(_args.out) if _args.out else RESULTS / "ops_demo_e2e_latest.json"
+    from bench_stamp import write_json
+    write_json(
+        artifact,
+        {
+            "ok": ok,
+            "epic": "EPIC-D02",
+            "tickets": [17, 18, 19],
+            "honesty": "Cortex-direct demo ops - not OpenVault-gated",
+            "fixture": str(FIXTURE),
+            "scratch": str(SCRATCH),
+            "started": started,
+            "finished": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "passed": sum(1 for s in STEPS if s["ok"]),
+            "total": len(STEPS),
+            "steps": STEPS,
+        },
     )
     print(f"\n{sum(1 for s in STEPS if s['ok'])}/{len(STEPS)} checks passed -> {artifact}")
     sys.exit(rc)

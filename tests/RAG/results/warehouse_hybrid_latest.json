@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "honesty": "Cortex-direct / hybrid_max demo \u2014 not OpenVault-gated. No exclusion confirm loops.",
+  "honesty": "Cortex-direct / hybrid_max demo — not OpenVault-gated. No exclusion confirm loops.",
   "variant": {
     "name": "hybrid_max",
     "depth": "max",
@@ -10,7 +10,7 @@
   "summary": {
     "variant": "hybrid_max",
     "label": "hybrid SQL+SiRA max (no confirm loops)",
-    "space_id": 8,
+    "space_id": 1,
     "n": 10,
     "correct": 10,
     "accuracy": 1.0,
@@ -30,7 +30,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 45.7,
+      "ms": 12.3,
       "error": null,
       "model": "pandas-sql"
     },
@@ -46,7 +46,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 12.2,
+      "ms": 3.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -57,28 +57,28 @@
       "difficulty": "Hard",
       "reasoning_type": "TopNExclude",
       "gold": "SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.89",
-      "notes": "explicit SKU exclude \u2014 never ask confirm",
+      "notes": "explicit SKU exclude — never ask confirm",
       "pred": "SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84 | SKU-00351: 486982.9",
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 10.8,
+      "ms": 4.0,
       "error": null,
       "model": "pandas-sql"
     },
     {
       "workbook": "wh_01_sales_core.xlsx",
       "qid": 4,
-      "question": "No \u2014 show top 5 sales without excluding",
+      "question": "No — show top 5 sales without excluding",
       "difficulty": "Hard",
       "reasoning_type": "TopNNoExclude",
       "gold": "SKU-00397: 726158.36 | SKU-00183: 581836.43 | SKU-00171: 538139.25 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
-      "notes": "button-echo / cancel exclude \u2014 treat as plain top 5, never loop",
+      "notes": "button-echo / cancel exclude — treat as plain top 5, never loop",
       "pred": "SKU-00397: 726158.36 | SKU-00183: 581836.44 | SKU-00171: 538139.24 | SKU-00381: 531252.23 | SKU-00016: 492673.84",
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 14.4,
+      "ms": 3.5,
       "error": null,
       "model": "pandas-sql"
     },
@@ -94,7 +94,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 19.0,
+      "ms": 3.7,
       "error": null,
       "model": "pandas-sql"
     },
@@ -110,7 +110,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 20.7,
+      "ms": 4.2,
       "error": null,
       "model": "pandas-sql"
     },
@@ -126,7 +126,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 1.4,
+      "ms": 0.3,
       "error": null,
       "model": "pandas-sql"
     },
@@ -142,7 +142,7 @@
       "correct": true,
       "match_reason": "sku_rank_order",
       "lane": "sql",
-      "ms": 14.9,
+      "ms": 3.5,
       "error": null,
       "model": "pandas-sql"
     },
@@ -158,7 +158,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 18.1,
+      "ms": 3.8,
       "error": null,
       "model": "pandas-sql"
     },
@@ -174,7 +174,7 @@
       "correct": true,
       "match_reason": "substring",
       "lane": "sql",
-      "ms": 13.8,
+      "ms": 2.9,
       "error": null,
       "model": "pandas-sql"
     }
@@ -215,9 +215,12 @@
     "How many SKUs do we have in inventory?",
     "What is total stock value by category?"
   ],
-  "ts": "2026-08-06T14:32:44",
+  "ts": "2026-11-27T02:47:16",
   "score_artifacts_preserved": [
     "tests/RAG/results/frtr_cross_latest.json",
     "tests/RAG/results/frtr_cross_latest.xlsx"
-  ]
+  ],
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:47:16Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

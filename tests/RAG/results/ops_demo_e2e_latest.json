@@ -7,10 +7,10 @@
     19
   ],
   "honesty": "Cortex-direct demo ops - not OpenVault-gated",
-  "fixture": "E:\\AirGPT\\tests\\RAG\\messy\\ops\\messy_payroll_ops.xlsx",
-  "scratch": "E:\\AirGPT\\tests\\RAG\\results\\ops\\e2e_payroll_copy.xlsx",
-  "started": "2026-08-27T21:47:39",
-  "finished": "2026-08-27T21:48:18",
+  "fixture": "/workspace/tests/RAG/fixtures/ops/payroll_ops.xlsx",
+  "scratch": "/workspace/tests/RAG/results/ops/e2e_payroll_copy.xlsx",
+  "started": "2026-11-27T02:47:16",
+  "finished": "2026-11-27T02:47:17",
   "passed": 32,
   "total": 32,
   "steps": [
@@ -47,7 +47,7 @@
     {
       "step": "file unchanged after reject",
       "ok": true,
-      "detail": "salary still 5700.55"
+      "detail": "salary still 4100.0"
     },
     {
       "step": "propose before identity confirm refused",
@@ -67,7 +67,7 @@
     {
       "step": "file unchanged after off-rails",
       "ok": true,
-      "detail": "salary still 5700.55"
+      "detail": "salary still 4100.0"
     },
     {
       "step": "identity confirmed",
@@ -82,7 +82,7 @@
     {
       "step": "proposal is +8%",
       "ok": true,
-      "detail": "5700.55 -> 6156.59"
+      "detail": "4100.0 -> 4428.0"
     },
     {
       "step": "abort accepted",
@@ -92,7 +92,7 @@
     {
       "step": "file unchanged after abort",
       "ok": true,
-      "detail": "salary still 5700.55"
+      "detail": "salary still 4100.0"
     },
     {
       "step": "re-confirm identity",
@@ -107,12 +107,12 @@
     {
       "step": "salary is the proposed value",
       "ok": true,
-      "detail": "5700.55 -> 6156.59"
+      "detail": "4100.0 -> 4428.0"
     },
     {
       "step": "audit stamp written",
       "ok": true,
-      "detail": "amended 2026-08-27T21:47:53 (confirmed, token ops_1787838471666_13)"
+      "detail": "amended 2026-11-27T02:47:16 (confirmed, token ops_1795747637002_3)"
     },
     {
       "step": "neighbour row untouched",
@@ -122,7 +122,7 @@
     {
       "step": "asks for the next action",
       "ok": true,
-      "detail": "Amended E-0012 (row 13). Next action? Name another employee, ask for the next row, or stop."
+      "detail": "Amended E-0012 (row 3). Next action? Name another employee, ask for the next row, or stop."
     },
     {
       "step": "next row proposed",
@@ -152,7 +152,7 @@
     {
       "step": "second salary is +8%",
       "ok": true,
-      "detail": "3446.06 -> 3721.74"
+      "detail": "5200.5 -> 5616.54"
     },
     {
       "step": "continue by name/id starts a fresh identify",
@@ -174,5 +174,8 @@
       "ok": true,
       "detail": "2 amended of 3 steps"
     }
-  ]
+  ],
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:47:17Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

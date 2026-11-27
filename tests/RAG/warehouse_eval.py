@@ -168,16 +168,20 @@ def main() -> None:
     ap.add_argument("--space-id", type=int, default=0)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--skip-gen", action="store_true", help="do not rewrite the committed workbooks")
+    ap.add_argument("--out", default="")
     args = ap.parse_args()
 
-    gen_main()
+    if not args.skip_gen:
+        gen_main()
     if args.gen_only:
         return
 
     gold = gold_questions()
     if args.limit:
         gold = gold[: args.limit]
-    (RESULTS / "warehouse_gold.json").write_text(json.dumps(gold, indent=2), encoding="utf-8")
+    if not args.out:
+        (RESULTS / "warehouse_gold.json").write_text(json.dumps(gold, indent=2), encoding="utf-8")
 
     paths = sorted(WH.glob("wh_*.xlsx"))
     if not paths:
@@ -241,13 +245,20 @@ def main() -> None:
             "tests/RAG/results/frtr_cross_latest.xlsx",
         ],
     }
+    from bench_stamp import write_json
+    if args.out:
+        dest = Path(args.out)
+        write_json(dest, payload)
+        print(json.dumps(out["summary"], indent=2), flush=True)
+        print(f"wrote {dest}", flush=True)
+        return
     ts = time.strftime("%Y%m%d_%H%M%S")
     jp = RESULTS / f"warehouse_hybrid_{ts}.json"
     xp = RESULTS / f"warehouse_hybrid_{ts}.xlsx"
     latest_j = RESULTS / "warehouse_hybrid_latest.json"
     latest_x = RESULTS / "warehouse_hybrid_latest.xlsx"
-    jp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    latest_j.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_json(jp, payload)
+    write_json(latest_j, payload)
     _write_xlsx(xp, payload)
     _write_xlsx(latest_x, payload)
     print(json.dumps(out["summary"], indent=2), flush=True)

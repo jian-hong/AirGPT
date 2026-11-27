@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -21,7 +22,13 @@ REPO = ROOT.parents[1]  # tests/RAG -> AirGPT
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-BENCH = ROOT / "FRTR-bench"
+def resolve_bench() -> Path:
+    """FRTR-bench is gitignored. CI sets AIRGPT_FRTR_BENCH to the committed stand-in."""
+    raw = (os.environ.get("AIRGPT_FRTR_BENCH") or "").strip()
+    return Path(raw).expanduser() if raw else ROOT / "FRTR-bench"
+
+
+BENCH = resolve_bench()
 SANITIZED = ROOT / "frtr_sanitized"
 RESULTS = ROOT / "results"
 
@@ -615,6 +622,7 @@ def main():
     ap.add_argument("--eval-only", action="store_true", help="skip ingest; use --space-id")
     ap.add_argument("--space-id", type=int, default=0)
     ap.add_argument("--extract-only", action="store_true")
+    ap.add_argument("--out", default="", help="write the latest JSON here and skip side files")
     args = ap.parse_args()
 
     pattern = args.workbook or "frtr_*.xlsx"
@@ -633,9 +641,12 @@ def main():
         print(f"extracted {len(qs)} q from {src.name}", flush=True)
 
     RESULTS.mkdir(parents=True, exist_ok=True)
-    gold_path = RESULTS / "frtr_gold.json"
-    gold_path.write_text(json.dumps(all_q, indent=2), encoding="utf-8")
-    print(f"gold -> {gold_path} ({len(all_q)} questions)", flush=True)
+    if not args.out:
+        gold_path = RESULTS / "frtr_gold.json"
+        gold_path.write_text(json.dumps(all_q, indent=2), encoding="utf-8")
+        print(f"gold -> {gold_path} ({len(all_q)} questions)", flush=True)
+    else:
+        print(f"gold {len(all_q)} questions (not written; --out)", flush=True)
 
     if args.extract_only:
         return
@@ -661,12 +672,17 @@ def main():
         space_id = int(sp["id"])
 
     out = run_eval(space_id, all_q, depth=args.depth, use_llm=not args.no_llm, limit=args.limit)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    out_path = RESULTS / f"frtr_run_{ts}.json"
-    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
-    (RESULTS / "frtr_latest.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    from bench_stamp import write_json
+    if args.out:
+        dest = Path(args.out)
+        write_json(dest, out)
+    else:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        dest = RESULTS / f"frtr_run_{ts}.json"
+        write_json(dest, out)
+        write_json(RESULTS / "frtr_latest.json", out)
     print(json.dumps(out["summary"], indent=2), flush=True)
-    print(f"wrote {out_path}", flush=True)
+    print(f"wrote {dest}", flush=True)
 
 
 if __name__ == "__main__":

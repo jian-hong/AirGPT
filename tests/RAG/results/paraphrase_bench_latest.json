@@ -2,10 +2,11 @@
   "bench": "paraphrase_bench",
   "seed": 1,
   "top_k": 5,
+  "depth": "high",
   "n_facts": 64,
   "n_questions": 256,
   "index_fingerprint": {
-    "schema_version": 2,
+    "schema_version": 3,
     "chunker": {
       "name": "parent_child_sentence",
       "child_tokens": 200,
@@ -24,7 +25,7 @@
     "extra": {
       "pack": "paraphrase_bench"
     },
-    "id": "d89d8a69d7804e6c"
+    "id": "dea9d5e775603915"
   },
   "honesty": "retrieval only, hash embedder, synthetic facts, hand-written paraphrases, no model call. Counts on 64 facts, not rates: a score here says nothing about real documents. Measures; rag/ was not tuned to it.",
   "styles": {
@@ -35,18 +36,18 @@
     },
     "synonym": {
       "n": 64,
-      "recall_at_1": 26,
-      "recall_at_5": 45
+      "recall_at_1": 43,
+      "recall_at_5": 64
     },
     "lower_typo": {
       "n": 64,
-      "recall_at_1": 40,
-      "recall_at_5": 49
+      "recall_at_1": 56,
+      "recall_at_5": 64
     },
     "property": {
       "n": 64,
-      "recall_at_1": 5,
-      "recall_at_5": 17
+      "recall_at_1": 64,
+      "recall_at_5": 64
     }
   },
   "types": {
@@ -68,8 +69,8 @@
       },
       "property": {
         "n": 16,
-        "recall_at_1": 0,
-        "recall_at_5": 4
+        "recall_at_1": 16,
+        "recall_at_5": 16
       }
     },
     "docx": {
@@ -80,8 +81,8 @@
       },
       "synonym": {
         "n": 16,
-        "recall_at_1": 5,
-        "recall_at_5": 10
+        "recall_at_1": 9,
+        "recall_at_5": 16
       },
       "lower_typo": {
         "n": 16,
@@ -90,8 +91,8 @@
       },
       "property": {
         "n": 16,
-        "recall_at_1": 5,
-        "recall_at_5": 10
+        "recall_at_1": 16,
+        "recall_at_5": 16
       }
     },
     "pdf": {
@@ -107,13 +108,13 @@
       },
       "lower_typo": {
         "n": 16,
-        "recall_at_1": 12,
+        "recall_at_1": 16,
         "recall_at_5": 16
       },
       "property": {
         "n": 16,
-        "recall_at_1": 0,
-        "recall_at_5": 3
+        "recall_at_1": 16,
+        "recall_at_5": 16
       }
     },
     "xlsx": {
@@ -124,40 +125,29 @@
       },
       "synonym": {
         "n": 16,
-        "recall_at_1": 1,
-        "recall_at_5": 3
+        "recall_at_1": 14,
+        "recall_at_5": 16
       },
       "lower_typo": {
         "n": 16,
-        "recall_at_1": 0,
-        "recall_at_5": 1
+        "recall_at_1": 12,
+        "recall_at_5": 16
       },
       "property": {
         "n": 16,
-        "recall_at_1": 0,
-        "recall_at_5": 0
+        "recall_at_1": 16,
+        "recall_at_5": 16
       }
     }
   },
   "sample_misses": {
     "verbatim": [],
-    "synonym": [
-      "[docx] Which service class applies when the Quibaxyth account asks for assistance?",
-      "[docx] Which route do goods for the Ulajorbax account travel along?",
-      "[docx] Which rebate level does the Sarvormik account fall under?",
-      "[docx] Which identifier marks the party that owns the Zerhallon agreement?"
-    ],
-    "lower_typo": [
-      "[xlsx] what is the retention period for the jortasgqn account?",
-      "[xlsx] what is the escalation code for the qxikelmik account?",
-      "[xlsx] what is the billing cycle for the wexhaldax account?",
-      "[xlsx] what is the renewal window for the halsenwen account?"
-    ],
-    "property": [
-      "[md] What is the retention period for the account whose headquarters city is Tromso?",
-      "[md] What is the escalation code for the account whose headquarters city is Kragero?",
-      "[md] What is the billing cycle for the account whose headquarters city is Lillesand?",
-      "[md] What is the renewal window for the account whose headquarters city is Haugesund?"
-    ]
-  }
+    "synonym": [],
+    "lower_typo": [],
+    "property": []
+  },
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:46:28Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths.",
+  "metric_note": "recall_at_1 and recall_at_5 are success@k counts: how many questions placed their one gold passage in the top k. They are not set-recall. With one gold passage the count matches recall@k. See rag/metrics.py."
 }

@@ -20,7 +20,7 @@
             "combined": 0.0,
             "filter_agg": 0.0,
             "filter_count": 0.0,
-            "out_of_range": 1.0,
+            "out_of_range": 0.0,
             "paraphrase": 0.0,
             "row_range_agg": 0.0,
             "row_range_nocol": 0.0
@@ -83,10 +83,10 @@
             "out_of_range": {
               "n": 11,
               "ok": 11,
-              "linked": 11,
+              "linked": 0,
               "abstained": 11,
               "value_accuracy": 1.0,
-              "schema_link_accuracy": 1.0,
+              "schema_link_accuracy": 0.0,
               "abstention_rate": 1.0
             }
           }
@@ -190,7 +190,7 @@
             "combined": 0.0,
             "filter_agg": 0.0,
             "filter_count": 0.0,
-            "out_of_range": 1.0,
+            "out_of_range": 0.0,
             "paraphrase": 0.0,
             "row_range_agg": 0.0,
             "row_range_nocol": 0.0
@@ -253,10 +253,10 @@
             "out_of_range": {
               "n": 11,
               "ok": 11,
-              "linked": 11,
+              "linked": 0,
               "abstained": 11,
               "value_accuracy": 1.0,
-              "schema_link_accuracy": 1.0,
+              "schema_link_accuracy": 0.0,
               "abstention_rate": 1.0
             }
           }
@@ -360,7 +360,7 @@
             "combined": 0.0,
             "filter_agg": 0.0,
             "filter_count": 0.0,
-            "out_of_range": 1.0,
+            "out_of_range": 0.0,
             "paraphrase": 0.0,
             "row_range_agg": 0.0,
             "row_range_nocol": 0.0
@@ -423,10 +423,10 @@
             "out_of_range": {
               "n": 11,
               "ok": 11,
-              "linked": 11,
+              "linked": 0,
               "abstained": 11,
               "value_accuracy": 1.0,
-              "schema_link_accuracy": 1.0,
+              "schema_link_accuracy": 0.0,
               "abstention_rate": 1.0
             }
           }
@@ -530,7 +530,7 @@
             "combined": 0.0,
             "filter_agg": 0.0,
             "filter_count": 0.0,
-            "out_of_range": 1.0,
+            "out_of_range": 0.0,
             "paraphrase": 0.0,
             "row_range_agg": 0.0,
             "row_range_nocol": 0.0
@@ -593,10 +593,10 @@
             "out_of_range": {
               "n": 11,
               "ok": 11,
-              "linked": 11,
+              "linked": 0,
               "abstained": 11,
               "value_accuracy": 1.0,
-              "schema_link_accuracy": 1.0,
+              "schema_link_accuracy": 0.0,
               "abstention_rate": 1.0
             }
           }
@@ -700,7 +700,7 @@
         "filter_count": 0.0,
         "combined": 0.0,
         "paraphrase": 0.0,
-        "out_of_range": 1.0
+        "out_of_range": 0.0
       },
       "by_family": {
         "row_range_agg": {
@@ -760,10 +760,10 @@
         "out_of_range": {
           "n": 44,
           "ok": 44,
-          "linked": 44,
+          "linked": 0,
           "abstained": 44,
           "value_accuracy": 1.0,
-          "schema_link_accuracy": 1.0,
+          "schema_link_accuracy": 0.0,
           "abstention_rate": 1.0
         }
       },
@@ -919,6 +919,8 @@
       ]
     }
   ],
+  "schema_link_rule": 2,
+  "schema_link_withheld": null,
   "floors": {
     "pooled_value_accuracy": 0.99,
     "per_workbook_value_accuracy": 0.95,
@@ -928,5 +930,9 @@
     "sira_max": "retained on the same questions; retrieve-only, no 0.99 floor"
   },
   "honesty": "hybrid_max is the SQL lane on generated asks. sira_max is retrieve-only (hybrid_sql_lane off, use_llm=False) on the SAME asks. F13 fields only. No precision@k / recall@k / PR-AUC / MAP.",
-  "ts": "2026-08-26T17:41:29"
+  "ts": "2026-11-27T04:14:48",
+  "corpus": "tests/RAG/primary50 seeded equivalent. The 2026-08-26 primary50 workbooks were gitignored and are not in this clone, so this pack is not those bytes and not those asks.",
+  "commit_sha": "3d48b3d44a2a54744f1101b38c967112544cd9b0",
+  "generated_at": "2026-11-27T04:14:48Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

@@ -2,6 +2,30 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- oracle close() is strict again; scalar gold is published precision
+
+- `close()` is back to `abs(got - want) <= max(1e-6, abs(want) * 1e-9)`. It no longer rounds either side. An unrounded gap of 2.5e-5 (`42.63464` vs `42.63461538`) fails, and `1000.00004` vs `1000` fails.
+- `expected()` rounds scalar gold with `round(value, 4)`, matching `sheet_sql` line 1708. Per-column gold stays the full float, matching the unrounded `float(agg)` at line 1509.
+- Re-score of the seeded primary50 board on that judge: hybrid_max **320/320**, sira_max **44/320**. Single-lane p50_01 n=21 is 21/21. Smoke n=7 is hybrid 7/7, sira 1/7. F13b floors unchanged. `MIN_TESTS` stays 380.
+
+## 2026-11-27 -- suite: stamp test must not call git for parents
+
+- Run 45931649892: `rag-benches` passed (18 artifacts matched a fresh run). `suite` failed one new test: `git rev-parse HEAD^@` is empty on the depth-1 checkout, so `assert parents` saw `[]`. 1620 passed, 9 skipped. The test now stubs both git calls. Floors unchanged. `MIN_TESTS` stays 380.
+
+## 2026-11-27 -- rag-benches stamp check on a depth-1 merge checkout
+
+- The first CI run of `rag-benches` (45931231274) failed in the stamp check, before any bench ran. Actions checked out merge commit `1fea9ee` at depth 1, so `9118e72` was not an object and `merge-base --is-ancestor` returned false. The job now fetches full history, and a stamp that is a parent SHA written on the commit still counts when those objects are missing. No floor moved.
+
+## 2026-11-27 -- RAG-BENCH-17: CI regenerates benches, harder real-doc pack (#93)
+
+- New job `rag-benches` (windows-latest) runs `tests/RAG/regen_latest.py --check`. It regenerates every committed `tests/RAG/results/*_latest.json` and fails on drift. Each file carries `commit_sha` and `generated_at`. The compare ignores those stamps. Suite `MIN_TESTS` stays 380.
+- Paraphrase, hash embedder, n=64 per style. Stale file: synonym success@5 45/64, property 17/64. This harness: verbatim 64/64 and 64/64, synonym 43/64 and 64/64, lower_typo 56/64 and 64/64, property 64/64 and 64/64. `recall_at_k` on these boards is success@k (one gold passage). Documented in `rag/metrics.py`.
+- File types n=480. success@5 stayed 480/480. success@1 was 473/480 in the stale file and 474/480 on this run.
+- Real-document pack `tests/RAG/real_doc_bench.py`, n=200, value-level gold. success@1 120/200 (0.6), success@5 120/200 (0.6), nDCG@10 0.6. Verbatim 80/80, synonym 40/40, cross-file 0/80. Harder than the paraphrase board.
+- The 2026-08-26 primary50 workbooks were gitignored and are not in this clone, so those asks cannot be re-run. A seeded equivalent is committed under `tests/RAG/primary50/` (four workbooks plus SHA256SUMS). n=320 on those asks: first run hybrid_max 280/320 because `close()` rejected values the SQL lane publishes at 4 decimals (example: got 42.6346, want 42.63461538461539; all 40 misses were that class). After `oracle_bench.close` also accepts `round(a, 4) == round(b, 4)`: hybrid_max 320/320 every family, sira_max 44/320 all from out_of_range value hits. sira schema-link on out_of_range is 0/44 (a refusal does not bind the sheet). malformed 0. F13b floors hold. Not a re-score of the original bytes.
+- FRTR-bench is gitignored. CI uses `tests/RAG/fixtures/frtr_min` (one workbook, 6 questions). frtr_eval 6/6, frtr_cross both variants 6/6, frtr_sql_batch 0/6 (different ask path). Ops fixture `tests/RAG/fixtures/ops/payroll_ops.xlsx`: 32/32. edge_probe --offline 8/9 (the old live Cortex trace is not reproducible here). warehouse --skip-gen 10/10.
+- No new runtime flag. Bench scripts only. `rag/ingest.py` not edited.
+
 ## 2026-11-27 -- BROWSER-01: confirm a new origin, close the browser on one thread (#99)
 
 - The first page, and any later page on a different scheme, host, or port,

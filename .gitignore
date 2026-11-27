@@ -75,7 +75,13 @@ vendor/vendor/
 
 # Heavyweight RAG fixture packs - generate locally, do not commit binaries
 tests/RAG/FRTR-bench/
-tests/RAG/primary50/
+# Seeded F13b workbooks are committed (RAG-BENCH-17). Ignore anything else dropped here.
+tests/RAG/primary50/*
+!tests/RAG/primary50/p50_01_sales_messy.xlsx
+!tests/RAG/primary50/p50_02_ops_messy.xlsx
+!tests/RAG/primary50/p50_03_inventory_messy.xlsx
+!tests/RAG/primary50/p50_04_mixed_messy.xlsx
+!tests/RAG/primary50/SHA256SUMS
 tests/RAG/t2-ragbench/
 
 # Regenerated bench intermediates and runtime ops tokens - not artifacts

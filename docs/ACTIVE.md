@@ -208,7 +208,23 @@ What exists in this repo and where. Update when structure changes, not when stat
   records as tables, relations across file types.
 - `tests/RAG/paraphrase_bench.py` -- same facts asked four ways (verbatim,
   synonym, lowercase+typo, by another fact). Gate pins measured floors; two are
-  deliberately weak and say so. Measure only.
+  deliberately weak and say so. Measure only. `recall_at_1` / `recall_at_5`
+  in this file and in filetype and multilingual benches are success@k counts
+  (one gold passage). `rag/metrics.py` says so.
+- `tests/RAG/real_doc_bench.py` + `tests/RAG/real_docs/` -- committed archive
+  (register, HTML policy, desk memo, ledger, PDF, Word) and 200 value-level
+  questions. Reports success@1, success@5 and nDCG@10. `cross_file` asks for a
+  code that is not in the memo the city appears in.
+- `tests/RAG/regen_latest.py` -- CI job `rag-benches` regenerates every
+  `tests/RAG/results/*_latest.json` plus the n=320 primary50 board and fails
+  if the measured payload drifts. `bench_stamp.py` writes `commit_sha` and
+  `generated_at`; the diff ignores those, timings and absolute paths.
+- `tests/RAG/primary50/` -- seeded equivalent of the gitignored 2026-08-26
+  workbooks (`gen_ci_fixtures.py`), so `oracle_bench.py` can re-run n=320
+  `sira_max` and `hybrid_max`. Not the original bytes.
+- `tests/RAG/fixtures/frtr_min/` and `fixtures/ops/payroll_ops.xlsx` --
+  stand-ins so the FRTR and ops latest JSON can be regenerated.
+  `AIRGPT_FRTR_BENCH` selects the FRTR directory.
 - `rag/answer.py` `abstention` -- offline answer says the space does not
   mention a name / file / attribute instead of quoting a look-alike.
 - `rag/ingest.py` -- also `.tsv .xml .log .ipynb .rtf`. Re-ingesting a file

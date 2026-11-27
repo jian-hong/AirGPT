@@ -1,30 +1,19 @@
 {
   "ok": true,
   "artifact": "oracle_cross",
-  "workbook": "frtr_0001_quarterly-summary.xlsx",
+  "workbook": "p50_01_sales_messy.xlsx",
   "seed": 1,
   "n": 7,
   "questions": [
-    "On the Revenue sheet, total Revenue for rows 257 to 337",
-    "select rows 128 to 160 on Expenses, minimum",
-    "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
-    "On Revenue, how many rows have qty greater than 111.0",
-    "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
-    "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
-    "On the Revenue sheet, maximum Qty for rows 27382 to 27482"
+    "On the Sales sheet, total Revenue for rows 256 to 306",
+    "select rows 126 to 152 on Costs, minimum",
+    "On Sales, what is the minimum UnitPrice where revenue below 659.26",
+    "On Sales, how many rows have qty greater than 41.0",
+    "On the Sales sheet, sum UnitPrice for rows 256 to 388 where qty below 41.0",
+    "On the Sales sheet, maximum UnitPrice for rows 54 to 180",
+    "On the Sales sheet, maximum Revenue for rows 27205 to 27305"
   ],
-  "header_drift": [
-    [
-      "Revenue",
-      3,
-      4
-    ],
-    [
-      "Expenses",
-      3,
-      4
-    ]
-  ],
+  "header_drift": [],
   "variants": [
     {
       "name": "sira_max",
@@ -33,7 +22,7 @@
         "combined": 0.0,
         "filter_agg": 0.0,
         "filter_count": 0.0,
-        "out_of_range": 1.0,
+        "out_of_range": 0.0,
         "paraphrase": 0.0,
         "row_range_agg": 0.0,
         "row_range_nocol": 0.0
@@ -98,23 +87,23 @@
         "out_of_range": {
           "n": 1,
           "ok": 1,
-          "linked": 1,
+          "linked": 0,
           "abstained": 1,
           "value_accuracy": 1.0,
-          "schema_link_accuracy": 1.0,
+          "schema_link_accuracy": 0.0,
           "abstention_rate": 1.0
         }
       },
       "n": 7,
       "correct": 1,
-      "right_value_wrong_binding": 0,
+      "right_value_wrong_binding": 1,
       "rows": [
         {
           "family": "row_range_agg",
-          "question": "On the Revenue sheet, total Revenue for rows 257 to 337",
+          "question": "On the Sales sheet, total Revenue for rows 256 to 306",
           "ok": false,
-          "why": "refused, but the oracle computed 701519.7395020829",
-          "ms": 2740.7,
+          "why": "refused, but the oracle computed 43894.52",
+          "ms": 68.5,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -125,10 +114,10 @@
         },
         {
           "family": "row_range_nocol",
-          "question": "select rows 128 to 160 on Expenses, minimum",
+          "question": "select rows 126 to 152 on Costs, minimum",
           "ok": false,
           "why": "refused, but the oracle computed None",
-          "ms": 1749.0,
+          "ms": 53.9,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -139,10 +128,10 @@
         },
         {
           "family": "filter_agg",
-          "question": "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
+          "question": "On Sales, what is the minimum UnitPrice where revenue below 659.26",
           "ok": false,
-          "why": "refused, but the oracle computed 20.18549447315856",
-          "ms": 1719.3,
+          "why": "refused, but the oracle computed 2.32",
+          "ms": 40.2,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -153,10 +142,10 @@
         },
         {
           "family": "filter_count",
-          "question": "On Revenue, how many rows have qty greater than 111.0",
+          "question": "On Sales, how many rows have qty greater than 41.0",
           "ok": false,
-          "why": "refused, but the oracle computed 288.0",
-          "ms": 1370.6,
+          "why": "refused, but the oracle computed 199.0",
+          "ms": 70.3,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -167,10 +156,10 @@
         },
         {
           "family": "combined",
-          "question": "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
+          "question": "On the Sales sheet, sum UnitPrice for rows 256 to 388 where qty below 41.0",
           "ok": false,
-          "why": "refused, but the oracle computed 10418.001190632627",
-          "ms": 899.7,
+          "why": "refused, but the oracle computed 1283.66",
+          "ms": 34.0,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -181,10 +170,10 @@
         },
         {
           "family": "paraphrase",
-          "question": "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
+          "question": "On the Sales sheet, maximum UnitPrice for rows 54 to 180",
           "ok": false,
-          "why": "refused, but the oracle computed 148.2090089308845",
-          "ms": 2533.6,
+          "why": "refused, but the oracle computed 39.29",
+          "ms": 104.2,
           "linked_ok": false,
           "link_why": "refused although the oracle found rows",
           "sql": "",
@@ -195,12 +184,12 @@
         },
         {
           "family": "out_of_range",
-          "question": "On the Revenue sheet, maximum Qty for rows 27382 to 27482",
+          "question": "On the Sales sheet, maximum Revenue for rows 27205 to 27305",
           "ok": true,
           "why": "refused as it should",
-          "ms": 1210.6,
-          "linked_ok": true,
-          "link_why": "refused: rows outside the sheet",
+          "ms": 56.5,
+          "linked_ok": false,
+          "link_why": "refused: sheet None != 'Sales'",
           "sql": "",
           "sheet": null,
           "linked": {},
@@ -294,17 +283,17 @@
       "rows": [
         {
           "family": "row_range_agg",
-          "question": "On the Revenue sheet, total Revenue for rows 257 to 337",
+          "question": "On the Sales sheet, total Revenue for rows 256 to 306",
           "ok": true,
-          "why": "701519.7395020829",
-          "ms": 65.0,
+          "why": "43894.52",
+          "ms": 21.6,
           "linked_ok": true,
           "link_why": "sheet + columns bound",
-          "sql": "SELECT SUM(Revenue) FROM Revenue WHERE _excel_row BETWEEN 257 AND 337",
-          "sheet": "Revenue",
+          "sql": "SELECT SUM(Revenue) FROM Sales WHERE _excel_row BETWEEN 256 AND 306",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "Revenue",
             "filters": [],
             "all_numeric": false
@@ -314,17 +303,17 @@
         },
         {
           "family": "row_range_nocol",
-          "question": "select rows 128 to 160 on Expenses, minimum",
+          "question": "select rows 126 to 152 on Costs, minimum",
           "ok": true,
-          "why": "1 columns match",
-          "ms": 6.3,
+          "why": "2 columns match",
+          "ms": 2.3,
           "linked_ok": true,
-          "link_why": "bound sheet, all numeric columns",
-          "sql": "SELECT MIN(AmountUSD) FROM Expenses WHERE _excel_row BETWEEN 128 AND 160",
-          "sheet": "Expenses",
+          "link_why": "bound sheet, all numeric columns delivered",
+          "sql": "SELECT MIN(Units) FROM Costs WHERE _excel_row BETWEEN 126 AND 152; SELECT MIN(Amount) FROM Costs WHERE _excel_row BETWEEN 126 AND 152",
+          "sheet": "Costs",
           "linked": {
-            "sheet": "Expenses",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Costs",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "",
             "filters": [],
             "all_numeric": true
@@ -334,17 +323,17 @@
         },
         {
           "family": "filter_agg",
-          "question": "On Revenue, what is the minimum UnitPrice where revenue below 7835.61",
+          "question": "On Sales, what is the minimum UnitPrice where revenue below 659.26",
           "ok": true,
-          "why": "20.18549447315856",
-          "ms": 8.4,
+          "why": "2.32",
+          "ms": 11.3,
           "linked_ok": true,
           "link_why": "sheet + columns bound",
-          "sql": "SELECT MIN(UnitPrice) FROM Revenue WHERE Revenue < 7835.61",
-          "sheet": "Revenue",
+          "sql": "SELECT MIN(UnitPrice) FROM Sales WHERE Revenue < 659.26",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "UnitPrice",
             "filters": [
               "Revenue"
@@ -356,17 +345,17 @@
         },
         {
           "family": "filter_count",
-          "question": "On Revenue, how many rows have qty greater than 111.0",
+          "question": "On Sales, how many rows have qty greater than 41.0",
           "ok": true,
-          "why": "288.0",
-          "ms": 10.7,
+          "why": "199.0",
+          "ms": 15.7,
           "linked_ok": true,
           "link_why": "sheet + columns bound",
-          "sql": "SELECT COUNT(*) FROM Revenue WHERE Qty > 111",
-          "sheet": "Revenue",
+          "sql": "SELECT COUNT(*) FROM Sales WHERE Qty > 41",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "",
             "filters": [
               "Qty"
@@ -378,17 +367,17 @@
         },
         {
           "family": "combined",
-          "question": "On the Revenue sheet, sum UnitPrice for rows 257 to 501 where qty below 111.0",
+          "question": "On the Sales sheet, sum UnitPrice for rows 256 to 388 where qty below 41.0",
           "ok": true,
-          "why": "10418.001190632625",
-          "ms": 5.3,
+          "why": "1283.66",
+          "ms": 10.6,
           "linked_ok": true,
           "link_why": "sheet + columns bound",
-          "sql": "SELECT SUM(UnitPrice) FROM Revenue WHERE Qty < 111 AND _excel_row BETWEEN 257 AND 501",
-          "sheet": "Revenue",
+          "sql": "SELECT SUM(UnitPrice) FROM Sales WHERE Qty < 41 AND _excel_row BETWEEN 256 AND 388",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "UnitPrice",
             "filters": [
               "Qty"
@@ -400,17 +389,17 @@
         },
         {
           "family": "paraphrase",
-          "question": "On the Revenue sheet, maximum UnitPrice for rows 288 to 521",
+          "question": "On the Sales sheet, maximum UnitPrice for rows 54 to 180",
           "ok": true,
-          "why": "148.2090089308845 (3 phrasings agree)",
-          "ms": 7.3,
+          "why": "39.29 (3 phrasings agree)",
+          "ms": 27.2,
           "linked_ok": true,
           "link_why": "sheet + columns bound",
-          "sql": "SELECT MAX(UnitPrice) FROM Revenue WHERE _excel_row BETWEEN 288 AND 521",
-          "sheet": "Revenue",
+          "sql": "SELECT MAX(UnitPrice) FROM Sales WHERE _excel_row BETWEEN 54 AND 180",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
             "metric": "UnitPrice",
             "filters": [],
             "all_numeric": false
@@ -420,18 +409,18 @@
         },
         {
           "family": "out_of_range",
-          "question": "On the Revenue sheet, maximum Qty for rows 27382 to 27482",
+          "question": "On the Sales sheet, maximum Revenue for rows 27205 to 27305",
           "ok": true,
           "why": "refused as it should",
-          "ms": 1.6,
+          "ms": 9.0,
           "linked_ok": true,
-          "link_why": "refused: rows outside the sheet",
-          "sql": "SELECT MAX(Qty) FROM Revenue WHERE _excel_row BETWEEN 27382 AND 27482",
-          "sheet": "Revenue",
+          "link_why": "refused: sheet + columns bound",
+          "sql": "SELECT MAX(Revenue) FROM Sales WHERE _excel_row BETWEEN 27205 AND 27305",
+          "sheet": "Sales",
           "linked": {
-            "sheet": "Revenue",
-            "workbook": "frtr_0001_quarterly-summary.xlsx",
-            "metric": "Qty",
+            "sheet": "Sales",
+            "workbook": "p50_01_sales_messy.xlsx",
+            "metric": "Revenue",
             "filters": [],
             "all_numeric": false
           },
@@ -441,26 +430,35 @@
       ]
     }
   ],
+  "schema_link_rule": 2,
   "index_fingerprint": {
-    "schema_version": 1,
+    "schema_version": 3,
     "chunker": {
-      "name": "parent_child",
+      "name": "parent_child_sentence",
       "child_tokens": 200,
       "parent_max_tokens": 900,
-      "child_overlap": 40
+      "child_overlap": 40,
+      "table": true
     },
     "embed": {
-      "backend": "model",
-      "model": "BAAI/bge-small-en-v1.5",
-      "dim": 384
+      "backend": "hash",
+      "model": "",
+      "dim": 64
+    },
+    "lexical": {
+      "tokenizer": "unicode_v1"
     },
     "extra": {
-      "pack": "FRTR-bench",
-      "workbook": "frtr_0001_quarterly-summary.xlsx"
+      "pack": "primary50",
+      "workbook": "p50_01_sales_messy.xlsx",
+      "ontology_version": 4
     },
-    "id": "eeb81ac9414bd5df"
+    "id": "749bc46a36e36171"
   },
   "oracle": "openpyxl direct cell reads by spreadsheet row. Shares no code with the lane AND uses a different header signal: the lane picks by modal body width, this picks by type transition (last text row above the first row containing a number). They disagree in both directions on synthetic sheets, which is what makes the drift check meaningful. Shared residual: both fall back to the pre-#31 first-wide-row rule when their primary signal is inconclusive.",
   "honesty": "hybrid_max scores the SQL engine (sheet_sql) on generated asks. sira_max scores retrieve-only (answer() with hybrid_sql_lane off, use_llm=False) on the SAME generated asks. F13 metrics only.",
-  "ts": "2026-08-26T16:52:27"
+  "ts": "2026-11-27T04:14:24",
+  "commit_sha": "3d48b3d44a2a54744f1101b38c967112544cd9b0",
+  "generated_at": "2026-11-27T04:14:24Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

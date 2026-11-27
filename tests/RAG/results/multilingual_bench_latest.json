@@ -5,7 +5,7 @@
   "top_k": 5,
   "n_distractors_per_language": 20,
   "index_fingerprint": {
-    "schema_version": 2,
+    "schema_version": 3,
     "chunker": {
       "name": "parent_child_sentence",
       "child_tokens": 200,
@@ -24,13 +24,13 @@
     "extra": {
       "pack": "multilingual_bench"
     },
-    "id": "d89d8a69d7804e6c"
+    "id": "dea9d5e775603915"
   },
   "ingest_gaps": {
     "pdf_rtl": {
-      "arabic_survives": false,
+      "arabic_survives": true,
       "code_survives": true,
-      "extracted": "## Page 1\nSQ-7911."
+      "extracted": "## Page 1\nمدة الاحتفاظ للعميل خالد هوSQ-7911."
     }
   },
   "tokenizer_gaps": {
@@ -43,31 +43,28 @@
       "skipped": {},
       "a_own": {
         "n": 30,
-        "recall_at_1": 19,
-        "recall_at_5": 27,
-        "answer_has_value": 23,
+        "recall_at_1": 21,
+        "recall_at_5": 29,
+        "answer_has_value": 25,
         "false_abstain": 0,
-        "false_warn": 2,
-        "locator_n": 27,
-        "locator_ok": 27,
+        "false_warn": 0,
+        "locator_n": 29,
+        "locator_ok": 29,
         "misses": [
-          "建信海客户的折扣档位是什么？",
-          "伟东宏客户的合规标签是什么？",
-          "安兴文客户的折扣档位是什么？"
+          "建信海客户的折扣档位是什么？"
         ]
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 19,
-        "recall_at_5": 23,
-        "answer_has_value": 22,
+        "recall_at_1": 23,
+        "recall_at_5": 28,
+        "answer_has_value": 26,
         "false_abstain": 0,
-        "false_warn": 5,
-        "locator_n": 23,
-        "locator_ok": 23,
+        "false_warn": 0,
+        "locator_n": 28,
+        "locator_ok": 28,
         "misses": [
           "康林安客户的情况",
-          "华华东客户的情况",
           "建信海客户的情况"
         ]
       },
@@ -76,7 +73,7 @@
         "recall_at_1": 26,
         "recall_at_5": 30,
         "answer_has_value": 30,
-        "false_abstain": 6,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -84,11 +81,9 @@
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 0,
-        "warned": 9,
-        "missed": [
-          "康安丰客户的续约窗口是什么？"
-        ]
+        "abstained": 10,
+        "warned": 0,
+        "missed": []
       }
     },
     "ja": {
@@ -96,40 +91,32 @@
       "skipped": {},
       "a_own": {
         "n": 30,
-        "recall_at_1": 19,
-        "recall_at_5": 27,
-        "answer_has_value": 24,
+        "recall_at_1": 21,
+        "recall_at_5": 30,
+        "answer_has_value": 25,
         "false_abstain": 0,
-        "false_warn": 2,
-        "locator_n": 27,
-        "locator_ok": 27,
-        "misses": [
-          "ヒコチノのお客様の割引区分は何ですか？",
-          "ハムヤコのお客様のエスカレーションコードは何ですか？",
-          "マヒルリのお客様の更新期間は何ですか？"
-        ]
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 18,
-        "recall_at_5": 26,
-        "answer_has_value": 23,
-        "false_abstain": 3,
-        "false_warn": 3,
-        "locator_n": 26,
-        "locator_ok": 26,
-        "misses": [
-          "ヒコチノのお客様について教えてください。",
-          "ハムヤコのお客様について教えてください。",
-          "ミヒヒセのお客様について教えてください。"
-        ]
+        "recall_at_1": 22,
+        "recall_at_5": 30,
+        "answer_has_value": 27,
+        "false_abstain": 0,
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 20,
+        "recall_at_1": 22,
         "recall_at_5": 30,
-        "answer_has_value": 29,
-        "false_abstain": 7,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -137,8 +124,8 @@
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 0,
-        "warned": 10,
+        "abstained": 10,
+        "warned": 0,
         "missed": []
       }
     },
@@ -148,17 +135,13 @@
       "a_own": {
         "n": 30,
         "recall_at_1": 20,
-        "recall_at_5": 26,
-        "answer_has_value": 24,
+        "recall_at_5": 30,
+        "answer_has_value": 30,
         "false_abstain": 0,
-        "false_warn": 2,
-        "locator_n": 26,
-        "locator_ok": 26,
-        "misses": [
-          "태현소 고객의 갱신 기간은 무엇입니까?",
-          "민수승 고객의 할인 구간은 무엇입니까?",
-          "하호하 고객의 지원 등급은 무엇입니까?"
-        ]
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "b_name": {
         "n": 30,
@@ -166,31 +149,27 @@
         "recall_at_5": 30,
         "answer_has_value": 30,
         "false_abstain": 0,
-        "false_warn": 3,
+        "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
         "misses": []
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 24,
-        "recall_at_5": 29,
-        "answer_has_value": 29,
+        "recall_at_1": 30,
+        "recall_at_5": 30,
+        "answer_has_value": 30,
         "false_abstain": 0,
-        "false_warn": 1,
-        "locator_n": 29,
-        "locator_ok": 29,
-        "misses": [
-          "What is the audit reference for the 한현윤 account?"
-        ]
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 0,
-        "warned": 9,
-        "missed": [
-          "미호승 고객의 청구 주기는 무엇입니까?"
-        ]
+        "abstained": 10,
+        "warned": 0,
+        "missed": []
       }
     },
     "ar": {
@@ -199,19 +178,17 @@
       "a_own": {
         "n": 30,
         "recall_at_1": 13,
-        "recall_at_5": 29,
-        "answer_has_value": 24,
+        "recall_at_5": 30,
+        "answer_has_value": 25,
         "false_abstain": 0,
         "false_warn": 0,
-        "locator_n": 29,
-        "locator_ok": 29,
-        "misses": [
-          "ما هو رمز التصعيد للعميل عادل البلوي؟"
-        ]
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 12,
+        "recall_at_1": 13,
         "recall_at_5": 30,
         "answer_has_value": 30,
         "false_abstain": 0,
@@ -222,28 +199,20 @@
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 14,
-        "recall_at_5": 27,
-        "answer_has_value": 24,
-        "false_abstain": 6,
+        "recall_at_1": 18,
+        "recall_at_5": 30,
+        "answer_has_value": 27,
+        "false_abstain": 0,
         "false_warn": 0,
-        "locator_n": 27,
-        "locator_ok": 27,
-        "misses": [
-          "What is the audit reference for the فيصل الخالدي account?",
-          "What is the support tier for the يوسف الغامدي account?",
-          "What is the compliance tag for the فيصل الزهراني account?"
-        ]
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 0,
-        "warned": 5,
-        "missed": [
-          "ما هو مدة الاحتفاظ للعميل خالد القحطاني؟",
-          "ما هو رمز التصعيد للعميل فيصل العتيبي؟",
-          "ما هو دورة الفوترة للعميل وليد الحربي؟"
-        ]
+        "abstained": 10,
+        "warned": 0,
+        "missed": []
       }
     },
     "th": {
@@ -252,37 +221,31 @@
       "a_own": {
         "n": 30,
         "recall_at_1": 20,
-        "recall_at_5": 29,
+        "recall_at_5": 30,
         "answer_has_value": 28,
         "false_abstain": 0,
-        "false_warn": 1,
-        "locator_n": 29,
-        "locator_ok": 29,
-        "misses": [
-          "รหัสการยกระดับของลูกค้า ดีวันเพ็ญ คืออะไร"
-        ]
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 22,
-        "recall_at_5": 27,
-        "answer_has_value": 24,
+        "recall_at_1": 25,
+        "recall_at_5": 30,
+        "answer_has_value": 27,
         "false_abstain": 0,
-        "false_warn": 3,
-        "locator_n": 27,
-        "locator_ok": 27,
-        "misses": [
-          "ข้อมูลของลูกค้า ดีวันเพ็ญ",
-          "ข้อมูลของลูกค้า พรวันบุญ",
-          "ข้อมูลของลูกค้า นกดีจิต"
-        ]
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 26,
+        "recall_at_1": 27,
         "recall_at_5": 30,
-        "answer_has_value": 28,
-        "false_abstain": 19,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -290,11 +253,9 @@
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 0,
-        "warned": 9,
-        "missed": [
-          "ช่วงเวลาต่ออายุของลูกค้า คำชายแก้ว คืออะไร"
-        ]
+        "abstained": 10,
+        "warned": 0,
+        "missed": []
       }
     },
     "ru": {
@@ -302,17 +263,14 @@
       "skipped": {},
       "a_own": {
         "n": 30,
-        "recall_at_1": 26,
-        "recall_at_5": 28,
-        "answer_has_value": 28,
-        "false_abstain": 2,
-        "false_warn": 1,
-        "locator_n": 28,
-        "locator_ok": 28,
-        "misses": [
-          "Что указано в поле «категория скидки» для клиента Савич?",
-          "Что указано в поле «метка соответствия» для клиента Рогин?"
-        ]
+        "recall_at_1": 30,
+        "recall_at_5": 30,
+        "answer_has_value": 30,
+        "false_abstain": 0,
+        "false_warn": 0,
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "b_name": {
         "n": 30,
@@ -320,17 +278,17 @@
         "recall_at_5": 30,
         "answer_has_value": 30,
         "false_abstain": 0,
-        "false_warn": 4,
+        "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
         "misses": []
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 24,
+        "recall_at_1": 30,
         "recall_at_5": 30,
-        "answer_has_value": 24,
-        "false_abstain": 30,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -338,8 +296,8 @@
       },
       "unanswerable": {
         "n": 10,
-        "abstained": 6,
-        "warned": 4,
+        "abstained": 10,
+        "warned": 0,
         "missed": []
       }
     },
@@ -348,10 +306,10 @@
       "skipped": {},
       "a_own": {
         "n": 30,
-        "recall_at_1": 28,
+        "recall_at_1": 30,
         "recall_at_5": 30,
-        "answer_has_value": 29,
-        "false_abstain": 1,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -359,10 +317,10 @@
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 26,
+        "recall_at_1": 30,
         "recall_at_5": 30,
-        "answer_has_value": 27,
-        "false_abstain": 4,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -370,10 +328,10 @@
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 26,
+        "recall_at_1": 30,
         "recall_at_5": 30,
-        "answer_has_value": 25,
-        "false_abstain": 30,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -402,23 +360,21 @@
       },
       "b_name": {
         "n": 30,
-        "recall_at_1": 26,
-        "recall_at_5": 29,
-        "answer_has_value": 26,
-        "false_abstain": 1,
+        "recall_at_1": 30,
+        "recall_at_5": 30,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
-        "locator_n": 29,
-        "locator_ok": 29,
-        "misses": [
-          "Información sobre la cuenta Casmonsab"
-        ]
+        "locator_n": 30,
+        "locator_ok": 30,
+        "misses": []
       },
       "c_english": {
         "n": 30,
-        "recall_at_1": 26,
+        "recall_at_1": 30,
         "recall_at_5": 30,
-        "answer_has_value": 26,
-        "false_abstain": 24,
+        "answer_has_value": 30,
+        "false_abstain": 0,
         "false_warn": 0,
         "locator_n": 30,
         "locator_ok": 30,
@@ -431,5 +387,9 @@
         "missed": []
       }
     }
-  }
+  },
+  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
+  "generated_at": "2026-11-27T02:46:46Z",
+  "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths.",
+  "metric_note": "recall_at_1 and recall_at_5 are success@k counts: how many questions placed their one gold passage in the top k. They are not set-recall. With one gold passage the count matches recall@k. See rag/metrics.py."
 }

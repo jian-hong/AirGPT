@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from frtr_eval import (  # noqa: E402
+    BENCH,
     RESULTS,
     SANITIZED,
     build_space_and_ingest,
@@ -35,8 +36,6 @@ from frtr_eval import (  # noqa: E402
     run_eval,
     sanitize_workbook,
 )
-
-BENCH = ROOT / "FRTR-bench"
 
 DEMO_DEFAULT_VARIANT = "hybrid_max"
 
@@ -298,6 +297,7 @@ def main() -> None:
     ap.add_argument("--eval-only", action="store_true")
     ap.add_argument("--space-id", type=int, default=0)
     ap.add_argument("--variants", default="", help="comma names; default all")
+    ap.add_argument("--out", default="", help="write the latest JSON here and skip side files")
     args = ap.parse_args()
 
     src = BENCH / args.workbook
@@ -312,7 +312,8 @@ def main() -> None:
     dst = SANITIZED / src.name
     sanitize_workbook(src, dst)
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / "frtr_gold.json").write_text(json.dumps(qs, indent=2), encoding="utf-8")
+    if not args.out:
+        (RESULTS / "frtr_gold.json").write_text(json.dumps(qs, indent=2), encoding="utf-8")
     print(f"gold {len(qs)} from {src.name}", flush=True)
 
     space_id = args.space_id
@@ -369,11 +370,13 @@ def main() -> None:
         )
 
     # rank by accuracy then avg latency
+    # Tie-break on the variant name, not on elapsed time, so a fresh run matches
+    # the committed JSON. Latency is still stored per row.
     ranked = sorted(
         variants_out,
         key=lambda v: (
             -(v["summary"].get("accuracy") or 0),
-            sum(r.get("ms") or 0 for r in v.get("rows") or []) / max(1, len(v.get("rows") or [])),
+            v["name"],
         ),
     )
     best = ranked[0]["name"] if ranked else None
@@ -407,15 +410,21 @@ def main() -> None:
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    json_path = RESULTS / f"frtr_cross_{ts}.json"
-    xlsx_path = RESULTS / f"frtr_cross_{ts}.xlsx"
-    latest_json = RESULTS / "frtr_cross_latest.json"
-    latest_xlsx = RESULTS / "frtr_cross_latest.xlsx"
-    json_path.write_text(json.dumps(matrix, indent=2), encoding="utf-8")
-    latest_json.write_text(json.dumps(matrix, indent=2), encoding="utf-8")
-    _write_xlsx(xlsx_path, matrix)
-    _write_xlsx(latest_xlsx, matrix)
+    from bench_stamp import write_json
+    if args.out:
+        json_path = Path(args.out)
+        write_json(json_path, matrix)
+        xlsx_path = None
+    else:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        json_path = RESULTS / f"frtr_cross_{ts}.json"
+        xlsx_path = RESULTS / f"frtr_cross_{ts}.xlsx"
+        latest_json = RESULTS / "frtr_cross_latest.json"
+        latest_xlsx = RESULTS / "frtr_cross_latest.xlsx"
+        write_json(json_path, matrix)
+        write_json(latest_json, matrix)
+        _write_xlsx(xlsx_path, matrix)
+        _write_xlsx(latest_xlsx, matrix)
 
     print("\n=== FINAL SCOREBOARD ===", flush=True)
     for v in ranked:

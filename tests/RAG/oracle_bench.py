@@ -380,11 +380,23 @@ def generate(path: Path, schema: dict[str, dict], rng: random.Random, n: int) ->
     return cases[:n]
 
 
+def _scalar_gold(value: float | None) -> float | None:
+    """Gold for a scalar answer, at the precision sheet_sql publishes.
+
+    sheet_sql.py stores the scalar ``value`` as ``round(value, 4)``. The
+    judge stays strict, so the gold is rounded once here and the lane's
+    number is not rounded again inside ``close``.
+    """
+    if value is None:
+        return None
+    return round(float(value), 4)
+
+
 def expected(path: Path, case: dict) -> dict:
     fam = case["family"]
     if fam in ("row_range_agg", "paraphrase"):
         vals, _ = oracle_values(path, case["sheet"], case["cidx"], case["lo"], case["hi"])
-        return {"kind": "scalar", "value": apply_agg(case["agg"], vals), "n": len(vals)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], vals)), "n": len(vals)}
     if fam == "out_of_range":
         return {"kind": "refusal"}
     if fam == "row_range_nocol":
@@ -400,19 +412,19 @@ def expected(path: Path, case: dict) -> dict:
             path, case["sheet"], case["fidx"], case["fidx"], case["op"], case["pivot"],
             case["first"], case["last"],
         )
-        return {"kind": "scalar", "value": float(len(keep)), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(float(len(keep))), "n": len(keep)}
     if fam == "filter_agg":
         keep = oracle_filtered(
             path, case["sheet"], case["cidx"], case["fidx"], case["op"], case["pivot"],
             case["first"], case["last"],
         )
-        return {"kind": "scalar", "value": apply_agg(case["agg"], keep), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], keep)), "n": len(keep)}
     if fam == "combined":
         keep = oracle_filtered(
             path, case["sheet"], case["cidx"], case["fidx"], case["op"], case["pivot"],
             case["lo"], case["hi"],
         )
-        return {"kind": "scalar", "value": apply_agg(case["agg"], keep), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], keep)), "n": len(keep)}
     return {"kind": "unknown"}
 
 
@@ -426,6 +438,14 @@ def ask(frames: dict, question: str) -> dict | None:
 
 
 def close(a: float | None, b: float | None) -> bool:
+    """Strict match. Scalar gold is already at published precision.
+
+    ``expected`` rounds a scalar gold value to 4 decimals, which is what
+    ``sheet_sql`` writes on the scalar ``value`` field. This function does
+    not round either side: a 5th-decimal miss and a count off by 4e-5 both
+    fail. Per-column gold stays full precision because that lane stores
+    ``float(agg)`` unrounded.
+    """
     if a is None or b is None:
         return a is b
     if b == 0:
@@ -920,7 +940,13 @@ def main() -> None:
         out = Path(args.out) if args.out else RESULTS / "oracle_cross_primary50.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         pooled["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        out.write_text(json.dumps(pooled, indent=2), encoding="utf-8")
+        pooled["corpus"] = (
+            "tests/RAG/primary50 seeded equivalent. The 2026-08-26 primary50 "
+            "workbooks were gitignored and are not in this clone, so this pack "
+            "is not those bytes and not those asks."
+        )
+        from bench_stamp import write_json
+        write_json(out, pooled)
         print(f"pack n={pooled['n']} wrote {out}", flush=True)
         for v in pooled.get("variants") or []:
             _print_f13(f"pack {v['name']}", v)
@@ -1054,8 +1080,8 @@ def main() -> None:
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         out = Path(args.out) if args.out else RESULTS / "oracle_cross_latest.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        from bench_stamp import write_json
+        write_json(out, payload)
         print(f"wrote {out}", flush=True)
         # Named --out must not clobber the n=7 CI smoke at oracle_cross_latest.json.
         # F13b pack runs write oracle_cross_primary50_*.json instead.
@@ -1100,7 +1126,8 @@ def main() -> None:
         "oracle": oracle_note,
     }
     out = Path(args.out) if args.out else RESULTS / "oracle_bench_latest.json"
-    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    from bench_stamp import write_json
+    write_json(out, payload)
     print(f"wrote {out}", flush=True)
     if total_ok != len(rows):
         raise SystemExit(1)

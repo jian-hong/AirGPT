@@ -206,11 +206,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--depth", default="high", choices=["basic", "high", "max"])
+    ap.add_argument("--out", default="", help="write JSON here instead of the committed latest path")
     ap.add_argument("--no-write", action="store_true")
     args = ap.parse_args()
     res = run(args.seed, depth=args.depth)
     print(render(res))
     if not args.no_write:
-        RESULTS.parent.mkdir(parents=True, exist_ok=True)
-        RESULTS.write_text(json.dumps(res, indent=2) + "\n", encoding="utf-8")
-        print(f"wrote {RESULTS}")
+        from bench_stamp import write_json
+        dest = Path(args.out) if args.out else RESULTS
+        write_json(dest, res, retrieval=True)
+        print(f"wrote {dest}")
