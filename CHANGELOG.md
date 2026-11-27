@@ -2,6 +2,10 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- rag-benches stamp check on a depth-1 merge checkout
+
+- The first CI run of `rag-benches` (45931231274) failed in the stamp check, before any bench ran. Actions checked out merge commit `1fea9ee` at depth 1, so `9118e72` was not an object and `merge-base --is-ancestor` returned false. The job now fetches full history, and a stamp that is a parent SHA written on the commit still counts when those objects are missing. No floor moved.
+
 ## 2026-11-27 -- RAG-BENCH-17: CI regenerates benches, harder real-doc pack (#93)
 
 - New job `rag-benches` (windows-latest) runs `tests/RAG/regen_latest.py --check`. It regenerates every committed `tests/RAG/results/*_latest.json` and fails on drift. Each file carries `commit_sha` and `generated_at`. The compare ignores those stamps. Suite `MIN_TESTS` stays 380.

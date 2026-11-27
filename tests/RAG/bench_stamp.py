@@ -173,10 +173,26 @@ def require_stamp(payload: dict, *, label: str) -> str:
 
 
 def is_ancestor(sha: str, head: str = "HEAD") -> bool:
+    """True when sha is in the history of head.
+
+    A pull-request checkout is a merge commit fetched at depth 1. The parent
+    objects are not in the clone, so merge-base cannot see them, but the parent
+    SHAs are stored on the commit itself. A stamp that is one of those parents
+    was produced on this history.
+    """
     proc = subprocess.run(
         ["git", "merge-base", "--is-ancestor", sha, head],
         check=False,
         capture_output=True,
         text=True,
     )
-    return proc.returncode == 0
+    if proc.returncode == 0:
+        return True
+    listed = subprocess.run(
+        ["git", "rev-parse", f"{head}^@"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    parents = {p.strip().lower() for p in (listed.stdout or "").split() if p.strip()}
+    return sha.lower() in parents

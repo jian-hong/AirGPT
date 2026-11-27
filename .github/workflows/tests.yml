@@ -121,6 +121,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Default depth 1 drops the merge commit's parents, so the stamp SHA
+          # looks like it is not in history. Full history keeps the ancestor check.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:

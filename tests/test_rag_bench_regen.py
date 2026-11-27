@@ -90,6 +90,34 @@ def test_metrics_module_calls_bench_recall_fields_success_at_k():
     assert "not success@k" in text or "It is not success@k" in text or "not\nsuccess@k" in text
 
 
+def test_stamp_sha_that_is_a_parent_counts_when_merge_base_cannot_see_it():
+    """A depth-1 PR checkout has the merge commit but not its parent objects."""
+    import subprocess
+
+    head = bench_stamp.git_sha()
+    parents = subprocess.check_output(
+        ["git", "rev-parse", f"{head}^@"], text=True
+    ).split()
+    assert parents
+    real = subprocess.run
+
+    def hidden_parent(cmd, **kwargs):
+        if list(cmd[:3]) == ["git", "merge-base", "--is-ancestor"]:
+            class Proc:
+                returncode = 1
+                stdout = ""
+                stderr = "shallow"
+            return Proc()
+        return real(cmd, **kwargs)
+
+    subprocess.run = hidden_parent
+    try:
+        assert bench_stamp.is_ancestor(parents[0], head)
+        assert bench_stamp.is_ancestor("a" * 40, head) is False
+    finally:
+        subprocess.run = real
+
+
 def test_committed_real_doc_artifact_is_harder_than_a_saturated_board():
     """The paraphrase board is already success@5 on every question. This pack must not be."""
     path = RAG / "results" / "real_doc_bench_latest.json"
