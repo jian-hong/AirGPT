@@ -380,11 +380,23 @@ def generate(path: Path, schema: dict[str, dict], rng: random.Random, n: int) ->
     return cases[:n]
 
 
+def _scalar_gold(value: float | None) -> float | None:
+    """Gold for a scalar answer, at the precision sheet_sql publishes.
+
+    sheet_sql.py stores the scalar ``value`` as ``round(value, 4)``. The
+    judge stays strict, so the gold is rounded once here and the lane's
+    number is not rounded again inside ``close``.
+    """
+    if value is None:
+        return None
+    return round(float(value), 4)
+
+
 def expected(path: Path, case: dict) -> dict:
     fam = case["family"]
     if fam in ("row_range_agg", "paraphrase"):
         vals, _ = oracle_values(path, case["sheet"], case["cidx"], case["lo"], case["hi"])
-        return {"kind": "scalar", "value": apply_agg(case["agg"], vals), "n": len(vals)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], vals)), "n": len(vals)}
     if fam == "out_of_range":
         return {"kind": "refusal"}
     if fam == "row_range_nocol":
@@ -400,19 +412,19 @@ def expected(path: Path, case: dict) -> dict:
             path, case["sheet"], case["fidx"], case["fidx"], case["op"], case["pivot"],
             case["first"], case["last"],
         )
-        return {"kind": "scalar", "value": float(len(keep)), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(float(len(keep))), "n": len(keep)}
     if fam == "filter_agg":
         keep = oracle_filtered(
             path, case["sheet"], case["cidx"], case["fidx"], case["op"], case["pivot"],
             case["first"], case["last"],
         )
-        return {"kind": "scalar", "value": apply_agg(case["agg"], keep), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], keep)), "n": len(keep)}
     if fam == "combined":
         keep = oracle_filtered(
             path, case["sheet"], case["cidx"], case["fidx"], case["op"], case["pivot"],
             case["lo"], case["hi"],
         )
-        return {"kind": "scalar", "value": apply_agg(case["agg"], keep), "n": len(keep)}
+        return {"kind": "scalar", "value": _scalar_gold(apply_agg(case["agg"], keep)), "n": len(keep)}
     return {"kind": "unknown"}
 
 
@@ -426,16 +438,19 @@ def ask(frames: dict, question: str) -> dict | None:
 
 
 def close(a: float | None, b: float | None) -> bool:
+    """Strict match. Scalar gold is already at published precision.
+
+    ``expected`` rounds a scalar gold value to 4 decimals, which is what
+    ``sheet_sql`` writes on the scalar ``value`` field. This function does
+    not round either side: a 5th-decimal miss and a count off by 4e-5 both
+    fail. Per-column gold stays full precision because that lane stores
+    ``float(agg)`` unrounded.
+    """
     if a is None or b is None:
         return a is b
     if b == 0:
         return abs(a) < TOL
-    if abs(a - b) <= max(TOL, abs(b) * 1e-9):
-        return True
-    # sheet_sql publishes round(value, 4). Scoring 42.6346 against
-    # 42.63461538461539 as a miss makes value accuracy unreadable: every
-    # inexact average fails while the lane is doing what it documents.
-    return round(float(a), 4) == round(float(b), 4)
+    return abs(a - b) <= max(TOL, abs(b) * 1e-9)
 
 
 def required_links(case: dict) -> tuple[str, set[str]]:

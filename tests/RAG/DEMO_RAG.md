@@ -7,11 +7,11 @@ Branch: `demo/rag-cross-compare` | Epic [#6](https://github.com/jian-hong/AirGPT
 
 | Bench | Variant | Score | Artifact |
 |-------|---------|-------|----------|
-| FRTR `frtr_0001` cross | hybrid_max **6/6**, sira_max 3/6 (`--no-llm`) | `tests/RAG/results/frtr_cross_latest.xlsx` |
-| Oracle F13 A/B `frtr_0001` n=7 | hybrid_max value **7/7**, sira_max **1/7** (abstain) | `tests/RAG/results/oracle_cross_latest.json` |
-| Oracle F13b primary50 n=320 | hybrid_max **320/320**, sira_max **44/320** (value: out_of_range only; schema-link on that family is 0). Seeded equivalent workbooks, not the gitignored 2026-08-26 bytes. Judge accepts the lane's 4-decimal values. | `tests/RAG/results/oracle_cross_primary50.json` |
+| FRTR cross, stand-in `tests/RAG/fixtures/frtr_min` | hybrid_max, sira_max, `--no-llm` | **6/6** and **6/6**. Historical gitignored pack: hybrid 6/6, sira 3/6. | `tests/RAG/results/frtr_cross_latest.json` |
+| Oracle smoke, seeded `p50_01` n=7 | hybrid_max, sira_max | hybrid **7/7**, sira **1/7**. Historical label was `frtr_0001` n=7; that workbook is not this file. | `tests/RAG/results/oracle_cross_latest.json` |
+| Oracle F13b primary50 equivalent n=320 | hybrid_max, sira_max | hybrid **320/320**, sira **44/320** (value: out_of_range only; schema-link on that family is 0). Scalar gold is rounded to 4 decimals; `close()` is strict. Original 2026-08-26 bytes are not in the clone. | `tests/RAG/results/oracle_cross_primary50.json` |
 | Warehouse 6 workbooks | hybrid_max | **10/10 = 1.000** | `tests/RAG/results/warehouse_hybrid_latest.xlsx` |
-| FRTR SQL batch (8 books) | hybrid_sql_only | **10/44 = 0.227** (0001 still 6/6) | `tests/RAG/results/frtr_batch_latest.xlsx` |
+| FRTR SQL batch, stand-in, 1 workbook n=6 | hybrid_sql_only | **0/6**. Historical 8-book score was 10/44 and is not this file. | `tests/RAG/results/frtr_batch_latest.json` |
 | Edge / injection | hybrid_max space 8 | **9/9 = 1.000** | `tests/RAG/results/edge_probe_latest.json` |
 | Cortex | `:8010` pack=dms | **live** | `cortex_client.health()` |
 

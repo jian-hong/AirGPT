@@ -247,3 +247,42 @@ def test_primary50_floors_do_not_apply_to_one_variant_payload():
     names = [v["name"] for v in pooled["variants"]]
     assert "sira_max" not in names
 
+
+def test_close_stays_strict_on_an_unrounded_miss():
+    """Rounding both sides used to pass these. close() must not."""
+    assert ob.close(42.63464, 42.63461538) is False
+    assert ob.close(1000.00004, 1000.0) is False
+    assert ob.close(1001.0, 1000.0) is False
+    published = round(42.63461538461539, 4)
+    assert published == 42.6346
+    assert ob.close(published, published) is True
+    # A per-column answer is the unrounded float. A 4-dp stand-in is not equal.
+    assert ob.close(published, 42.63461538461539) is False
+
+
+def test_scalar_gold_is_published_precision_and_per_column_is_not():
+    """expected() rounds scalar gold to 4 decimals. per_column gold stays full."""
+    import random
+
+    src = RAG / "primary50" / "p50_01_sales_messy.xlsx"
+    schema = ob.read_schema(src)
+    cases = ob.generate(src, schema, random.Random(1), 14)
+    saw_scalar = saw_per = False
+    for case in cases:
+        exp = ob.expected(src, case)
+        if exp["kind"] == "scalar":
+            saw_scalar = True
+            assert exp["value"] == round(exp["value"], 4)
+            assert ob.close(exp["value"], exp["value"])
+        elif exp["kind"] == "per_column":
+            saw_per = True
+            for col, value in exp["per_column"].items():
+                vals, _ = ob.oracle_values(
+                    src, case["sheet"], case["numeric"][col], case["lo"], case["hi"],
+                )
+                full = ob.apply_agg(case["agg"], vals)
+                assert value == full
+                if full is not None and full != round(full, 4):
+                    assert ob.close(round(full, 4), full) is False
+    assert saw_scalar and saw_per
+

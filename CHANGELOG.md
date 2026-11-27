@@ -2,6 +2,12 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- oracle close() is strict again; scalar gold is published precision
+
+- `close()` is back to `abs(got - want) <= max(1e-6, abs(want) * 1e-9)`. It no longer rounds either side. An unrounded gap of 2.5e-5 (`42.63464` vs `42.63461538`) fails, and `1000.00004` vs `1000` fails.
+- `expected()` rounds scalar gold with `round(value, 4)`, matching `sheet_sql` line 1708. Per-column gold stays the full float, matching the unrounded `float(agg)` at line 1509.
+- Re-score of the seeded primary50 board on that judge: hybrid_max **320/320**, sira_max **44/320**. Single-lane p50_01 n=21 is 21/21. Smoke n=7 is hybrid 7/7, sira 1/7. F13b floors unchanged. `MIN_TESTS` stays 380.
+
 ## 2026-11-27 -- suite: stamp test must not call git for parents
 
 - Run 45931649892: `rag-benches` passed (18 artifacts matched a fresh run). `suite` failed one new test: `git rev-parse HEAD^@` is empty on the depth-1 checkout, so `assert parents` saw `[]`. 1620 passed, 9 skipped. The test now stubs both git calls. Floors unchanged. `MIN_TESTS` stays 380.

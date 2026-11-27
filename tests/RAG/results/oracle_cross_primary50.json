@@ -930,9 +930,9 @@
     "sira_max": "retained on the same questions; retrieve-only, no 0.99 floor"
   },
   "honesty": "hybrid_max is the SQL lane on generated asks. sira_max is retrieve-only (hybrid_sql_lane off, use_llm=False) on the SAME asks. F13 fields only. No precision@k / recall@k / PR-AUC / MAP.",
-  "ts": "2026-11-27T02:48:56",
+  "ts": "2026-11-27T04:14:48",
   "corpus": "tests/RAG/primary50 seeded equivalent. The 2026-08-26 primary50 workbooks were gitignored and are not in this clone, so this pack is not those bytes and not those asks.",
-  "commit_sha": "9118e72f7250d85768fd4a3802c6fe82c3ed32e2",
-  "generated_at": "2026-11-27T02:48:56Z",
+  "commit_sha": "3d48b3d44a2a54744f1101b38c967112544cd9b0",
+  "generated_at": "2026-11-27T04:14:48Z",
   "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

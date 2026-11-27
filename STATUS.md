@@ -22,8 +22,8 @@
    phone, provider, Cortex, embedder.
 6. **RAG benches (#93).** `rag-benches` regenerates every `*_latest.json`.
    Paraphrase success@5 64/64. File types 480/480. Real-doc n=200:
-   120/200 at 1 and 5, nDCG@10 0.6. primary50 equivalent hybrid 320/320,
-   sira 44/320. Original bytes were not in the clone.
+   120/200 at 1 and 5, nDCG@10 0.6. primary50 equivalent, strict `close()`
+   with scalar gold at 4 decimals: hybrid 320/320, sira 44/320.
 7. **CU-01 (#94).** `AIRGPT_DESKTOP_SCALE` default off. On, screenshot
    (640, 360) of 2560x1440 shown at 1280x720 maps to (1280, 720). Bench:
    flag off 0/50, flag on 50/50, at 100% and at 150%.
