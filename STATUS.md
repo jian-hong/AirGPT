@@ -18,13 +18,22 @@
    `no_update_server`.
 4. **Connect.** Settings Network only. Chat grid is side+main. LTX2 mock
    outputs are gitignored so CI can run `test_apps_hub_ltx2.py`.
-5. **Phone preview + Open in Space.** `/data/` Range (206/416). Open for
-   pdf/office/txt. Host-only `POST /api/space/open`. Needs a real iPhone
-   and a Windows host. RAG UI rounds stay on draft PR #91.
-6. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
+5. **UI PR #91 (draft), branch `claude/rag-ui-improvements-qgauwt`.**
+   Rounds 1-3b: shell, lens, stress corpus, 8-language refusals, phone
+   chat. Code `e4d0ab5`: 1595/0/9; JS 256; browser 27/27; Windows CI green
+   on `a507281`. Unverified: tunnel, phone, provider, Cortex, embedder.
+   Owner calls: P14-P36. RAG #90 is inside #91 (n=320 not re-run).
+6. GitHub still lists D09 #56 and D10 #71 OPEN. Done locally on
+   `fix/guest-boundary-and-phone-shell`, not pushed.
+7. **Phone preview.** `/data/` Range (206/416). Open for pdf/office/txt.
+   Host-only `POST /api/space/open`. Needs a real iPhone and Windows host.
+8. **CU-01 pointer scale (#94).** `AIRGPT_DESKTOP_SCALE` default off.
+   On, screenshot (640, 360) of a 2560x1440 grab shown at 1280x720 maps
+   to screen (1280, 720). Drawn-grid bench (not a live 150% display):
+   flag off 0/50 at 100% and at 150%; flag on 50/50 at both.
+9. **RAG sources (#97).** GitHub ingest and a depth-capped crawl ship behind
    `AIRGPT_RAG_SOURCES_GITHUB` and `AIRGPT_RAG_CRAWL`, both default off.
    Tokens from OpenVault only. File-type bench artifact stays 480/480.
-   D09/D10 scope is on `fix/guest-boundary-and-phone-shell`, not pushed.
 
 ## Next
 

@@ -2,6 +2,24 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-27 -- CU-01: map screenshot clicks back to the screen
+
+- `AIRGPT_DESKTOP_SCALE=1` (default off) maps `click`, `drag`, and
+  `scroll` (when given x and y) from the last downscaled screenshot onto
+  the framebuffer. On Windows it also sets per-monitor DPI awareness so
+  ImageGrab and SetCursorPos share that space. Flag off: coordinates are
+  passed through and the screenshot payload is unchanged. Input still
+  returns `confirm_required` unless `confirmed=True`.
+- A 2560x1440 grab shown as 1280x720 maps screenshot (640, 360) to screen
+  (1280, 720) for click, drag, and scroll. With the flag on, the payload
+  adds `scale`, `scale_y`, and `dpi` (`scale` is displayed/full).
+- Click bench `tests/test_desktop_click_bench.py` draws 50 targets on a
+  2560x1440 grid. 100% and 150% are a coordinate model: this run did not
+  change a live display to 150%. Measured: flag off 0/50 at 100% and 0/50
+  at 150%; flag on 50/50 at both. The same bench with the DPI call not
+  taking effect scored 0/50 at 150%. Local pytest of the two desktop
+  modules: 16 passed. `MIN_TESTS` stays 380.
+
 ## 2026-11-27 -- GitHub repo and depth-capped site as knowledge sources
 
 - `ingest_github` reads a repository at a pinned commit. Citations are
