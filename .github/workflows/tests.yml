@@ -1,8 +1,9 @@
 # AirGPT test suite.
 #
-# Runner: windows-latest, not ubuntu. requirements.txt pins pywin32, so `pip install
-# -r requirements.txt` cannot complete on Linux. Saying that here is cheaper than a
-# green Linux job that installed nothing.
+# The full suite stays on windows-latest (floor MIN_TESTS). READY-03 also runs
+# tests/test_ready03_bundle.py on ubuntu-latest and windows-latest. pywin32 is
+# marked Windows-only in requirements.lock, so Linux can install the lock file.
+# pip-audit runs against that install.
 #
 # Runner command: pytest, not `python -m unittest discover`. 22 of the 45 modules
 # under tests/ are pytest-style bare functions with no TestCase subclass. unittest
@@ -141,3 +142,43 @@ jobs:
         run: |
           python tests/RAG/regen_latest.py --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # READY-03. Loopback bind, tunnel opt-in, lock file, and the bundle wizard.
+  # Real processes, not a skipped Linux install. pip-audit fails the job on a
+  # known vulnerability in the locked set.
+  ready03:
+    name: ready03 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    env:
+      AIRGPT_NO_BROWSER: "1"
+      AIRGPT_TUNNEL: "0"
+      AIRGPT_BIND: "127.0.0.1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Linux compiler for pynput
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc libc6-dev
+
+      - name: Install the lock file
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install pytest pip-audit
+
+      - name: pip-audit
+        run: pip-audit --progress-spinner off
+
+      - name: READY-03 tests
+        run: python -m pytest tests/test_ready03_bundle.py -q -p no:cacheprovider

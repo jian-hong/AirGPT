@@ -2,6 +2,13 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-28 -- READY-03: loopback bind, tunnel off, lock file, bundle wizard
+
+- `pywin32` is Windows-only (`sys_platform == "win32"`). `pip install -r requirements.lock` works on Linux and macOS. The pinned set is `requirements.lock`. CI runs `pip-audit` and `tests/test_ready03_bundle.py` on Ubuntu and Windows.
+- Default bind is `127.0.0.1`. `AIRGPT_BIND=0.0.0.0` is the LAN opt-in and prints a warning. The public tunnel does not start unless `AIRGPT_TUNNEL=1` or the host sends `confirm_public: true`. The warning is in the API and the Connected Devices button.
+- `python -m bundle.launch` creates one local service token, stores it in the OS keychain when that works, and writes a mode 0600 file for DMS and OpenVault. The token is never printed. `bundle/docker-compose.yml` binds AirGPT, DMS, and OpenVault to loopback. First-run steps are in `docs/ONBOARDING.md` and `ui/onboarding.html`.
+- A signed EXE is still not download-safe.
+
 ## 2026-11-27 -- oracle close() is strict again; scalar gold is published precision
 
 - `close()` is back to `abs(got - want) <= max(1e-6, abs(want) * 1e-9)`. It no longer rounds either side. An unrounded gap of 2.5e-5 (`42.63464` vs `42.63461538`) fails, and `1000.00004` vs `1000` fails.

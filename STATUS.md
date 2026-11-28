@@ -6,8 +6,10 @@
 
 0. **Do not kill leftover listeners.** Live: AirGPT `:8765`, Cortex
    constructor `:8010`, engine `:8011` (`PACK=dms`), OpenVault `:5000`.
-1. **S1 passcode is set.** Local host 200. Phone API without a join token
-   is 401 `auth required`. Probe stays 200. Not download-safe.
+1. **S1 passcode is set.** Local host 200. Phone without a join token is
+   401. Probe stays 200. Default bind is 127.0.0.1 and the public tunnel
+   is off unless you opt in (`python -m bundle.launch`). Signed EXE is
+   still not download-safe.
 2. **Scheduler.** GitHub list + review (`rt-483c184a`), AirGPT ship-gate
    (`rt-18d64fc7` FAIL-closed unseen), OpenForge 3d (`rt-dcb70626` PASS)
    run as `scheduled_work`. Digest `rt-547f4184` waits on a Google App

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>AirGPT first-run setup</title>
+  <style>
+    body { font: 16px/1.45 system-ui, sans-serif; margin: 0; background: #0f1419; color: #e7ecf1; }
+    main { max-width: 40rem; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+    ol { padding-left: 1.2rem; }
+    li { margin: 0.9rem 0; }
+    h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
+    p { margin: 0.3rem 0; }
+    .warn { border: 1px solid #b45309; background: #2a1c0b; padding: 0.8rem 1rem; border-radius: 8px; }
+    button { font: inherit; background: #2563eb; color: white; border: 0; border-radius: 8px; padding: 0.55rem 0.9rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    #result { margin-top: 0.8rem; }
+    a { color: #93c5fd; }
+    code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AirGPT first-run setup</h1>
+  <p>AirGPT, DMS, and OpenVault on this computer. The public tunnel stays off. The service token is stored and never shown.</p>
+  <ol id="steps">
+    <li>
+      <h2>Install on this computer</h2>
+      <p>Install Python 3.11 or newer. In the AirGPT folder run <code>pip install -r requirements.lock</code>. On Windows that also installs pywin32. On Linux and macOS that line is skipped.</p>
+    </li>
+    <li>
+      <h2>Create the local service token</h2>
+      <p>Press the button below, or run <code>python -m bundle.launch --check</code>. The token goes to the OS keychain when that works, and to a file with mode 0600 so DMS and OpenVault can read it. It is not shown.</p>
+    </li>
+    <li>
+      <h2>Start AirGPT, DMS, and OpenVault</h2>
+      <p>Run <code>python -m bundle.launch --up</code>. AirGPT listens on <code>http://127.0.0.1:8765</code>. DMS listens on <code>http://127.0.0.1:8011</code> when <code>DMS_CMD</code> is set. OpenVault listens on <code>http://127.0.0.1:5000</code> when <code>OPENVAULT_CMD</code> is set.</p>
+    </li>
+    <li>
+      <h2>Set a passcode on this computer</h2>
+      <p>Open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>. In Settings, then Profile, set a host passcode before any phone joins.</p>
+    </li>
+    <li>
+      <h2>Leave the public tunnel off</h2>
+      <p id="tunnelWarn" class="warn">Public tunnel is off by default. Turning it on publishes this computer on the internet through cloudflared or another provider. Anyone with the URL can reach the sign-in page. Only continue if you accept that.</p>
+    </li>
+    <li>
+      <h2>Open the LAN only if you mean to</h2>
+      <p>The default bind is 127.0.0.1. Set <code>AIRGPT_BIND=0.0.0.0</code> only when other machines on your network should connect. Startup prints a warning.</p>
+    </li>
+  </ol>
+  <p><button type="button" id="create">Create local service token</button></p>
+  <p id="result" role="status"></p>
+  <p>Full guide: <code>docs/ONBOARDING.md</code></p>
+</main>
+<script>
+(function () {
+  var result = document.getElementById("result");
+  function show(text) { result.textContent = text; }
+  fetch("/api/bundle/status").then(function (r) { return r.json(); }).then(function (d) {
+    if (d.tunnel_warning) document.getElementById("tunnelWarn").textContent = d.tunnel_warning;
+    if (d.token_stored) {
+      show("A local service token is already stored (" + (d.token_where || "file") + "). It is not shown.");
+    }
+  }).catch(function () {
+    show("Status is not available yet. You can still read the steps above.");
+  });
+  document.getElementById("create").addEventListener("click", function () {
+    var btn = document.getElementById("create");
+    btn.disabled = true;
+    fetch("/api/bundle/setup", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}).then(function (r) {
+      return r.json().then(function (d) { return {ok: r.ok, d: d}; });
+    }).then(function (res) {
+      var d = res.d || {};
+      if (!res.ok) {
+        show(d.error || "Setup did not finish.");
+        btn.disabled = false;
+        return;
+      }
+      var where = d.token_where === "keyring" ? "the OS keychain" : "a private file";
+      var path = d.token_path ? " File: " + d.token_path + "." : "";
+      show("Stored in " + where + "." + path + " The token was not shown.");
+    }).catch(function () {
+      show("Setup request failed.");
+      btn.disabled = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>
