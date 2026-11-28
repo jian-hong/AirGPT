@@ -16,3 +16,4 @@ main_idea: Windows-only pywin32 and a boot-time public tunnel were one install f
 - `bundle/posture.py` owns the bind and the tunnel flag.
 - `bundle/token_store.py` uses keyring, then a mode 0600 file. Callers return `where` and `path`, never the secret.
 - `tests/test_ready03_bundle.py` starts three loopback processes and the real HTTP handler. CI job `ready03` runs that file on Ubuntu and Windows and runs `pip-audit`.
+- `rag-benches` failed on an orphan stamp `3d48b3d` (never pushed; squash parent is `bd68822`). The other artifacts regenerated and matched. The seven oracle files now name `bd68822`. Measurements were not rewritten.

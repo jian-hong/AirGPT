@@ -2,6 +2,10 @@
 
 Append-only. Never edited, only added to. Newest first.
 
+## 2026-11-28 -- rag-benches: oracle stamp names a pushed commit
+
+- The seven oracle JSON files were stamped `3d48b3d`, the local HEAD that generated them. That commit was squash-merged as `a74a423` and is not in the repo, so `merge-base --is-ancestor` failed on master (run 45941362714) and on this branch (run 46129688091) before those benches ran. The stamp is now `bd68822`, the parent of `a74a423`. The measured payload is unchanged. No floor moved.
+
 ## 2026-11-28 -- READY-03: loopback bind, tunnel off, lock file, bundle wizard
 
 - `pywin32` is Windows-only (`sys_platform == "win32"`). `pip install -r requirements.lock` works on Linux and macOS. The pinned set is `requirements.lock`. CI runs `pip-audit` and `tests/test_ready03_bundle.py` on Ubuntu and Windows.
