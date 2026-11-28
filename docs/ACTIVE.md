@@ -3,6 +3,16 @@
 What exists in this repo and where. Update when structure changes, not when state changes
 - state lives in STATUS.md.
 
+- `bundle/` -- one-machine launcher for AirGPT (`127.0.0.1:8765`), DMS
+  (`127.0.0.1:8011`, `DMS_CMD`), and OpenVault (`127.0.0.1:5000`,
+  `OPENVAULT_CMD`). `python -m bundle.launch`. Token store is
+  `bundle/token_store.py` (OS keychain, plus a mode 0600 file). The token
+  is never printed. Compose: `bundle/docker-compose.yml` (siblings profile
+  for DMS and OpenVault images). Guide: `docs/ONBOARDING.md`. First-run
+  page: `ui/onboarding.html` and `python -m bundle.launch --ui`.
+  Bind and tunnel defaults: `bundle/posture.py`. `AIRGPT_BIND` defaults to
+  `127.0.0.1`. `AIRGPT_TUNNEL` defaults off. Decision: `docs/decisions/DR-0008-localhost-bind-and-tunnel-off.md`.
+  Tests: `tests/test_ready03_bundle.py` (Linux and Windows CI job `ready03`).
 - Request gates in `clipdrop.py`, in the order they run: `_wrap_dispatch`
   (cross-site guard `_origin_gate`, bad JSON 400, crash 500) around every
   `do_*`; then `Handler._gate` (passcode set, token, host-only paths,

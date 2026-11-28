@@ -374,8 +374,9 @@ def test_chat_cannot_call_browser_tools():
 def test_host_prefixes_stay_the_same_length():
     import clipdrop
 
-    assert len(clipdrop._HOST_ONLY_PREFIXES) == 25
+    assert len(clipdrop._HOST_ONLY_PREFIXES) == 26
     assert "/api/desktop" in clipdrop._HOST_ONLY_PREFIXES
+    assert "/api/bundle" in clipdrop._HOST_ONLY_PREFIXES
 
 
 def test_min_tests_floor_unchanged():

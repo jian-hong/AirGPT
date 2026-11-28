@@ -28,6 +28,13 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import db
 import vault
+from bundle.posture import (
+    BIND_ALL_WARNING,
+    TUNNEL_OPT_IN_WARNING,
+    bind_is_loopback,
+    resolve_bind_host,
+    tunnel_opted_in,
+)
 from config import APP_NAME, APP_VERSION, BIN_DIR, DATA_DIR, DEMO_MOCK, DEMO_MOCK_HOSTNAME, DEMO_MOCK_LAN_IP, ROOT, ensure_dirs
 
 try:
@@ -88,7 +95,7 @@ except ImportError:
 _latest_capture_session = 0
 _server_mode = "general"
 
-HOST = "0.0.0.0"
+HOST = resolve_bind_host()
 PORT = 8765
 CLIPBOARD_POLL = 0.35
 BIN = BIN_DIR
@@ -114,6 +121,7 @@ _tunnel = {"url": "", "provider": "", "status": "off", "error": "", "healthy": F
            "last_provider": ""}
 _tunnel_procs: list[subprocess.Popen] = []
 _tunnel_lock = threading.Lock()
+_tunnel_health_started = False
 _health_fails = 0
 _sync_version = 0
 _sync_cv = threading.Condition()
@@ -227,6 +235,16 @@ def restart_tunnel() -> None:
     threading.Thread(target=tunnel_worker, daemon=True).start()
 
 
+def enable_public_tunnel() -> None:
+    """Opt in to a public tunnel and print the warning. Does not print secrets."""
+    os.environ["AIRGPT_TUNNEL"] = "1"
+    print(TUNNEL_OPT_IN_WARNING)
+    if _tunnel_health_started:
+        restart_tunnel()
+    else:
+        _boot_tunnel_threads()
+
+
 def _boot_tunnel_threads() -> None:
     """Kill leftover cloudflared *then* start the worker. Never the reverse.
 
@@ -236,9 +254,12 @@ def _boot_tunnel_threads() -> None:
     cloudflared exiting code 1 after 1s with no forwarding URL on a normal
     `python clipdrop.py` boot.
     """
+    global _tunnel_health_started
     _kill_orphan_cloudflared()
     threading.Thread(target=tunnel_worker, daemon=True).start()
-    threading.Thread(target=tunnel_health_loop, daemon=True).start()
+    if not _tunnel_health_started:
+        _tunnel_health_started = True
+        threading.Thread(target=tunnel_health_loop, daemon=True).start()
 
 
 def _image_file_path(msg: dict) -> Path | None:
@@ -1270,6 +1291,7 @@ _HOST_ONLY_PREFIXES: tuple[str, ...] = (
     "/api/netie/",      # Netie account link / login / logout (writes the user-level account file)
     "/api/input-notes", # keystroke-note recorder start/stop/append and the saved notes
     "/api/restart-tunnel",  # drops the tunnel for every phone
+    "/api/bundle",      # local service token and first-run setup (host only)
     "/api/optimizers/", # pip install of optional packages
     "/api/space/",      # launch Netie Space on this PC (host only)
     "/api/agents",      # exact path too: "/api/agents/" alone left list + create open
@@ -1611,7 +1633,7 @@ def _lan_fallback() -> dict:
         "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
         "network_profile": "Unknown",
         "firewall": _firewall_status or "unknown",
-        "listening": f"0.0.0.0:{PORT}",
+        "listening": f"{HOST}:{PORT}",
         "lan_likely_blocked": False,
         "hint": "LAN diagnostics pending -- retry or run enable-lan.bat",
         "pending": True,
@@ -1637,7 +1659,7 @@ def _compute_lan_diagnostics() -> dict:
         "lan_url": f"http://{ips[0]}:{PORT}" if ips else None,
         "network_profile": profile,
         "firewall": fw,
-        "listening": f"0.0.0.0:{PORT}",
+        "listening": f"{HOST}:{PORT}",
         "lan_likely_blocked": blocked,
         "hint": hint,
     }
@@ -5003,6 +5025,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(404, {"error": "not found"})
             return self._json(200, w)
 
+        if path == "/api/bundle/status":
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"error": "host only"})
+            from bundle.api import status_payload
+            return self._json(200, status_payload())
+
         if path == "/api/probe":
             host = self.headers.get("Host", "")
             via = "tunnel" if any(x in host for x in (
@@ -5061,6 +5089,8 @@ class Handler(BaseHTTPRequestHandler):
                 "recommended_url": recommended,
                 "join_url": join_url,
                 "qr_token": qr_tok,
+                "bind": HOST,
+                "tunnel_warning": TUNNEL_OPT_IN_WARNING,
                 "tunnel_status": _tunnel.get("status"),
                 "tunnel_provider": _tunnel_provider_label(),
                 "tunnel_error": _tunnel.get("error"),
@@ -7421,8 +7451,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(code, body)
 
         if path == "/api/restart-tunnel":
-            restart_tunnel()
-            return self._json(200, {"ok": True, "status": "restarting"})
+            try:
+                data = json.loads(self._body().decode() or "{}")
+            except ValueError:
+                return self._json(400, {"error": "bad json"})
+            if not isinstance(data, dict):
+                return self._json(400, {"error": "bad json"})
+            if data.get("confirm_public") is not True and not tunnel_opted_in():
+                return self._json(409, {
+                    "ok": False,
+                    "error": "confirmation required",
+                    "warning": TUNNEL_OPT_IN_WARNING,
+                    "tunnel": "off",
+                })
+            enable_public_tunnel()
+            return self._json(200, {
+                "ok": True,
+                "status": "restarting",
+                "warning": TUNNEL_OPT_IN_WARNING,
+            })
+
+        if path == "/api/bundle/setup":
+            if not _is_host_request(self.headers, self.client_address[0]):
+                return self._json(403, {"error": "host only"})
+            from bundle.api import setup_payload
+            return self._json(200, setup_payload())
 
         if path == "/api/adopt-tunnel":
             if not _is_local_host(ip):
@@ -9421,14 +9474,17 @@ def network_watcher() -> None:
         key = ",".join(ips)
         if key and key != last:
             if last:
-                print(f"[network] IP changed {last} → {key} — restarting tunnel")
+                print(f"[network] IP changed {last} -> {key}")
                 _network_epoch += 1
                 _save_network_state(ips)
                 bump_sync()
-                restart_tunnel()
+                if tunnel_opted_in():
+                    restart_tunnel()
+                else:
+                    print("[network] tunnel stays off")
             else:
                 _save_network_state(ips)
-            if wifi_access:
+            if wifi_access and not bind_is_loopback(HOST):
                 wifi_access.stop_mdns()
                 wifi_access.start_mdns(PORT)
             last = key
@@ -9508,7 +9564,8 @@ def _wait_for_port(host: str, port: int, *, seconds: float = 20.0) -> bool:
 
 
 def main():
-    global _firewall_status, AI_AUTO
+    global _firewall_status, AI_AUTO, HOST
+    HOST = resolve_bind_host()
     try:
         import crashlog
         crashlog.install("airgpt")
@@ -9522,7 +9579,7 @@ def main():
         return
 
     _firewall_status = try_firewall()
-    if wifi_access:
+    if wifi_access and not bind_is_loopback(HOST):
         wifi_access.start_mdns(PORT)
     try:
         if app_license:
@@ -9537,7 +9594,15 @@ def main():
         print(f"[agents] close-interrupted skip: {e}")
     threading.Thread(target=clipboard_loop, daemon=True).start()
     threading.Thread(target=screenshot_loop, daemon=True).start()
-    _boot_tunnel_threads()
+    if not bind_is_loopback(HOST):
+        print(BIND_ALL_WARNING)
+    if tunnel_opted_in():
+        print(TUNNEL_OPT_IN_WARNING)
+        _boot_tunnel_threads()
+        tunnel_line = "  Tunnel: on. " + TUNNEL_OPT_IN_WARNING
+    else:
+        _tunnel.update(url="", provider="", status="off", error="", healthy=False)
+        tunnel_line = "  Tunnel: off. Set AIRGPT_TUNNEL=1 only if you accept a public URL."
     threading.Thread(target=network_watcher, daemon=True).start()
     threading.Thread(target=_startup_verify, daemon=True).start()
     try:
@@ -9549,11 +9614,12 @@ def main():
     ips = local_ips()
     print(f"\n=== {APP_NAME} v{APP_VERSION} ===")
     print(f"  PC:     http://127.0.0.1:{PORT}")
-    if wifi_access and wifi_access.mdns_url():
-        print(f"  WiFi:   {wifi_access.mdns_url()}  (easy name, same WiFi)")
-    if ips:
-        print(f"  WiFi:   http://{ips[0]}:{PORT}")
-    print("  Tunnel: starting (check UI for iPad URL)")
+    if not bind_is_loopback(HOST):
+        if wifi_access and wifi_access.mdns_url():
+            print(f"  WiFi:   {wifi_access.mdns_url()}  (easy name, same WiFi)")
+        if ips:
+            print(f"  WiFi:   http://{ips[0]}:{PORT}")
+    print(tunnel_line)
     print("  P2P:    http://127.0.0.1:8765/p2p  (no firewall needed)")
     print("  Restart: run restart.bat when you change WiFi\n")
 

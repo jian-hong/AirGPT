@@ -65,7 +65,8 @@ class HubAccessBarHonestyStaticTest(unittest.TestCase):
 
     def test_host_only_prefixes_stay_closed(self):
         self.assertIn("/api/rag", clipdrop._HOST_ONLY_PREFIXES)
-        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 25)  # + /api/export, /api/import, /api/space/
+        self.assertEqual(len(clipdrop._HOST_ONLY_PREFIXES), 26)  # + /api/bundle
+        self.assertIn("/api/bundle", clipdrop._HOST_ONLY_PREFIXES)
         self.assertIn("/api/space/", clipdrop._HOST_ONLY_PREFIXES)
 
     def test_min_tests_stays_380(self):

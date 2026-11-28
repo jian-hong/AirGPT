@@ -3307,14 +3307,14 @@ body.theme-light #hubMiniCard .btn{padding:3px 9px;font-size:10px;min-height:28p
               <div class="sc-connect-col preferred" id="tunnelCard" data-path="tunnel">
                 <h4>Tunnel — any WiFi</h4>
                 <img class="qr-img" id="qrTunnel" alt="Tunnel QR" width="180" height="180"/>
-                <div class="url-box" id="tunnelUrl" role="button" tabindex="0" title="Click to copy" onclick="copyUrlBox(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyUrlBox(this)}">Starting tunnel…</div>
+                <div class="url-box" id="tunnelUrl" role="button" tabindex="0" title="Click to copy" onclick="copyUrlBox(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyUrlBox(this)}">Tunnel off</div>
                 <div class="sc-connect-actions">
                   <button class="btn primary" id="tunnelPasscodeBtn" style="display:none" onclick="showSettingsPanel('profile')">Set passcode</button>
                   <button class="btn primary" id="tunnelCopyBtn" onclick="copyText($('tunnelUrl').textContent)">Copy</button>
                   <button class="btn" id="tunnelOpenBtn" onclick="openTunnel()">Open</button>
                   <button class="btn icon-only" id="restartTunnelBtn" onclick="restartTunnel()" title="Retry tunnel" aria-label="Retry tunnel">↻</button>
                 </div>
-                <p class="hint" id="tunnelHint">Works everywhere — company WiFi, home, hotspot.</p>
+                <p class="hint" id="tunnelHint">Off until you turn it on. A public tunnel publishes this computer on the internet. <a href="/ui/onboarding.html">First-run setup</a></p>
                 <p class="hint" id="tunnelStatus" style="color:var(--warn);display:none"></p>
               </div>
             </div>
@@ -14123,11 +14123,13 @@ function setQR(imgEl,url){
 }
 
 async function restartTunnel(){
-  toast('Restarting tunnel — new QR in ~15s…');
+  const warn='Public tunnel is off by default. Turning it on publishes this computer on the internet. Anyone with the URL can reach the sign-in page. Continue only if you accept that.';
+  if(!window.confirm(warn))return;
+  toast('Starting the public tunnel. This publishes this computer on the internet.');
   window._tunnelRetry=0;
   $('restartTunnelBtn').disabled=true;
   try{
-    await api('/api/restart-tunnel',{method:'POST'});
+    await api('/api/restart-tunnel',{method:'POST',body:JSON.stringify({confirm_public:true})});
     $('tunnelUrl').textContent='Restarting tunnel…';
     $('qrTunnel').style.display='none';
     lastTunnelUrl='';
@@ -16051,6 +16053,9 @@ function applyTunnelUi(d){
     if(qrTunnel){qrTunnel.style.display='';setQR(qrTunnel,showUrl)}
     lastTunnelUrl=d.tunnel_url;
     const ts=$('tunnelStatus');if(ts)ts.style.display='none';
+  }else if(d.tunnel_status==='off'||d.tunnel_status===''){
+    if(tunnelUrl)tunnelUrl.textContent='Tunnel off';
+    if(qrTunnel)qrTunnel.style.display='none';
   }else if(d.tunnel_status==='failed'){
     if(tunnelUrl)tunnelUrl.textContent='Tunnel down — click ↻';
     if(qrTunnel)qrTunnel.style.display='none';

@@ -3075,7 +3075,7 @@
   "oracle": "openpyxl direct cell reads by spreadsheet row. Shares no code with the lane AND uses a different header signal: the lane picks by modal body width, this picks by type transition (last text row above the first row containing a number). They disagree in both directions on synthetic sheets, which is what makes the drift check meaningful. Shared residual: both fall back to the pre-#31 first-wide-row rule when their primary signal is inconclusive.",
   "honesty": "hybrid_max scores the SQL engine (sheet_sql) on generated asks. sira_max scores retrieve-only (answer() with hybrid_sql_lane off, use_llm=False) on the SAME generated asks. F13 metrics only.",
   "ts": "2026-11-27T04:14:36",
-  "commit_sha": "3d48b3d44a2a54744f1101b38c967112544cd9b0",
+  "commit_sha": "bd6882237cb05a0fcdaa2ec93b9f7da21cbf8816",
   "generated_at": "2026-11-27T04:14:36Z",
   "provenance_note": "commit_sha is the git HEAD the harness process ran against. generated_at is the wall clock of that process. A drift check ignores both, plus timings, space ids and absolute paths."
 }

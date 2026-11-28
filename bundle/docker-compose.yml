@@ -1,0 +1,52 @@
+# Netie bundle on one machine. Ports are loopback only.
+# The token file is mounted. The token is not written in this file.
+#   python -m bundle.launch --check
+#   docker compose -f bundle/docker-compose.yml up --build
+#   docker compose -f bundle/docker-compose.yml --profile siblings up
+name: netie-bundle
+
+services:
+  airgpt:
+    build:
+      context: ..
+      dockerfile: bundle/Dockerfile
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      AIRGPT_BIND: 127.0.0.1
+      AIRGPT_TUNNEL: "0"
+      AIRGPT_NO_BROWSER: "1"
+      NETIE_TOKEN_FILE: /run/netie/service-token
+    volumes:
+      - type: bind
+        source: ${NETIE_TOKEN_FILE:?set NETIE_TOKEN_FILE to the 0600 token file}
+        target: /run/netie/service-token
+        read_only: true
+
+  dms:
+    profiles: ["siblings"]
+    image: ${DMS_IMAGE:-netie/dms:local}
+    ports:
+      - "127.0.0.1:8010:8010"
+      - "127.0.0.1:8011:8011"
+    environment:
+      PACK: dms
+      NETIE_TOKEN_FILE: /run/netie/service-token
+    volumes:
+      - type: bind
+        source: ${NETIE_TOKEN_FILE:?set NETIE_TOKEN_FILE to the 0600 token file}
+        target: /run/netie/service-token
+        read_only: true
+
+  openvault:
+    profiles: ["siblings"]
+    image: ${OPENVAULT_IMAGE:-netie/openvault:local}
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      NETIE_TOKEN_FILE: /run/netie/service-token
+    volumes:
+      - type: bind
+        source: ${NETIE_TOKEN_FILE:?set NETIE_TOKEN_FILE to the 0600 token file}
+        target: /run/netie/service-token
+        read_only: true
